@@ -77,6 +77,15 @@ void FdemSolver::init() {
     damping_ = cfg_.getd("dampingLocal",
                          scen_ == Scenario::SHPB ? 0.0
                                                  : (quasiStatic ? 0.7 : 0.02));
+    // Viscosite de volume 2*mu*D de l'eq. 6 de Yan et al. (le terme de taux
+    // DANS la contrainte — leur amortissement est VISQUEUX, Table 1 :
+    // mu = 7,6e3 Pa.s, la ou rockim n'avait que le Cundall nodal). Opt-in :
+    // 0 (defaut) = strictement bit-identique (le terme n'est pas calcule).
+    bulkVisc_ = cfg_.getd("bulkViscosity", 0.0);
+    if (bulkVisc_ < 0.0)
+        throw std::runtime_error("bulkViscosity must be >= 0 [Pa.s] (eq. 6 "
+                                 "de Yan et al. : terme 2*mu*D dans la "
+                                 "contrainte)");
     // Body force. Absent (or 0) leaves every existing model bit-identical:
     // bodyForces() returns immediately and no other code path is touched.
     gravity_ = cfg_.getd("gravity", 0.0);
@@ -2263,6 +2272,23 @@ void FdemSolver::elementForces() {
         if (!law_ && pm > 3.0 * ftP_[e.phase]) {        // mean-tension cap
             double shift = pm - 3.0 * ftP_[e.phase];
             s(0) -= shift; s(1) -= shift;
+        }
+        // ---- viscosite de volume (eq. 6 de Yan et al. : + 2 mu D) ----------
+        // D = sym(L), L = Fdot F^-1 (taux de deformation en configuration
+        // courante), tourne dans le repere co-rote et ajoute a la contrainte
+        // AVANT la rotation retour — l'equivalent exact du 2*mu*D de leur
+        // forme, dissipatif par construction (puissance 2 mu D:D >= 0).
+        // bulkViscosity = 0 (defaut) : branche non executee, bit-identique.
+        if (bulkVisc_ > 0.0) {
+            Eigen::Matrix2d Fd = Eigen::Matrix2d::Zero();
+            for (int a = 0; a < 3; ++a)
+                Fd += v_[e.n[a]] * e.dN.col(a).transpose();
+            Eigen::Matrix2d L = Fd * F.inverse();
+            Eigen::Matrix2d Dr = 0.5 * (L + L.transpose());
+            Eigen::Matrix2d Dc = R.transpose() * Dr * R;   // co-rote
+            s(0) += 2.0 * bulkVisc_ * Dc(0, 0);
+            s(1) += 2.0 * bulkVisc_ * Dc(1, 1);
+            s(2) += 2.0 * bulkVisc_ * Dc(0, 1);
         }
         Eigen::Matrix2d sig;
         sig << s(0), s(2), s(2), s(1);

@@ -332,6 +332,7 @@ private:
     std::unordered_map<uint64_t, double> pen0_;
 
     double damping_ = 0.02, pullV_ = 0.05;
+    double bulkVisc_ = 0.0;                // 2*mu*D de l'eq. 6 (Yan) [Pa.s]
     double gravity_ = 0.0;                 // body-force acceleration, -y [m/s^2]
     double pullRamp_ = 0.0;                // grip velocity rise time [s]
     bool gripFree_ = false;                // frictionless tension grips
