@@ -202,8 +202,12 @@ private:
     };
 
     // setup
-    void buildMesh();                      // dispatch: grid | voronoi
+    void buildMesh();                      // dispatch: grid | voronoi | file
     void buildMeshVoronoi();
+    // mesh = file — import d'un maillage triangulaire NON STRUCTURE (Gmsh
+    // MSH 2.2 ASCII, elements type 2) : le maillage "a la Yan et al.",
+    // simplexes uniformes sans structure de grains (box uniquement).
+    void buildMeshFile();
     void buildMeshDisc();                  // discMesh = native: exact rim
     void buildMeshShpb();                  // geometry = shpb: bar-disc-bar
     void setupShpbGauges();                // monitor-point element lists

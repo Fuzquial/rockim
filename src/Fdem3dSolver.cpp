@@ -20,11 +20,34 @@
 #include "rockim/Tessellation3.hpp"
 #include "rockim/VtkWriter.hpp"
 
+#include <chrono>
+#include <cstdlib>
 #ifdef _OPENMP
 #include <omp.h>
 #endif
 
 namespace rockim {
+
+namespace {
+// ROCKIM_PROF=1 — per-phase step profile, the 2D FdemSolver pattern in 3D.
+struct F3Prof {
+    double tEl = 0, tIn = 0, tJt = 0, tGc = 0, tTc = 0;
+    long n = 0;
+    bool on = std::getenv("ROCKIM_PROF") != nullptr;
+    ~F3Prof() {
+        if (!on || n == 0) return;
+        std::fprintf(stderr,
+                     "[prof3d] per step (ms): elem %.2f insert %.2f joint %.2f "
+                     "gcontact %.2f tool %.2f  (%ld steps)\n",
+                     1e3 * tEl / n, 1e3 * tIn / n, 1e3 * tJt / n,
+                     1e3 * tGc / n, 1e3 * tTc / n, n);
+    }
+} f3Prof;
+double f3now() {
+    return std::chrono::duration<double>(
+               std::chrono::steady_clock::now().time_since_epoch()).count();
+}
+} // namespace
 
 Fdem3dSolver::Fdem3dSolver(const Config& cfg, std::string outDir)
     : cfg_(cfg), out_(std::move(outDir)) {}
@@ -94,6 +117,30 @@ void Fdem3dSolver::init() {
                                      "(got '" + ins + "')");
         adaptive_ = ins == "adaptive";
     }
+    // jointSoftening = linear (default, unchanged) | yan — the exponential
+    // reduction factor f(D) of Yan et al. eq. 11, ported from the 2D solver.
+    // Read BEFORE assignJointProps(): it sets the critical opening/slip from
+    // the fracture energies through I = int_0^1 f(D) dD.
+    {
+        std::string js = cfg_.gets("jointSoftening", "linear");
+        if (js != "linear" && js != "yan")
+            throw std::runtime_error("jointSoftening must be linear | yan "
+                                     "(got '" + js + "')");
+        yanSoft_ = js == "yan";
+    }
+    if (yanSoft_) {
+        yanP_.a = cfg_.getd("yanA", 0.63);
+        yanP_.b = cfg_.getd("yanB", 1.8);
+        yanP_.c = cfg_.getd("yanC", 6.0);
+        yanFricScaled_ = cfg_.geti("jointFrictionScaled", 0) != 0;
+        yanI_ = yan::integralFD(yanP_, cfg_.geti("yanQuadN", 4096));
+        if (!(yanI_ > 1e-6))
+            throw std::runtime_error("jointSoftening = yan: int f(D) dD is "
+                                     "not positive — check yanA/yanB/yanC");
+        std::cout << "[FDEM3D] joint softening: Yan et al. f(D), a = "
+                  << yanP_.a << ", b = " << yanP_.b << ", c = " << yanP_.c
+                  << ", int f(D) dD = " << yanI_ << "\n";
+    }
     assignJointProps();
     if (adaptive_) {
         for (auto& J : jt_) J.bonded = true;
@@ -125,6 +172,17 @@ void Fdem3dSolver::init() {
     fragId_.assign(el_.size(), 0);
     toolKE0_ = tool_.ke();
 
+    // Un maillage STRUCTURE n'est pas un choix esthetique : il biaise les
+    // trajets de fissures ET peut diverger en phase debris (2D mesure
+    // 2026-08-06 ; 3D confirme 2026-08-11 — grille de Kuhn intrinseque en
+    // cascade, gcWork +584 J pour 16 J incidents). Les scenarios d'impact et
+    // de coupe doivent partir du maillage desordonne.
+    if (!voronoi_ && scen_ != Scenario::TENSION)
+        std::cout << "[FDEM3D] WARNING: mesh = grid + scenario de "
+                     "fissuration — un maillage structure biaise les trajets "
+                     "et peut diverger en phase debris (FICHE 2026-08-06/11). "
+                     "Utiliser mesh = voronoi + grainSeeding = random pour "
+                     "tout resultat ou la casse compte.\n";
     std::cout << "[FDEM3D] " << el_.size() << " tets, " << jt_.size()
               << " joints, " << X0_.size() << " nodes, dt = " << dt_
               << " s, steps = " << (long)std::ceil(T_ / dt_) << "\n";
@@ -150,10 +208,17 @@ void Fdem3dSolver::init() {
 // ---------------------------------------------------------------------------
 void Fdem3dSolver::buildMesh() {
     std::string mesh = cfg_.gets("mesh", "grid");
-    if (mesh != "grid" && mesh != "voronoi")
-        throw std::runtime_error("mesh must be grid | voronoi (got '" + mesh
-                                 + "')");
+    if (mesh != "grid" && mesh != "voronoi" && mesh != "file")
+        throw std::runtime_error("mesh must be grid | voronoi | file (got '"
+                                 + mesh + "')");
     voronoi_ = mesh == "voronoi";
+    if (mesh == "file") {
+        if (phases_.n() > 1)
+            throw std::runtime_error("'phases' needs the grain machinery: "
+                "mesh = file imports a single-material unstructured mesh");
+        buildMeshFile();
+        return;
+    }
     if (!voronoi_ && phases_.n() > 1)
         throw std::runtime_error("'phases' declares "
             + std::to_string(phases_.n()) + " minerals but mesh = grid would "
@@ -205,6 +270,104 @@ void Fdem3dSolver::buildMesh() {
     std::vector<int> tetGrain(tets.size(), 0);         // one implicit grain
     nGrains_ = 1;
     buildFromTets(vc, tets, tetGrain, {0});
+}
+
+// ---------------------------------------------------------------------------
+// mesh = file — maillage tetraedrique non structure importe (Gmsh MSH 2.2
+// ASCII, $Nodes + $Elements de type 4). C'est le maillage "a la Yan et al."
+// (IJRMMS 169, 2023, figs 8/9b/11) : simplexes uniformes desordonnes, sans
+// structure de grains — la pratique des codes etablis (Gmsh chez Akantu,
+// OpenFDEM, la litterature FDEM ; cf. veille P1). Generer par exemple avec
+// tools/make_unstructured_mesh.py, puis :
+//     mesh = file
+//     meshFile = maillage.msh
+// Le maillage est TRANSLATE pour que sa boite englobante parte de l'origine,
+// et W/D/H sont REDEFINIS depuis cette boite (les frontieres, l'outil et les
+// jauges s'appuient sur les plans x/y/z = 0 et W/D/H). Ids de noeuds non
+// contigus acceptes ; l'orientation des tets est reparee par buildFromTets.
+// Le chemin de dimensionnement non uniforme (h local par element, grille de
+// contact creuse) est celui du voronoi : voronoi_ = true, un seul grain.
+// ---------------------------------------------------------------------------
+void Fdem3dSolver::buildMeshFile() {
+    std::string path = cfg_.reqs("meshFile");
+    std::ifstream in(path);
+    if (!in)
+        throw std::runtime_error("meshFile: cannot open '" + path + "'");
+    std::string line;
+    std::map<long, int> id2idx;
+    std::vector<Eigen::Vector3d> vpos;
+    std::vector<std::array<int, 4>> tets;
+    bool sawFormat = false;
+    while (std::getline(in, line)) {
+        if (line.rfind("$MeshFormat", 0) == 0) {
+            std::getline(in, line);
+            double ver = std::atof(line.c_str());
+            if (ver < 2.0 || ver >= 3.0)
+                throw std::runtime_error("meshFile: MSH version "
+                    + std::to_string(ver) + " unsupported — export ASCII 2.2 "
+                    "(Gmsh: Mesh.MshFileVersion = 2.2)");
+            sawFormat = true;
+        } else if (line.rfind("$Nodes", 0) == 0) {
+            long n = 0;
+            in >> n;
+            for (long k = 0; k < n; ++k) {
+                long id; double x, y, z;
+                in >> id >> x >> y >> z;
+                id2idx[id] = (int)vpos.size();
+                vpos.push_back({x, y, z});
+            }
+        } else if (line.rfind("$Elements", 0) == 0) {
+            long n = 0;
+            in >> n;
+            for (long k = 0; k < n; ++k) {
+                long id; int type, ntags;
+                in >> id >> type >> ntags;
+                long tag;
+                for (int t = 0; t < ntags; ++t) in >> tag;
+                int nn = type == 15 ? 1 : type == 1 ? 2 : type == 2 ? 3
+                       : type == 4 ? 4 : -1;
+                if (nn < 0)
+                    throw std::runtime_error("meshFile: element type "
+                        + std::to_string(type) + " unsupported (tets only; "
+                        "export a pure tetrahedral mesh)");
+                std::array<int, 4> vv{};
+                for (int q = 0; q < nn; ++q) {
+                    long nid; in >> nid;
+                    if (nn == 4) {
+                        auto it = id2idx.find(nid);
+                        if (it == id2idx.end())
+                            throw std::runtime_error("meshFile: element "
+                                "references unknown node id");
+                        vv[q] = it->second;
+                    }
+                }
+                if (nn == 4) tets.push_back(vv);       // points/lines/tris:
+            }                                          // boundary — skipped
+        }
+    }
+    if (!sawFormat || vpos.empty() || tets.empty())
+        throw std::runtime_error("meshFile: no tetrahedra found in '" + path
+                                 + "' (need ASCII MSH 2.2 with type-4 "
+                                 "elements)");
+    // translate to the origin and take the box from the bounding box
+    Eigen::Vector3d lo = vpos[0], hi = vpos[0];
+    for (const auto& p : vpos) { lo = lo.cwiseMin(p); hi = hi.cwiseMax(p); }
+    for (auto& p : vpos) p -= lo;
+    W_ = hi.x() - lo.x();
+    D_ = hi.y() - lo.y();
+    H_ = hi.z() - lo.z();
+    if (!(W_ > 0 && D_ > 0 && H_ > 0))
+        throw std::runtime_error("meshFile: degenerate bounding box");
+    std::vector<int> tetGrain(tets.size(), 0);         // one implicit grain
+    nGrains_ = 1;
+    voronoi_ = true;             // non-uniform sizing paths (local h, sparse
+                                 // contact grid) — a file mesh is not a grid
+    std::cout << "[FDEM3D] mesh = file: '" << path << "' — "
+              << vpos.size() << " nodes, " << tets.size()
+              << " tets, box " << W_ << " x " << D_ << " x " << H_ << " m\n";
+    buildFromTets(vpos, tets, tetGrain, {0});
+    hmin_ = 1e30;
+    for (double h : hEl_) hmin_ = std::min(hmin_, h);
 }
 
 void Fdem3dSolver::buildMeshVoronoi() {
@@ -418,8 +581,12 @@ void Fdem3dSolver::assignJointProps() {
         J.Gf = Gf;
         J.GfII = GfII;
         J.dnE = ft / J.pj;
-        J.dnF = J.dnE + 2.0 * Gf / ft;                 // linear mode-I softening
-        J.slipF = 2.0 * GfII / coh;                    // mode-II softening slip
+        // Critical opening / slip: the softening branch must enclose exactly
+        // GfI (resp. GfII) — linear branch has area ft w / 2, the f(D) branch
+        // has area ft w I with I = int f(D) dD (eq. 13/15), as in 2D.
+        double kI = yanSoft_ ? 1.0 / yanI_ : 2.0;
+        J.dnF = J.dnE + kI * Gf / ft;                  // mode-I critical opening
+        J.slipF = kI * GfII / coh;                     // mode-II softening slip
         J.tanPhi = std::tan(phiDeg * M_PI / 180.0);
     }
     applyJointStatistics();
@@ -472,8 +639,9 @@ void Fdem3dSolver::applyJointStatistics() {
         J.ft *= J.stat;
         J.coh *= J.stat;
         J.dnE = J.ft / J.pj;
-        J.dnF = J.dnE + 2.0 * J.Gf / J.ft;
-        J.slipF = 2.0 * J.GfII / J.coh;
+        double kI = yanSoft_ ? 1.0 / yanI_ : 2.0;
+        J.dnF = J.dnE + kI * J.Gf / J.ft;
+        J.slipF = kI * J.GfII / J.coh;
         xmin = std::min(xmin, J.stat);
         xmax = std::max(xmax, J.stat);
         xsum += J.stat;
@@ -787,12 +955,24 @@ void Fdem3dSolver::step() {
     for (auto& fi : f_) fi.setZero();
     tool_.F.setZero();
 
-    elementForces();
-    if (adaptive_) insertionSweep();       // before jointForces: a joint born
+    if (f3Prof.on) {
+        double t0 = f3now(); elementForces();
+        double t1 = f3now(); if (adaptive_) insertionSweep();
+        double t2 = f3now(); jointForces();
+        double t3 = f3now(); generalContact();
+        double t4 = f3now(); toolContact();
+        double t5 = f3now();
+        f3Prof.tEl += t1 - t0; f3Prof.tIn += t2 - t1; f3Prof.tJt += t3 - t2;
+        f3Prof.tGc += t4 - t3; f3Prof.tTc += t5 - t4;
+        ++f3Prof.n;
+    } else {
+        elementForces();
+        if (adaptive_) insertionSweep();   // before jointForces: a joint born
                                            // this step carries traction now
-    jointForces();
-    generalContact();
-    toolContact();
+        jointForces();
+        generalContact();
+        toolContact();
+    }
     confiningForces();                     // no-op si confiningPressure = 0
     if (confP_ > 0.0 && !confLatched_
         && t_ >= std::max(cfg_.getd("confineGaugeTime", 3.0 * confRamp_),
@@ -871,7 +1051,7 @@ void Fdem3dSolver::elementForces() {
 // PER JOINT (GBM). Parallel as in 2D: per-joint state is private, the
 // force scatter goes through per-thread buffers reduced in thread order.
 void Fdem3dSolver::jointForces() {
-    auto processJoint = [&](Joint& J, auto&& addF, long& nb) {
+    auto processJoint = [&](Joint& J, auto&& addF, long& nb, double& dampW) {
         if (J.dead || J.bonded) return;    // bonded: node binding carries it
         Eigen::Vector3d P1 = 0.5 * ((X0_[J.a[0]] + u_[J.a[0]]) + (X0_[J.b[0]] + u_[J.b[0]]));
         Eigen::Vector3d P2 = 0.5 * ((X0_[J.a[1]] + u_[J.a[1]]) + (X0_[J.b[1]] + u_[J.b[1]]));
@@ -894,42 +1074,98 @@ void Fdem3dSolver::jointForces() {
             Eigen::Vector3d dt3 = delta - delta.dot(n) * n;
             dnMax = std::max(dnMax, dn);
 
-            double sig;
-            if (dn >= 0.0) {
+            // ================= normal traction =========================
+            // The 2026-08-05 2D refonte, ported verbatim (FdemSolver.cpp):
+            //  (1) the ELASTIC/cohesive part is computed FIRST — a viscous
+            //      term must never be able to break a joint;
+            //  (2) an INTACT cohesive joint is BILATERAL (it is a bond, it
+            //      may pull); clipping belongs to a BROKEN joint acting as a
+            //      contact, and then it applies to the RESULTANT;
+            //  (3) the dashpot coefficient carries the MOOSE hard bound
+            //      cd <= m_eff/dt (past it the dashpot reverses the approach
+            //      velocity within one step instead of damping it) — the
+            //      bound the 3D port had LOST (suspect #1 of the frozen
+            //      debris-phase instability, 2026-08-07).
+            double sigEl;                              // elastic / cohesive
+            if (yanSoft_) {
+                // exponential softening of Yan et al., eq. 11-13/16-17, as
+                // in 2D: rn measured beyond the elastic branch dnE, mixed
+                // driver D = sqrt(rn^2 + rs^2), origin-secant unloading.
+                double ot = J.dnF - J.dnE;
+                double rn = (ot > 0.0 && dn > J.dnE) ? (dn - J.dnE) / ot : 0.0;
+                double rs = (J.slipF > 0.0) ? J.slip[k].norm() / J.slipF : 0.0;
+                double Dnow = std::sqrt(rn * rn + rs * rs);
+                if (Dnow > J.D) J.D = std::min(1.0, Dnow);
+                double fdY = yan::fD(J.D, yanP_);
+                if (dn >= 0.0) {
+                    if (dn > J.omax[k]) J.omax[k] = dn;
+                    double om = J.omax[k];
+                    double sMax = std::min(J.pj * om, fdY * J.ft);
+                    sigEl = (om > 1e-30) ? sMax * dn / om : 0.0;
+                } else {
+                    sigEl = J.pj * dn;                 // closed: penalty
+                }
+            } else if (dn >= 0.0) {
                 double env = (dn <= J.dnE) ? J.pj * dn
                            : (dn >= J.dnF) ? 0.0
                            : J.ft * (J.dnF - dn) / (J.dnF - J.dnE);
                 double tr2 = (1.0 - J.D) * J.pj * dn;
                 if (tr2 > env) {
-                    sig = env;
+                    sigEl = env;
                     if (dn > 1e-30) {
                         double Dn = 1.0 - env / (J.pj * dn);
                         if (Dn > J.D) J.D = std::min(1.0, Dn);
                     }
-                } else sig = tr2;
+                } else sigEl = tr2;
             } else {
+                sigEl = J.pj * dn;                     // closed: penalty
+            }
+
+            double sig = sigEl;
+            if (xiJ_ > 0.0) {
                 Eigen::Vector3d vrel = v_[ib] - v_[ia];
                 double meff = 0.5 * std::min(m_[ia], m_[ib]);
                 double cd = 2.0 * xiJ_ * std::sqrt(J.pj * At * meff);
-                // SIGN: the traction acts on B as -sig*At*n, so a term
-                // opposing the opening rate vrel.n carries a PLUS sign. The
-                // minus here was anti-damping — the same defect found and
-                // fixed in the 2D solver, where it broke every joint of the
-                // specimen under zero load once the bond was made bilateral.
-                sig = J.pj * dn + cd * vrel.dot(n) / At;
-                if (sig > 0) sig = 0;
+                // hard bound: past m_eff/dt the dashpot reverses the
+                // approach velocity within one step (MOOSE), as in 2D
+                cd = std::min(cd, meff / dt_);
+                // SIGN: the traction acts on B as -sig*At*n, so a term that
+                // OPPOSES the opening rate vrel.n carries a PLUS sign (the
+                // historical minus was anti-damping — 2D lesson 2026-08-05)
+                double sigV = cd * vrel.dot(n) / At;
+                if (J.D < 1.0) {
+                    sig = sigEl + sigV;                // bilateral bond
+                } else if (dn < 0.0) {
+                    sig = std::min(0.0, sigEl + sigV); // contact: clip the SUM
+                }
+                // power of the viscous part: F_B.v_B + F_A.v_A
+                dampW -= (sig - sigEl) * At * vrel.dot(n) * dt_;
             }
 
             J.slip[k] -= J.slip[k].dot(n) * n;         // keep slip in-plane
             Eigen::Vector3d tauTr = J.pj * (dt3 - J.slip[k]);
-            double tauLim = (1.0 - J.D) * J.coh
-                            + J.tanPhi * std::max(0.0, -sig);
+            // yan: cohesion scaled by f(D); Coulomb term unscaled by default
+            // so a crushed joint keeps residual friction (jointFrictionScaled
+            // = 1 for the literal eq. 10), exactly as in 2D
+            double fdS = yanSoft_ ? yan::fD(J.D, yanP_) : 0.0;
+            double coh = yanSoft_ ? fdS * J.coh : (1.0 - J.D) * J.coh;
+            double muS = (yanSoft_ && yanFricScaled_) ? fdS : 1.0;
+            double tauLim = coh + muS * J.tanPhi * std::max(0.0, -sig);
             double tn = tauTr.norm();
             Eigen::Vector3d tau = tauTr;
             if (tn > tauLim && tn > 0) {
                 tau *= tauLim / tn;
                 J.slip[k] += (tauTr - tau) / J.pj;     // vector return mapping
-                double Dt2 = J.slip[k].norm() / J.slipF;
+                double Dt2;
+                if (yanSoft_) {
+                    double ot = J.dnF - J.dnE;
+                    double rn = (ot > 0.0 && dn > J.dnE) ? (dn - J.dnE) / ot
+                                                         : 0.0;
+                    double rs = J.slip[k].norm() / J.slipF;
+                    Dt2 = std::sqrt(rn * rn + rs * rs);   // eq. 16 / 14
+                } else {
+                    Dt2 = J.slip[k].norm() / J.slipF;
+                }
                 if (Dt2 > J.D) J.D = std::min(1.0, Dt2);
             }
 
@@ -939,7 +1175,24 @@ void Fdem3dSolver::jointForces() {
         }
 
         if (J.D >= 1.0) {
-            if (J.tBreak < 0) { J.tBreak = t_; ++nb; }
+            if (J.tBreak < 0) {
+                J.tBreak = t_; ++nb;
+                // partition of the damage driver at the breaking instant
+                // (ported from 2D): rn = mode I (opening), rs = mode II
+                // (sliding). Output only — no force depends on it.
+                double otF = J.dnF - J.dnE;
+                double rnF = (otF > 0.0 && dnMax > J.dnE)
+                           ? (dnMax - J.dnE) / otF : 0.0;
+                double sMx = 0.0;
+                for (int q = 0; q < 3; ++q)
+                    sMx = std::max(sMx, J.slip[q].norm());
+                double rsF = (J.slipF > 0.0) ? sMx / J.slipF : 0.0;
+                double den = rnF * rnF + rsF * rsF;
+                J.failMode = (den > 1e-300) ? (rnF * rnF) / den : 1.0;
+                J.rnB = rnF;
+                J.rsB = rsF;
+                J.bmode = (rnF >= rsF) ? 1 : 2;  // 1 traction, 2 cisaillement
+            }
             if (dnMax > 3.0 * J.dnF) J.dead = true;    // separation only
         }
     };
@@ -954,6 +1207,7 @@ void Fdem3dSolver::jointForces() {
             touchedTL_.assign(nT, {});
         }
         std::vector<long> nbT(nT, 0);
+        std::vector<double> dwT(nT, 0.0);
 #pragma omp parallel
         {
             int t = omp_get_thread_num();
@@ -962,14 +1216,16 @@ void Fdem3dSolver::jointForces() {
             auto& tl = touchedTL_[t];
             tl.clear();
             long nb = 0;
+            double dw = 0.0;
             auto addF = [&](int i, const Eigen::Vector3d& v3) {
                 if (!seen[i]) { seen[i] = 1; tl.push_back(i); }
                 fb[i] += v3;
             };
 #pragma omp for schedule(static)
             for (int jI = 0; jI < (int)jt_.size(); ++jI)
-                processJoint(jt_[jI], addF, nb);
+                processJoint(jt_[jI], addF, nb, dw);
             nbT[t] = nb;
+            dwT[t] = dw;
         }
         for (int t = 0; t < nT; ++t) {
             for (int i : touchedTL_[t]) {
@@ -978,14 +1234,17 @@ void Fdem3dSolver::jointForces() {
                 seenTL_[t][i] = 0;
             }
             nBroken_ += nbT[t];
+            dampWork_ += dwT[t];
         }
         return;
     }
 #endif
     long nb1 = 0;                        // 1 thread: bit-identical to serial
+    double dw1 = 0.0;
     auto addF1 = [&](int i, const Eigen::Vector3d& v3) { f_[i] += v3; };
-    for (auto& J : jt_) processJoint(J, addF1, nb1);
+    for (auto& J : jt_) processJoint(J, addF1, nb1, dw1);
     nBroken_ += nb1;
+    dampWork_ += dw1;
 }
 
 void Fdem3dSolver::rebuildContactFaces() {
@@ -1077,11 +1336,25 @@ void Fdem3dSolver::generalContact() {
     }
 
     double cap = 0.6 * hmin_;
-    std::vector<int> done;                     // per-node face dedup (voronoi)
-    for (int i : actNodes_) {
+
+    // Detection is the expensive part (grid sweep + geometry) and is PURE:
+    // it parallelizes over nodes into per-thread candidate lists, exactly as
+    // the 2D solver does (FdemSolver::generalContact). The DELICATE part —
+    // birth-gap bookkeeping (pen0_), damping, force application and the
+    // net-work meter — stays SERIAL, walking the candidates in thread order.
+    // schedule(static) hands each thread a contiguous chunk of actNodes_, so
+    // the concatenated candidate order equals the serial sweep order: the
+    // result is BIT-IDENTICAL to the serial path for any thread count.
+    struct CPair {
+        int i, k;
+        double pen, wa, wb, wc;
+        Eigen::Vector3d nrm;
+    };
+    auto detect = [&](int i, std::vector<CPair>& outC,
+                      std::vector<int>& done) {
         Eigen::Vector3d p = X0_[i] + u_[i];
         if ((p.array() <= boxLo.array()).any()
-            || (p.array() >= boxHi.array()).any()) continue;
+            || (p.array() >= boxHi.array()).any()) return;
         int ci = std::clamp(int((p.x() - gmin_.x()) / cell_), 0, gx_ - 1);
         int cj = std::clamp(int((p.y() - gmin_.y()) / cell_), 0, gy_ - 1);
         int ck = std::clamp(int((p.z() - gmin_.z()) / cell_), 0, gz_ - 1);
@@ -1137,38 +1410,76 @@ void Fdem3dSolver::generalContact() {
                 double wc = (d00 * d21 - d01 * d20) / den;
                 double wa = 1.0 - wb - wc;
                 if (wa < 0 || wb < 0 || wc < 0) continue;
-                double pen = -d;
-                uint64_t pkey = (uint64_t(uint32_t(i)) << 40)
-                                ^ (uint64_t(uint32_t(bf.n[0])) << 20)
-                                ^ uint32_t(bf.n[1]);
-                auto [it0, isNew] = pen0_.try_emplace(pkey, pen);
-                if (!isNew) it0->second *= relax_;
-                pen = std::max(0.0, pen - it0->second);
-                if (pen <= 0.0) continue;
-                Eigen::Vector3d vFace = wa * v_[bf.n[0]] + wb * v_[bf.n[1]]
-                                        + wc * v_[bf.n[2]];
-                Eigen::Vector3d vrel = v_[i] - vFace;
-                double vn = vrel.dot(nrm);
-                double cdmp = 2.0 * xiGC_ * std::sqrt(kpGC_ * m_[i]);
-                double fn = kpGC_ * pen * (vn < 0.0 ? 1.0 : gcRest_) - cdmp * vn;
-                if (fn < 0) fn = 0;
-                Eigen::Vector3d vt = vrel - vn * nrm;
-                double vtn = vt.norm();
-                Eigen::Vector3d ftv = Eigen::Vector3d::Zero();
-                if (vtn > 0)
-                    ftv = -muC_ * fn * std::tanh(vtn / vReg_) * vt / vtn;
-                Eigen::Vector3d Fc = fn * nrm + ftv;
-                double capF = 20.0 * m_[i] / dt_;
-                double Fn2 = Fc.norm();
-                if (Fn2 > capF) Fc *= capF / Fn2;
-                gcWork_ += Fc.dot(vrel) * dt_;
-                f_[i] += Fc;
-                f_[bf.n[0]] -= wa * Fc;
-                f_[bf.n[1]] -= wb * Fc;
-                f_[bf.n[2]] -= wc * Fc;
+                outC.push_back({i, k, -d, wa, wb, wc, nrm});
             }
         }
+    };
+
+    static std::vector<std::vector<CPair>> cpTL;       // per-thread lists
+    bool par = false;
+#ifdef _OPENMP
+    // fork/join costs more than the sweep while few faces are active: go
+    // parallel only when the debris population makes it genuinely heavy
+    par = omp_get_max_threads() > 1 && actNodes_.size() >= 4096;
+#endif
+    if (par) {
+#ifdef _OPENMP
+        int nT = omp_get_max_threads();
+        if ((int)cpTL.size() < nT) cpTL.assign(nT, {});
+#pragma omp parallel
+        {
+            int t = omp_get_thread_num();
+            cpTL[t].clear();
+            std::vector<int> done;
+            done.reserve(64);
+#pragma omp for schedule(static)
+            for (int a = 0; a < (int)actNodes_.size(); ++a)
+                detect(actNodes_[a], cpTL[t], done);
+        }
+#endif
+    } else {
+        if (cpTL.empty()) cpTL.assign(1, {});
+        for (auto& lst : cpTL) lst.clear();
+        std::vector<int> done;
+        done.reserve(64);
+        for (int i : actNodes_) detect(i, cpTL[0], done);
     }
+
+    for (auto& lst : cpTL)
+        for (const CPair& cp : lst) {
+            int i = cp.i;
+            const BFace& bf = act_[cp.k];
+            const Eigen::Vector3d& nrm = cp.nrm;
+            double pen = cp.pen;
+            uint64_t pkey = (uint64_t(uint32_t(i)) << 40)
+                            ^ (uint64_t(uint32_t(bf.n[0])) << 20)
+                            ^ uint32_t(bf.n[1]);
+            auto [it0, isNew] = pen0_.try_emplace(pkey, pen);
+            if (!isNew) it0->second *= relax_;
+            pen = std::max(0.0, pen - it0->second);
+            if (pen <= 0.0) continue;
+            Eigen::Vector3d vFace = cp.wa * v_[bf.n[0]] + cp.wb * v_[bf.n[1]]
+                                    + cp.wc * v_[bf.n[2]];
+            Eigen::Vector3d vrel = v_[i] - vFace;
+            double vn = vrel.dot(nrm);
+            double cdmp = 2.0 * xiGC_ * std::sqrt(kpGC_ * m_[i]);
+            double fn = kpGC_ * pen * (vn < 0.0 ? 1.0 : gcRest_) - cdmp * vn;
+            if (fn < 0) fn = 0;
+            Eigen::Vector3d vt = vrel - vn * nrm;
+            double vtn = vt.norm();
+            Eigen::Vector3d ftv = Eigen::Vector3d::Zero();
+            if (vtn > 0)
+                ftv = -muC_ * fn * std::tanh(vtn / vReg_) * vt / vtn;
+            Eigen::Vector3d Fc = fn * nrm + ftv;
+            double capF = 20.0 * m_[i] / dt_;
+            double Fn2 = Fc.norm();
+            if (Fn2 > capF) Fc *= capF / Fn2;
+            gcWork_ += Fc.dot(vrel) * dt_;
+            f_[i] += Fc;
+            f_[bf.n[0]] -= cp.wa * Fc;
+            f_[bf.n[1]] -= cp.wb * Fc;
+            f_[bf.n[2]] -= cp.wc * Fc;
+        }
 }
 
 // Rigid tool (sphere or flat punch) against every node. Per-node force
@@ -1420,18 +1731,23 @@ void Fdem3dSolver::writeFrame(int frame) {
                       {{"velocity", &vel}});
 
     std::vector<std::array<int, 3>> tris;
-    std::vector<double> Dj, tb, Tp, Fs;
+    std::vector<double> Dj, tb, Tp, Fs, Bd, Fm, Bm;
     for (const auto& J : jt_) {
         tris.push_back(J.a);
         Dj.push_back(J.D);
         tb.push_back(J.tBreak);
         Tp.push_back(J.type);
         Fs.push_back(J.stat);
+        Bd.push_back(J.bonded ? 1.0 : 0.0);
+        Fm.push_back(J.failMode);
+        Bm.push_back(J.bmode);
     }
     std::snprintf(name, sizeof(name), "/fdem3d_joints_%04d.vtu", frame);
-    vtk::writeTriangles3(out_ + name, pts, tris,
-                         {{"damage", &Dj}, {"tBreak", &tb}, {"type", &Tp},
-                          {"ftScale", &Fs}});
+    vtk::ScalarField jf{
+        {"damage", &Dj}, {"tBreak", &tb}, {"type", &Tp},
+        {"ftScale", &Fs}, {"bonded", &Bd}, {"breakMode", &Bm}};
+    if (cfg_.getb("writeJointMode", false)) jf["failMode"] = &Fm;
+    vtk::writeTriangles3(out_ + name, pts, tris, jf);
 
     std::ofstream fm(out_ + "/frames.csv",
                      frame == 0 ? std::ios::trunc : std::ios::app);
@@ -1481,6 +1797,24 @@ void Fdem3dSolver::finalize() {
     std::cout << "\n[FDEM3D] ---- summary ----\n"
               << "[FDEM3D] block kinetic energy at end: " << keBlock << " J\n"
               << "[FDEM3D] net work by general contact: " << gcWork_ << " J\n";
+    // A dashpot can only DISSIPATE. A positive figure here means the viscous
+    // branch is injecting energy — the rectifier failure mode — and every
+    // number the run produced is suspect (2D lesson, now measured in 3D too).
+    std::cout << "[FDEM3D] joint dashpot work: " << dampWork_ << " J  ["
+              << (dampWork_ <= 0.0 ? "OK, dissipative"
+                                   : "FAIL - the dashpot INJECTED energy")
+              << "]\n";
+    {   // failure-mode census (breakMode: 1 = tensile, 2 = shear)
+        long nTm = 0, nSm = 0;
+        for (const auto& J : jt_) {
+            if (J.bmode == 1) ++nTm;
+            else if (J.bmode == 2) ++nSm;
+        }
+        if (nTm + nSm > 0)
+            std::cout << "[FDEM3D] breakage mode: " << nTm << " tensile, "
+                      << nSm << " shear ("
+                      << 100.0 * nSm / (double)(nTm + nSm) << " % shear)\n";
+    }
     if (adaptive_)
         std::cout << "[FDEM3D] adaptive insertion: " << nInserted_ << " / "
                   << jt_.size() << " joints inserted ("

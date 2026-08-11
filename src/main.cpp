@@ -54,12 +54,16 @@ int main(int argc, char** argv) {
 
         std::string mode = cfg.gets("mode", "fem");
         std::string mesh = cfg.gets("mesh", "grid");
-        if (mesh != "grid" && mesh != "voronoi")
+        if (mesh != "grid" && mesh != "voronoi" && mesh != "file")
             throw std::runtime_error("unknown mesh '" + mesh
-                                     + "' (grid | voronoi)");
+                                     + "' (grid | voronoi | file)");
         if (mesh == "voronoi" && mode != "fdem" && mode != "fdem3d")
             throw std::runtime_error("mesh = voronoi (grains + phases) is only "
                                      "implemented for mode = fdem | fdem3d");
+        if (mesh == "file" && mode != "fdem" && mode != "fdem3d")
+            throw std::runtime_error("mesh = file (unstructured import) is "
+                                     "only implemented for mode = fdem | "
+                                     "fdem3d");
         if (cfg.has("phases") && mode != "fdem" && mode != "fdem3d")
             throw std::runtime_error("'phases' (mineral phases) is only "
                                      "implemented for mode = fdem | fdem3d");

@@ -46,6 +46,7 @@
 #include "rockim/MatLaw.hpp"
 #include "rockim/Material.hpp"
 #include "rockim/Solver.hpp"
+#include "rockim/YanSoftening.hpp"
 
 namespace rockim {
 
@@ -104,6 +105,16 @@ private:
         // exactly the traction the bonded face was carrying).
         bool bonded = false;
         double dn0 = 0.0;
+        // largest opening ever reached per integration point (jointSoftening
+        // = yan: the omax of eq. 17 — origin-secant unloading), as in 2D
+        std::array<double, 3> omax{{0.0, 0.0, 0.0}};
+        // ---- failure mode, recorded ONCE when D first reaches 1 -----------
+        // Ported from the 2D solver: partition of the eq. 16 damage driver at
+        // the breaking instant. bmode = 1 tensile, 2 shear, 0 intact;
+        // failMode = rn^2/(rn^2+rs^2) in [0,1], -1 while intact. Output only.
+        int bmode = 0;
+        double rnB = 0.0, rsB = 0.0;
+        double failMode = -1.0;
     };
 
     struct BFace {                          // active contact face
@@ -122,8 +133,13 @@ private:
         double ke() const { return 0.5 * mass * v.squaredNorm(); }
     };
 
-    void buildMesh();                      // dispatch: grid | voronoi
+    void buildMesh();                      // dispatch: grid | voronoi | file
     void buildMeshVoronoi();
+    // mesh = file — import d'un maillage tetraedrique NON STRUCTURE (Gmsh
+    // MSH 2.2 ASCII, elements type 4), la voie "maillage a la Yan et al." :
+    // simplexes uniformes sans structure de grains. Le bloc est translate a
+    // l'origine et W/D/H sont relus de la boite englobante.
+    void buildMeshFile();
     void buildFromTets(const std::vector<Eigen::Vector3d>& vpos,
                        const std::vector<std::array<int, 4>>& tets,
                        const std::vector<int>& tetGrain,
@@ -167,8 +183,25 @@ private:
     int nGrains_ = 1;
 
     // joint law: per-joint properties live in Joint; xiJ_ is the shared
-    // compressive dashpot ratio
+    // dashpot ratio (bilateral on intact joints, clipped resultant on broken
+    // ones — the 2026-08-05 2D refonte, ported)
     double xiJ_ = 0.05;
+
+    // ---- post-peak softening shape (jointSoftening), ported from 2D --------
+    // linear (default, unchanged): ft -> 0 over dnF - dnE = 2 Gf / ft.
+    // yan: the exponential reduction factor f(D) of Yan et al. (IJRMMS 169,
+    // 2023) eq. 11, critical opening/slip calibrated so the area under the
+    // softening branch is still exactly GfI / GfII:
+    //     dnF - dnE = Gf / (ft yanI_),  slipF = GfII / (c yanI_).
+    bool yanSoft_ = false;
+    bool yanFricScaled_ = false;
+    yan::Params yanP_;
+    double yanI_ = 1.0;                    // int_0^1 f(D) dD
+
+    // Work done by the joint dashpot. A dashpot can only DISSIPATE, so this
+    // must stay <= 0 — the direct detector of the rectifier/anti-damping
+    // failure modes (2D lesson, 2026-08-05). One multiply per point.
+    double dampWork_ = 0.0;
 
     // ---- adaptive insertion (insertion = adaptive), as in FdemSolver -------
     // No joint exists at t = 0: bonded faces are handled kinematically (node

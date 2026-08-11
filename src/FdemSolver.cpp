@@ -327,6 +327,15 @@ void FdemSolver::init() {
     fragId_.assign(el_.size(), 0);
     toolKE0_ = tool_.ke();
 
+    // Meme garde-fou qu'en 3D : la grille en croix diverge en phase debris
+    // (mesure 2026-08-06 : 379 joints, Ec > energie livree) la ou le Voronoi
+    // desordonne est propre. Condition de validite, pas d'esthetique.
+    if (!voronoi_ && (scen_ == Scenario::PERCUSSION || scen_ == Scenario::SHEAR))
+        std::cout << "[FDEM] WARNING: mesh = grid + scenario de fissuration — "
+                     "un maillage structure biaise les trajets et peut "
+                     "diverger en phase debris (FICHE 2026-08-06). Utiliser "
+                     "mesh = voronoi + grainSeeding = random pour tout "
+                     "resultat ou la casse compte.\n";
     std::cout << "[FDEM] " << el_.size() << " elements, " << jt_.size()
               << " joints, " << X0_.size() << " nodes, dt = " << dt_
               << " s, steps = " << (long)std::ceil(T_ / dt_) << "\n";
@@ -355,10 +364,21 @@ void FdemSolver::init() {
 // ---------------------------------------------------------------------------
 void FdemSolver::buildMesh() {
     std::string mesh = cfg_.gets("mesh", "grid");
-    if (mesh != "grid" && mesh != "voronoi")
-        throw std::runtime_error("mesh must be grid | voronoi (got '" + mesh
-                                 + "')");
+    if (mesh != "grid" && mesh != "voronoi" && mesh != "file")
+        throw std::runtime_error("mesh must be grid | voronoi | file (got '"
+                                 + mesh + "')");
     voronoi_ = mesh == "voronoi";
+    if (mesh == "file") {
+        if (shpb_ || disc_)
+            throw std::runtime_error("mesh = file is implemented for the BOX "
+                "geometry (percussion / shear / tension); the disc and shpb "
+                "assemblies build their own meshes");
+        if (phases_.n() > 1)
+            throw std::runtime_error("'phases' needs the grain machinery: "
+                "mesh = file imports a single-material unstructured mesh");
+        buildMeshFile();
+        return;
+    }
     if (shpb_) { buildMeshShpb(); return; }            // three-body assembly
     if (!voronoi_ && phases_.n() > 1)
         throw std::runtime_error("'phases' declares "
@@ -947,6 +967,101 @@ void FdemSolver::cutDisc(std::vector<Eigen::Vector2d>& vpos,
     // is applied as a traction on the horizontal facets inside the load arc
     // (setupBrazilianLoad), and element-scale roughness of the rim does not
     // reach the centre of the disc, where the measurement is made.
+}
+
+// ---------------------------------------------------------------------------
+// mesh = file — maillage triangulaire non structure importe (Gmsh MSH 2.2
+// ASCII, elements type 2) : le maillage "a la Yan et al." en 2D. Meme
+// contrat que le 3D : translation a l'origine, W/H relus de la boite
+// englobante, orientation CCW reparee ici (buildFromTriangles la refuse),
+// chemin de dimensionnement non uniforme (voronoi_ = true, un grain).
+// ---------------------------------------------------------------------------
+void FdemSolver::buildMeshFile() {
+    std::string path = cfg_.reqs("meshFile");
+    std::ifstream in(path);
+    if (!in)
+        throw std::runtime_error("meshFile: cannot open '" + path + "'");
+    std::string line;
+    std::map<long, int> id2idx;
+    std::vector<Eigen::Vector2d> vpos;
+    std::vector<std::array<int, 3>> tris;
+    bool sawFormat = false;
+    while (std::getline(in, line)) {
+        if (line.rfind("$MeshFormat", 0) == 0) {
+            std::getline(in, line);
+            double ver = std::atof(line.c_str());
+            if (ver < 2.0 || ver >= 3.0)
+                throw std::runtime_error("meshFile: MSH version "
+                    + std::to_string(ver) + " unsupported — export ASCII 2.2 "
+                    "(Gmsh: Mesh.MshFileVersion = 2.2)");
+            sawFormat = true;
+        } else if (line.rfind("$Nodes", 0) == 0) {
+            long n = 0;
+            in >> n;
+            for (long k = 0; k < n; ++k) {
+                long id; double x, y, z;
+                in >> id >> x >> y >> z;
+                id2idx[id] = (int)vpos.size();
+                vpos.push_back({x, y});
+            }
+        } else if (line.rfind("$Elements", 0) == 0) {
+            long n = 0;
+            in >> n;
+            for (long k = 0; k < n; ++k) {
+                long id; int type, ntags;
+                in >> id >> type >> ntags;
+                long tag;
+                for (int t = 0; t < ntags; ++t) in >> tag;
+                int nn = type == 15 ? 1 : type == 1 ? 2 : type == 2 ? 3
+                       : type == 4 ? 4 : -1;
+                if (nn < 0)
+                    throw std::runtime_error("meshFile: element type "
+                        + std::to_string(type) + " unsupported (2D: "
+                        "triangles only)");
+                if (nn == 4)
+                    throw std::runtime_error("meshFile: tetrahedra found — "
+                        "this is a 3D mesh; use mode = fdem3d");
+                std::array<int, 3> vv{};
+                for (int q = 0; q < nn; ++q) {
+                    long nid; in >> nid;
+                    if (nn == 3) {
+                        auto it = id2idx.find(nid);
+                        if (it == id2idx.end())
+                            throw std::runtime_error("meshFile: element "
+                                "references unknown node id");
+                        vv[q] = it->second;
+                    }
+                }
+                if (nn == 3) tris.push_back(vv);       // points/lines skipped
+            }
+        }
+    }
+    if (!sawFormat || vpos.empty() || tris.empty())
+        throw std::runtime_error("meshFile: no triangles found in '" + path
+                                 + "' (need ASCII MSH 2.2 with type-2 "
+                                 "elements)");
+    Eigen::Vector2d lo = vpos[0], hi = vpos[0];
+    for (const auto& p : vpos) { lo = lo.cwiseMin(p); hi = hi.cwiseMax(p); }
+    for (auto& p : vpos) p -= lo;
+    W_ = hi.x() - lo.x();
+    H_ = hi.y() - lo.y();
+    if (!(W_ > 0 && H_ > 0))
+        throw std::runtime_error("meshFile: degenerate bounding box");
+    for (auto& t : tris) {                             // force CCW
+        const auto &A = vpos[t[0]], &B = vpos[t[1]], &C = vpos[t[2]];
+        double det = (B.x() - A.x()) * (C.y() - A.y())
+                   - (C.x() - A.x()) * (B.y() - A.y());
+        if (det < 0) std::swap(t[1], t[2]);
+    }
+    std::vector<int> triGrain(tris.size(), 0);
+    nGrains_ = 1;
+    voronoi_ = true;             // non-uniform sizing paths — not a grid
+    std::cout << "[FDEM] mesh = file: '" << path << "' — " << vpos.size()
+              << " nodes, " << tris.size() << " triangles, box " << W_
+              << " x " << H_ << " m\n";
+    buildFromTriangles(vpos, tris, triGrain, {0});
+    hmin_ = 1e30;
+    for (double h : hEl_) hmin_ = std::min(hmin_, h);
 }
 
 void FdemSolver::buildMeshVoronoi() {
