@@ -1,0 +1,6 @@
+build/
+out_*/
+*.o
+*.obj
+nohup.out
+__pycache__/

@@ -1,0 +1,1564 @@
+// ---------------------------------------------------------------------------
+// Fdem3dSolver — 3D Munjiza-style FDEM. Derivations in comments; the model
+// mirrors the (verified) 2D FdemSolver, lifted to Kuhn tetrahedra, with the
+// same two mesh front-ends (structured grid | Voronoi grains + phases).
+// ---------------------------------------------------------------------------
+#include "rockim/Fdem3dSolver.hpp"
+
+#include <algorithm>
+#include <cmath>
+#include <cstdio>
+#include <fstream>
+#include <functional>
+#include <iostream>
+#include <map>
+#include <queue>
+#include <random>
+#include <stdexcept>
+
+#include "rockim/RandomField.hpp"
+#include "rockim/Tessellation3.hpp"
+#include "rockim/VtkWriter.hpp"
+
+#ifdef _OPENMP
+#include <omp.h>
+#endif
+
+namespace rockim {
+
+Fdem3dSolver::Fdem3dSolver(const Config& cfg, std::string outDir)
+    : cfg_(cfg), out_(std::move(outDir)) {}
+
+void Fdem3dSolver::init() {
+    mat_ = Material::from(cfg_);
+    phases_ = PhaseSet::from(cfg_);
+
+    std::string sc = cfg_.gets("scenario", "percussion");
+    if      (sc == "percussion") scen_ = Scenario::PERCUSSION;
+    else if (sc == "shear")      scen_ = Scenario::SHEAR;
+    else if (sc == "tension")    scen_ = Scenario::TENSION;
+    else throw std::runtime_error("fdem3d scenario must be percussion | shear | tension");
+
+    W_ = cfg_.getd("W", 0.08);
+    D_ = cfg_.getd("D", 0.08);
+    H_ = cfg_.getd("H", 0.06);
+    nx_ = cfg_.geti("nx", 20);
+    ny_ = cfg_.geti("ny", 20);
+    nz_ = cfg_.geti("nz", 15);
+    T_ = cfg_.getd("T", 2e-4);
+    damping_ = cfg_.getd("dampingLocal", scen_ == Scenario::TENSION ? 0.7 : 0.05);
+
+    buildMesh();
+
+    // voronoi contact cell: 2 x median element size, floored so the ±1-cell
+    // sweep still covers the deepest allowed penetration (0.6 x the largest
+    // element) — hmin (the thinnest sliver) would explode the cell count
+    if (voronoi_) {
+        std::vector<double> h = hEl_;
+        std::nth_element(h.begin(), h.begin() + h.size() / 2, h.end());
+        double hMed = h[h.size() / 2];
+        double hMax = *std::max_element(hEl_.begin(), hEl_.end());
+        cellV_ = std::max(2.0 * hMed, 0.61 * hMax);
+    }
+
+    // ---- per-phase element tables (elementForces hot loop) ------------------
+    lamP_.clear(); mu2P_.clear(); crushCapP_.clear(); ftP_.clear(); rhoP_.clear();
+    for (const Material& m : phases_.mat) {
+        lamP_.push_back(m.E * m.nu / ((1 + m.nu) * (1 - 2 * m.nu)));
+        mu2P_.push_back(m.E / (1 + m.nu));                 // 2G
+        crushCapP_.push_back(cfg_.getd("crushCap", 8.0 * m.cohesion));
+        ftP_.push_back(m.ft);
+        rhoP_.push_back(m.rho);
+    }
+
+    // ---- cohesive joint law (PER JOINT, as in 2D) ---------------------------
+    // ---- optional bulk constitutive law -------------------------------------
+    if (cfg_.has("law")) {
+        if (phases_.n() > 1)
+            throw std::runtime_error("'law' (bulk constitutive law) is a SINGLE "
+                "material model: it cannot be combined with mineral 'phases'.");
+        double lcMax = 0.0;
+        for (double h : hEl_) lcMax = std::max(lcMax, h);
+        law_ = MatLaw::make(cfg_.gets("law", "elastic"), mat_, cfg_, lcMax);
+        std::cout << "[FDEM3D] bulk law = " << law_->name() << ", "
+                  << el_.size() << " tets, lc max = " << lcMax << " m\n";
+    }
+
+    // insertion = adaptive : extrinsic scheme of Yan et al. (IJRMMS 169,
+    // 2023), ported from the 2D solver. Read BEFORE assignJointProps, which
+    // selects the (softer) activation penalty in that mode.
+    {
+        std::string ins = cfg_.gets("insertion", "intrinsic");
+        if (ins != "intrinsic" && ins != "adaptive")
+            throw std::runtime_error("insertion must be intrinsic | adaptive "
+                                     "(got '" + ins + "')");
+        adaptive_ = ins == "adaptive";
+    }
+    assignJointProps();
+    if (adaptive_) {
+        for (auto& J : jt_) J.bonded = true;
+        buildBindingTables();
+        std::cout << "[FDEM3D] adaptive insertion: " << jt_.size()
+                  << " bonded faces, activation penalty "
+                  << cfg_.getd("insertionPenaltyFactor", 4.0) << " E/h\n";
+    }
+    xiJ_ = cfg_.getd("jointXi", 0.05);
+
+    kp_ = phases_.maxE() * hmin_;                      // tool contact [N/m]
+    muC_ = cfg_.getd("contactMu", 0.5);
+    xiC_ = cfg_.getd("contactXi", 0.05);
+    vReg_ = cfg_.getd("contactVreg", 1e-3);
+    kpGC_ = cfg_.getd("gcPenaltyFactor", 0.01) * phases_.maxE() * hmin_;
+    xiGC_ = cfg_.getd("gcXi", 0.8);
+    gcRest_ = cfg_.getd("gcRestitution", 0.2);
+
+    placeTool();
+    setupBoundaries();
+    setupConfinement();
+    computeStableDt();
+    relax_ = std::exp(-dt_ / cfg_.getd("gcBirthTau", 1e-6));
+
+    if (scen_ == Scenario::TENSION) pullV_ = cfg_.getd("pullV", 0.05);
+    pullDelay_ = cfg_.getd("pullDelay", 0.0);
+    gripFree_ = cfg_.getb("gripLateralFree", false);
+    pullRamp_ = cfg_.getd("pullRamp", 0.0);
+    fragId_.assign(el_.size(), 0);
+    toolKE0_ = tool_.ke();
+
+    std::cout << "[FDEM3D] " << el_.size() << " tets, " << jt_.size()
+              << " joints, " << X0_.size() << " nodes, dt = " << dt_
+              << " s, steps = " << (long)std::ceil(T_ / dt_) << "\n";
+    if (voronoi_) {
+        long nGB = 0;
+        for (const auto& J : jt_) if (J.type > 0) ++nGB;
+        std::cout << "[FDEM3D] voronoi: " << nGrains_ << " grains, "
+                  << phases_.n() << " phase(s), " << nGB
+                  << " grain-boundary joints, hmin = " << hmin_ << " m\n";
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Mesh generation. Two front-ends share one topology builder, as in 2D:
+//   mesh = grid    — structured hex grid split into the 6 Kuhn tetrahedra
+//                    per cell (identical corner ordering makes the induced
+//                    face diagonals compatible across cells), optional
+//                    interior-vertex jitter (one implicit "grain").
+//   mesh = voronoi — 3D Voronoi grain structure (Tessellation3) with
+//                    per-grain mineral phases: the GBM mode.
+// Every interior triangular face gets a cohesive joint; boundary faces feed
+// the quiet boundaries and the general contact.
+// ---------------------------------------------------------------------------
+void Fdem3dSolver::buildMesh() {
+    std::string mesh = cfg_.gets("mesh", "grid");
+    if (mesh != "grid" && mesh != "voronoi")
+        throw std::runtime_error("mesh must be grid | voronoi (got '" + mesh
+                                 + "')");
+    voronoi_ = mesh == "voronoi";
+    if (!voronoi_ && phases_.n() > 1)
+        throw std::runtime_error("'phases' declares "
+            + std::to_string(phases_.n()) + " minerals but mesh = grid would "
+            "silently use only the first: set mesh = voronoi (or drop the "
+            "phases key)");
+    if (voronoi_) { buildMeshVoronoi(); return; }
+
+    double dx = W_ / nx_, dy = D_ / ny_, dz = H_ / nz_;
+    hmin_ = std::min({dx, dy, dz});
+    double jit = cfg_.getd("meshJitter", 0.0) * 0.5 * hmin_;
+    std::mt19937 rng(cfg_.geti("seed", 12345));
+    std::uniform_real_distribution<double> U(-jit, jit);
+
+    int vnx = nx_ + 1, vny = ny_ + 1, vnz = nz_ + 1;
+    std::vector<Eigen::Vector3d> vc((std::size_t)vnx * vny * vnz);
+    auto vid = [&](int i, int j, int k) { return (k * vny + j) * vnx + i; };
+    for (int k = 0; k < vnz; ++k)
+        for (int j = 0; j < vny; ++j)
+            for (int i = 0; i < vnx; ++i) {
+                Eigen::Vector3d p(i * dx, j * dy, k * dz);
+                if (jit > 0 && i > 0 && i < nx_ && j > 0 && j < ny_
+                    && k > 0 && k < nz_)
+                    p += Eigen::Vector3d(U(rng), U(rng), U(rng));
+                vc[vid(i, j, k)] = p;
+            }
+
+    std::vector<std::array<int, 4>> tets;
+    tets.reserve((std::size_t)6 * nx_ * ny_ * nz_);
+    const int perms[6][3] = {{0, 1, 2}, {0, 2, 1}, {1, 0, 2},
+                             {1, 2, 0}, {2, 0, 1}, {2, 1, 0}};
+    for (int k = 0; k < nz_; ++k)
+        for (int j = 0; j < ny_; ++j)
+            for (int i = 0; i < nx_; ++i) {
+                int c[2][2][2];
+                for (int a = 0; a < 2; ++a)
+                    for (int b = 0; b < 2; ++b)
+                        for (int cph = 0; cph < 2; ++cph)
+                            c[a][b][cph] = vid(i + a, j + b, k + cph);
+                for (const auto& p : perms) {
+                    int s[3] = {0, 0, 0};
+                    std::array<int, 4> vv;
+                    vv[0] = c[0][0][0];
+                    s[p[0]] = 1; vv[1] = c[s[0]][s[1]][s[2]];
+                    s[p[1]] = 1; vv[2] = c[s[0]][s[1]][s[2]];
+                    vv[3] = c[1][1][1];
+                    tets.push_back(vv);
+                }
+            }
+    std::vector<int> tetGrain(tets.size(), 0);         // one implicit grain
+    nGrains_ = 1;
+    buildFromTets(vc, tets, tetGrain, {0});
+}
+
+void Fdem3dSolver::buildMeshVoronoi() {
+    double d = cfg_.reqd("grainSize");
+    double jit = cfg_.getd("grainJitter", 0.5);
+    int lloyd = cfg_.geti("lloydIters", 2);
+    double mf = cfg_.getd("vertexMergeFrac", 0.12);
+    int refine = cfg_.geti("refineLevels", 0);
+    std::string seeding = cfg_.gets("grainSeeding", "hex");
+    if (seeding != "hex" && seeding != "random")
+        throw std::runtime_error("grainSeeding must be hex | random (got '"
+                                 + seeding + "')");
+    std::mt19937 rng(cfg_.geti("seed", 12345));
+
+    Tessellation3 T = Tessellation3::build(W_, D_, H_, d, jit, lloyd, mf,
+                                           refine, phases_.fraction, rng,
+                                           seeding == "random");
+    nGrains_ = T.nGrains;
+
+    std::vector<std::array<int, 4>> tets;
+    std::vector<int> tetGrain;
+    tets.reserve(T.tet.size());
+    tetGrain.reserve(T.tet.size());
+    for (const auto& t : T.tet) {
+        tets.push_back(t.v);
+        tetGrain.push_back(t.grain);
+    }
+    buildFromTets(T.vtx, tets, tetGrain, T.phaseOfGrain);
+
+    // the length scale of the contact machinery and the CFL is now set by
+    // the smallest element the tessellation produced (inscribed size 6V/A)
+    hmin_ = 1e30;
+    for (double h : hEl_) hmin_ = std::min(hmin_, h);
+}
+
+// ---------------------------------------------------------------------------
+// Shared topology builder: per-tet node quadruples, cohesive joints on the
+// doubly-shared virtual faces (outward-oriented, node pairs matched by
+// virtual id), exterior faces, masses, tension grips. Virtual vertex ids
+// come from the caller: two tets are joined iff they share a vertex triple,
+// inside grains and across them alike.
+// ---------------------------------------------------------------------------
+void Fdem3dSolver::buildFromTets(const std::vector<Eigen::Vector3d>& vpos,
+                                 const std::vector<std::array<int, 4>>& tets,
+                                 const std::vector<int>& tetGrain,
+                                 const std::vector<int>& grainPhase) {
+    // face registry: sorted virtual triple -> owners (elem + 3 (virt, real))
+    struct Owner { int elem; std::array<int, 3> vv, nn; };
+    std::map<std::array<int, 3>, std::vector<Owner>> faces;
+    el_.reserve(tets.size());
+    hEl_.reserve(tets.size());
+
+    for (std::size_t tId = 0; tId < tets.size(); ++tId) {
+        std::array<int, 4> vv = tets[tId];
+        int base = (int)X0_.size();
+        Elem e;
+        for (int q = 0; q < 4; ++q) {
+            X0_.push_back(vpos[vv[q]]);
+            elemOf_.push_back((int)el_.size());
+            vOf_.push_back(vv[q]);
+            e.n[q] = base + q;
+        }
+        // ensure positive volume: swap two vertices if needed
+        Eigen::Matrix3d J;
+        J.col(0) = X0_[e.n[1]] - X0_[e.n[0]];
+        J.col(1) = X0_[e.n[2]] - X0_[e.n[0]];
+        J.col(2) = X0_[e.n[3]] - X0_[e.n[0]];
+        double det = J.determinant();
+        if (det < 0) {
+            std::swap(e.n[2], e.n[3]);
+            std::swap(vv[2], vv[3]);
+            J.col(1) = X0_[e.n[2]] - X0_[e.n[0]];
+            J.col(2) = X0_[e.n[3]] - X0_[e.n[0]];
+            det = -det;
+        }
+        e.V0 = det / 6.0;
+        if (e.V0 <= 0) throw std::runtime_error("degenerate tet");
+        Eigen::Matrix3d Jinv = J.inverse();
+        // grad N_a: N0 = 1 - xi - eta - zeta, N1 = xi, ...
+        e.dN.col(1) = Jinv.row(0);
+        e.dN.col(2) = Jinv.row(1);
+        e.dN.col(3) = Jinv.row(2);
+        e.dN.col(0) = -(e.dN.col(1) + e.dN.col(2) + e.dN.col(3));
+        e.grain = tetGrain.empty() ? 0 : tetGrain[tId];
+        e.phase = grainPhase.empty() ? 0 : grainPhase[e.grain];
+        // inscribed-sphere diameter 6V/A — the local length scale of the
+        // joint penalty and the contact caps on the voronoi mesh
+        double Atot = 0.0;
+        const int fi4[4][3] = {{1, 2, 3}, {0, 3, 2}, {0, 1, 3}, {0, 2, 1}};
+        for (const auto& fi : fi4) {
+            Eigen::Vector3d A = X0_[e.n[fi[0]]], B = X0_[e.n[fi[1]]],
+                            C = X0_[e.n[fi[2]]];
+            Atot += 0.5 * (B - A).cross(C - A).norm();
+        }
+        hEl_.push_back(6.0 * e.V0 / Atot);
+        int id = (int)el_.size();
+        el_.push_back(e);
+
+        // four faces, ordered OUTWARD (right-hand rule away from the
+        // opposite vertex)
+        const int faceIdx[4][3] = {{1, 2, 3}, {0, 3, 2}, {0, 1, 3}, {0, 2, 1}};
+        for (const auto& fi : faceIdx) {
+            std::array<int, 3> fvv = {vv[fi[0]], vv[fi[1]], vv[fi[2]]};
+            std::array<int, 3> fnn = {e.n[fi[0]], e.n[fi[1]], e.n[fi[2]]};
+            // verify outwardness against the tet centroid
+            Eigen::Vector3d A = X0_[fnn[0]], B = X0_[fnn[1]], C = X0_[fnn[2]];
+            Eigen::Vector3d cen = 0.25 * (X0_[e.n[0]] + X0_[e.n[1]]
+                                          + X0_[e.n[2]] + X0_[e.n[3]]);
+            Eigen::Vector3d nrm = (B - A).cross(C - A);
+            if (nrm.dot((A + B + C) / 3.0 - cen) < 0) {
+                std::swap(fvv[1], fvv[2]);
+                std::swap(fnn[1], fnn[2]);
+            }
+            std::array<int, 3> key = fvv;
+            std::sort(key.begin(), key.end());
+            faces[key].push_back({id, fvv, fnn});
+        }
+    }
+
+    for (auto& [key, lst] : faces) {
+        if (lst.size() == 2) {
+            Joint J;
+            J.eA = lst[0].elem;
+            J.eB = lst[1].elem;
+            J.a = lst[0].nn;                 // outward-ordered in A
+            for (int q = 0; q < 3; ++q)      // pair B nodes by virtual id
+                for (int r = 0; r < 3; ++r)
+                    if (lst[1].vv[r] == lst[0].vv[q]) J.b[q] = lst[1].nn[r];
+            Eigen::Vector3d A = X0_[J.a[0]], B = X0_[J.a[1]], C = X0_[J.a[2]];
+            J.A0 = 0.5 * (B - A).cross(C - A).norm();
+            for (auto& sl : J.slip) sl.setZero();
+            jt_.push_back(J);
+        } else if (lst.size() == 1) {
+            exterior_.push_back({lst[0].elem, lst[0].nn});
+        } else {
+            throw std::runtime_error("mesh topology error: a face is shared "
+                                     "by more than two tets (vertex weld "
+                                     "produced a non-manifold mesh)");
+        }
+    }
+
+    u_.assign(X0_.size(), Eigen::Vector3d::Zero());
+    v_.assign(X0_.size(), Eigen::Vector3d::Zero());
+    f_.assign(X0_.size(), Eigen::Vector3d::Zero());
+    m_.assign(X0_.size(), 0.0);
+    flag_.assign(X0_.size(), FREE);
+    for (const auto& e : el_)
+        for (int a = 0; a < 4; ++a)
+            m_[e.n[a]] += phases_.mat[e.phase].rho * e.V0 / 4.0;
+
+    if (scen_ == Scenario::TENSION) {
+        for (int i = 0; i < (int)X0_.size(); ++i) {
+            if (X0_[i].z() < 1e-9)           flag_[i] = FIXED;
+            else if (X0_[i].z() > H_ - 1e-9) flag_[i] = PRESCRIBED;
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Per-joint cohesive properties — the 2D GBM rule verbatim. Intra-grain
+// joints (and every joint of the grid mesh) carry the bulk material of
+// their phase. Grain-boundary joints take the MEAN of the two neighbouring
+// phases times the alpha attenuation factors; heterophase boundaries get
+// the extra heteroFactor on the strength-like properties. The penalty uses
+// the local element size for the voronoi mesh (elements are not uniform)
+// and the global hmin for the grid mesh (bit-compatible with the pre-GBM
+// behaviour).
+// ---------------------------------------------------------------------------
+void Fdem3dSolver::assignJointProps() {
+    // Adaptive insertion: the penalty only serves ACTIVATED joints as
+    // unloading/contact stiffness (bonded faces are kinematic), so it can be
+    // much softer than the intrinsic factor — that is where the dt gain of
+    // Yan et al. comes from. Same convention as the 2D solver.
+    double pf = adaptive_ ? cfg_.getd("insertionPenaltyFactor", 4.0)
+                          : cfg_.getd("jointPenaltyFactor", 20.0);
+    for (auto& J : jt_) {
+        const Elem& A = el_[J.eA];
+        const Elem& B = el_[J.eB];
+        const Material& mA = phases_.mat[A.phase];
+        const Material& mB = phases_.mat[B.phase];
+        double E, ft, coh, Gf, GfII, phiDeg;
+        if (!voronoi_ || A.grain == B.grain) {
+            J.type = 0;                                // intra-grain: bulk
+            E = mA.E; ft = mA.ft; coh = mA.cohesion;
+            Gf = mA.Gf; GfII = mA.gfShearFactor * mA.Gf;
+            phiDeg = mA.phiDeg;
+        } else {
+            bool hetero = A.phase != B.phase;
+            J.type = hetero ? 2 : 1;
+            double s = hetero ? phases_.heteroFactor : 1.0;
+            E    = phases_.aE   * 0.5 * (mA.E + mB.E);
+            ft   = s * phases_.aTen * 0.5 * (mA.ft + mB.ft);
+            coh  = s * phases_.aCoh * 0.5 * (mA.cohesion + mB.cohesion);
+            Gf   = s * phases_.aGf  * 0.5 * (mA.Gf + mB.Gf);
+            GfII = s * phases_.aGf  * 0.5 * (mA.gfShearFactor * mA.Gf
+                                             + mB.gfShearFactor * mB.Gf);
+            phiDeg = phases_.aFric * 0.5 * (mA.phiDeg + mB.phiDeg);
+        }
+        // defense in depth: the attenuated MEANS must stay physical (ft = 0
+        // would make dnF infinite, the envelope NaN, and the joint
+        // unbreakable; tan(phi >= 90 deg) would flip the friction sign)
+        if (!(ft > 0.0) || !(coh > 0.0) || !(E > 0.0)
+            || !(phiDeg >= 0.0 && phiDeg < 89.0))
+            throw std::runtime_error("assignJointProps: attenuated joint "
+                "properties left the physical range (ft/coh/E must be > 0, "
+                "friction angle in [0, 89) deg) — check gb* factors");
+        double h = voronoi_ ? 0.5 * (hEl_[J.eA] + hEl_[J.eB]) : hmin_;
+        J.pj = pf * E / h;
+        J.ft = ft;
+        J.coh = coh;
+        J.Gf = Gf;
+        J.GfII = GfII;
+        J.dnE = ft / J.pj;
+        J.dnF = J.dnE + 2.0 * Gf / ft;                 // linear mode-I softening
+        J.slipF = 2.0 * GfII / coh;                    // mode-II softening slip
+        J.tanPhi = std::tan(phiDeg * M_PI / 180.0);
+    }
+    applyJointStatistics();
+}
+
+// ---------------------------------------------------------------------------
+// Statistical joint strengths — the 2D implicit-DFH bridge in 3D. With
+// jointWeibullM = m > 1, every joint's ft and cohesion are multiplied by a
+// Weibull(m) factor of MEAN 1; fracture energies are NOT scaled and the
+// openings dnF/slipF are recomputed. strengthCorrLength = 0 draws
+// independently per joint; > 0 samples ONE Gaussian random field
+// (RandomField3) through the Gaussian copula at the joint face centroid —
+// the field lives in SPACE, independent of the mesh (fieldSeed controls it
+// separately from the mesh seed), so two meshes see the same weak zones.
+// Anisotropy: strengthCorrLengthB across the texture plane and
+// strengthCorrAngleDeg tilting that plane about the y-axis (foliation).
+// ---------------------------------------------------------------------------
+void Fdem3dSolver::applyJointStatistics() {
+    double m = cfg_.getd("jointWeibullM", 0.0);
+    if (m <= 0.0) return;                              // deterministic joints
+    if (m <= 1.0)
+        throw std::runtime_error("jointWeibullM must be > 1 (typical rock "
+                                 "values 5-30)");
+    double ell = cfg_.getd("strengthCorrLength", 0.0);
+    unsigned fseed = (unsigned)cfg_.geti("fieldSeed",
+                                         cfg_.geti("seed", 12345) + 777);
+    double gam = std::tgamma(1.0 + 1.0 / m);
+    auto weib = [&](double u) {
+        u = std::clamp(u, 1e-12, 1.0 - 1e-12);
+        return std::pow(-std::log(1.0 - u), 1.0 / m) / gam;
+    };
+
+    double xmin = 1e300, xmax = 0.0, xsum = 0.0;
+    if (ell > 0.0) {
+        double ellB = cfg_.getd("strengthCorrLengthB", ell);
+        double ang = cfg_.getd("strengthCorrAngleDeg", 0.0);
+        RandomField3 F(W_, D_, H_, ell, ellB, ang, fseed);
+        for (auto& J : jt_) {
+            Eigen::Vector3d mid = (X0_[J.a[0]] + X0_[J.a[1]] + X0_[J.a[2]])
+                                  / 3.0;
+            double g = F(mid);
+            J.stat = weib(0.5 * std::erfc(-g / std::sqrt(2.0)));   // Phi(g)
+        }
+    } else {
+        std::mt19937 rng(fseed);
+        std::uniform_real_distribution<double> U(0.0, 1.0);
+        for (auto& J : jt_) J.stat = weib(U(rng));
+    }
+    for (auto& J : jt_) {
+        J.ft *= J.stat;
+        J.coh *= J.stat;
+        J.dnE = J.ft / J.pj;
+        J.dnF = J.dnE + 2.0 * J.Gf / J.ft;
+        J.slipF = 2.0 * J.GfII / J.coh;
+        xmin = std::min(xmin, J.stat);
+        xmax = std::max(xmax, J.stat);
+        xsum += J.stat;
+    }
+    std::cout << "[FDEM3D] joint strength statistics: Weibull m = " << m
+              << (ell > 0.0 ? " correlated, ell = " + std::to_string(ell)
+                            : std::string(" independent per joint"))
+              << ", factor mean/min/max = " << xsum / jt_.size() << "/"
+              << xmin << "/" << xmax << "\n";
+}
+
+// ===========================================================================
+// Adaptive insertion — 3D port of the FdemSolver machinery (Yan, Zheng &
+// Wang, IJRMMS 169, 2023). Nodes are already duplicated per tet, so "shared"
+// is enforced kinematically: the co-located copies of an original vertex are
+// bound into groups that integrate as one node. Binding groups are the
+// connected components of the TET FAN around the vertex, two tets being
+// connected when the face between them is still bonded; activating a joint
+// re-runs the union-find at the face's three vertices, which reproduces the
+// progressive node splitting of the 2D fig. 7 in 3D (a crack-front vertex
+// stays whole while the fan is still connected around it).
+// ===========================================================================
+void Fdem3dSolver::buildBindingTables() {
+    nVert_ = 0;
+    for (int v : vOf_) nVert_ = std::max(nVert_, v + 1);
+    copiesOfVert_.assign(nVert_, {});
+    for (int i = 0; i < (int)X0_.size(); ++i)
+        copiesOfVert_[vOf_[i]].push_back(i);
+    jointsOfVert_.assign(nVert_, {});
+    for (int jI = 0; jI < (int)jt_.size(); ++jI)
+        for (int k = 0; k < 3; ++k)
+            jointsOfVert_[vOf_[jt_[jI].a[k]]].push_back(jI);
+    grpsOfVert_.assign(nVert_, {});
+    for (int v = 0; v < nVert_; ++v) rebindVertex(v);
+}
+
+void Fdem3dSolver::rebindVertex(int v) {
+    const auto& copies = copiesOfVert_[v];
+    auto& grps = grpsOfVert_[v];
+    grps.clear();
+    if (copies.empty()) return;
+    std::vector<int> elems;
+    elems.reserve(copies.size());
+    for (int i : copies) elems.push_back(elemOf_[i]);
+    auto local = [&](int e) {
+        for (int k = 0; k < (int)elems.size(); ++k)
+            if (elems[k] == e) return k;
+        return -1;
+    };
+    std::vector<int> par(elems.size());
+    for (int k = 0; k < (int)par.size(); ++k) par[k] = k;
+    std::function<int(int)> find = [&](int x) {
+        while (par[x] != x) { par[x] = par[par[x]]; x = par[x]; }
+        return x;
+    };
+    for (int jI : jointsOfVert_[v]) {
+        const Joint& J = jt_[jI];
+        if (!J.bonded) continue;
+        int a = local(J.eA), b = local(J.eB);
+        if (a < 0 || b < 0) continue;
+        par[find(a)] = find(b);
+    }
+    std::vector<int> root(copies.size());
+    for (int c = 0; c < (int)copies.size(); ++c) root[c] = find(c);
+    std::vector<char> done(copies.size(), 0);
+    for (int c = 0; c < (int)copies.size(); ++c) {
+        if (done[c]) continue;
+        std::vector<int> g;
+        for (int d = c; d < (int)copies.size(); ++d)
+            if (!done[d] && root[d] == root[c]) { done[d] = 1; g.push_back(copies[d]); }
+        grps.push_back(std::move(g));
+    }
+}
+
+// Insertion criterion on every bonded face: average of the two tets' GLOBAL
+// stress tensors projected on the current face frame; activate when
+// sigma_n >= ft or |tau| >= fs with fs = c - sigma_n tan(phi) in compression.
+void Fdem3dSolver::insertionSweep() {
+    struct Hit { int jI; double sig, fs; Eigen::Vector3d tauV; };
+    std::vector<Hit> hits;
+    auto testJoint = [&](int jI, std::vector<Hit>& out) {
+        const Joint& J = jt_[jI];
+        if (!J.bonded) return;
+        Eigen::Vector3d P1 = 0.5 * ((X0_[J.a[0]] + u_[J.a[0]]) + (X0_[J.b[0]] + u_[J.b[0]]));
+        Eigen::Vector3d P2 = 0.5 * ((X0_[J.a[1]] + u_[J.a[1]]) + (X0_[J.b[1]] + u_[J.b[1]]));
+        Eigen::Vector3d P3 = 0.5 * ((X0_[J.a[2]] + u_[J.a[2]]) + (X0_[J.b[2]] + u_[J.b[2]]));
+        Eigen::Vector3d nr = (P2 - P1).cross(P3 - P1);
+        double nn = nr.norm();
+        if (nn < 1e-18) return;
+        Eigen::Vector3d n = nr / nn;
+        Eigen::Matrix3d S = 0.5 * (el_[J.eA].sigG + el_[J.eB].sigG);
+        Eigen::Vector3d tvec = S * n;
+        double sig = n.dot(tvec);
+        Eigen::Vector3d tauV = tvec - sig * n;
+        double fs = J.coh + (sig < 0.0 ? -sig * J.tanPhi : 0.0);
+        if (sig >= J.ft || tauV.norm() >= fs) out.push_back({jI, sig, fs, tauV});
+    };
+#ifdef _OPENMP
+    #pragma omp parallel
+    {
+        std::vector<Hit> mine;
+        #pragma omp for schedule(static) nowait
+        for (int jI = 0; jI < (int)jt_.size(); ++jI) testJoint(jI, mine);
+        #pragma omp critical
+        hits.insert(hits.end(), mine.begin(), mine.end());
+    }
+#else
+    for (int jI = 0; jI < (int)jt_.size(); ++jI) testJoint(jI, hits);
+#endif
+    if (hits.empty()) return;
+    std::sort(hits.begin(), hits.end(),
+              [](const Hit& x, const Hit& y) { return x.jI < y.jI; });
+    for (const Hit& h : hits) activateJoint(h.jI, h.sig, h.tauV, h.fs);
+}
+
+// Stress continuity at insertion, as in 2D: opening offset so the elastic
+// branch reproduces min(sigma, ft) at zero geometric opening, and a vector
+// slip offset so the trial shear pj*(dt3 - slip) equals the transmitted
+// tangential traction (clamped to the current Coulomb cap) at dt3 = 0.
+void Fdem3dSolver::activateJoint(int jI, double sig,
+                                 const Eigen::Vector3d& tauV, double fsNow) {
+    Joint& J = jt_[jI];
+    if (!J.bonded) return;
+    J.bonded = false;
+    J.dn0 = std::min(sig, J.ft) / J.pj;
+    Eigen::Vector3d tau0 = tauV;
+    double tn = tau0.norm();
+    if (tn > fsNow && tn > 0.0) tau0 *= fsNow / tn;
+    for (int k = 0; k < 3; ++k) J.slip[k] = -tau0 / J.pj;
+    ++nInserted_;
+    rebindVertex(vOf_[J.a[0]]);
+    rebindVertex(vOf_[J.a[1]]);
+    rebindVertex(vOf_[J.a[2]]);
+}
+
+void Fdem3dSolver::placeTool() {
+    if (scen_ == Scenario::TENSION) return;
+    tool_.mass   = cfg_.getd("toolMass", 0.5);
+    tool_.radius = cfg_.getd("toolRadius", 0.015);
+    double gap = cfg_.getd("toolGap", 1e-4);
+    // toolShape = sphere | flat ('disc' accepted as the 2D synonym); shear
+    // forces the sphere, exactly as 2D shear forces the disc
+    std::string sh = cfg_.gets("toolShape", "sphere");
+    if (sh != "sphere" && sh != "disc" && sh != "flat")
+        throw std::runtime_error("toolShape must be sphere | flat (3D)");
+    tool_.flat = sh == "flat" && scen_ == Scenario::PERCUSSION;
+    if (scen_ == Scenario::PERCUSSION) {
+        tool_.free = true;
+        double zTip = tool_.flat ? H_ + gap : H_ + tool_.radius + gap;
+        tool_.x = {cfg_.getd("toolX", 0.5 * W_), cfg_.getd("toolY", 0.5 * D_),
+                   zTip};
+        tool_.v = {0.0, 0.0, -cfg_.getd("impactSpeed", 8.0)};
+    } else {
+        tool_.free = false;
+        double depth = cfg_.getd("cutDepth", 0.004);
+        tool_.x = {cfg_.getd("toolX", -tool_.radius - gap), 0.5 * D_,
+                   H_ - depth + tool_.radius};
+        tool_.v = {cfg_.getd("cutSpeed", 10.0), 0.0, 0.0};
+    }
+}
+
+void Fdem3dSolver::setupBoundaries() {
+    cAbs_.assign(X0_.size(), Eigen::Vector3d::Zero());
+    kAbs_.assign(X0_.size(), Eigen::Vector3d::Zero());
+    if (scen_ == Scenario::TENSION) return;
+
+    std::string ab = cfg_.gets("absorbing", "none");
+    if (ab != "none" && ab != "sides" && ab != "all")
+        throw std::runtime_error("absorbing must be none | sides | all");
+
+    double sF = cfg_.getd("absorbSpringFactor", 1.0);
+    double Rx = cfg_.getd("absorbSpringR", 0.5 * W_);
+    double Ry = cfg_.getd("absorbSpringR", 0.5 * D_);
+    double Rz = cfg_.getd("absorbSpringR", H_);
+    double tol = 1e-9;
+
+    for (const auto& bf : exterior_) {
+        // impedances of the LOCAL phase: with mineral phases the truncated
+        // continuum behind each boundary face is the one of the face's grain
+        const Material& mp = phases_.mat[el_[bf.elem].phase];
+        double G = mp.G();
+        Eigen::Vector3d A = X0_[bf.n[0]], B = X0_[bf.n[1]], C = X0_[bf.n[2]];
+        double At3 = 0.5 * (B - A).cross(C - A).norm() / 3.0;  // per node
+        bool xlo = A.x() < tol && B.x() < tol && C.x() < tol;
+        bool xhi = A.x() > W_ - tol && B.x() > W_ - tol && C.x() > W_ - tol;
+        bool ylo = A.y() < tol && B.y() < tol && C.y() < tol;
+        bool yhi = A.y() > D_ - tol && B.y() > D_ - tol && C.y() > D_ - tol;
+        bool zlo = A.z() < tol && B.z() < tol && C.z() < tol;
+        int nAxis = xlo || xhi ? 0 : (ylo || yhi ? 1 : (zlo ? 2 : -1));
+        if (nAxis < 0) continue;
+        double R = nAxis == 0 ? Rx : (nAxis == 1 ? Ry : Rz);
+        bool lateral = nAxis != 2;
+        for (int nid : bf.n) {
+            if (lateral && ab != "none") {
+                for (int a = 0; a < 3; ++a) {
+                    double c = (a == nAxis ? mp.cP() : mp.cS());
+                    cAbs_[nid](a) += mp.rho * c * At3;
+                    kAbs_[nid](a) += sF * G / (a == nAxis ? R : 2.0 * R) * At3;
+                }
+            }
+            if (nAxis == 2) {
+                if (ab == "all") {
+                    for (int a = 0; a < 3; ++a) {
+                        double c = (a == 2 ? mp.cP() : mp.cS());
+                        cAbs_[nid](a) += mp.rho * c * At3;
+                        kAbs_[nid](a) += sF * G / (a == 2 ? R : 2.0 * R) * At3;
+                    }
+                } else {                       // percussion AND shear: the
+                    flag_[nid] = FIXED;        // block needs its support
+                }
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Confinement triaxial 3D — portage direct du 2D : la pression est une charge
+// SUIVEUSE sur les faces exterieures LATERALES d'origine (une cellule
+// triaxiale a une membrane sur le fut, pas sur les plateaux), recalculee sur
+// la geometrie courante, lumped A/3 par noeud, montee en rampe cosinus.
+// Comme en 2D, les faces creees par la fissuration ne recoivent RIEN (la
+// membrane presse la surface de l'eprouvette, pas l'interieur des fissures).
+// ---------------------------------------------------------------------------
+void Fdem3dSolver::setupConfinement() {
+    confP_ = cfg_.getd("confiningPressure", 0.0);
+    confRamp_ = cfg_.getd("confiningRamp", 2e-4);
+    if (confP_ == 0.0) return;
+    std::string cf = cfg_.gets("confineFaces", "lateral");
+    if (cf != "lateral" && cf != "all")
+        throw std::runtime_error("confineFaces must be lateral | all");
+    for (const auto& bf : exterior_) {
+        Eigen::Vector3d A = X0_[bf.n[0]], B = X0_[bf.n[1]], C = X0_[bf.n[2]];
+        Eigen::Vector3d n = (B - A).cross(C - A);
+        double nn = n.norm();
+        if (nn < 1e-18) continue;
+        if (cf == "lateral" && std::abs(n.z() / nn) > 0.5) continue;
+        confFaces_.push_back(bf);
+    }
+    std::cout << "[FDEM3D] confinement: " << confP_ / 1e6 << " MPa sur "
+              << confFaces_.size() << " faces laterales d'origine, rampe "
+              << confRamp_ << " s\n";
+}
+
+void Fdem3dSolver::confiningForces() {
+    if (confP_ == 0.0) return;
+    double p = confP_;
+    if (confRamp_ > 0.0 && t_ < confRamp_)
+        p *= 0.5 * (1.0 - std::cos(M_PI * t_ / confRamp_));
+    for (const auto& bf : confFaces_) {
+        Eigen::Vector3d A = X0_[bf.n[0]] + u_[bf.n[0]];
+        Eigen::Vector3d B = X0_[bf.n[1]] + u_[bf.n[1]];
+        Eigen::Vector3d C = X0_[bf.n[2]] + u_[bf.n[2]];
+        // aire orientee courante : les faces exterieures sont construites
+        // sortantes, la traction -p n s'applique vers l'interieur
+        Eigen::Vector3d S = 0.5 * (B - A).cross(C - A);
+        Eigen::Vector3d F = -p * S / 3.0;              // par noeud
+        f_[bf.n[0]] += F;
+        f_[bf.n[1]] += F;
+        f_[bf.n[2]] += F;
+    }
+}
+
+// contrainte laterale moyenne (sxx+syy)/2 dans le coeur (tiers central) —
+// la jauge falsifiable du confinement, lue apres l'equilibrage
+double Fdem3dSolver::achievedConfinement() const {
+    double s = 0.0, V = 0.0;
+    for (const auto& e : el_) {
+        Eigen::Vector3d c = 0.25 * (X0_[e.n[0]] + X0_[e.n[1]]
+                                    + X0_[e.n[2]] + X0_[e.n[3]]);
+        if (std::abs(c.x() - 0.5 * W_) > 0.25 * W_
+            || std::abs(c.y() - 0.5 * D_) > 0.25 * D_
+            || std::abs(c.z() - 0.5 * H_) > 0.25 * H_) continue;
+        s += 0.5 * (e.sigG(0, 0) + e.sigG(1, 1)) * e.V0;
+        V += e.V0;
+    }
+    return V > 0.0 ? s / V : 0.0;
+}
+
+void Fdem3dSolver::computeStableDt() {
+    std::vector<double> K(X0_.size());
+    for (std::size_t i = 0; i < X0_.size(); ++i) {
+        const Elem& e = el_[elemOf_[i]];
+        double h = voronoi_ ? hEl_[elemOf_[i]] : hmin_;
+        K[i] = 4.0 * phases_.mat[e.phase].E * h;
+    }
+    for (const auto& J : jt_) {
+        double k = J.pj * J.A0 / 3.0;
+        for (int q = 0; q < 3; ++q) { K[J.a[q]] += k; K[J.b[q]] += k; }
+    }
+    double nExtra = cfg_.getd("extraContacts", 2.0);
+    double dtMin = 1e30;
+    for (std::size_t i = 0; i < X0_.size(); ++i)
+        dtMin = std::min(dtMin, 2.0 * std::sqrt(m_[i] / (K[i] + nExtra * kp_)));
+    // CFL from the TRUE minimum inscribed diameter, not the nominal grid
+    // pitch. The Kuhn split makes tets thin BY CONSTRUCTION (median 6V/A is
+    // ~0.4x the cell edge, jitter takes the worst to ~0.2x), so the nominal
+    // hmin overestimates the stable dt by up to 5x. The intrinsic runs never
+    // saw it: their pf = 20 joint springs dominated dtMin and provided the
+    // safety margin by accident. insertion = adaptive removed those springs
+    // from the bonded phase and the first homogeneous grid impact EXPLODED
+    // (2.4 MJ of block KE from a 16 J impact) — measured 2026-08-07.
+    double hCfl = hmin_;
+    for (double h : hEl_) hCfl = std::min(hCfl, h);
+    double cfl = hCfl / phases_.maxCp();
+    dt_ = cfg_.getd("dtFactor", 0.15) * std::min(dtMin, cfl);
+}
+
+// ===========================================================================
+
+void Fdem3dSolver::step() {
+    for (auto& fi : f_) fi.setZero();
+    tool_.F.setZero();
+
+    elementForces();
+    if (adaptive_) insertionSweep();       // before jointForces: a joint born
+                                           // this step carries traction now
+    jointForces();
+    generalContact();
+    toolContact();
+    confiningForces();                     // no-op si confiningPressure = 0
+    if (confP_ > 0.0 && !confLatched_
+        && t_ >= std::max(cfg_.getd("confineGaugeTime", 3.0 * confRamp_),
+                          20.0 * dt_)) {
+        confAchieved_ = achievedConfinement();
+        confLatched_ = true;
+    }
+
+    if (scen_ == Scenario::TENSION) {
+        gripF_.setZero();
+        for (int i = 0; i < (int)X0_.size(); ++i)
+            if (flag_[i] == PRESCRIBED) gripF_ += f_[i];
+        sigmaPeak_ = std::max(sigmaPeak_, std::abs(gripF_.z()) / (W_ * D_));
+    } else {
+        peakF_ = std::max(peakF_, tool_.F.norm());
+        work_ += -tool_.F.dot(tool_.v) * dt_;
+    }
+
+    integrate();
+    t_ += dt_;
+    if ((++stepCount_ & 1023) == 0)
+        if (!std::isfinite(work_) || !std::isfinite(u_[0].x()))
+            throw std::runtime_error("FDEM3D instability (NaN)");
+}
+
+// Co-rotational linear tet. R from F by Higham iteration R <- (R + R^-T)/2,
+// warm-started from F scaled to unit Frobenius norm of a rotation. The
+// Lame constants, crush cap and mean-tension cap are those of the
+// element's PHASE (single-phase tables reduce to the pre-GBM arithmetic).
+// Node duplication makes the loop embarrassingly parallel, as in 2D:
+// every element writes only its OWN four nodes.
+void Fdem3dSolver::elementForces() {
+#ifdef _OPENMP
+#pragma omp parallel for schedule(static)
+#endif
+    for (int eI = 0; eI < (int)el_.size(); ++eI) {
+        Elem& e = el_[eI];
+        double lam = lamP_[e.phase];
+        double mu2 = mu2P_[e.phase];
+        Eigen::Matrix3d F = Eigen::Matrix3d::Zero();
+        for (int a = 0; a < 4; ++a)
+            F += (X0_[e.n[a]] + u_[e.n[a]]) * e.dN.col(a).transpose();
+        Eigen::Matrix3d R;
+        double det = F.determinant();
+        if (det > 1e-9) {
+            R = F * std::sqrt(3.0) / F.norm();
+            for (int it = 0; it < 3; ++it)
+                R = 0.5 * (R + R.inverse().transpose());
+        } else R.setIdentity();               // degenerate: crush cap handles it
+        Eigen::Matrix3d Ub = R.transpose() * F;
+        Eigen::Matrix3d eps = 0.5 * (Ub + Ub.transpose()) - Eigen::Matrix3d::Identity();
+        double tr = eps.trace();
+        Eigen::Matrix3d sig;
+        if (law_) sig = law_->stress(eps, e.st, dt_, hEl_[eI]);
+        else      sig = lam * tr * Eigen::Matrix3d::Identity() + mu2 * eps;
+        double pm = sig.trace() / 3.0;
+        Eigen::Matrix3d dev = sig - pm * Eigen::Matrix3d::Identity();
+        e.svm = std::sqrt(1.5) * dev.norm();
+        if (!law_ && e.svm > crushCapP_[e.phase]) {   // deviatoric crush cap
+            dev *= crushCapP_[e.phase] / e.svm;
+            e.svm = crushCapP_[e.phase];
+        }
+        if (pm > 3.0 * ftP_[e.phase]) pm = 3.0 * ftP_[e.phase];  // mean-tension
+        sig = dev + pm * Eigen::Matrix3d::Identity();
+        Eigen::Matrix3d P = R * sig;
+        e.sigG = P * R.transpose();        // global Cauchy (insertion sweep)
+        for (int a = 0; a < 4; ++a)
+            f_[e.n[a]] -= e.V0 * (P * e.dN.col(a));
+    }
+}
+
+// Triangular cohesive joints, 3 node-pair integration points (A0/3 each).
+// Same constitutive scheme as 2D: damage envelope in mode I, damage-plastic
+// friction in mode II with a VECTOR slip return mapping in the face plane,
+// shared scalar damage, death by clear separation only. All properties are
+// PER JOINT (GBM). Parallel as in 2D: per-joint state is private, the
+// force scatter goes through per-thread buffers reduced in thread order.
+void Fdem3dSolver::jointForces() {
+    auto processJoint = [&](Joint& J, auto&& addF, long& nb) {
+        if (J.dead || J.bonded) return;    // bonded: node binding carries it
+        Eigen::Vector3d P1 = 0.5 * ((X0_[J.a[0]] + u_[J.a[0]]) + (X0_[J.b[0]] + u_[J.b[0]]));
+        Eigen::Vector3d P2 = 0.5 * ((X0_[J.a[1]] + u_[J.a[1]]) + (X0_[J.b[1]] + u_[J.b[1]]));
+        Eigen::Vector3d P3 = 0.5 * ((X0_[J.a[2]] + u_[J.a[2]]) + (X0_[J.b[2]] + u_[J.b[2]]));
+        Eigen::Vector3d nr = (P2 - P1).cross(P3 - P1);
+        double nn = nr.norm();
+        if (nn < 1e-18) return;
+        Eigen::Vector3d n = nr / nn;                   // outward from A
+
+        double At = J.A0 / 3.0;
+        double dnMax = -1e30;
+
+        for (int k = 0; k < 3; ++k) {
+            int ia = J.a[k], ib = J.b[k];
+            Eigen::Vector3d delta = (X0_[ib] + u_[ib]) - (X0_[ia] + u_[ia]);
+            // dn0: adaptive-insertion opening offset (0 for intrinsic
+            // joints) — a joint born under tension starts AT the envelope
+            // peak, stress continuity as in the 2D solver
+            double dn = delta.dot(n) + J.dn0;
+            Eigen::Vector3d dt3 = delta - delta.dot(n) * n;
+            dnMax = std::max(dnMax, dn);
+
+            double sig;
+            if (dn >= 0.0) {
+                double env = (dn <= J.dnE) ? J.pj * dn
+                           : (dn >= J.dnF) ? 0.0
+                           : J.ft * (J.dnF - dn) / (J.dnF - J.dnE);
+                double tr2 = (1.0 - J.D) * J.pj * dn;
+                if (tr2 > env) {
+                    sig = env;
+                    if (dn > 1e-30) {
+                        double Dn = 1.0 - env / (J.pj * dn);
+                        if (Dn > J.D) J.D = std::min(1.0, Dn);
+                    }
+                } else sig = tr2;
+            } else {
+                Eigen::Vector3d vrel = v_[ib] - v_[ia];
+                double meff = 0.5 * std::min(m_[ia], m_[ib]);
+                double cd = 2.0 * xiJ_ * std::sqrt(J.pj * At * meff);
+                // SIGN: the traction acts on B as -sig*At*n, so a term
+                // opposing the opening rate vrel.n carries a PLUS sign. The
+                // minus here was anti-damping — the same defect found and
+                // fixed in the 2D solver, where it broke every joint of the
+                // specimen under zero load once the bond was made bilateral.
+                sig = J.pj * dn + cd * vrel.dot(n) / At;
+                if (sig > 0) sig = 0;
+            }
+
+            J.slip[k] -= J.slip[k].dot(n) * n;         // keep slip in-plane
+            Eigen::Vector3d tauTr = J.pj * (dt3 - J.slip[k]);
+            double tauLim = (1.0 - J.D) * J.coh
+                            + J.tanPhi * std::max(0.0, -sig);
+            double tn = tauTr.norm();
+            Eigen::Vector3d tau = tauTr;
+            if (tn > tauLim && tn > 0) {
+                tau *= tauLim / tn;
+                J.slip[k] += (tauTr - tau) / J.pj;     // vector return mapping
+                double Dt2 = J.slip[k].norm() / J.slipF;
+                if (Dt2 > J.D) J.D = std::min(1.0, Dt2);
+            }
+
+            Eigen::Vector3d trac = (sig * n + tau) * At;
+            addF(ib, -trac);
+            addF(ia, trac);
+        }
+
+        if (J.D >= 1.0) {
+            if (J.tBreak < 0) { J.tBreak = t_; ++nb; }
+            if (dnMax > 3.0 * J.dnF) J.dead = true;    // separation only
+        }
+    };
+
+#ifdef _OPENMP
+    int nT = omp_get_max_threads();
+    if (nT > 1) {
+        if ((int)fTL_.size() != nT) {
+            fTL_.assign(nT, std::vector<Eigen::Vector3d>(
+                                X0_.size(), Eigen::Vector3d::Zero()));
+            seenTL_.assign(nT, std::vector<char>(X0_.size(), 0));
+            touchedTL_.assign(nT, {});
+        }
+        std::vector<long> nbT(nT, 0);
+#pragma omp parallel
+        {
+            int t = omp_get_thread_num();
+            auto& fb = fTL_[t];
+            auto& seen = seenTL_[t];
+            auto& tl = touchedTL_[t];
+            tl.clear();
+            long nb = 0;
+            auto addF = [&](int i, const Eigen::Vector3d& v3) {
+                if (!seen[i]) { seen[i] = 1; tl.push_back(i); }
+                fb[i] += v3;
+            };
+#pragma omp for schedule(static)
+            for (int jI = 0; jI < (int)jt_.size(); ++jI)
+                processJoint(jt_[jI], addF, nb);
+            nbT[t] = nb;
+        }
+        for (int t = 0; t < nT; ++t) {
+            for (int i : touchedTL_[t]) {
+                f_[i] += fTL_[t][i];
+                fTL_[t][i].setZero();
+                seenTL_[t][i] = 0;
+            }
+            nBroken_ += nbT[t];
+        }
+        return;
+    }
+#endif
+    long nb1 = 0;                        // 1 thread: bit-identical to serial
+    auto addF1 = [&](int i, const Eigen::Vector3d& v3) { f_[i] += v3; };
+    for (auto& J : jt_) processJoint(J, addF1, nb1);
+    nBroken_ += nb1;
+}
+
+void Fdem3dSolver::rebuildContactFaces() {
+    act_ = exterior_;
+    for (const auto& J : jt_)
+        if (J.dead) {
+            act_.push_back({J.eA, J.a});
+            act_.push_back({J.eB, {J.b[0], J.b[2], J.b[1]}});  // outward in B
+        }
+    std::vector<char> inAct(X0_.size(), 0);
+    for (const auto& bf : act_)
+        for (int nid : bf.n) inAct[nid] = 1;
+    actNodes_.clear();
+    for (int i = 0; i < (int)X0_.size(); ++i)
+        if (inAct[i]) actNodes_.push_back(i);
+}
+
+// General node-triangle contact with every 2D-learned safeguard: clipped
+// grid box, co-location exclusion by origin vertex, birth-gap relief and a
+// quasi-plastic soft normal law. On the voronoi mesh, faces can span
+// several grid cells, so they are binned into ALL cells their AABB covers
+// (with per-node pair dedup) and the deep-penetration cap uses the local
+// element size — the 2D general-contact note, applied in 3D. The grid mesh
+// keeps the original midpoint binning, bit-identical.
+void Fdem3dSolver::generalContact() {
+    if (actStamp_ != nBroken_ && (actStamp_ < 0 || stepCount_ % 8 == 0)) {
+        rebuildContactFaces();
+        actStamp_ = nBroken_;
+    }
+    if (act_.empty()) return;
+
+    // Cell size: 2 hmin on the grid mesh (unchanged); on the voronoi mesh
+    // hmin is the THINNEST sliver, and (L/hmin)^3 dense cells reallocated
+    // every step cost ~0.5 GB/step on the percussion demo — the voronoi
+    // path uses 2 x median element size and a SPARSE hash grid instead
+    // (allocation proportional to active faces, not to the box volume).
+    cell_ = voronoi_ ? cellV_ : 2.0 * hmin_;
+    Eigen::Vector3d boxLo(-0.5 * W_, -0.5 * D_, -0.5 * H_);
+    Eigen::Vector3d boxHi(1.5 * W_, 1.5 * D_, 2.0 * H_);
+    std::vector<Eigen::Vector3d> cen(act_.size());
+    std::vector<char> inBox(act_.size(), 0);
+    for (std::size_t k = 0; k < act_.size(); ++k) {
+        cen[k] = ((X0_[act_[k].n[0]] + u_[act_[k].n[0]])
+                  + (X0_[act_[k].n[1]] + u_[act_[k].n[1]])
+                  + (X0_[act_[k].n[2]] + u_[act_[k].n[2]])) / 3.0;
+        inBox[k] = (cen[k].array() > boxLo.array()).all()
+                   && (cen[k].array() < boxHi.array()).all();
+    }
+    gmin_ = boxLo - Eigen::Vector3d::Constant(cell_);
+    Eigen::Vector3d span = boxHi - gmin_ + Eigen::Vector3d::Constant(cell_);
+    gx_ = std::max(1, int(span.x() / cell_) + 1);
+    gy_ = std::max(1, int(span.y() / cell_) + 1);
+    gz_ = std::max(1, int(span.z() / cell_) + 1);
+    auto cidx = [&](int cx, int cy, int cz) {
+        return ((uint64_t)cz * gy_ + cy) * gx_ + cx;
+    };
+    if (voronoi_) {
+        gridV_.clear();
+        for (std::size_t k = 0; k < act_.size(); ++k) {
+            if (!inBox[k]) continue;
+            // AABB binning: a voronoi face can span several cells
+            Eigen::Vector3d lo = X0_[act_[k].n[0]] + u_[act_[k].n[0]];
+            Eigen::Vector3d hi = lo;
+            for (int q = 1; q < 3; ++q) {
+                Eigen::Vector3d p = X0_[act_[k].n[q]] + u_[act_[k].n[q]];
+                lo = lo.cwiseMin(p);
+                hi = hi.cwiseMax(p);
+            }
+            int x0 = std::clamp(int((lo.x() - gmin_.x()) / cell_), 0, gx_ - 1);
+            int y0 = std::clamp(int((lo.y() - gmin_.y()) / cell_), 0, gy_ - 1);
+            int z0 = std::clamp(int((lo.z() - gmin_.z()) / cell_), 0, gz_ - 1);
+            int x1 = std::clamp(int((hi.x() - gmin_.x()) / cell_), 0, gx_ - 1);
+            int y1 = std::clamp(int((hi.y() - gmin_.y()) / cell_), 0, gy_ - 1);
+            int z1 = std::clamp(int((hi.z() - gmin_.z()) / cell_), 0, gz_ - 1);
+            for (int cz = z0; cz <= z1; ++cz)
+                for (int cy = y0; cy <= y1; ++cy)
+                    for (int cx = x0; cx <= x1; ++cx)
+                        gridV_[cidx(cx, cy, cz)].push_back((int)k);
+        }
+    } else {
+        grid_.assign((std::size_t)gx_ * gy_ * gz_, {});
+        for (std::size_t k = 0; k < act_.size(); ++k) {
+            if (!inBox[k]) continue;
+            int cx = std::clamp(int((cen[k].x() - gmin_.x()) / cell_), 0, gx_ - 1);
+            int cy = std::clamp(int((cen[k].y() - gmin_.y()) / cell_), 0, gy_ - 1);
+            int cz = std::clamp(int((cen[k].z() - gmin_.z()) / cell_), 0, gz_ - 1);
+            grid_[cidx(cx, cy, cz)].push_back((int)k);
+        }
+    }
+
+    double cap = 0.6 * hmin_;
+    std::vector<int> done;                     // per-node face dedup (voronoi)
+    for (int i : actNodes_) {
+        Eigen::Vector3d p = X0_[i] + u_[i];
+        if ((p.array() <= boxLo.array()).any()
+            || (p.array() >= boxHi.array()).any()) continue;
+        int ci = std::clamp(int((p.x() - gmin_.x()) / cell_), 0, gx_ - 1);
+        int cj = std::clamp(int((p.y() - gmin_.y()) / cell_), 0, gy_ - 1);
+        int ck = std::clamp(int((p.z() - gmin_.z()) / cell_), 0, gz_ - 1);
+        int myElem = elemOf_[i];
+        if (voronoi_) done.clear();
+        for (int dk = -1; dk <= 1; ++dk)
+        for (int dj = -1; dj <= 1; ++dj)
+        for (int di = -1; di <= 1; ++di) {
+            int cx = ci + di, cy = cj + dj, cz = ck + dk;
+            if (cx < 0 || cy < 0 || cz < 0 || cx >= gx_ || cy >= gy_ || cz >= gz_)
+                continue;
+            const std::vector<int>* lst;
+            if (voronoi_) {
+                auto itc = gridV_.find(cidx(cx, cy, cz));
+                if (itc == gridV_.end()) continue;
+                lst = &itc->second;
+            } else {
+                lst = &grid_[cidx(cx, cy, cz)];
+            }
+            for (int k : *lst) {
+                const BFace& bf = act_[k];
+                if (bf.elem == myElem) continue;
+                if (voronoi_) {
+                    if (std::find(done.begin(), done.end(), k) != done.end())
+                        continue;
+                    done.push_back(k);
+                }
+                Eigen::Vector3d A = X0_[bf.n[0]] + u_[bf.n[0]];
+                Eigen::Vector3d B = X0_[bf.n[1]] + u_[bf.n[1]];
+                Eigen::Vector3d C = X0_[bf.n[2]] + u_[bf.n[2]];
+                bool colocated = false;
+                for (int q = 0; q < 3; ++q)
+                    if (vOf_[i] == vOf_[bf.n[q]]) {
+                        Eigen::Vector3d Pq = X0_[bf.n[q]] + u_[bf.n[q]];
+                        if ((p - Pq).norm() < 0.25 * hmin_) colocated = true;
+                    }
+                if (colocated) continue;
+                Eigen::Vector3d nr = (B - A).cross(C - A);
+                double a2 = nr.norm();
+                if (a2 < 1e-18) continue;
+                Eigen::Vector3d nrm = nr / a2;         // outward of bf.elem
+                double d = (p - A).dot(nrm);
+                double capLoc = voronoi_ ? 0.6 * hEl_[bf.elem] : cap;
+                if (d >= 0.0 || d < -capLoc) continue;
+                // barycentric inside test of the projection
+                Eigen::Vector3d q = p - d * nrm;
+                Eigen::Vector3d v0 = B - A, v1 = C - A, v2 = q - A;
+                double d00 = v0.dot(v0), d01 = v0.dot(v1), d11 = v1.dot(v1);
+                double d20 = v2.dot(v0), d21 = v2.dot(v1);
+                double den = d00 * d11 - d01 * d01;
+                if (den < 1e-24) continue;
+                double wb = (d11 * d20 - d01 * d21) / den;
+                double wc = (d00 * d21 - d01 * d20) / den;
+                double wa = 1.0 - wb - wc;
+                if (wa < 0 || wb < 0 || wc < 0) continue;
+                double pen = -d;
+                uint64_t pkey = (uint64_t(uint32_t(i)) << 40)
+                                ^ (uint64_t(uint32_t(bf.n[0])) << 20)
+                                ^ uint32_t(bf.n[1]);
+                auto [it0, isNew] = pen0_.try_emplace(pkey, pen);
+                if (!isNew) it0->second *= relax_;
+                pen = std::max(0.0, pen - it0->second);
+                if (pen <= 0.0) continue;
+                Eigen::Vector3d vFace = wa * v_[bf.n[0]] + wb * v_[bf.n[1]]
+                                        + wc * v_[bf.n[2]];
+                Eigen::Vector3d vrel = v_[i] - vFace;
+                double vn = vrel.dot(nrm);
+                double cdmp = 2.0 * xiGC_ * std::sqrt(kpGC_ * m_[i]);
+                double fn = kpGC_ * pen * (vn < 0.0 ? 1.0 : gcRest_) - cdmp * vn;
+                if (fn < 0) fn = 0;
+                Eigen::Vector3d vt = vrel - vn * nrm;
+                double vtn = vt.norm();
+                Eigen::Vector3d ftv = Eigen::Vector3d::Zero();
+                if (vtn > 0)
+                    ftv = -muC_ * fn * std::tanh(vtn / vReg_) * vt / vtn;
+                Eigen::Vector3d Fc = fn * nrm + ftv;
+                double capF = 20.0 * m_[i] / dt_;
+                double Fn2 = Fc.norm();
+                if (Fn2 > capF) Fc *= capF / Fn2;
+                gcWork_ += Fc.dot(vrel) * dt_;
+                f_[i] += Fc;
+                f_[bf.n[0]] -= wa * Fc;
+                f_[bf.n[1]] -= wb * Fc;
+                f_[bf.n[2]] -= wc * Fc;
+            }
+        }
+    }
+}
+
+// Rigid tool (sphere or flat punch) against every node. Per-node force
+// writes are race-free; the tool reaction is reduced through per-thread
+// partial sums added in thread order (deterministic per thread count).
+void Fdem3dSolver::toolContact() {
+    if (scen_ == Scenario::TENSION) return;
+    auto nodeFc = [&](int i, Eigen::Vector3d& Fc) {
+        Eigen::Vector3d p = X0_[i] + u_[i];
+        if (tool_.flat) {
+            // flat-ended punch: vertical contact only against the bottom
+            // face (sharp edge, as in 2D)
+            double rx = p.x() - tool_.x.x(), ry = p.y() - tool_.x.y();
+            if (rx * rx + ry * ry > tool_.radius * tool_.radius) return false;
+            double pen = p.z() - tool_.x.z();
+            if (pen <= 0) return false;
+            double c = 2.0 * xiC_ * std::sqrt(kp_ * m_[i]);
+            double fn = kp_ * pen + c * (v_[i].z() - tool_.v.z());
+            if (fn < 0) fn = 0;
+            Eigen::Vector3d vt(v_[i].x() - tool_.v.x(),
+                               v_[i].y() - tool_.v.y(), 0.0);
+            double vtn = vt.norm();
+            Eigen::Vector3d ftv = Eigen::Vector3d::Zero();
+            if (vtn > 0) ftv = -muC_ * fn * std::tanh(vtn / vReg_) * vt / vtn;
+            Fc = ftv + Eigen::Vector3d(0.0, 0.0, -fn);
+        } else {
+            Eigen::Vector3d d = p - tool_.x;
+            double dist = d.norm();
+            if (dist >= tool_.radius || dist < 1e-14) return false;
+            Eigen::Vector3d n = d / dist;
+            double pen = tool_.radius - dist;
+            Eigen::Vector3d vrel = v_[i] - tool_.v;
+            double c = 2.0 * xiC_ * std::sqrt(kp_ * m_[i]);
+            double fn = kp_ * pen - c * vrel.dot(n);
+            if (fn < 0) fn = 0;
+            Eigen::Vector3d vt = vrel - vrel.dot(n) * n;
+            double vtn = vt.norm();
+            Eigen::Vector3d ftv = Eigen::Vector3d::Zero();
+            if (vtn > 0) ftv = -muC_ * fn * std::tanh(vtn / vReg_) * vt / vtn;
+            Fc = fn * n + ftv;
+        }
+        return true;
+    };
+#ifdef _OPENMP
+    int nT = omp_get_max_threads();
+    std::vector<Eigen::Vector3d> FT(nT, Eigen::Vector3d::Zero());
+#pragma omp parallel
+    {
+        int t = omp_get_thread_num();
+        Eigen::Vector3d Floc = Eigen::Vector3d::Zero();
+#pragma omp for schedule(static)
+        for (int i = 0; i < (int)X0_.size(); ++i) {
+            Eigen::Vector3d Fc;
+            if (!nodeFc(i, Fc)) continue;
+            f_[i] += Fc;
+            Floc -= Fc;
+        }
+        FT[t] = Floc;
+    }
+    for (const auto& F : FT) tool_.F += F;
+#else
+    for (int i = 0; i < (int)X0_.size(); ++i) {
+        Eigen::Vector3d Fc;
+        if (!nodeFc(i, Fc)) continue;
+        f_[i] += Fc;
+        tool_.F -= Fc;
+    }
+#endif
+}
+
+void Fdem3dSolver::integrate() {
+    if (adaptive_) {
+        // Bound groups integrate as ONE node (sum of forces and masses,
+        // damping and quiet-boundary terms on the sums), exactly as in the
+        // 2D solver. Copies of a group share flags (same position) and stay
+        // bit-identical: groups only ever split, never merge.
+#ifdef _OPENMP
+#pragma omp parallel for schedule(static)
+#endif
+        for (int vv = 0; vv < nVert_; ++vv) {
+            for (const auto& g : grpsOfVert_[vv]) {
+                int i0 = g[0];
+                if (flag_[i0] == FIXED) {
+                    if (gripFree_) {
+                        double Fx = 0.0, Fy = 0.0, M = 0.0;
+                        for (int i : g) { Fx += f_[i].x(); Fy += f_[i].y(); M += m_[i]; }
+                        double vx = v_[i0].x() + (dt_ / M) * Fx;
+                        double vy = v_[i0].y() + (dt_ / M) * Fy;
+                        for (int i : g) {
+                            v_[i] = {vx, vy, 0.0};
+                            u_[i] += dt_ * v_[i];
+                        }
+                    } else for (int i : g) v_[i].setZero();
+                    continue;
+                }
+                if (flag_[i0] == PRESCRIBED) {
+                    double vx = 0.0, vy = 0.0;
+                    if (gripFree_) {
+                        double Fx = 0.0, Fy = 0.0, M = 0.0;
+                        for (int i : g) { Fx += f_[i].x(); Fy += f_[i].y(); M += m_[i]; }
+                        vx = v_[i0].x() + (dt_ / M) * Fx;
+                        vy = v_[i0].y() + (dt_ / M) * Fy;
+                    }
+                    double tv = t_ - pullDelay_;   // triaxial : sigma3 d'abord
+                    double vg = tv <= 0.0 ? 0.0 : pullV_;
+                    if (vg != 0.0 && pullRamp_ > 0.0 && tv < pullRamp_)
+                        vg *= 0.5 * (1.0 - std::cos(M_PI * tv / pullRamp_));
+                    for (int i : g) {
+                        v_[i] = {vx, vy, vg};
+                        u_[i] += dt_ * v_[i];
+                    }
+                    continue;
+                }
+                Eigen::Vector3d F = Eigen::Vector3d::Zero();
+                Eigen::Vector3d cS = Eigen::Vector3d::Zero();
+                double M = 0.0;
+                for (int i : g) {
+                    F += f_[i];
+                    for (int a = 0; a < 3; ++a)
+                        if (kAbs_[i](a) > 0) F(a) -= kAbs_[i](a) * u_[i](a);
+                    cS += cAbs_[i];
+                    M += m_[i];
+                }
+                if (damping_ > 0)
+                    for (int a = 0; a < 3; ++a)
+                        F(a) -= damping_ * std::abs(F(a))
+                                * (v_[i0](a) > 0 ? 1.0 : (v_[i0](a) < 0 ? -1.0 : 0.0));
+                Eigen::Vector3d vn = v_[i0] + (dt_ / M) * F;
+                for (int a = 0; a < 3; ++a)
+                    if (cS(a) > 0) vn(a) /= 1.0 + dt_ * cS(a) / M;
+                for (int i : g) {
+                    v_[i] = vn;
+                    u_[i] += dt_ * vn;
+                }
+            }
+        }
+        if (scen_ != Scenario::TENSION) tool_.integrate(dt_);
+        return;
+    }
+#ifdef _OPENMP
+#pragma omp parallel for schedule(static)
+#endif
+    for (int i = 0; i < (int)X0_.size(); ++i) {
+        if (flag_[i] == FIXED) {
+            // gripFree: frictionless grips — only the axial dof is held
+            // (2D lesson: fully clamped grips decide where the specimen
+            // breaks through the Saint-Venant corner concentration)
+            if (gripFree_) {
+                v_[i].x() += (dt_ / m_[i]) * f_[i].x();
+                v_[i].y() += (dt_ / m_[i]) * f_[i].y();
+                v_[i].z() = 0.0;
+                u_[i] += dt_ * v_[i];
+            } else v_[i].setZero();
+            continue;
+        }
+        if (flag_[i] == PRESCRIBED) {
+            if (gripFree_) {
+                v_[i].x() += (dt_ / m_[i]) * f_[i].x();
+                v_[i].y() += (dt_ / m_[i]) * f_[i].y();
+            } else { v_[i].x() = 0.0; v_[i].y() = 0.0; }
+            // pullRamp: cosine rise of the grip velocity — a stepped grip
+            // launches a transient that unzips the first joint row under
+            // the grip whatever the strength map says (2D lesson)
+            double tv = t_ - pullDelay_;       // triaxial : sigma3 d'abord
+            double vg = tv <= 0.0 ? 0.0 : pullV_;
+            if (vg != 0.0 && pullRamp_ > 0.0 && tv < pullRamp_)
+                vg *= 0.5 * (1.0 - std::cos(M_PI * tv / pullRamp_));
+            v_[i].z() = vg;
+            u_[i] += dt_ * v_[i];
+            continue;
+        }
+        for (int a = 0; a < 3; ++a) {
+            if (kAbs_[i](a) > 0) f_[i](a) -= kAbs_[i](a) * u_[i](a);
+            if (damping_ > 0)
+                f_[i](a) -= damping_ * std::abs(f_[i](a))
+                            * (v_[i](a) > 0 ? 1.0 : (v_[i](a) < 0 ? -1.0 : 0.0));
+        }
+        v_[i] += (dt_ / m_[i]) * f_[i];
+        for (int a = 0; a < 3; ++a)
+            if (cAbs_[i](a) > 0)
+                v_[i](a) /= 1.0 + dt_ * cAbs_[i](a) / m_[i];
+        u_[i] += dt_ * v_[i];
+    }
+    if (scen_ != Scenario::TENSION) tool_.integrate(dt_);
+}
+
+void Fdem3dSolver::computeFragments() {
+    std::vector<std::vector<int>> adj(el_.size());
+    for (const auto& J : jt_)
+        if (J.D < 1.0) {
+            adj[J.eA].push_back(J.eB);
+            adj[J.eB].push_back(J.eA);
+        }
+    std::fill(fragId_.begin(), fragId_.end(), -1);
+    int nid = 0;
+    std::vector<std::pair<int, double>> mass;
+    for (int s = 0; s < (int)el_.size(); ++s) {
+        if (fragId_[s] >= 0) continue;
+        double mm = 0;
+        std::queue<int> qu;
+        qu.push(s);
+        fragId_[s] = nid;
+        while (!qu.empty()) {
+            int e = qu.front(); qu.pop();
+            mm += rhoP_[el_[e].phase] * el_[e].V0;
+            for (int w : adj[e])
+                if (fragId_[w] < 0) { fragId_[w] = nid; qu.push(w); }
+        }
+        mass.push_back({nid, mm});
+        ++nid;
+    }
+    std::sort(mass.begin(), mass.end(),
+              [](auto& a, auto& b) { return a.second > b.second; });
+    std::vector<int> rank(nid);
+    for (int k = 0; k < nid; ++k) rank[mass[k].first] = k;
+    for (auto& fid : fragId_) fid = rank[fid];
+    nFrag_ = nid;
+    double vDet = 0;                                   // volume, phase-neutral
+    for (int e = 0; e < (int)el_.size(); ++e)
+        if (fragId_[e] != 0) vDet += el_[e].V0;
+    detachedVol_ = vDet;
+}
+
+// ===========================================================================
+
+void Fdem3dSolver::writeFrame(int frame) {
+    computeFragments();
+
+    std::vector<Eigen::Vector3d> pts(X0_.size()), vel(X0_.size());
+    for (std::size_t i = 0; i < X0_.size(); ++i) {
+        pts[i] = X0_[i] + u_[i];
+        vel[i] = v_[i];
+    }
+    std::vector<std::array<int, 4>> tets(el_.size());
+    std::vector<double> svm(el_.size()), frag(el_.size());
+    std::vector<double> phs(el_.size()), grn(el_.size());
+    for (std::size_t e = 0; e < el_.size(); ++e) {
+        tets[e] = el_[e].n;
+        svm[e] = el_[e].svm;
+        frag[e] = fragId_[e];
+        phs[e] = el_[e].phase;
+        grn[e] = el_[e].grain;
+    }
+    char name[64];
+    std::snprintf(name, sizeof(name), "/fdem3d_%04d.vtu", frame);
+    vtk::writeTetMesh(out_ + name, pts, tets,
+                      {{"vonMises", &svm}, {"fragment", &frag},
+                       {"phase", &phs}, {"grain", &grn}},
+                      {{"velocity", &vel}});
+
+    std::vector<std::array<int, 3>> tris;
+    std::vector<double> Dj, tb, Tp, Fs;
+    for (const auto& J : jt_) {
+        tris.push_back(J.a);
+        Dj.push_back(J.D);
+        tb.push_back(J.tBreak);
+        Tp.push_back(J.type);
+        Fs.push_back(J.stat);
+    }
+    std::snprintf(name, sizeof(name), "/fdem3d_joints_%04d.vtu", frame);
+    vtk::writeTriangles3(out_ + name, pts, tris,
+                         {{"damage", &Dj}, {"tBreak", &tb}, {"type", &Tp},
+                          {"ftScale", &Fs}});
+
+    std::ofstream fm(out_ + "/frames.csv",
+                     frame == 0 ? std::ios::trunc : std::ios::app);
+    if (frame == 0) fm << "frame,t,toolX,toolY,toolZ\n";
+    fm << frame << "," << t_ << "," << tool_.x.x() << "," << tool_.x.y()
+       << "," << tool_.x.z() << "\n";
+}
+
+void Fdem3dSolver::historyHeader(std::ostream& os) const {
+    if (scen_ == Scenario::TENSION) { os << "t,gripFz,sigma,sigmaPeak,nBroken\n"; return; }
+    os << "t,toolFx,toolFy,toolFz,toolX,toolY,toolZ,toolVx,toolVy,toolVz,"
+          "work,toolKE,nBroken,nFrag,detachedVol,specificEnergy\n";
+}
+
+void Fdem3dSolver::historyRow(std::ostream& os) const {
+    if (scen_ == Scenario::TENSION) {
+        os << t_ << "," << gripF_.z() << ","
+           << std::abs(gripF_.z()) / (W_ * D_) << ","
+           << sigmaPeak_ << "," << nBroken_ << "\n";
+        return;
+    }
+    double Es = detachedVol_ > 0 ? work_ / detachedVol_ : 0.0;
+    os << t_ << "," << tool_.F.x() << "," << tool_.F.y() << "," << tool_.F.z()
+       << "," << tool_.x.x() << "," << tool_.x.y() << "," << tool_.x.z()
+       << "," << tool_.v.x() << "," << tool_.v.y() << "," << tool_.v.z()
+       << "," << work_ << "," << tool_.ke() << "," << nBroken_ << ","
+       << nFrag_ << "," << detachedVol_ << "," << Es << "\n";
+}
+
+void Fdem3dSolver::finalize() {
+    computeFragments();
+
+    std::ofstream fe(out_ + "/fdem3d_final_elements.csv");
+    fe << "cx,cy,cz,fragment,phase,grain\n";
+    for (std::size_t e = 0; e < el_.size(); ++e) {
+        Eigen::Vector3d c = Eigen::Vector3d::Zero();
+        for (int a = 0; a < 4; ++a) c += X0_[el_[e].n[a]] + u_[el_[e].n[a]];
+        c /= 4.0;
+        fe << c.x() << "," << c.y() << "," << c.z() << "," << fragId_[e]
+           << "," << el_[e].phase << "," << el_[e].grain << "\n";
+    }
+
+    double keBlock = 0.0;
+    for (std::size_t i = 0; i < X0_.size(); ++i)
+        keBlock += 0.5 * m_[i] * v_[i].squaredNorm();
+
+    std::cout << "\n[FDEM3D] ---- summary ----\n"
+              << "[FDEM3D] block kinetic energy at end: " << keBlock << " J\n"
+              << "[FDEM3D] net work by general contact: " << gcWork_ << " J\n";
+    if (adaptive_)
+        std::cout << "[FDEM3D] adaptive insertion: " << nInserted_ << " / "
+                  << jt_.size() << " joints inserted ("
+                  << (jt_.empty() ? 0.0 : 100.0 * nInserted_ / jt_.size())
+                  << " %), " << nBroken_ << " fully broken\n";
+    if (confP_ > 0.0)
+        std::cout << "[FDEM3D] confinement: vise " << -confP_ / 1e6
+                  << " MPa lateral, atteint (coeur, apres equilibrage) "
+                  << confAchieved_ / 1e6 << " MPa ("
+                  << 100.0 * std::abs(confAchieved_ / -confP_) << " %)\n";
+
+    if (voronoi_) {
+        // grain/phase bookkeeping: achieved volume fractions and the
+        // inter/intra-granular split of the broken joints — the observable
+        // a GBM exists to produce.
+        std::vector<double> vPh(phases_.n(), 0.0);
+        double vTot = 0.0;
+        for (const auto& e : el_) { vPh[e.phase] += e.V0; vTot += e.V0; }
+        std::cout << "[FDEM3D] grains: " << nGrains_ << ", phases:";
+        for (int p = 0; p < phases_.n(); ++p)
+            std::cout << " " << phases_.name[p] << " "
+                      << 100.0 * vPh[p] / vTot << "%"
+                      << " (target " << 100.0 * phases_.fraction[p] << "%)";
+        std::cout << "\n";
+        long nt[3] = {0, 0, 0}, nb[3] = {0, 0, 0};
+        for (const auto& J : jt_) {
+            ++nt[J.type];
+            if (J.D >= 1.0) ++nb[J.type];
+        }
+        std::cout << "[FDEM3D] joints intra/homo/hetero: " << nt[0] << "/"
+                  << nt[1] << "/" << nt[2] << ", broken: " << nb[0] << "/"
+                  << nb[1] << "/" << nb[2];
+        long nbTot = nb[0] + nb[1] + nb[2];
+        if (nbTot > 0)
+            std::cout << "  (intergranular fraction "
+                      << 100.0 * (nb[1] + nb[2]) / (double)nbTot << " %)";
+        std::cout << "\n";
+    }
+
+    if (scen_ == Scenario::TENSION) {
+        if (!cfg_.getb("verifyFt", true)) {
+            std::cout << "[FDEM3D] tension result (GB-controlled, verifyFt=off):\n"
+                      << "[FDEM3D]   peak macro stress = " << sigmaPeak_ / 1e6
+                      << " MPa = " << sigmaPeak_ / mat_.ft << " x bulk ft"
+                      << " (weak-boundary reference gbAlphaTen = "
+                      << phases_.aTen << ")\n"
+                      << "[FDEM3D]   broken joints = " << nBroken_ << " / "
+                      << jt_.size() << "\n";
+            return;
+        }
+        double err = 100.0 * (sigmaPeak_ - mat_.ft) / mat_.ft;
+        // On the voronoi mesh the crack must follow a tortuous joint path
+        // whose facets are inclined to the loading axis (each sees
+        // sigma cos^2 theta), so the macroscopic peak sits AT or somewhat
+        // ABOVE ft: the band is widened on that side, as in 2D. The Kuhn
+        // grid keeps complete horizontal joint planes and must hit ft.
+        double hi = voronoi_ ? 25.0 : 5.0;
+        bool pass = err > -5.0 && err < hi;
+        std::cout << "[FDEM3D] tension verification ("
+                  << (voronoi_ ? "voronoi grains"
+                               : "full horizontal joint planes exist") << "):\n"
+                  << "[FDEM3D]   peak macro stress = " << sigmaPeak_ / 1e6
+                  << " MPa, expected ft = " << mat_.ft / 1e6
+                  << " MPa, error = " << err << " %  ["
+                  << (pass ? "PASS" : "FAIL") << "]\n"
+                  << "[FDEM3D]   broken joints = " << nBroken_ << " / "
+                  << jt_.size() << "\n";
+        return;
+    }
+    double Es = detachedVol_ > 0 ? work_ / detachedVol_ : 0.0;
+    std::cout << "[FDEM3D] peak tool force   : " << peakF_ << " N\n"
+              << "[FDEM3D] tool work output  : " << work_ << " J";
+    if (tool_.free)
+        std::cout << "  (tool KE loss: " << toolKE0_ - tool_.ke() << " J)";
+    std::cout << "\n[FDEM3D] broken joints     : " << nBroken_ << " / " << jt_.size()
+              << "\n[FDEM3D] fragments         : " << nFrag_
+              << " (detached vol " << detachedVol_ << " m^3)"
+              << "\n[FDEM3D] specific energy   : " << Es << " J/m^3\n";
+}
+
+} // namespace rockim

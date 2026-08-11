@@ -1,0 +1,3679 @@
+// ---------------------------------------------------------------------------
+// FdemSolver — 2D combined finite-discrete element method (Munjiza-style).
+// See the header for the model overview; comments here carry the derivations.
+// ---------------------------------------------------------------------------
+#include "rockim/FdemSolver.hpp"
+
+#include <algorithm>
+#include <cmath>
+#include <cstdio>
+#include <fstream>
+#include <functional>
+#include <iostream>
+#include <map>
+#include <queue>
+#include <random>
+#include <stdexcept>
+
+#include "rockim/RandomField.hpp"
+#include "rockim/Tessellation.hpp"
+#include "rockim/VtkWriter.hpp"
+
+#include <chrono>
+#include <cstdlib>
+#ifdef _OPENMP
+#include <omp.h>
+#endif
+
+namespace rockim {
+
+namespace {
+struct FProf {
+    double tEl = 0, tJt = 0, tGc = 0, tTc = 0, tIn = 0;
+    long n = 0;
+    bool on = std::getenv("ROCKIM_PROF") != nullptr;
+    ~FProf() {
+        if (!on || n == 0) return;
+        std::fprintf(stderr,
+                     "[prof] per step (ms): elem %.2f insert %.2f joint %.2f "
+                     "gcontact %.2f tool %.2f  (%ld steps)\n",
+                     1e3 * tEl / n, 1e3 * tIn / n, 1e3 * tJt / n,
+                     1e3 * tGc / n, 1e3 * tTc / n, n);
+    }
+} fProf;
+double fnow() {
+    return std::chrono::duration<double>(
+               std::chrono::steady_clock::now().time_since_epoch()).count();
+}
+} // namespace
+
+FdemSolver::FdemSolver(const Config& cfg, std::string outDir)
+    : cfg_(cfg), out_(std::move(outDir)) {}
+
+void FdemSolver::init() {
+    mat_ = Material::from(cfg_);
+    phases_ = PhaseSet::from(cfg_);
+
+    std::string sc = cfg_.gets("scenario", "percussion");
+    if      (sc == "percussion") scen_ = Scenario::PERCUSSION;
+    else if (sc == "shear")      scen_ = Scenario::SHEAR;
+    else if (sc == "tension")    scen_ = Scenario::TENSION;
+    else if (sc == "brazilian")  scen_ = Scenario::BRAZILIAN;
+    else if (sc == "shpb")       scen_ = Scenario::SHPB;
+    else throw std::runtime_error("fdem scenario must be percussion | shear | "
+                                  "tension | brazilian | shpb");
+
+    W_ = cfg_.getd("W", 0.2);
+    H_ = cfg_.getd("H", 0.2);
+    nx_ = cfg_.geti("nx", 64);
+    ny_ = cfg_.geti("ny", 64);
+    thk_ = cfg_.getd("thickness", 1.0);
+    T_ = cfg_.getd("T", 2.5e-4);
+    bool quasiStatic = scen_ == Scenario::TENSION || scen_ == Scenario::BRAZILIAN;
+    // SHPB default 0: Cundall local damping is a non-physical force
+    // proportional to |f| that ATTENUATES a travelling elastic wave, which
+    // is exactly the quantity this test measures. Any non-zero value here
+    // would show up as the "cohesive-element attenuation" of fig. 23.
+    damping_ = cfg_.getd("dampingLocal",
+                         scen_ == Scenario::SHPB ? 0.0
+                                                 : (quasiStatic ? 0.7 : 0.02));
+    // Body force. Absent (or 0) leaves every existing model bit-identical:
+    // bodyForces() returns immediately and no other code path is touched.
+    gravity_ = cfg_.getd("gravity", 0.0);
+    if (gravity_ < 0.0)
+        throw std::runtime_error("gravity is a magnitude in m/s^2 (it acts along -y): use a positive value");
+
+    // ---- geometry: box (default) or disc (mandatory for the brazilian) -----
+    std::string geo = cfg_.gets("geometry",
+                                scen_ == Scenario::BRAZILIAN ? "disc"
+                              : scen_ == Scenario::SHPB      ? "shpb" : "box");
+    if (geo != "box" && geo != "disc" && geo != "shpb")
+        throw std::runtime_error("geometry must be box | disc | shpb (got '"
+                                 + geo + "')");
+    disc_ = geo == "disc";
+    shpb_ = geo == "shpb";
+    if ((scen_ == Scenario::SHPB) != shpb_)
+        throw std::runtime_error("scenario = shpb and geometry = shpb go "
+                                 "together (the SHPB assembly IS the geometry)");
+    if (shpb_) {
+        // ---- SHPB assembly (fig. 22 of Yan, Zheng & Wang 2023) -------------
+        shpbLIB_   = cfg_.getd("shpbIncidentLength", 2.00);
+        shpbLTB_   = cfg_.getd("shpbTransmitLength", 1.50);
+        shpbD_     = cfg_.getd("shpbBarDiameter", 0.05);
+        shpbDrock_ = cfg_.getd("shpbDiscDiameter", 0.050);
+        shpbGap_   = cfg_.getd("shpbGap", 0.0);
+        hBar_      = cfg_.getd("shpbBarElemSize", 5e-3);
+        hDisc_     = cfg_.getd("shpbDiscElemSize", 7.5e-4);
+        shpbNoDisc_ = cfg_.getb("shpbNoDisc", false);
+        // NOTE: the SHPB disc is left ROUND, as in fig. 22 (flat bar ends
+        // against a circular disc). discFlattenDeg is a brazilian-platen
+        // key and is deliberately NOT honoured here.
+        for (auto [v, nm] : {std::pair<double, const char*>{shpbLIB_, "shpbIncidentLength"},
+                             {shpbLTB_, "shpbTransmitLength"},
+                             {shpbD_, "shpbBarDiameter"},
+                             {shpbDrock_, "shpbDiscDiameter"},
+                             {hBar_, "shpbBarElemSize"},
+                             {hDisc_, "shpbDiscElemSize"}})
+            if (!(v > 0.0))
+                throw std::runtime_error(std::string("shpb: ") + nm
+                                         + " must be > 0");
+        if (shpbGap_ < 0.0)
+            throw std::runtime_error("shpbGap must be >= 0 (0 = faces flush)");
+        std::string pl = cfg_.gets("shpbPulse", "halfsine");
+        if (pl != "halfsine" && pl != "trapezoid")
+            throw std::runtime_error("shpbPulse must be halfsine | trapezoid");
+        shpbPulse_ = pl == "trapezoid" ? 1 : 0;
+        shpbV0_  = cfg_.getd("shpbPulseV0", 5.2);
+        shpbTau_ = cfg_.getd("shpbPulseTau", 2.2e-4);
+        shpbPlateau_ = cfg_.getd("shpbPulsePlateau", 0.5);
+        if (!(shpbV0_ > 0.0) || !(shpbTau_ > 0.0))
+            throw std::runtime_error("shpbPulseV0 / shpbPulseTau must be > 0");
+        if (!(shpbPlateau_ > 0.0 && shpbPlateau_ < 1.0))
+            throw std::runtime_error("shpbPulsePlateau (plateau fraction of "
+                                     "the trapezoid) must be in (0, 1)");
+        absFac_ = cfg_.getd("absorbFactor", 1.0);
+        if (!(absFac_ > 0.0))
+            throw std::runtime_error("absorbFactor must be > 0 (1 = classical "
+                                     "Lysmer rho c v, 2 = eq. 21 as printed)");
+        double xDiscL = shpbLIB_ + shpbGap_;
+        discR_ = 0.5 * shpbDrock_;
+        discC_ = {xDiscL + discR_, 0.5 * shpbD_};
+        W_ = shpbLIB_ + shpbLTB_ + shpbDrock_ + 2.0 * shpbGap_;
+        H_ = shpbD_;
+        xEndAbs_ = W_;
+        shpbM1_ = cfg_.getd("shpbMonitor1", shpbLIB_ - 1.00);
+        shpbM2_ = cfg_.getd("shpbMonitor2",
+                            xDiscL + shpbDrock_ + shpbGap_ + 1.00);
+        shpbGaugeW_ = cfg_.getd("shpbGaugeHalfLength", 2.0 * hBar_);
+        // contact cell sized on the DISC elements (the small ones): a cell
+        // of 8 bar elements put every interface face in one bucket and made
+        // the detection O(n_faces^2) — measured 64 ms/step of the 80 ms.
+        gcCell_ = cfg_.getd("gcCell", 2.0 * hDisc_);
+        gcBoxMesh_ = cfg_.getb("gcBoxMesh", true);
+        double win = cfg_.getd("gcXwindow", 0.10);
+        if (win > 0.0) {
+            gcXmin_ = discC_.x() - discR_ - win;
+            gcXmax_ = discC_.x() + discR_ + win;
+        }
+        brazStop_ = false;
+    }
+    if (scen_ == Scenario::BRAZILIAN && !disc_)
+        throw std::runtime_error("scenario = brazilian needs geometry = disc "
+                                 "(the indirect tension test is a DISC "
+                                 "compressed diametrically)");
+    if (disc_) {
+        discR_ = 0.5 * std::min(W_, H_);
+        discC_ = {0.5 * W_, 0.5 * H_};
+        // FLATTENED brazilian disc: the standard answer to the failure mode
+        // this solver measured on the plain disc — with a round rim the first
+        // joints break AT THE CONTACT (measured: first break at r/R = 0.98,
+        // 9 deg from the loaded pole, the centre only eighth), so the peak load
+        // is a contact-crushing load and not a tensile strength at all. Cutting
+        // two chords gives a real flat bearing, the load spreads over it, and
+        // the crack initiates at the centre as the test requires. Literature
+        // loading angles are 20-30 deg.
+        discFlat_ = cfg_.getd("discFlattenDeg", 0.0);
+        // End-of-test handling of the brazilian (see FdemSolver.hpp). Default
+        // false = the run length is T, exactly as before.
+        brazStop_ = cfg_.getb("brazilianStopAfterPeak", false);
+        eGaugeLo_ = cfg_.getd("elasticGaugeLo", 0.3);
+        eGaugeHi_ = cfg_.getd("elasticGaugeHi", 0.8);
+        if (!(eGaugeHi_ > eGaugeLo_ && eGaugeLo_ > 0.0))
+            throw std::runtime_error("elasticGaugeLo/Hi must satisfy "
+                                     "0 < Lo < Hi (band in units of ft)");
+        brazStopDelay_ = cfg_.getd("brazilianStopDelay", 5e-5);
+        if (discFlat_ < 0.0 || discFlat_ > 60.0)
+            throw std::runtime_error("discFlattenDeg (FULL loading angle of the "
+                                     "flattened brazilian disc) must be in "
+                                     "[0, 60]");
+        if (cfg_.gets("absorbing", "none") != "none")
+            throw std::runtime_error("geometry = disc has no box faces to put "
+                                     "Lysmer boundaries on: set absorbing = none");
+    }
+
+    // loading mode of the uniaxial test — read BEFORE buildMesh, which is
+    // where the grip flags are stamped
+    if (scen_ == Scenario::TENSION) {
+        std::string ld = cfg_.gets("loading", "grips");
+        if (ld != "grips" && ld != "platens")
+            throw std::runtime_error("loading must be grips | platens (got '"
+                                     + ld + "')");
+        tensionPlatens_ = ld == "platens";
+        if (tensionPlatens_ && cfg_.getd("pullV", 0.05) > 0.0)
+            throw std::runtime_error("loading = platens can only PUSH: use "
+                                     "pullV < 0 (compression). Direct tension "
+                                     "needs glued grips.");
+        // ---- metrologie de la compression (voir FdemSolver.hpp) -----------
+        ucsStop_ = cfg_.getb("ucsStopAfterPeak", false);
+        ucsStopDelay_ = cfg_.getd("ucsStopDelay", 5e-5);
+        gLoFrac_ = cfg_.getd("gaugeLoFrac", 0.25);
+        gHiFrac_ = cfg_.getd("gaugeHiFrac", 0.75);
+        if (!(gHiFrac_ > gLoFrac_ && gLoFrac_ >= 0.0 && gHiFrac_ <= 1.0))
+            throw std::runtime_error("gaugeLoFrac/gaugeHiFrac must satisfy "
+                                     "0 <= Lo < Hi <= 1 (extensometer bands, "
+                                     "fractions of the specimen height)");
+    }
+
+    buildMesh();
+
+    // ---- per-phase element tables (elementForces hot loop) ------------------
+    DmP_.clear(); nuP_.clear(); crushCapP_.clear(); ftP_.clear(); rhoP_.clear();
+    for (const Material& m : phases_.mat) {
+        DmP_.push_back(m.Dmat());
+        nuP_.push_back(m.nu);
+        crushCapP_.push_back(cfg_.getd("crushCap", 8.0 * m.cohesion));
+        ftP_.push_back(m.ft);
+        rhoP_.push_back(m.rho);
+    }
+
+    // ---- optional bulk constitutive law -------------------------------------
+    if (cfg_.has("law")) {
+        if (phases_.n() > 1)
+            throw std::runtime_error("'law' (bulk constitutive law) is a SINGLE "
+                "material model: it cannot be combined with mineral 'phases'. "
+                "Drop one of the two.");
+        double lcMax = 0.0;
+        for (double h : hEl_) lcMax = std::max(lcMax, h);
+        law_ = MatLaw::make(cfg_.gets("law", "elastic"), mat_, cfg_, lcMax);
+        std::cout << "[FDEM] bulk law = " << law_->name()
+                  << " (plane strain), elements " << el_.size()
+                  << ", lc max = " << lcMax << " m\n";
+    }
+
+    // ---- cohesive joint law (PER JOINT) -------------------------------------
+    // Intrinsic penalty: p = factor * E / h. The glued assembly then has the
+    // series compliance 1/E_eff ~ 1/E + O(1)/(p h): factor 20 keeps the
+    // artificial softening at the few-percent level while costing only
+    // sqrt(20/100) of the dt a factor-100 penalty would. Intra-grain joints
+    // carry the phase material; grain-boundary joints the attenuated mean of
+    // the two phases (assignJointProps).
+    //
+    // insertion = adaptive switches to the EXTRINSIC scheme of Yan, Zheng &
+    // Wang (IJRMMS 169, 2023, 105439): no joint exists at t = 0 (bonded,
+    // handled by rigid node binding = exact shared-node FEM), each is
+    // activated when the edge-averaged traction reaches the envelope.
+    {
+        std::string ins = cfg_.gets("insertion", "intrinsic");
+        if (ins != "intrinsic" && ins != "adaptive")
+            throw std::runtime_error("insertion must be intrinsic | adaptive "
+                                     "(got '" + ins + "')");
+        adaptive_ = ins == "adaptive";
+    }
+    // jointSoftening = linear (default, unchanged) | yan — the exponential
+    // reduction factor f(D) of the article (its eq. 11), see YanSoftening.hpp.
+    // Read BEFORE assignJointProps(): it sets the critical opening/slip from
+    // the fracture energies through I = int_0^1 f(D) dD.
+    {
+        std::string js = cfg_.gets("jointSoftening", "linear");
+        if (js != "linear" && js != "yan")
+            throw std::runtime_error("jointSoftening must be linear | yan "
+                                     "(got '" + js + "')");
+        yanSoft_ = js == "yan";
+    }
+    if (yanSoft_) {
+        yanP_.a = cfg_.getd("yanA", 0.63);
+        yanP_.b = cfg_.getd("yanB", 1.8);
+        yanP_.c = cfg_.getd("yanC", 6.0);
+        yanFricScaled_ = cfg_.geti("jointFrictionScaled", 0) != 0;
+        yanI_ = yan::integralFD(yanP_, cfg_.geti("yanQuadN", 4096));
+        if (!(yanI_ > 1e-6))
+            throw std::runtime_error("jointSoftening = yan: int f(D) dD is "
+                                     "not positive — check yanA/yanB/yanC");
+        std::cout << "[FDEM] joint softening: Yan et al. f(D), a = "
+                  << yanP_.a << ", b = " << yanP_.b << ", c = " << yanP_.c
+                  << ", int f(D) dD = " << yanI_ << "\n";
+    }
+    assignJointProps();
+    if (adaptive_) {
+        for (auto& J : jt_) J.bonded = true;
+        buildBindingTables();
+        std::cout << "[FDEM] adaptive insertion: " << jt_.size()
+                  << " bonded edges, activation penalty "
+                  << cfg_.getd("insertionPenaltyFactor", 4.0) << " E/h\n";
+    }
+    xiJ_ = cfg_.getd("jointXi", 0.05);
+
+    kp_ = phases_.maxE() * thk_;                       // tool contact penalty
+    // General (debris) contact: node-segment penalty on ROTATING faces is a
+    // follower force — at full E*t stiffness it pumps energy into the
+    // crushed zone. Debris does not need bulk stiffness: soften and damp.
+    kpGC_ = cfg_.getd("gcPenaltyFactor", 0.01) * phases_.maxE() * thk_;
+    xiGC_ = cfg_.getd("gcXi", 0.8);
+    gcRest_ = cfg_.getd("gcRestitution", 0.2);
+    relax_ = 1.0;   // set after dt is known (init order): see below
+    muC_ = cfg_.getd("contactMu", 0.5);
+    xiC_ = cfg_.getd("contactXi", 0.05);
+    vReg_ = cfg_.getd("contactVreg", 1e-3);
+
+    placeTool();
+    setupBoundaries();
+    if (scen_ == Scenario::SHPB) setupShpbGauges();
+    setupConfinement();
+    setupBrazilianLoad();                  // before computeStableDt: it sets
+                                           // kpPlaten_, which enters the budget
+    setupStrainGauge();                    // after the platens: needs plTop_.y
+    computeStableDt();
+
+    relax_ = std::exp(-dt_ / cfg_.getd("gcBirthTau", 1e-6));
+    if (scen_ == Scenario::TENSION || scen_ == Scenario::BRAZILIAN)
+        pullV_ = cfg_.getd("pullV", 0.05);
+    gripFree_ = cfg_.getb("gripLateralFree", false);
+    pullRamp_ = cfg_.getd("pullRamp", 0.0);
+    pullDelay_ = cfg_.getd("pullDelay", 0.0);
+    if (pullDelay_ < 0.0)
+        throw std::runtime_error("pullDelay must be >= 0 s (it delays the "
+                                 "start of the axial loading so a confining "
+                                 "pressure can equilibrate first)");
+    fragId_.assign(el_.size(), 0);
+    toolKE0_ = tool_.ke();
+
+    std::cout << "[FDEM] " << el_.size() << " elements, " << jt_.size()
+              << " joints, " << X0_.size() << " nodes, dt = " << dt_
+              << " s, steps = " << (long)std::ceil(T_ / dt_) << "\n";
+    if (disc_)
+        std::cout << "[FDEM] disc geometry: diameter " << 2.0 * discR_
+                  << " m, centre (" << discC_.x() << ", " << discC_.y() << ")\n";
+    if (voronoi_) {
+        long nGB = 0;
+        for (const auto& J : jt_) if (J.type > 0) ++nGB;
+        std::cout << "[FDEM] voronoi: " << nGrains_ << " grains, "
+                  << phases_.n() << " phase(s), " << nGB
+                  << " grain-boundary joints, hmin = " << hmin_ << " m\n";
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Mesh generation. Two front-ends share one topology builder:
+//   mesh = grid    — structured cross-diagonal mesh with optional corner
+//                    jitter (the original layout; one implicit "grain").
+//   mesh = voronoi — Voronoi grain structure (Tessellation) with per-grain
+//                    mineral phases: the GBM mode. Crack paths then follow
+//                    grain boundaries and intra-grain fans instead of the
+//                    lattice directions.
+// Every interior edge gets a 4-node cohesive joint; exterior faces are kept
+// for the quiet boundaries and the general contact.
+// ---------------------------------------------------------------------------
+void FdemSolver::buildMesh() {
+    std::string mesh = cfg_.gets("mesh", "grid");
+    if (mesh != "grid" && mesh != "voronoi")
+        throw std::runtime_error("mesh must be grid | voronoi (got '" + mesh
+                                 + "')");
+    voronoi_ = mesh == "voronoi";
+    if (shpb_) { buildMeshShpb(); return; }            // three-body assembly
+    if (!voronoi_ && phases_.n() > 1)
+        throw std::runtime_error("'phases' declares "
+            + std::to_string(phases_.n()) + " minerals but mesh = grid would "
+            "silently use only the first: set mesh = voronoi (or drop the "
+            "phases key)");
+    // discMesh = cut (default: disc cut out of the box mesh, rim ragged at
+    // element scale) | native (the disc is MESHED as a disc: boundary ring
+    // exactly on the circle). cut is kept as the default so every earlier
+    // result stays reproducible bit for bit.
+    std::string dm = cfg_.gets("discMesh", "cut");
+    if (dm != "cut" && dm != "native")
+        throw std::runtime_error("discMesh must be cut | native (got '" + dm
+                                 + "')");
+    if (dm == "native") {
+        if (!disc_)
+            throw std::runtime_error("discMesh = native needs geometry = disc");
+        voronoi_ = true;                   // grain machinery (GBM joints) on
+        buildMeshDisc();
+        return;
+    }
+    if (voronoi_) { buildMeshVoronoi(); return; }
+
+    double dx = W_ / nx_, dy = H_ / ny_;
+    hmin_ = std::min(dx, dy);
+    double jit = cfg_.getd("meshJitter", 0.0) * 0.5 * hmin_;
+    std::mt19937 rng(cfg_.geti("seed", 12345));
+    std::uniform_real_distribution<double> U(-jit, jit);
+
+    int vnx = nx_ + 1, vny = ny_ + 1;
+    std::vector<Eigen::Vector2d> vpos(vnx * vny + nx_ * ny_);
+    for (int j = 0; j < vny; ++j)
+        for (int i = 0; i < vnx; ++i) {
+            Eigen::Vector2d p(i * dx, j * dy);
+            if (jit > 0 && i > 0 && i < nx_ && j > 0 && j < ny_)
+                p += Eigen::Vector2d(U(rng), U(rng));
+            vpos[j * vnx + i] = p;
+        }
+    int centerBase = vnx * vny;
+    auto vid = [&](int i, int j) { return j * vnx + i; };
+    for (int j = 0; j < ny_; ++j)
+        for (int i = 0; i < nx_; ++i)
+            vpos[centerBase + j * nx_ + i] =
+                0.25 * (vpos[vid(i, j)] + vpos[vid(i + 1, j)]
+                        + vpos[vid(i + 1, j + 1)] + vpos[vid(i, j + 1)]);
+
+    std::vector<std::array<int, 3>> tris;
+    tris.reserve((std::size_t)4 * nx_ * ny_);
+    for (int j = 0; j < ny_; ++j)
+        for (int i = 0; i < nx_; ++i) {
+            int c00 = vid(i, j), c10 = vid(i + 1, j);
+            int c11 = vid(i + 1, j + 1), c01 = vid(i, j + 1);
+            int cc = centerBase + j * nx_ + i;
+            tris.push_back({c00, c10, cc});
+            tris.push_back({c10, c11, cc});
+            tris.push_back({c11, c01, cc});
+            tris.push_back({c01, c00, cc});
+        }
+    std::vector<int> triGrain(tris.size(), 0);         // one implicit grain
+    nGrains_ = 1;
+    cutDisc(vpos, tris, triGrain);
+    buildFromTriangles(vpos, tris, triGrain, {0});
+}
+
+
+// ---------------------------------------------------------------------------
+// geometry = shpb — the SHPB assembly of Yan, Zheng & Wang (2023) fig. 22:
+// incident bar (length LIB) | brazilian disc (D_rock) | transmission bar
+// (LTB), all of height D_bar, meshed in ONE pass as THREE DISJOINT bodies.
+//
+// Why disjoint bodies and not one welded mesh: in the real test the bars only
+// PRESS on the rock. The interfaces must transmit compression and friction
+// (k_c = 0.577 of table 2) and must be able to separate when the reflected
+// wave unloads them, which is exactly what the existing node-to-edge general
+// contact does. Welding them would make the assembly one continuum: no
+// reflection at the impedance jump, no separation, and the transmitted wave
+// would be wrong from the first microsecond.
+//
+// Why the two materials come from mineral PHASES: the phase machinery already
+// carries a full Material per phase through the element tables (DmP_, rhoP_),
+// the mass lumping, the joint properties and the boundary impedances. One
+// "grain" per body plus a phase per grain therefore gives the bars E = 240 GPa,
+// rho = 7700, nu = 0.01 and the disc E = 100.8 GPa, rho = 2800, nu = 0.297
+// with no new material plumbing at all. The bodies being disjoint, no
+// grain-boundary joint is ever created between two phases.
+//
+// The bars are meshed with the structured cross-diagonal grid at
+// shpbBarElemSize (5 mm by default: 40 elements per pulse wavelength
+// c*tau = 1.2 m, and the bars only have to carry a 1D elastic wave), the disc
+// with the same ring + hex-fill + Delaunay generator as discMesh = native at
+// shpbDiscElemSize (0.75 mm, the article's mesh size). Keeping the bars coarse
+// is what makes the run affordable: the stable dt is fixed by the FINEST
+// element, which is in the disc, and refining the bars would only multiply the
+// element count at constant dt.
+// ---------------------------------------------------------------------------
+void FdemSolver::buildMeshShpb() {
+    std::mt19937 rng(cfg_.geti("seed", 12345));
+    std::vector<Eigen::Vector2d> vpos;
+    std::vector<std::array<int, 3>> tris;
+    std::vector<int> triGrain;
+
+    // ---- a rectangular body on the cross-diagonal grid ---------------------
+    auto addBar = [&](double x0, double x1, double h, int grain) {
+        int nxb = std::max(1, (int)std::llround((x1 - x0) / h));
+        int nyb = std::max(1, (int)std::llround(H_ / h));
+        double dx = (x1 - x0) / nxb, dy = H_ / nyb;
+        int base = (int)vpos.size();
+        int vnx = nxb + 1;
+        for (int j = 0; j <= nyb; ++j)
+            for (int i = 0; i <= nxb; ++i)
+                vpos.push_back({x0 + i * dx, j * dy});
+        int cBase = (int)vpos.size();
+        for (int j = 0; j < nyb; ++j)
+            for (int i = 0; i < nxb; ++i)
+                vpos.push_back({x0 + (i + 0.5) * dx, (j + 0.5) * dy});
+        auto vid = [&](int i, int j) { return base + j * vnx + i; };
+        for (int j = 0; j < nyb; ++j)
+            for (int i = 0; i < nxb; ++i) {
+                int c00 = vid(i, j), c10 = vid(i + 1, j);
+                int c11 = vid(i + 1, j + 1), c01 = vid(i, j + 1);
+                int cc = cBase + j * nxb + i;
+                tris.push_back({c00, c10, cc});
+                tris.push_back({c10, c11, cc});
+                tris.push_back({c11, c01, cc});
+                tris.push_back({c01, c00, cc});
+                for (int k = 0; k < 4; ++k) triGrain.push_back(grain);
+            }
+    };
+
+    // ---- the disc: boundary ring on the circle + jittered hex fill ---------
+    auto addDisc = [&](double h, int grain) {
+        double R = discR_;
+        const Eigen::Vector2d C = discC_;
+        int base = (int)vpos.size();
+        std::vector<Eigen::Vector2d> p;
+        // radial dither of 1e-7 R breaks the exact cocircularity of the ring
+        // (Bowyer-Watson's inCircle test is degenerate on it) — same guard as
+        // buildMeshDisc, and three orders below the chord sagitta.
+        std::uniform_real_distribution<double> Ud(0.2, 1.0);
+        int nR = std::max(8, (int)std::ceil(2.0 * M_PI * R / h));
+        for (int k = 0; k < nR; ++k) {
+            double t = 2.0 * M_PI * k / nR;
+            double s = 1.0 - 1e-7 * Ud(rng);
+            p.push_back(C + R * s * Eigen::Vector2d(std::cos(t), std::sin(t)));
+        }
+        double jit = cfg_.getd("meshJitter", 0.25);
+        std::uniform_real_distribution<double> U(-jit * h, jit * h);
+        double dy = h * std::sqrt(3.0) / 2.0;
+        int j = 0;
+        for (double y = C.y() - R + 0.7 * h; y <= C.y() + R - 0.7 * h;
+             y += dy, ++j)
+            for (double x = C.x() - R + ((j & 1) ? 0.5 * h : 0.0);
+                 x <= C.x() + R; x += h) {
+                Eigen::Vector2d q(x + U(rng), y + U(rng));
+                if ((q - C).norm() <= R - 0.7 * h) p.push_back(q);
+            }
+        std::vector<std::array<int, 3>> dt = delaunayCCW(p);
+        if (dt.empty())
+            throw std::runtime_error("geometry = shpb: disc triangulation "
+                                     "failed");
+        // ---- Laplacian smoothing of the INTERIOR points ---------------------
+        // The stable time step is set by the SMALLEST inscribed diameter
+        // anywhere in the assembly, and the ring/fill transition of a jittered
+        // hex fill routinely leaves slivers: measured on the first build,
+        // h_min = 0.199 mm for a nominal 0.75 mm mesh, i.e. dt divided by ~13
+        // for a handful of degenerate elements. A few Laplacian sweeps (each
+        // interior vertex to the mean of its Delaunay neighbours, ring frozen
+        // so the disc stays a disc) regularise them at negligible cost. The
+        // topology is NOT re-triangulated: smoothing a Delaunay mesh of a
+        // convex domain cannot invert a triangle here, and the areas are
+        // checked below.
+        int nSm = cfg_.geti("shpbDiscSmooth", 8);
+        for (int it = 0; it < nSm; ++it) {
+            std::vector<Eigen::Vector2d> acc(p.size(), Eigen::Vector2d::Zero());
+            std::vector<int> cnt(p.size(), 0);
+            for (const auto& t : dt)
+                for (int k = 0; k < 3; ++k) {
+                    int a = t[k], b = t[(k + 1) % 3];
+                    acc[a] += p[b]; ++cnt[a];
+                    acc[b] += p[a]; ++cnt[b];
+                }
+            for (std::size_t k = (std::size_t)nR; k < p.size(); ++k)
+                if (cnt[k] > 0) p[k] = 0.7 * (acc[k] / cnt[k]) + 0.3 * p[k];
+        }
+        if (nSm > 0) {
+            dt = delaunayCCW(p);                       // re-triangulate once
+            if (dt.empty())
+                throw std::runtime_error("geometry = shpb: re-triangulation "
+                                         "after smoothing failed");
+        }
+        for (const auto& q : p) vpos.push_back(q);
+        for (const auto& t : dt) {
+            tris.push_back({base + t[0], base + t[1], base + t[2]});
+            triGrain.push_back(grain);
+        }
+    };
+
+    // phase lookup by NAME so the order of the `phases` line does not matter
+    auto phaseIdx = [&](const char* key, const char* def) {
+        std::string want = cfg_.gets(key, def);
+        for (int i = 0; i < phases_.n(); ++i)
+            if (phases_.name[i] == want) return i;
+        if (phases_.n() == 1) return 0;                // single-material model
+        throw std::runtime_error(std::string("geometry = shpb: no phase named '")
+            + want + "' in the `phases` list (set " + key + ")");
+    };
+    int pBar  = phaseIdx("shpbBarPhase", "bar");
+    int pRock = phaseIdx("shpbRockPhase", "rock");
+
+    double xDiscL = shpbLIB_ + shpbGap_;
+    addBar(0.0, shpbLIB_, hBar_, 0);                   // incident bar
+    std::vector<int> grainPhase{pBar};
+    if (!shpbNoDisc_) {
+        addDisc(hDisc_, 1);
+        addBar(xDiscL + shpbDrock_ + shpbGap_, W_, hBar_, 2);
+        grainPhase.push_back(pRock);
+        grainPhase.push_back(pBar);
+        nGrains_ = 3;
+    } else {
+        // bar-only wave-propagation verification: one bar, the pulse at its
+        // left end and the viscous boundary at its right end
+        xEndAbs_ = shpbLIB_;
+        nGrains_ = 1;
+    }
+    voronoi_ = true;                                   // per-element h, phases
+    buildFromTriangles(vpos, tris, triGrain, grainPhase);
+    hmin_ = 1e30;
+    for (double h : hEl_) hmin_ = std::min(hmin_, h);
+    std::cout << "[FDEM] shpb assembly: incident bar " << shpbLIB_
+              << " m, disc " << (shpbNoDisc_ ? 0.0 : 2.0 * discR_)
+              << " m, transmission bar " << (shpbNoDisc_ ? 0.0 : shpbLTB_)
+              << " m, height " << H_ << " m, " << el_.size()
+              << " elements (bar h = " << hBar_ << " m, disc h = " << hDisc_
+              << " m), hmin = " << hmin_ << " m\n";
+}
+
+// ---------------------------------------------------------------------------
+// Monitor points 1 and 2 (fig. 22). A strain gauge is not a point: it averages
+// over its own length. Here the reading is the AREA-WEIGHTED mean of the
+// co-rotated axial strain eps_xx over every element of the bar whose centroid
+// lies within shpbGaugeHalfLength of the monitor abscissa — i.e. a gauge of
+// 2 x that length, 4 bar elements by default. Averaging over the full bar
+// height also removes the lateral (Pochhammer-Chree) ringing that a
+// single-element read would show.
+// ---------------------------------------------------------------------------
+void FdemSolver::setupShpbGauges() {
+    monEl1_.clear(); monEl2_.clear();
+    monA1_.clear(); monA2_.clear();
+    monArea1_ = monArea2_ = 0.0;
+    for (int e = 0; e < (int)el_.size(); ++e) {
+        const Elem& E = el_[e];
+        double cx = (X0_[E.n[0]].x() + X0_[E.n[1]].x() + X0_[E.n[2]].x()) / 3.0;
+        if (E.grain == 0 && std::abs(cx - shpbM1_) <= shpbGaugeW_) {
+            monEl1_.push_back(e); monA1_.push_back(E.A0); monArea1_ += E.A0;
+        }
+        if (E.grain == 2 && std::abs(cx - shpbM2_) <= shpbGaugeW_) {
+            monEl2_.push_back(e); monA2_.push_back(E.A0); monArea2_ += E.A0;
+        }
+    }
+    if (monEl1_.empty())
+        throw std::runtime_error("geometry = shpb: monitor point 1 caught no "
+                                 "element — check shpbMonitor1 / "
+                                 "shpbGaugeHalfLength");
+    if (!shpbNoDisc_ && monEl2_.empty())
+        throw std::runtime_error("geometry = shpb: monitor point 2 caught no "
+                                 "element — check shpbMonitor2");
+    std::cout << "[FDEM] shpb gauges: monitor 1 at x = " << shpbM1_ << " m ("
+              << monEl1_.size() << " elements), monitor 2 at x = " << shpbM2_
+              << " m (" << monEl2_.size() << " elements), half-length "
+              << shpbGaugeW_ << " m\n";
+}
+
+// Prescribed velocity history on the struck face (fig. 22, bottom inset).
+// The article fits experimental data it does not publish; the inset shows a
+// single smooth compressive pulse peaking at 5.2 m/s about 0.09 ms after the
+// start and returning to zero at ~0.22 ms. Two shapes are offered:
+//   halfsine  v(t) = V0 sin(pi t / tau)                    (default)
+//   trapezoid V0 with a linear rise/fall of (1-plateau)/2 tau each.
+// Both are zero outside [0, tau]: the bar is then free and the reflected wave
+// travels back through a quiet boundary condition (v prescribed = 0 would
+// clamp it and reflect a second time).
+double FdemSolver::shpbVel(double t) const {
+    if (t <= 0.0 || t >= shpbTau_) return 0.0;
+    if (shpbPulse_ == 0)
+        return shpbV0_ * std::sin(M_PI * t / shpbTau_);
+    double rise = 0.5 * (1.0 - shpbPlateau_) * shpbTau_;
+    if (t < rise) return shpbV0_ * t / rise;
+    if (t > shpbTau_ - rise) return shpbV0_ * (shpbTau_ - t) / rise;
+    return shpbV0_;
+}
+
+void FdemSolver::shpbGaugeRead() {
+    double s1 = 0.0, s2 = 0.0;
+    for (std::size_t k = 0; k < monEl1_.size(); ++k)
+        s1 += el_[monEl1_[k]].exx * monA1_[k];
+    for (std::size_t k = 0; k < monEl2_.size(); ++k)
+        s2 += el_[monEl2_[k]].exx * monA2_[k];
+    epsM1_ = monArea1_ > 0.0 ? s1 / monArea1_ : 0.0;
+    epsM2_ = monArea2_ > 0.0 ? s2 / monArea2_ : 0.0;
+}
+
+// ---------------------------------------------------------------------------
+// discMesh = native — the disc is meshed AS a disc, the way Y-Geo/Irazu (and
+// Yan et al.'s fig. 11) build their brazilian models, instead of being cut
+// out of a box mesh:
+//   1. boundary ring EXACTLY on the circle (and on the two flattening chords
+//      when discFlattenDeg > 0), spaced at the element size, so the rim error
+//      is the chord sagitta h^2/(8R) — micrometres — instead of the
+//      half-element staircase of the cut;
+//   2. interior fill on a jittered hex lattice, kept clear of the ring by
+//      0.7 h so no boundary sliver can form;
+//   3. Bowyer-Watson Delaunay of ring + fill. The domain is CONVEX, so every
+//      triangle of the triangulation belongs to it: nothing is dropped, no
+//      flapping-element pass is needed;
+//   4. grain ids by nearest Voronoi seed of the centroid (jittered hex or
+//      Poisson at grainSize), so the GBM joint classification — and the
+//      per-grain phase draw — work exactly as with the box tessellation.
+// The two earlier attempts document why this exists: cutting by centroid
+// leaves a ragged rim (the user's objection), and projecting the cut rim
+// onto the circle crushed elements into slivers (dt / 8.6, rejected
+// 2026-08-05).
+// ---------------------------------------------------------------------------
+void FdemSolver::buildMeshDisc() {
+    double h = cfg_.reqd("grainElemSize");
+    double d = cfg_.reqd("grainSize");
+    double R = discR_;
+    const Eigen::Vector2d C = discC_;
+    std::mt19937 rng(cfg_.geti("seed", 12345));
+
+    // flattened disc: chords at |y - yc| = R cos(alpha), alpha = discFlat_/2
+    double ca = 1.0;                                   // cos(alpha)
+    if (discFlat_ > 0.0) ca = std::cos(0.5 * discFlat_ * M_PI / 180.0);
+    double yCut = R * ca;
+    auto inside = [&](const Eigen::Vector2d& p, double margin) {
+        return (p - C).norm() <= R - margin
+            && std::abs(p.y() - C.y()) <= yCut - margin;
+    };
+
+    // ---- 1. boundary ring ---------------------------------------------------
+    // Every ring point lies on ONE circle, so every ring quadruple is exactly
+    // cocircular — the degenerate case of the strict inCircle test, where
+    // Bowyer-Watson's flip decisions ride on floating-point noise (measured:
+    // the triangulation span, 18+ CPU-minutes without terminating). A
+    // deterministic RADIAL dither of 1e-7 R (nanometres — three orders below
+    // the chord sagitta this mesher exists to achieve) breaks the exact
+    // cocircularity while leaving the rim physically on the circle.
+    std::uniform_real_distribution<double> Ud(0.2, 1.0);
+    auto dither = [&]() { return 1.0 - 1e-7 * Ud(rng); };
+    std::vector<Eigen::Vector2d> vpos;
+    if (discFlat_ > 0.0) {
+        double a = 0.5 * discFlat_ * M_PI / 180.0;
+        double sa = std::sin(a);
+        // four arcs boundaries: theta in (a-90 -> 90-a) right, (90+a -> 270-a)
+        // left, plus the two chords y = yc +- yCut, x in [-R sa, R sa]
+        auto arc = [&](double t0, double t1) {
+            int n = std::max(2, (int)std::ceil(R * (t1 - t0) / h));
+            for (int k = 0; k < n; ++k) {              // t1 excluded: next
+                double t = t0 + (t1 - t0) * k / n;     // segment starts there
+                vpos.push_back(C + R * dither()
+                               * Eigen::Vector2d(std::cos(t), std::sin(t)));
+            }
+        };
+        auto chord = [&](double y, double x0, double x1) {
+            int n = std::max(2, (int)std::ceil(std::abs(x1 - x0) / h));
+            for (int k = 0; k < n; ++k)
+                vpos.push_back({C.x() + x0 + (x1 - x0) * k / n, C.y() + y});
+        };
+        arc(a - M_PI / 2, M_PI / 2 - a);               // right arc, CCW
+        chord(+yCut, +R * sa, -R * sa);                // top chord, CCW
+        arc(M_PI / 2 + a, 3 * M_PI / 2 - a);           // left arc
+        chord(-yCut, -R * sa, +R * sa);                // bottom chord
+    } else {
+        int n = std::max(8, (int)std::ceil(2.0 * M_PI * R / h));
+        for (int k = 0; k < n; ++k) {
+            double t = 2.0 * M_PI * k / n;
+            vpos.push_back(C + R * dither()
+                           * Eigen::Vector2d(std::cos(t), std::sin(t)));
+        }
+    }
+    const int nRing = (int)vpos.size();
+
+    // ---- 2. interior fill ---------------------------------------------------
+    double jit = cfg_.getd("meshJitter", 0.25);        // fraction of h
+    std::uniform_real_distribution<double> U(-jit * h, jit * h);
+    double dy = h * std::sqrt(3.0) / 2.0;
+    int j = 0;
+    for (double y = C.y() - R + 0.7 * h; y <= C.y() + R - 0.7 * h; y += dy, ++j)
+        for (double x = C.x() - R + ((j & 1) ? 0.5 * h : 0.0);
+             x <= C.x() + R; x += h) {
+            Eigen::Vector2d p(x + U(rng), y + U(rng));
+            if (inside(p, 0.7 * h)) vpos.push_back(p);
+        }
+
+    // ---- 3. Delaunay --------------------------------------------------------
+    std::vector<std::array<int, 3>> tris = delaunayCCW(vpos);
+    if (tris.empty())
+        throw std::runtime_error("discMesh = native: triangulation failed");
+
+    // ---- 4. grains by nearest seed ------------------------------------------
+    std::vector<Eigen::Vector2d> seeds;
+    {
+        std::uniform_real_distribution<double> Us(-0.5 * d * 0.5, 0.5 * d * 0.5);
+        double sy = d * std::sqrt(3.0) / 2.0;
+        int r = 0;
+        for (double y = C.y() - R; y <= C.y() + R; y += sy, ++r)
+            for (double x = C.x() - R + ((r & 1) ? 0.5 * d : 0.0);
+                 x <= C.x() + R; x += d) {
+                Eigen::Vector2d s(x + Us(rng), y + Us(rng));
+                if ((s - C).norm() <= R) seeds.push_back(s);
+            }
+        if (seeds.empty()) seeds.push_back(C);
+    }
+    std::vector<int> triGrain(tris.size(), 0);
+    for (std::size_t t = 0; t < tris.size(); ++t) {
+        Eigen::Vector2d cen = (vpos[tris[t][0]] + vpos[tris[t][1]]
+                               + vpos[tris[t][2]]) / 3.0;
+        double best = 1e300;
+        for (int s = 0; s < (int)seeds.size(); ++s) {
+            double q = (cen - seeds[s]).squaredNorm();
+            if (q < best) { best = q; triGrain[t] = s; }
+        }
+    }
+    nGrains_ = (int)seeds.size();
+
+    // per-grain phase draw, area-greedy like Tessellation: single phase = all 0
+    std::vector<int> grainPhase(nGrains_, 0);
+    if (phases_.n() > 1) {
+        std::vector<int> order(nGrains_);
+        for (int g = 0; g < nGrains_; ++g) order[g] = g;
+        std::shuffle(order.begin(), order.end(), rng);
+        std::vector<double> deficit = phases_.fraction;
+        for (int g : order) {
+            int bestP = 0;
+            for (int p = 1; p < phases_.n(); ++p)
+                if (deficit[p] > deficit[bestP]) bestP = p;
+            grainPhase[g] = bestP;
+            deficit[bestP] -= 1.0 / nGrains_;
+        }
+    }
+
+    hmin_ = 1e300;
+    for (const auto& t : tris) {
+        const auto &A = vpos[t[0]], &B = vpos[t[1]], &Cc = vpos[t[2]];
+        double det = (B.x() - A.x()) * (Cc.y() - A.y())
+                   - (Cc.x() - A.x()) * (B.y() - A.y());
+        double per = (B - A).norm() + (Cc - B).norm() + (A - Cc).norm();
+        if (det > 0) hmin_ = std::min(hmin_, 2.0 * det / per);
+    }
+    std::cout << "[FDEM] native disc mesh: " << nRing << " rim nodes on the "
+              << (discFlat_ > 0 ? "flattened circle" : "circle") << ", "
+              << tris.size() << " triangles, " << nGrains_
+              << " grains, hmin = " << hmin_ << " m (rim sagitta "
+              << h * h / (8.0 * R) << " m)\n";
+    buildFromTriangles(vpos, tris, triGrain, grainPhase);
+}
+
+// ---------------------------------------------------------------------------
+// geometry = disc: keep only the triangles whose CENTROID lies inside the disc
+// of radius min(W, H)/2 centred in the box. Filtering triangles (rather than
+// clipping them) keeps every element well shaped — the price is a rim that is
+// ragged at element scale. That is the right trade here: the brazilian
+// observable is where the crack runs and what the platen reads, neither of
+// which is decided by a half-element of rim roughness, whereas a clipped
+// sliver at the rim would set the stable time step for the whole run.
+//
+// Grain ids are left untouched (gaps are harmless: phaseOfGrain is indexed by
+// id), only the count reported to the user is refreshed.
+// ---------------------------------------------------------------------------
+void FdemSolver::cutDisc(std::vector<Eigen::Vector2d>& vpos,
+                         std::vector<std::array<int, 3>>& tris,
+                         std::vector<int>& triGrain) const {
+    if (!disc_) return;
+    std::vector<std::array<int, 3>> keptT;
+    std::vector<int> keptG;
+    keptT.reserve(tris.size());
+    keptG.reserve(tris.size());
+    double R2 = discR_ * discR_;
+    double yCut = discFlat_ > 0.0
+                  ? discR_ * std::cos(0.5 * discFlat_ * M_PI / 180.0)
+                  : 1e300;                             // no chord
+    for (std::size_t k = 0; k < tris.size(); ++k) {
+        Eigen::Vector2d c = (vpos[tris[k][0]] + vpos[tris[k][1]]
+                             + vpos[tris[k][2]]) / 3.0;
+        if ((c - discC_).squaredNorm() > R2) continue;
+        if (std::abs(c.y() - discC_.y()) > yCut) continue;   // flattening
+        keptT.push_back(tris[k]);
+        keptG.push_back(triGrain.empty() ? 0 : triGrain[k]);
+    }
+    if (keptT.empty())
+        throw std::runtime_error("geometry = disc removed every element: check "
+                                 "W/H (the disc is inscribed in the box)");
+    tris.swap(keptT);
+    triGrain.swap(keptG);
+    (void)vpos;
+
+    // ---- drop the flapping elements -----------------------------------------
+    // A staircase rim leaves triangles hanging by a SINGLE edge: in the
+    // cross-diagonal grid the four triangles of a cell have four different
+    // centroids, so a rim cell routinely keeps one of them while its three
+    // siblings go. Such an element is a flap on one cohesive joint, and that
+    // joint fails under any load at all — measured on the 20x20 disc: the first
+    // joint broke at an arc pressure of 0.70 MPa against ft = 10 MPa, and the
+    // debris it freed sent the general contact (and the run time) through the
+    // roof. Anything held by fewer than two joints is removed, iteratively
+    // because removing a flap can orphan its neighbour.
+    long dropped = 0;
+    for (int pass = 0;; ++pass) {
+        std::map<std::pair<int, int>, int> use;
+        for (const auto& t : tris)
+            for (int k = 0; k < 3; ++k) {
+                auto key = std::minmax(t[k], t[(k + 1) % 3]);
+                ++use[{key.first, key.second}];
+            }
+        std::vector<std::array<int, 3>> okT;
+        std::vector<int> okG;
+        for (std::size_t k = 0; k < tris.size(); ++k) {
+            int shared = 0;
+            for (int e = 0; e < 3; ++e) {
+                auto key = std::minmax(tris[k][e], tris[k][(e + 1) % 3]);
+                if (use[{key.first, key.second}] == 2) ++shared;
+            }
+            if (shared >= 2) { okT.push_back(tris[k]); okG.push_back(triGrain[k]); }
+        }
+        if (okT.size() == tris.size()) break;
+        dropped += (long)(tris.size() - okT.size());
+        tris.swap(okT);
+        triGrain.swap(okG);
+        if (tris.empty())
+            throw std::runtime_error("geometry = disc: the rim cleanup removed "
+                                     "every element — mesh far too coarse for "
+                                     "the disc");
+        if (pass > 50) break;                          // pathological mesh guard
+    }
+    // "held by 2 joints" does NOT imply "attached to the specimen": a cluster
+    // of three mutually-joined triangles satisfies it and floats free. Keep the
+    // LARGEST connected component only, otherwise those islands are counted as
+    // fragments from frame 0 and pollute the breakage census.
+    std::map<std::pair<int, int>, std::vector<int>> owner;
+    for (std::size_t k = 0; k < tris.size(); ++k)
+        for (int e = 0; e < 3; ++e) {
+            auto key = std::minmax(tris[k][e], tris[k][(e + 1) % 3]);
+            owner[{key.first, key.second}].push_back((int)k);
+        }
+    std::vector<int> comp(tris.size(), -1);
+    int nComp = 0;
+    for (std::size_t s = 0; s < tris.size(); ++s) {
+        if (comp[s] >= 0) continue;
+        std::queue<int> qu;
+        qu.push((int)s);
+        comp[s] = nComp;
+        while (!qu.empty()) {
+            int a = qu.front(); qu.pop();
+            for (int e = 0; e < 3; ++e) {
+                auto key = std::minmax(tris[a][e], tris[a][(e + 1) % 3]);
+                for (int b : owner[{key.first, key.second}])
+                    if (comp[b] < 0) { comp[b] = nComp; qu.push(b); }
+            }
+        }
+        ++nComp;
+    }
+    if (nComp > 1) {
+        std::vector<int> size(nComp, 0);
+        for (int c : comp) ++size[c];
+        int best = (int)(std::max_element(size.begin(), size.end())
+                         - size.begin());
+        std::vector<std::array<int, 3>> mainT;
+        std::vector<int> mainG;
+        for (std::size_t k = 0; k < tris.size(); ++k)
+            if (comp[k] == best) {
+                mainT.push_back(tris[k]);
+                mainG.push_back(triGrain[k]);
+            }
+        dropped += (long)(tris.size() - mainT.size());
+        tris.swap(mainT);
+        triGrain.swap(mainG);
+    }
+    std::cout << "[FDEM] disc cut: " << tris.size() << " elements kept, "
+              << dropped << " removed (flapping or detached islands; "
+              << nComp << " components before cleanup)\n";
+    // The rim is left as the STAIRCASE the cut produces. Projecting the
+    // boundary vertices radially onto the circle was tried and dropped: it does
+    // give a smooth disc, but stretching those rim triangles collapses their
+    // inscribed size, and the joint penalty (20 E/h) is inversely proportional
+    // to it — the stable time step fell by 8.6x on the 20x20 case for a
+    // cosmetic gain. The brazilian load does not need a smooth rim anyway: it
+    // is applied as a traction on the horizontal facets inside the load arc
+    // (setupBrazilianLoad), and element-scale roughness of the rim does not
+    // reach the centre of the disc, where the measurement is made.
+}
+
+void FdemSolver::buildMeshVoronoi() {
+    double d = cfg_.reqd("grainSize");
+    double jit = cfg_.getd("grainJitter", 0.5);
+    int lloyd = cfg_.geti("lloydIters", 2);
+    double mf = cfg_.getd("vertexMergeFrac", 0.12);
+    int refine = cfg_.geti("refineLevels", 0);
+    std::string seeding = cfg_.gets("grainSeeding", "hex");
+    if (seeding != "hex" && seeding != "random")
+        throw std::runtime_error("grainSeeding must be hex | random (got '"
+                                 + seeding + "')");
+    std::mt19937 rng(cfg_.geti("seed", 12345));
+
+    // grainMesh = fan (default, unchanged) | delaunay. The delaunay front-end
+    // is what the grain-based FDEM literature does: an unstructured mesh INSIDE
+    // every grain at about 0.18 x the grain diameter (Y-Geo / Irazu GBM), so
+    // that transgranular cracking is not confined to the spokes of a centroid
+    // fan. It is opt-in so every earlier voronoi result stays reproducible.
+    std::string gm = cfg_.gets("grainMesh", "fan");
+    if (gm != "fan" && gm != "delaunay")
+        throw std::runtime_error("grainMesh must be fan | delaunay (got '"
+                                 + gm + "')");
+    double gh = cfg_.getd("grainElemSize", 0.0);
+    Tessellation T = Tessellation::build(W_, H_, d, jit, lloyd, mf, refine,
+                                         phases_.fraction, rng,
+                                         seeding == "random",
+                                         gm == "delaunay", gh);
+    nGrains_ = T.nGrains;
+
+    std::vector<std::array<int, 3>> tris;
+    std::vector<int> triGrain;
+    tris.reserve(T.tri.size());
+    triGrain.reserve(T.tri.size());
+    for (const auto& t : T.tri) {
+        tris.push_back(t.v);
+        triGrain.push_back(t.grain);
+    }
+    cutDisc(T.vtx, tris, triGrain);
+    if (disc_) {                                       // refresh the census
+        std::vector<char> seen(nGrains_, 0);
+        for (int g : triGrain) if (g >= 0 && g < nGrains_) seen[g] = 1;
+        nGrains_ = (int)std::count(seen.begin(), seen.end(), (char)1);
+    }
+    buildFromTriangles(T.vtx, tris, triGrain, T.phaseOfGrain);
+
+    // the length scale of the contact machinery and the CFL is now set by
+    // the smallest element the tessellation produced (inscribed size 4A/P)
+    hmin_ = 1e30;
+    for (double h : hEl_) hmin_ = std::min(hmin_, h);
+}
+
+// ---------------------------------------------------------------------------
+// Shared topology builder: per-element node triplets, cohesive joints on the
+// doubly-shared virtual edges (with the CCW/outward orientation fixes that
+// the energy-pump hunt made mandatory), exterior faces, masses, tension
+// grips. Virtual vertex ids come from the caller: two triangles are joined
+// iff they share two virtual ids, inside grains and across them alike.
+// ---------------------------------------------------------------------------
+void FdemSolver::buildFromTriangles(const std::vector<Eigen::Vector2d>& vpos,
+                                    const std::vector<std::array<int, 3>>& tris,
+                                    const std::vector<int>& triGrain,
+                                    const std::vector<int>& grainPhase) {
+    std::map<std::pair<int, int>, std::vector<std::array<int, 3>>> edges;
+    el_.reserve(tris.size());
+    hEl_.reserve(tris.size());
+
+    for (std::size_t tId = 0; tId < tris.size(); ++tId) {
+        int va = tris[tId][0], vb = tris[tId][1], vs = tris[tId][2];
+        Elem e;
+        int base = (int)X0_.size();
+        for (int v : {va, vb, vs}) {
+            X0_.push_back(vpos[v]);
+            elemOf_.push_back((int)el_.size());
+            vOf_.push_back(v);
+        }
+        e.n = {base, base + 1, base + 2};
+        const auto& A = X0_[e.n[0]];
+        const auto& B = X0_[e.n[1]];
+        const auto& C = X0_[e.n[2]];
+        double det = (B.x() - A.x()) * (C.y() - A.y())
+                   - (C.x() - A.x()) * (B.y() - A.y());
+        e.A0 = 0.5 * det;
+        if (e.A0 <= 0) throw std::runtime_error("inverted element in mesh gen");
+        // dN(:,a) = grad N_a in the reference configuration
+        e.dN.col(0) = Eigen::Vector2d(B.y() - C.y(), C.x() - B.x()) / det;
+        e.dN.col(1) = Eigen::Vector2d(C.y() - A.y(), A.x() - C.x()) / det;
+        e.dN.col(2) = Eigen::Vector2d(A.y() - B.y(), B.x() - A.x()) / det;
+        e.grain = triGrain.empty() ? 0 : triGrain[tId];
+        e.phase = grainPhase.empty() ? 0 : grainPhase[e.grain];
+        double per = (B - A).norm() + (C - B).norm() + (A - C).norm();
+        hEl_.push_back(4.0 * e.A0 / per);              // inscribed diameter
+        int id = (int)el_.size();
+        el_.push_back(e);
+        int vv[4] = {va, vb, vs, va};
+        int nn[4] = {e.n[0], e.n[1], e.n[2], e.n[0]};
+        for (int k = 0; k < 3; ++k) {
+            auto key = std::minmax(vv[k], vv[k + 1]);
+            edges[{key.first, key.second}].push_back(
+                {id, /*P*/ vv[k] == key.first ? nn[k] : nn[k + 1],
+                     /*Q*/ vv[k] == key.first ? nn[k + 1] : nn[k]});
+        }
+    }
+
+    // joints on doubly-shared edges, exterior list on the rest
+    for (auto& [key, lst] : edges) {
+        if (lst.size() == 2) {
+            Joint J;
+            J.eA = lst[0][0];
+            J.eB = lst[1][0];
+            // recover A's CCW traversal (P -> Q as stored may be either
+            // orientation; the stored pair is keyed on the sorted virtual ids,
+            // so find which of A's stored nodes is first in its own CCW walk)
+            J.a1 = lst[0][1]; J.a2 = lst[0][2];
+            J.b1 = lst[1][1]; J.b2 = lst[1][2];
+            // ensure (a1 -> a2) is CCW in element A: the stored order is the
+            // sorted-virtual order; flip if needed using the outward test
+            const Elem& EA = el_[J.eA];
+            Eigen::Vector2d cenA = (X0_[EA.n[0]] + X0_[EA.n[1]] + X0_[EA.n[2]]) / 3.0;
+            Eigen::Vector2d P = X0_[J.a1], Q = X0_[J.a2];
+            Eigen::Vector2d nrm(( Q - P ).y(), -( Q - P ).x());
+            if (nrm.dot(0.5 * (P + Q) - cenA) < 0) {   // normal must leave A
+                std::swap(J.a1, J.a2);
+                std::swap(J.b1, J.b2);
+            }
+            J.L0 = (X0_[J.a2] - X0_[J.a1]).norm();
+            jt_.push_back(J);
+        } else if (lst.size() == 1) {
+            // Same orientation fix as for joints: the stored pair is in
+            // sorted-virtual-id order, but the outward-normal formula
+            // n = ((Q-P).y, -(P-Q).x)... assumes (P -> Q) is the CCW
+            // traversal of the owning element. Half the exterior edges were
+            // flipped, turning them into permanent phantom pushers for any
+            // node on their inside — the energy pump found by bisection.
+            BEdge be{lst[0][0], lst[0][1], lst[0][2]};
+            const Elem& E = el_[be.elem];
+            Eigen::Vector2d cen = (X0_[E.n[0]] + X0_[E.n[1]] + X0_[E.n[2]]) / 3.0;
+            Eigen::Vector2d P = X0_[be.na], Q = X0_[be.nb];
+            Eigen::Vector2d nrm((Q - P).y(), -(Q - P).x());
+            if (nrm.dot(0.5 * (P + Q) - cen) < 0) std::swap(be.na, be.nb);
+            exterior_.push_back(be);
+        } else {
+            throw std::runtime_error("mesh topology error: an edge is shared "
+                                     "by more than two triangles (vertex weld "
+                                     "produced a non-manifold mesh)");
+        }
+    }
+
+    u_.assign(X0_.size(), Eigen::Vector2d::Zero());
+    v_.assign(X0_.size(), Eigen::Vector2d::Zero());
+    f_.assign(X0_.size(), Eigen::Vector2d::Zero());
+    m_.assign(X0_.size(), 0.0);
+    flag_.assign(X0_.size(), FREE);
+    for (const auto& e : el_)
+        for (int a = 0; a < 3; ++a)
+            m_[e.n[a]] += phases_.mat[e.phase].rho * e.A0 * thk_ / 3.0;
+
+    // Clamped grip rows ONLY when the test is grip-driven. With platens the
+    // specimen is held by contact alone — no zero-thickness clamped layer, so
+    // no boundary layer for a refined mesh to resolve and fail in.
+    if (scen_ == Scenario::TENSION && !tensionPlatens_) {
+        for (int i = 0; i < (int)X0_.size(); ++i) {
+            if (X0_[i].y() < 1e-9)      flag_[i] = FIXED;
+            else if (X0_[i].y() > H_ - 1e-9) flag_[i] = PRESCRIBED;
+        }
+    }
+
+    // Lateral rollers on the two flanks of the box: u_x = 0, u_y free.
+    // Off by default. setupBoundaries() runs later and may promote the
+    // bottom row to FIXED, which is what the confined-strip test wants.
+    if (cfg_.getb("lateralRollers", false)) {
+        if (disc_)
+            throw std::runtime_error("lateralRollers needs geometry = box "
+                                     "(a disc has no flanks)");
+        for (int i = 0; i < (int)X0_.size(); ++i)
+            if (flag_[i] == FREE
+                && (X0_[i].x() < 1e-9 || X0_[i].x() > W_ - 1e-9))
+                flag_[i] = ROLLERX;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Per-joint cohesive properties. Intra-grain joints (and every joint of the
+// grid mesh) carry the bulk material of their phase. Grain-boundary joints
+// take the MEAN of the two neighbouring phases times the alpha attenuation
+// factors; heterophase boundaries get the extra heteroFactor on the
+// strength-like properties — the classification the GBM literature uses.
+// The penalty uses the local element size for the voronoi mesh (elements are
+// not uniform) and the global hmin for the grid mesh (bit-compatible with
+// the pre-GBM behaviour).
+// ---------------------------------------------------------------------------
+void FdemSolver::assignJointProps() {
+    // Adaptive insertion: the penalty never glues an intact continuum (bonded
+    // edges are handled kinematically), it only serves the ACTIVATED joints as
+    // unloading/contact stiffness. It can therefore be much softer than the
+    // intrinsic factor without softening the specimen — that is the whole
+    // point of the article (its fig. 9-10: accuracy AND dt). Default 4 E/h.
+    double pf = adaptive_ ? cfg_.getd("insertionPenaltyFactor", 4.0)
+                          : cfg_.getd("jointPenaltyFactor", 20.0);
+    for (auto& J : jt_) {
+        const Elem& A = el_[J.eA];
+        const Elem& B = el_[J.eB];
+        const Material& mA = phases_.mat[A.phase];
+        const Material& mB = phases_.mat[B.phase];
+        double E, ft, coh, Gf, GfII, phiDeg;
+        if (!voronoi_ || A.grain == B.grain) {
+            J.type = 0;                                // intra-grain: bulk
+            E = mA.E; ft = mA.ft; coh = mA.cohesion;
+            Gf = mA.Gf; GfII = mA.gfShearFactor * mA.Gf;
+            phiDeg = mA.phiDeg;
+        } else {
+            bool hetero = A.phase != B.phase;
+            J.type = hetero ? 2 : 1;
+            double s = hetero ? phases_.heteroFactor : 1.0;
+            E    = phases_.aE   * 0.5 * (mA.E + mB.E);
+            ft   = s * phases_.aTen * 0.5 * (mA.ft + mB.ft);
+            coh  = s * phases_.aCoh * 0.5 * (mA.cohesion + mB.cohesion);
+            Gf   = s * phases_.aGf  * 0.5 * (mA.Gf + mB.Gf);
+            GfII = s * phases_.aGf  * 0.5 * (mA.gfShearFactor * mA.Gf
+                                             + mB.gfShearFactor * mB.Gf);
+            phiDeg = phases_.aFric * 0.5 * (mA.phiDeg + mB.phiDeg);
+        }
+        // defense in depth: PhaseSet::validate already rejects zero-strength
+        // materials, but the attenuated MEANS must stay physical too (ft = 0
+        // would make dnF infinite, the envelope NaN, and the joint
+        // unbreakable; tan(phi >= 90 deg) would flip the friction sign)
+        if (!(ft > 0.0) || !(coh > 0.0) || !(E > 0.0)
+            || !(phiDeg >= 0.0 && phiDeg < 89.0))
+            throw std::runtime_error("assignJointProps: attenuated joint "
+                "properties left the physical range (ft/coh/E must be > 0, "
+                "friction angle in [0, 89) deg) — check gb* factors");
+        double h = voronoi_ ? 0.5 * (hEl_[J.eA] + hEl_[J.eB]) : hmin_;
+        J.pj = pf * E / h;
+        J.ft = ft;
+        J.coh = coh;
+        J.Gf = Gf;
+        J.GfII = GfII;
+        J.dnE = ft / J.pj;
+        // Critical opening / slip. The softening branch must enclose exactly
+        // GfI (resp. GfII), the elastic part excluded — that is what fixes
+        // the factor: linear branch of peak ft and width w has area ft w / 2,
+        // the f(D) branch of eq. 11 has area ft w I with I = int_0^1 f(D) dD
+        // (eq. 13 and 15 of the article).
+        double kI = yanSoft_ ? 1.0 / yanI_ : 2.0;
+        J.dnF = J.dnE + kI * Gf / ft;                  // mode-I critical opening
+        J.slipF = kI * GfII / coh;                     // mode-II critical slip
+        J.tanPhi = std::tan(phiDeg * M_PI / 180.0);
+    }
+    applyJointStatistics();
+}
+
+// ---------------------------------------------------------------------------
+// Statistical joint strengths — the implicit-DFH idea transplanted onto the
+// joint network. With jointWeibullM = m > 1, every joint's ft and cohesion
+// are multiplied by a Weibull(m) factor of MEAN 1 (scale 1/Gamma(1+1/m)),
+// so the calibrated deterministic strengths stay the ensemble mean.
+// Fracture energies are NOT scaled (defect statistics affect the strength,
+// the toughness stays a material property); the openings dnF/slipF are
+// recomputed accordingly.
+//
+// strengthCorrLength selects the spatial structure:
+//   = 0 : independent draw per joint (the analogue of the per-element
+//         Weibull draw of smeared DFH implementations — statistics converge
+//         with the mesh, the crack MAP does not);
+//   > 0 : the factors sample ONE Gaussian random field (RandomField) with
+//         that correlation length through the Gaussian copula
+//         u = Phi(g(x_mid)) — the field lives in SPACE, independent of the
+//         mesh, so two different meshes see the same weak zones and the
+//         crack map becomes reproducible. fieldSeed (default seed + 777)
+//         controls the field independently of the mesh seed.
+// ---------------------------------------------------------------------------
+void FdemSolver::applyJointStatistics() {
+    double m = cfg_.getd("jointWeibullM", 0.0);
+    if (m <= 0.0) return;                              // deterministic joints
+    if (m <= 1.0)
+        throw std::runtime_error("jointWeibullM must be > 1 (typical rock "
+                                 "values 5-30)");
+    double ell = cfg_.getd("strengthCorrLength", 0.0);
+    unsigned fseed = (unsigned)cfg_.geti("fieldSeed",
+                                         cfg_.geti("seed", 12345) + 777);
+    double gam = std::tgamma(1.0 + 1.0 / m);
+    auto weib = [&](double u) {
+        u = std::clamp(u, 1e-12, 1.0 - 1e-12);
+        return std::pow(-std::log(1.0 - u), 1.0 / m) / gam;
+    };
+
+    double xmin = 1e300, xmax = 0.0, xsum = 0.0;
+    if (ell > 0.0) {
+        // anisotropic option: a second length across the first (bands) and
+        // an orientation — the foliation-like texture knob
+        double ellB = cfg_.getd("strengthCorrLengthB", ell);
+        double ang = cfg_.getd("strengthCorrAngleDeg", 0.0);
+        RandomField F(W_, H_, ell, ellB, ang, fseed);
+        for (auto& J : jt_) {
+            Eigen::Vector2d mid = 0.5 * (X0_[J.a1] + X0_[J.a2]);
+            double g = F(mid);
+            double u = 0.5 * std::erfc(-g / std::sqrt(2.0));   // Phi(g)
+            J.stat = weib(u);
+        }
+    } else {
+        std::mt19937 rng(fseed);
+        std::uniform_real_distribution<double> U(0.0, 1.0);
+        for (auto& J : jt_) J.stat = weib(U(rng));
+    }
+    for (auto& J : jt_) {
+        J.ft *= J.stat;
+        J.coh *= J.stat;
+        J.dnE = J.ft / J.pj;
+        double kI = yanSoft_ ? 1.0 / yanI_ : 2.0;
+        J.dnF = J.dnE + kI * J.Gf / J.ft;
+        J.slipF = kI * J.GfII / J.coh;
+        xmin = std::min(xmin, J.stat);
+        xmax = std::max(xmax, J.stat);
+        xsum += J.stat;
+    }
+    std::cout << "[FDEM] joint strength statistics: Weibull m = " << m
+              << (ell > 0.0 ? " correlated, ell = " + std::to_string(ell)
+                            : std::string(" independent per joint"))
+              << ", factor mean/min/max = " << xsum / jt_.size() << "/"
+              << xmin << "/" << xmax << "\n";
+}
+
+// ===========================================================================
+// Adaptive insertion (Yan, Zheng & Wang, IJRMMS 169, 2023, 105439)
+//
+// The article starts from a SHARED-NODE mesh and splits nodes when a cohesive
+// element is inserted (its fig. 7). This solver's data layout is the exact
+// dual: nodes are ALREADY duplicated per element, so "shared" is enforced
+// kinematically — the co-located copies of an original vertex are bound into
+// groups that integrate as one node (sum of forces, sum of masses, common
+// velocity). Binding groups are the connected components of the element fan
+// around the vertex, two elements being connected when the edge between them
+// is still BONDED. Activating a joint and re-running the union-find at its
+// two endpoint vertices reproduces the progressive splitting of fig. 7: a
+// crack-tip vertex stays whole (the fan is still connected around the tip),
+// a traversed vertex splits into exactly the fan components.
+// ===========================================================================
+void FdemSolver::buildBindingTables() {
+    nVert_ = 0;
+    for (int v : vOf_) nVert_ = std::max(nVert_, v + 1);
+    copiesOfVert_.assign(nVert_, {});
+    for (int i = 0; i < (int)X0_.size(); ++i)
+        copiesOfVert_[vOf_[i]].push_back(i);
+    jointsOfVert_.assign(nVert_, {});
+    for (int jI = 0; jI < (int)jt_.size(); ++jI) {
+        jointsOfVert_[vOf_[jt_[jI].a1]].push_back(jI);
+        jointsOfVert_[vOf_[jt_[jI].a2]].push_back(jI);
+    }
+    grpsOfVert_.assign(nVert_, {});
+    for (int v = 0; v < nVert_; ++v) rebindVertex(v);
+}
+
+void FdemSolver::rebindVertex(int v) {
+    const auto& copies = copiesOfVert_[v];
+    auto& grps = grpsOfVert_[v];
+    grps.clear();
+    if (copies.empty()) return;
+    // local union-find over the elements of the fan
+    std::vector<int> elems;
+    elems.reserve(copies.size());
+    for (int i : copies) elems.push_back(elemOf_[i]);
+    auto local = [&](int e) {
+        for (int k = 0; k < (int)elems.size(); ++k)
+            if (elems[k] == e) return k;
+        return -1;                                     // not in this fan
+    };
+    std::vector<int> par(elems.size());
+    for (int k = 0; k < (int)par.size(); ++k) par[k] = k;
+    std::function<int(int)> find = [&](int x) {
+        while (par[x] != x) { par[x] = par[par[x]]; x = par[x]; }
+        return x;
+    };
+    for (int jI : jointsOfVert_[v]) {
+        const Joint& J = jt_[jI];
+        if (!J.bonded) continue;                       // inserted: edge is cut
+        int a = local(J.eA), b = local(J.eB);
+        if (a < 0 || b < 0) continue;
+        par[find(a)] = find(b);
+    }
+    // groups of copies keyed by the component of their element
+    std::vector<int> root(copies.size());
+    for (int c = 0; c < (int)copies.size(); ++c) root[c] = find(c);
+    std::vector<char> done(copies.size(), 0);
+    for (int c = 0; c < (int)copies.size(); ++c) {
+        if (done[c]) continue;
+        std::vector<int> g;
+        for (int d = c; d < (int)copies.size(); ++d)
+            if (!done[d] && root[d] == root[c]) { done[d] = 1; g.push_back(copies[d]); }
+        grps.push_back(std::move(g));
+    }
+}
+
+// The insertion criterion of the article, eq. 7-8: the traction on each
+// bonded edge is the average of the two neighbouring element stress tensors
+// projected on the edge frame; the joint is activated when sigma_n >= ft or
+// |tau| >= fs, with fs = c - sigma_n tan(phi) in compression, c otherwise.
+// The sweep is O(bonded edges) per step and runs before jointForces so a
+// newborn joint carries traction the very step it is inserted.
+void FdemSolver::insertionSweep() {
+    struct Hit { int jI; double sig, tau; };
+    std::vector<Hit> hits;
+#ifdef _OPENMP
+    #pragma omp parallel
+    {
+        std::vector<Hit> mine;
+        #pragma omp for schedule(static) nowait
+        for (int jI = 0; jI < (int)jt_.size(); ++jI) {
+            const Joint& J = jt_[jI];
+            if (!J.bonded) continue;
+            Eigen::Vector2d P = 0.5 * (X0_[J.a1] + u_[J.a1] + X0_[J.b1] + u_[J.b1]);
+            Eigen::Vector2d Q = 0.5 * (X0_[J.a2] + u_[J.a2] + X0_[J.b2] + u_[J.b2]);
+            Eigen::Vector2d ed = Q - P;
+            double L = ed.norm();
+            if (L < 1e-14) continue;
+            Eigen::Vector2d e = ed / L;
+            Eigen::Vector2d n(e.y(), -e.x());
+            const Elem& A = el_[J.eA];
+            const Elem& B = el_[J.eB];
+            double sxx = 0.5 * (A.sxx + B.sxx);
+            double syy = 0.5 * (A.syy + B.syy);
+            double sxy = 0.5 * (A.sxy + B.sxy);
+            double sig = n.x() * (sxx * n.x() + sxy * n.y())
+                       + n.y() * (sxy * n.x() + syy * n.y());
+            double tau = e.x() * (sxx * n.x() + sxy * n.y())
+                       + e.y() * (sxy * n.x() + syy * n.y());
+            double fs = J.coh + (sig < 0.0 ? -sig * J.tanPhi : 0.0);
+            if (sig >= J.ft || std::abs(tau) >= fs)
+                mine.push_back({jI, sig, tau});
+        }
+        #pragma omp critical
+        hits.insert(hits.end(), mine.begin(), mine.end());
+    }
+#else
+    for (int jI = 0; jI < (int)jt_.size(); ++jI) {
+        const Joint& J = jt_[jI];
+        if (!J.bonded) continue;
+        Eigen::Vector2d P = 0.5 * (X0_[J.a1] + u_[J.a1] + X0_[J.b1] + u_[J.b1]);
+        Eigen::Vector2d Q = 0.5 * (X0_[J.a2] + u_[J.a2] + X0_[J.b2] + u_[J.b2]);
+        Eigen::Vector2d ed = Q - P;
+        double L = ed.norm();
+        if (L < 1e-14) continue;
+        Eigen::Vector2d e = ed / L;
+        Eigen::Vector2d n(e.y(), -e.x());
+        const Elem& A = el_[J.eA];
+        const Elem& B = el_[J.eB];
+        double sxx = 0.5 * (A.sxx + B.sxx);
+        double syy = 0.5 * (A.syy + B.syy);
+        double sxy = 0.5 * (A.sxy + B.sxy);
+        double sig = n.x() * (sxx * n.x() + sxy * n.y())
+                   + n.y() * (sxy * n.x() + syy * n.y());
+        double tau = e.x() * (sxx * n.x() + sxy * n.y())
+                   + e.y() * (sxy * n.x() + syy * n.y());
+        double fs = J.coh + (sig < 0.0 ? -sig * J.tanPhi : 0.0);
+        if (sig >= J.ft || std::abs(tau) >= fs)
+            hits.push_back({jI, sig, tau});
+    }
+#endif
+    if (hits.empty()) return;
+    // deterministic activation order whatever the thread count
+    std::sort(hits.begin(), hits.end(),
+              [](const Hit& x, const Hit& y) { return x.jI < y.jI; });
+    for (const Hit& h : hits) activateJoint(h.jI, h.sig, h.tau);
+}
+
+// Stress continuity at insertion (the article's guard against the classical
+// "time discontinuity" of extrinsic CZM, its section 2.4-2.5, transposed to
+// this joint law): the newborn joint must transmit at zero geometric opening
+// exactly the traction the continuum was carrying.
+//   * normal — opening offset dn0 = min(sig, ft)/pj: the effective opening
+//     dn0 puts the elastic branch at sig (tension-triggered edges, where
+//     sig >= ft up to the one-step overshoot, start exactly at the envelope
+//     peak; shear-triggered edges keep their sub-critical or compressive
+//     normal traction, the article's case 2);
+//   * shear — plastic-slip offset so the trial traction pj*(dtg - slip)
+//     equals the transmitted tau (clamped to the current Coulomb cap, the
+//     article's f(D)*fs) at dtg = 0.
+// Then the union-find is re-run at the two endpoint vertices: fig. 7 for
+// free, including the third re-split of its node 2.
+void FdemSolver::activateJoint(int jI, double sig, double tau) {
+    Joint& J = jt_[jI];
+    if (!J.bonded) return;
+    J.bonded = false;
+    J.dn0 = std::min(sig, J.ft) / J.pj;
+    double fsNow = J.coh + (sig < 0.0 ? -sig * J.tanPhi : 0.0);
+    double tau0 = std::clamp(tau, -fsNow, fsNow);
+    J.slip[0] = J.slip[1] = -tau0 / J.pj;
+    ++nInserted_;
+    rebindVertex(vOf_[J.a1]);
+    rebindVertex(vOf_[J.a2]);
+}
+
+void FdemSolver::placeTool() {
+    if (scen_ == Scenario::TENSION || scen_ == Scenario::BRAZILIAN
+        || scen_ == Scenario::SHPB) return;        // no rigid tool
+    tool_.mass = cfg_.getd("toolMass", 5.0);
+    double gap = cfg_.getd("toolGap", 1e-4);
+    std::string sh = cfg_.gets("toolShape", "disc");
+    tool_.shape = (sh == "flat") ? Tool::Shape::FLAT
+                : (sh == "pdc")  ? Tool::Shape::PDC : Tool::Shape::DISC;
+    if (sh != "flat" && sh != "pdc" && sh != "disc")
+        throw std::runtime_error("toolShape must be disc | flat | pdc (2D)");
+    tool_.width  = cfg_.getd("toolWidth", 0.02);
+    tool_.radius = cfg_.getd("toolRadius", 0.015);
+
+    if (scen_ == Scenario::PERCUSSION) {
+        tool_.motion = Tool::Motion::FREE;
+        double vImp = cfg_.getd("impactSpeed", 8.0);
+        double xc = cfg_.getd("toolX", 0.5 * W_);
+        tool_.shape = Tool::Shape::DISC;               // disc insert
+        tool_.x = {xc, H_ + tool_.radius + gap};
+        tool_.v = {0.0, -vImp};
+    } else {                                           // SHEAR: lateral cut
+        tool_.motion = Tool::Motion::PRESCRIBED;
+        double depth = cfg_.getd("cutDepth", 0.004);
+        double vCut  = cfg_.getd("cutSpeed", 10.0);
+        if (sh == "pdc") {
+            // PDC cutter: `x` IS the cutting edge, placed at the depth of cut
+            // and started clear of the specimen so it engages progressively.
+            tool_.shape = Tool::Shape::PDC;
+            tool_.rakeDeg = cfg_.getd("backRakeDeg", 20.0);
+            tool_.faceLen = cfg_.getd("cutterLen", 0.013);
+            tool_.chamLen = cfg_.getd("chamferLen", 0.0);
+            tool_.chamDeg = cfg_.getd("chamferDeg", 45.0);
+            if (!(tool_.rakeDeg > -60.0 && tool_.rakeDeg < 60.0))
+                throw std::runtime_error("backRakeDeg must be in (-60, 60)");
+            tool_.x = {cfg_.getd("toolX", -0.002), H_ - depth};
+            std::cout << "[FDEM] PDC cutter: back rake " << tool_.rakeDeg
+                      << " deg, face " << tool_.faceLen << " m, depth of cut "
+                      << depth << " m, speed " << vCut << " m/s\n";
+        } else {
+            tool_.shape = Tool::Shape::DISC;
+            tool_.x = {cfg_.getd("toolX", -tool_.radius - gap),
+                       H_ - depth + tool_.radius};
+        }
+        tool_.v = {vCut, 0.0};
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Encastrement / quiet boundaries on the exterior faces, mirroring the FEM
+// module: absorbing = none | sides | all; 'all' replaces the fixed bottom by
+// the viscous-spring (Lysmer + Deeks-Randolph) support.
+// ---------------------------------------------------------------------------
+void FdemSolver::setupBoundaries() {
+    cAbsX_.assign(X0_.size(), 0.0);
+    cAbsY_.assign(X0_.size(), 0.0);
+    kAbsX_.assign(X0_.size(), 0.0);
+    kAbsY_.assign(X0_.size(), 0.0);
+    // ---- SHPB: driven face + viscous end (eq. 21-22 of the article) --------
+    if (scen_ == Scenario::SHPB) {
+        // (a) struck face x = 0 of the incident bar: v_x = shpbVel(t), v_y free
+        long nDrive = 0;
+        for (int i = 0; i < (int)X0_.size(); ++i)
+            if (X0_[i].x() < 1e-9) { flag_[i] = DRIVEX; ++nDrive; }
+        // (b) viscous boundary at the far end of the LAST bar. rockim's Lysmer
+        //     dashpot is the classical, impedance-matched rho c v per unit
+        //     area; the article's eq. 21 prints sigma = -2 rho cp vn, i.e.
+        //     TWICE that. Twice the matched impedance is NOT transparent (the
+        //     reflection coefficient of a dashpot z_d against a bar of
+        //     impedance z is (z_d - z)/(z_d + z), so z_d = 2 z reflects +1/3 of
+        //     the incident amplitude, sign-inverted); the standard
+        //     Lysmer-Kuhlemeyer factor is 1. absorbFactor exposes the choice:
+        //     default 1 (matched, what a "viscous boundary that absorbs
+        //     outgoing waves" must do), absorbFactor = 2 reproduces eq. 21 as
+        //     printed. The two are compared in the report.
+        long nAbs = 0;
+        for (const auto& be : exterior_) {
+            const Material& mp = phases_.mat[el_[be.elem].phase];
+            double zP = absFac_ * mp.rho * mp.cP() * thk_;
+            double zS = absFac_ * mp.rho * mp.cS() * thk_;
+            Eigen::Vector2d Pp = X0_[be.na], Qq = X0_[be.nb];
+            if (!(Pp.x() > xEndAbs_ - 1e-9 && Qq.x() > xEndAbs_ - 1e-9))
+                continue;
+            double L2 = 0.5 * (Qq - Pp).norm();
+            for (int nid : {be.na, be.nb}) {
+                cAbsX_[nid] += zP * L2;                // normal = x here
+                cAbsY_[nid] += zS * L2;
+                ++nAbs;
+            }
+        }
+        if (nDrive == 0 || nAbs == 0)
+            throw std::runtime_error("scenario = shpb: the driven face or the "
+                                     "viscous end caught no node");
+        const Material& mb = phases_.mat[el_[0].phase];
+        std::cout << "[FDEM] shpb: " << nDrive << " driven nodes at x = 0, "
+                     "viscous end at x = " << xEndAbs_ << " m (absorbFactor = "
+                  << absFac_ << " x rho c, cP = " << mb.cP() << " m/s, cS = "
+                  << mb.cS() << " m/s, cBar = " << mb.cBar() << " m/s)\n";
+        return;
+    }
+    // the brazilian disc stands on its platens: no encastred face, no Lysmer
+    if (scen_ == Scenario::TENSION || scen_ == Scenario::BRAZILIAN) return;
+
+    std::string ab = cfg_.gets("absorbing", "none");
+    if (ab != "none" && ab != "sides" && ab != "all")
+        throw std::runtime_error("absorbing must be none | sides | all");
+
+    double sF = cfg_.getd("absorbSpringFactor", 1.0);
+    double Rside = cfg_.getd("absorbSpringR", 0.5 * W_);
+    double Rbot  = cfg_.getd("absorbSpringR", H_);
+    double tol = 1e-9;
+
+    for (const auto& be : exterior_) {
+        // impedances of the LOCAL phase: with mineral phases the truncated
+        // continuum behind each boundary face is the one of the face's grain
+        const Material& mp = phases_.mat[el_[be.elem].phase];
+        double zP = mp.rho * mp.cP() * thk_;
+        double zS = mp.rho * mp.cS() * thk_;
+        double G  = mp.G();
+        Eigen::Vector2d P = X0_[be.na], Q = X0_[be.nb];
+        double L2 = 0.5 * (Q - P).norm();
+        bool left  = P.x() < tol && Q.x() < tol;
+        bool right = P.x() > W_ - tol && Q.x() > W_ - tol;
+        bool bot   = P.y() < tol && Q.y() < tol;
+        for (int nid : {be.na, be.nb}) {
+            if ((left || right) && ab != "none") {
+                cAbsX_[nid] += zP * L2;
+                cAbsY_[nid] += zS * L2;
+                kAbsX_[nid] += sF * G / Rside * L2 * thk_;
+                kAbsY_[nid] += sF * G / (2.0 * Rside) * L2 * thk_;
+            }
+            if (bot) {
+                if (ab == "all") {
+                    cAbsY_[nid] += zP * L2;
+                    cAbsX_[nid] += zS * L2;
+                    kAbsY_[nid] += sF * G / Rbot * L2 * thk_;
+                    kAbsX_[nid] += sF * G / (2.0 * Rbot) * L2 * thk_;
+                } else if (scen_ == Scenario::PERCUSSION) {
+                    flag_[nid] = FIXED;                // encastred bottom
+                }
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Brazilian load arcs. The two arcs are selected from the ORIGINAL exterior
+// faces by the angular position of their midpoint (within loadArcDeg of the
+// top and bottom poles) AND by the orientation of their outward normal: only
+// the predominantly VERTICAL facets are loaded. That second test matters
+// because cutting the disc out of a meshed box leaves a staircase rim whose
+// vertical risers would otherwise take a horizontal traction and shear the rim
+// for nothing; the horizontal treads are the bearing surface, and their total
+// length is exactly the bearing width the classical solution assumes.
+//
+// Loading is by PRESSURE RATE (loadRate, Pa/s) rather than by displacement:
+// the arcs are self-equilibrated, so there is no support to react against and
+// nothing constrains the specimen's rigid-body motion. The default rate takes
+// the arc pressure to 20 x ft over the run, which brackets failure for the
+// usual bearing widths (sigma_t = 2P/(pi D t) with P = p x bearing width).
+// ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Platen geometry and per-node bearing weights, shared by the brazilian and by
+// the platen-loaded uniaxial test. The contact planes start FLUSH with the
+// extreme nodes of the strip: no gap (the platen would accelerate into the
+// specimen) and no initial penetration (which would release k pen^2/2 of energy
+// created from nothing).
+// ---------------------------------------------------------------------------
+void FdemSolver::initPlatens(double xc, double hw) {
+    // Platen contact stiffness. It MUST be set here and not in the caller: it
+    // lived in the brazilian branch alone, so the uniaxial test ran with
+    // kpPlaten_ = 0 and the platens transmitted nothing at all (peak 0.0 MPa,
+    // zero broken joints — a silent "ok" that looked like a result).
+    kpPlaten_ = cfg_.getd("platenPenaltyFactor", 1.0) * phases_.maxE() * thk_;
+    if (!(kpPlaten_ > 0.0))
+        throw std::runtime_error("platenPenaltyFactor must be > 0");
+    // platen geometry FIRST: the tributary weights below test against
+    // plTop_.xc, and computing them before it is set silently measures the
+    // strip |x| <= hw at the LEFT EDGE of the box instead of the bearing.
+    // That mistake cost four runs of a sweep: on a flattened disc
+    // (hw = R sin alpha = 5.2 mm) the two strips do not even overlap, so
+    // every weight was zero and the platens transmitted nothing.
+    plTop_.xc = plBot_.xc = xc;
+    plTop_.halfW = plBot_.halfW = hw;
+    plTop_.sign = -1;                                  // above, presses down
+    plBot_.sign = +1;                                  // below, presses up
+
+    // tributary rim length per node, normalized to its mean over the
+    // bearing: turns a per-duplicated-node spring into a per-unit-length
+    // pressure, which is what a platen actually applies
+    platenTrib_ = cfg_.getb("platenTributary", true);
+    platenW_.assign(X0_.size(), 0.0);
+    if (platenTrib_) {
+        for (const auto& be : exterior_) {
+            double L = (X0_[be.nb] - X0_[be.na]).norm();
+            for (int nid : {be.na, be.nb}) {
+                if (std::abs(X0_[nid].x() - plTop_.xc) > hw) continue;
+                platenW_[nid] += 0.5 * L;
+            }
+        }
+        double sum = 0.0;
+        long n = 0;
+        for (double w : platenW_) if (w > 0.0) { sum += w; ++n; }
+        if (n == 0)
+            throw std::runtime_error("brazilian: no exterior node under the "
+                                     "platens — platenHalfWidth too small?");
+        double mean = sum / n;
+        for (double& w : platenW_) w /= mean;
+    } else {
+        std::fill(platenW_.begin(), platenW_.end(), 1.0);
+    }
+    double yHi = -1e300, yLo = 1e300;
+    for (const auto& X : X0_) {
+        if (std::abs(X.x() - plTop_.xc) > hw) continue;
+        yHi = std::max(yHi, X.y());
+        yLo = std::min(yLo, X.y());
+    }
+    if (yHi < yLo)
+        throw std::runtime_error("brazilian: no node under the platens");
+    // start flush with the extreme nodes: no gap (the platen would
+    // accelerate into the disc) and no initial penetration (which would
+    // release k pen^2/2 of energy created from nothing)
+    plTop_.y = yHi;
+    plBot_.y = yLo;
+}
+
+void FdemSolver::setupBrazilianLoad() {
+    if (scen_ == Scenario::TENSION && tensionPlatens_) {
+        // UCS / triaxial through platens: they span the FULL specimen width
+        initPlatens(0.5 * W_, 0.5 * W_ + 1e-9);
+        platenV_ = std::abs(cfg_.getd("pullV", 0.05));     // closure rate
+        std::cout << "[FDEM] uniaxial loaded by PLATENS closing at "
+                  << platenV_ << " m/s total (no clamped grip row)\n";
+        return;
+    }
+
+    if (scen_ != Scenario::BRAZILIAN) return;
+    std::string how = cfg_.gets("brazilianLoading", "platens");
+    if (how != "platens" && how != "traction")
+        throw std::runtime_error("brazilianLoading must be platens | traction "
+                                 "(got '" + how + "')");
+    brazPlatens_ = how == "platens";
+
+    if (brazPlatens_) {
+        // Two rigid platens closing on the disc, as in Y-Geo and the FEM-DEM
+        // BTS literature. platenHalfWidth defaults to the full radius (flat
+        // platens); the contact arc then grows with the load, which is what
+        // keeps the CENTRE the most tensile point of the disc.
+        // on a flattened disc the natural bearing is the flat itself
+        double hwDef = discFlat_ > 0.0
+                       ? discR_ * std::sin(0.5 * discFlat_ * M_PI / 180.0)
+                       : discR_;
+        double hw = cfg_.getd("platenHalfWidth", hwDef);
+        if (!(hw > 0.0)) throw std::runtime_error("platenHalfWidth must be > 0");
+        // Platen contact stiffness, separate from the tool's. Real brazilian
+        // rigs put a cardboard or steel cushion between jaw and rock exactly to
+        // spread the contact; numerically the same job is done by softening the
+        // penalty, which lets more rim nodes engage instead of one asperity
+        // taking the whole load.
+        initPlatens(discC_.x(), hw);
+        platenV_ = std::abs(cfg_.getd("pullV", 0.05));      // CLOSURE rate
+        std::cout << "[FDEM] brazilian: flattening 2*alpha = " << discFlat_
+                  << " deg, platen penalty " << kpPlaten_ / (phases_.maxE() * thk_)
+                  << " x E*t\n";
+        std::cout << "[FDEM] brazilian: two rigid platens closing at "
+                  << platenV_ << " m/s total (" << 0.5 * platenV_
+                  << " m/s each, both inward), half-width " << hw << " m\n";
+        return;
+    }
+
+    double halfAng = cfg_.getd("loadArcDeg", 7.5) * M_PI / 180.0;
+    if (!(halfAng > 0.0 && halfAng < 0.5 * M_PI))
+        throw std::runtime_error("loadArcDeg must be in (0, 90)");
+    loadRate_ = cfg_.getd("loadRate", 20.0 * mat_.ft / T_);
+    if (!(loadRate_ > 0.0))
+        throw std::runtime_error("loadRate must be > 0 [Pa/s]");
+
+    for (const auto& be : exterior_) {
+        Eigen::Vector2d P = X0_[be.na], Q = X0_[be.nb];
+        Eigen::Vector2d mid = 0.5 * (P + Q);
+        Eigen::Vector2d d = Q - P;
+        double L = d.norm();
+        if (L < 1e-14) continue;
+        Eigen::Vector2d n(d.y() / L, -d.x() / L);      // outward
+        if (std::abs(n.y()) < 0.5) continue;           // staircase riser
+        Eigen::Vector2d r = mid - discC_;
+        double rn = r.norm();
+        if (rn < 1e-14) continue;
+        // angle away from the vertical: |cos| of the angle between r and +/-y
+        double cosToPole = std::abs(r.y()) / rn;
+        if (cosToPole < std::cos(halfAng)) continue;
+        if (r.y() > 0.0 && n.y() > 0.0) {
+            arcTop_.edge.push_back(be);
+            arcTop_.length += L;
+        } else if (r.y() < 0.0 && n.y() < 0.0) {
+            arcBot_.edge.push_back(be);
+            arcBot_.length += L;
+        }
+    }
+    if (arcTop_.edge.empty() || arcBot_.edge.empty())
+        throw std::runtime_error("brazilian: no loadable rim facet found in one "
+                                 "of the arcs — widen loadArcDeg or refine the "
+                                 "mesh");
+    std::cout << "[FDEM] brazilian load arcs: +/-" << cfg_.getd("loadArcDeg", 7.5)
+              << " deg, " << arcTop_.edge.size() << " / " << arcBot_.edge.size()
+              << " faces, bearing width " << arcTop_.length << " / "
+              << arcBot_.length << " m (" << 100.0 * arcTop_.length
+              / (2.0 * discR_) << " % of D), rate " << loadRate_ / 1e6
+              << " MPa/s\n";
+    if (std::abs(arcTop_.length - arcBot_.length)
+        > 0.2 * arcTop_.length)
+        std::cout << "[FDEM] WARNING: the two bearing widths differ by more "
+                     "than 20 %: the load pair is not balanced and the disc "
+                     "will drift. Refine the mesh or widen loadArcDeg.\n";
+}
+
+// ---------------------------------------------------------------------------
+// Extensometre de la compression uniaxiale/triaxiale (Yan et al. fig. 19b).
+// Trois mesures de la deformation axiale, ecrites cote a cote dans
+// history.csv pour que la comparaison au module d'entree soit verifiable :
+//   epsPlaten : la fermeture des plateaux rapportee a leur ecartement initial
+//               — la deformation MACHINE, qui contient la compliance du
+//               contact penalite ;
+//   epsSpec   : le raccourcissement des deux faces de l'eprouvette ;
+//   epsGauge  : un extensometre interieur entre deux bandes de nœuds a
+//               gaugeLoFrac et gaugeHiFrac de la hauteur, donc affranchi du
+//               contact ET des effets de bord.
+// Aucune force n'en depend : sortie seulement.
+// ---------------------------------------------------------------------------
+void FdemSolver::setupStrainGauge() {
+    if (!(scen_ == Scenario::TENSION && tensionPlatens_)) return;
+    gap0_ = plTop_.y - plBot_.y;
+    if (!(gap0_ > 0.0))
+        throw std::runtime_error("platen gap is not positive — initPlatens "
+                                 "did not find the bearing rows");
+    // les deux bandes de l'extensometre : une demi-maille de part et d'autre
+    // des cotes y = gLoFrac*H et y = gHiFrac*H
+    double band = 0.5 * hmin_ + 1e-12;
+    double yLo = gLoFrac_ * H_, yHi = gHiFrac_ * H_;
+    double sLo = 0.0, sHi = 0.0;
+    for (int i = 0; i < (int)X0_.size(); ++i) {
+        double y = X0_[i].y();
+        if (std::abs(y - yLo) <= band) { gLoNodes_.push_back(i); sLo += y; }
+        if (std::abs(y - yHi) <= band) { gHiNodes_.push_back(i); sHi += y; }
+        if (y < 1e-9) botNodes_.push_back(i);
+        if (y > H_ - 1e-9) topNodes_.push_back(i);
+    }
+    if (gLoNodes_.empty() || gHiNodes_.empty())
+        throw std::runtime_error("strain gauge: no node found on one of the "
+                                 "extensometer bands — widen the band or move "
+                                 "gaugeLoFrac / gaugeHiFrac");
+    gLoY_ = sLo / gLoNodes_.size();
+    gHiY_ = sHi / gHiNodes_.size();
+    std::cout << "[FDEM] axial strain gauge: platen gap " << gap0_
+              << " m; extensometer " << gHiY_ - gLoY_ << " m between "
+              << gLoNodes_.size() << " and " << gHiNodes_.size()
+              << " nodes at y = " << gLoY_ << " / " << gHiY_ << " m\n";
+}
+
+void FdemSolver::gaugeStrain(double& epsPlaten, double& epsSpec,
+                             double& epsGauge) const {
+    epsPlaten = epsSpec = epsGauge = 0.0;
+    if (gap0_ <= 0.0) return;
+    epsPlaten = (gap0_ - (plTop_.y - plBot_.y)) / gap0_;
+    auto meanUy = [&](const std::vector<int>& ns) {
+        double s = 0.0;
+        for (int i : ns) s += u_[i].y();
+        return ns.empty() ? 0.0 : s / ns.size();
+    };
+    if (!topNodes_.empty() && !botNodes_.empty())
+        epsSpec = (meanUy(botNodes_) - meanUy(topNodes_)) / H_;
+    double L0 = gHiY_ - gLoY_;
+    if (L0 > 0.0)
+        epsGauge = (meanUy(gLoNodes_) - meanUy(gHiNodes_)) / L0;
+}
+
+// ---------------------------------------------------------------------------
+// Confining pressure. The loaded set is fixed once, at init, from the ORIGINAL
+// exterior faces:
+//   box  + confineFaces = sides : the two lateral faces (x = 0, x = W) — the
+//                                 triaxial cell, and the confined-percussion
+//                                 case;
+//   box  + confineFaces = all   : every exterior face except the ones a
+//                                 boundary condition already owns (the tension
+//                                 grips; the struck top face in percussion —
+//                                 the tool is there, not a fluid);
+//   disc                        : the whole perimeter minus the platen strips.
+// ---------------------------------------------------------------------------
+void FdemSolver::setupConfinement() {
+    confP_ = cfg_.getd("confiningPressure", 0.0);
+    confRamp_ = cfg_.getd("confiningRamp", 0.0);
+    if (confP_ == 0.0) return;
+    if (confP_ < 0.0)
+        throw std::runtime_error("confiningPressure must be >= 0 (it is a "
+                                 "PRESSURE: positive squeezes the specimen)");
+    std::string which = cfg_.gets("confineFaces", "sides");
+    if (which != "sides" && which != "all")
+        throw std::runtime_error("confineFaces must be sides | all (got '"
+                                 + which + "')");
+    bool all = which == "all";
+    double tol = 1e-9;
+    double hw = cfg_.getd("platenHalfWidth", discR_);
+
+    for (const auto& be : exterior_) {
+        Eigen::Vector2d P = X0_[be.na], Q = X0_[be.nb];
+        if (disc_) {
+            // skip the faces the platens will press on: a fluid pressure and a
+            // rigid platen on the same facet is a double load
+            double ym = 0.5 * (P.y() + Q.y());
+            bool underPlaten = std::abs(0.5 * (P.x() + Q.x()) - discC_.x()) <= hw
+                               && (ym > discC_.y() + 0.9 * discR_
+                                   || ym < discC_.y() - 0.9 * discR_);
+            if (!underPlaten) confEdges_.push_back(be);
+            continue;
+        }
+        bool left  = P.x() < tol && Q.x() < tol;
+        bool right = P.x() > W_ - tol && Q.x() > W_ - tol;
+        bool bot   = P.y() < tol && Q.y() < tol;
+        bool top   = P.y() > H_ - tol && Q.y() > H_ - tol;
+        if (left || right) { confEdges_.push_back(be); continue; }
+        if (!all) continue;
+        if (scen_ == Scenario::TENSION && (bot || top)) continue;  // grips
+        if (scen_ != Scenario::TENSION && top) continue;           // tool face
+        if (bot && (flag_[be.na] == FIXED || flag_[be.nb] == FIXED)) continue;
+        confEdges_.push_back(be);
+    }
+    if (confEdges_.empty())
+        throw std::runtime_error("confiningPressure is set but no exterior face "
+                                 "qualifies — check confineFaces / geometry");
+    for (const auto& be : confEdges_)
+        confL0_ += (X0_[be.nb] - X0_[be.na]).norm();
+
+    std::cout << "[FDEM] confinement: " << confP_ / 1e6 << " MPa on "
+              << confEdges_.size() << " exterior faces (" << which
+              << "), total length " << confL0_ << " m, ramp " << confRamp_
+              << " s\n";
+    if (confRamp_ <= 0.0)
+        std::cout << "[FDEM] WARNING: confiningRamp = 0 applies the pressure as "
+                     "a STEP, which launches a wave through the specimen "
+                     "(same failure mode as a stepped grip velocity — see "
+                     "pullRamp). Ramp over several wave transits.\n";
+    for (const auto& be : confEdges_)
+        if (kAbsX_[be.na] > 0 || kAbsY_[be.na] > 0) {
+            std::cout << "[FDEM] WARNING: confined faces also carry Lysmer "
+                         "springs (absorbing): the springs pull the surface "
+                         "back toward u = 0 and FIGHT the confinement. Read the "
+                         "achieved lateral stress in the summary before "
+                         "trusting the target.\n";
+            break;
+        }
+}
+
+// ---------------------------------------------------------------------------
+// Stable time step. Per-node stiffness sums (joints dominate through the
+// intrinsic penalty):  elements ~ 2 E t per node, each joint point
+// p * (L/2) * t on its two nodes, plus a budget of general contacts at kp.
+//   dt = dtFactor * min_i 2 sqrt(m_i / K_i),   also capped by the mesh CFL.
+// ---------------------------------------------------------------------------
+void FdemSolver::computeStableDt() {
+    std::vector<double> K(X0_.size());
+    for (std::size_t i = 0; i < X0_.size(); ++i)
+        K[i] = 2.0 * phases_.mat[el_[elemOf_[i]].phase].E * thk_;
+    for (const auto& J : jt_) {
+        double k = J.pj * 0.5 * J.L0 * thk_;
+        K[J.a1] += k; K[J.a2] += k; K[J.b1] += k; K[J.b2] += k;
+    }
+    double nExtra = cfg_.getd("extraContacts", 2.0);
+    // the platen penalty is a spring on the bearing nodes exactly like the
+    // tool's: budget the STIFFER of the two, or a platenPenaltyFactor > 1
+    // would silently control stability
+    double kContact = std::max(kp_, kpPlaten_);
+    // SHPB: the bar/rock interfaces are the ONLY load path, so the general
+    // contact penalty is a first-class spring and must enter the budget (it
+    // does not for the other scenarios, where general contact only handles
+    // debris at gcPenaltyFactor = 0.01 E t and never controls stability).
+    if (scen_ == Scenario::SHPB) kContact = std::max(kContact, kpGC_);
+    double dtMin = 1e30;
+    for (std::size_t i = 0; i < X0_.size(); ++i)
+        dtMin = std::min(dtMin,
+                         2.0 * std::sqrt(m_[i] / (K[i] + nExtra * kContact)));
+    // CFL from the TRUE minimum inscribed diameter (4A/P), not the nominal
+    // grid pitch: the cross-diagonal split makes triangles with h ~ 0.41 dx,
+    // so nominal hmin overestimates the ceiling ~2.4x. Masked in intrinsic
+    // mode by the joint-spring term dominating dtMin; exposed by
+    // insertion = adaptive (see the 3D solver, where the same defect blew up
+    // the first homogeneous grid impact, 2026-08-07).
+    double hCfl = hmin_;
+    for (double h : hEl_) hCfl = std::min(hCfl, h);
+    double cfl = hCfl / phases_.maxCp();
+    dt_ = cfg_.getd("dtFactor", 0.2) * std::min(dtMin, cfl);
+}
+
+// ===========================================================================
+// Time stepping
+// ===========================================================================
+
+void FdemSolver::step() {
+    for (auto& fi : f_) fi.setZero();
+    tool_.resetForce();
+    // SHPB: the pulse velocity of THIS step, read by integrate() (DRIVEX)
+    if (scen_ == Scenario::SHPB) vDrive_ = shpbVel(t_);
+
+    if (fProf.on) {
+        double t0 = fnow(); elementForces(); bodyForces();
+        double t05 = fnow(); if (adaptive_) insertionSweep();
+        double t1 = fnow(); jointForces();
+        double t2 = fnow(); generalContact();
+        double t3 = fnow(); toolContact();
+        double t4 = fnow();
+        fProf.tEl += t05 - t0; fProf.tIn += t1 - t05; fProf.tJt += t2 - t1;
+        fProf.tGc += t3 - t2; fProf.tTc += t4 - t3;
+        ++fProf.n;
+    } else {
+        elementForces();
+        bodyForces();                      // gravity (no-op when gravity = 0)
+        if (adaptive_) insertionSweep();   // before jointForces: a joint born
+                                           // this step carries traction now
+        jointForces();
+        generalContact();
+        toolContact();
+    }
+    if (scen_ == Scenario::SHPB) shpbGaugeRead();   // monitor points 1 and 2
+    brazilianForces();                     // no-op outside the brazilian
+    if (scen_ == Scenario::TENSION && tensionPlatens_) platenForces();
+    confiningForces();                     // no-op when confiningPressure = 0
+    // gauge the confinement AFTER the ramp has had time to equilibrate through
+    // the specimen: read exactly at the end of the ramp and the interior is
+    // still catching up (measured 55 % of the target that way, 3 ramp times
+    // later it is there). Keep it well before the axial load matters.
+    if (confP_ > 0.0 && !confLatched_
+        && t_ >= std::max(cfg_.getd("confineGaugeTime", 3.0 * confRamp_),
+                          20.0 * dt_)) {
+        confAchieved_ = achievedConfinement();
+        confLatched_ = true;
+    }
+
+    if (scen_ == Scenario::TENSION) {
+        if (tensionPlatens_) {
+            // the platen reaction IS the axial load; no grip row exists
+            gripF_ = plTop_.F;
+        } else {
+            gripF_.setZero();
+            for (int i = 0; i < (int)X0_.size(); ++i)
+                if (flag_[i] == PRESCRIBED) gripF_ += f_[i];
+        }
+        double sigma = std::abs(gripF_.y()) / (W_ * thk_);
+        // Verrouillage du pic, transpose du bresilien : tant que la premiere
+        // chute franche post-fissuration n'a pas eu lieu, l'essai est une
+        // mesure de resistance valable ; apres, les plateaux ecrasent les
+        // fragments et la contrainte nominale n'a plus de sens. Le seuil est
+        // 30 % du pic (l'article coupe ses courbes de la fig. 19b sur la
+        // branche descendante). Sortie seulement : aucune force n'en depend.
+        if (!peakLockedU_) {
+            sigmaPeak_ = std::max(sigmaPeak_, sigma);
+            if (nBroken_ > 0 && sigmaPeak_ > 0.0 && sigma < 0.3 * sigmaPeak_) {
+                peakLockedU_ = true;
+                tLockedU_ = t_;
+            }
+        }
+    } else if (scen_ == Scenario::BRAZILIAN) {
+        // ISRM indirect tensile strength from the platen reaction:
+        //   sigma_t = 2 P / (pi D t)
+        // the platen reaction and the applied traction play the same role: the
+        // vertical force squeezing the disc along its diameter
+        double P = brazPlatens_ ? std::abs(plTop_.F.y())
+                                : std::abs(arcTop_.F.y());
+        // Flattened brazilian disc: sigma_t = k * 2P/(pi D t), the correction
+        // k of Wang et al. (IJRMMS 41, 2004) as tabulated by Yu et al. (EFM
+        // 247, 2021): 0.9644 at 2*alpha = 20 deg, 0.9205 at 30 deg. Linear in
+        // between, 1 for the plain disc. Wang's validity criterion is
+        // 2*alpha >= 20 deg — below that the opening stress is no longer
+        // maximal at the centre.
+        double kFBD = 1.0;
+        if (discFlat_ > 0.0)
+            kFBD = discFlat_ <= 20.0
+                   ? 1.0 + (0.9644 - 1.0) * discFlat_ / 20.0
+                   : 0.9644 + (0.9205 - 0.9644) * (discFlat_ - 20.0) / 10.0;
+        sigmaT_ = kFBD * 2.0 * P / (M_PI * 2.0 * discR_ * thk_);
+        if (!peakLocked_) {
+            if (sigmaT_ > sigmaTpeak_) {
+                sigmaTpeak_ = sigmaT_;
+                peakF_ = P;
+                tPeak_ = t_;
+                nBrokenAtPeak_ = nBroken_;
+            }
+            // a drop to 70 % of the peak once cracking has started is the
+            // failure event; everything after it is the platens grinding the
+            // halves together
+            if (nBroken_ > 0 && sigmaTpeak_ > 0.0
+                && sigmaT_ < 0.7 * sigmaTpeak_) {
+                peakLocked_ = true;
+                tLocked_ = t_;                 // end-of-test marker
+            }
+        }
+        // EARLY elastic gauge, accumulated while the nominal sigma_t is
+        // inside [eGaugeLo_, eGaugeHi_] x ft and the disc is still intact.
+        // That band is the genuinely linear part of the loading: the centre
+        // there carries sigma_xx = 2P/(pi D t) to better than a percent, while
+        // above it the core starts to soften and the closed-form solution stops
+        // describing the disc (measured: the ratio holds 0.99 up to
+        // sigma_t ~ 1.2 x ft, then falls away as the centre unloads).
+        if (nBroken_ == 0 && sigmaT_ >= eGaugeLo_ * mat_.ft
+            && sigmaT_ <= eGaugeHi_ * mat_.ft) {
+            double sx = 0.0, sy = 0.0;
+            discCentreStress(sx, sy);
+            eSumXX_ += sx;
+            eSumYY_ += sy;
+            eSumSig_ += sigmaT_;
+            ++eN_;
+            eDfrac_ = gDfrac_;
+        }
+        // latch the elastic gauge while the disc is still intact; the LAST
+        // such step is the one just before first breakage, i.e. the highest
+        // load at which the closed-form solution still applies
+        if (nBroken_ == 0) {
+            discCentreStress(gXX_, gYY_);
+            gSigT_ = sigmaT_;
+            long nD = 0;
+            double sD = 0.0;
+            for (const auto& J : jt_) {
+                sD += J.D;
+                if (J.D > 0.01) ++nD;
+            }
+            gDfrac_ = jt_.empty() ? 0.0 : (double)nD / jt_.size();
+            gDmean_ = jt_.empty() ? 0.0 : sD / jt_.size();
+        }
+    } else {
+        peakF_ = std::max(peakF_, tool_.F.norm());
+        work_ += -tool_.F.dot(tool_.v) * dt_;
+    }
+
+    integrate();
+    t_ += dt_;
+
+    if ((++stepCount_ & 1023) == 0) {                  // cheap stability guard
+        if (!std::isfinite(work_) || !std::isfinite(u_[0].x()))
+            throw std::runtime_error("FDEM instability (NaN) — reduce dtFactor");
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Co-rotational CST internal forces. F = sum_a x_a (grad N_a)^T; 2D polar
+// decomposition in closed form: with c1 = F00 + F11, c2 = F10 - F01,
+//   R = [[c1, -c2], [c2, c1]] / sqrt(c1^2 + c2^2).
+// Biot strain eps = sym(R^T F) - I, sigma = D eps in the co-rotated frame,
+// nodal forces f_a -= A0 t (R sigma) grad N_a. Exact for arbitrary rigid
+// rotations, small elastic strains — which is the regime of flying rock
+// fragments.
+// ---------------------------------------------------------------------------
+void FdemSolver::elementForces() {
+    // node duplication makes this loop embarrassingly parallel: every
+    // element writes only its OWN three nodes
+#ifdef _OPENMP
+#pragma omp parallel for schedule(static)
+#endif
+    for (int eI = 0; eI < (int)el_.size(); ++eI) {
+        Elem& e = el_[eI];
+        const Eigen::Matrix3d& Dm = DmP_[e.phase];
+        Eigen::Matrix2d F = Eigen::Matrix2d::Zero();
+        for (int a = 0; a < 3; ++a) {
+            Eigen::Vector2d x = X0_[e.n[a]] + u_[e.n[a]];
+            F += x * e.dN.col(a).transpose();
+        }
+        double c1 = F(0, 0) + F(1, 1);
+        double c2 = F(1, 0) - F(0, 1);
+        double hyp = std::sqrt(c1 * c1 + c2 * c2);
+        Eigen::Matrix2d R;
+        if (hyp > 1e-14) R << c1 / hyp, -c2 / hyp, c2 / hyp, c1 / hyp;
+        else             R.setIdentity();
+        Eigen::Matrix2d U = R.transpose() * F;
+        Eigen::Vector3d eps(U(0, 0) - 1.0, U(1, 1) - 1.0, U(0, 1) + U(1, 0));
+        Eigen::Vector3d s;
+        if (law_) {
+            // PLANE STRAIN is exactly eps_zz = 0, so the 3D law can be used
+            // verbatim: hand it the co-rotated Biot strain with a zero
+            // out-of-plane component and keep the in-plane stresses. The law
+            // returns sigma_zz itself (it is a reaction, not an input).
+            Eigen::Matrix3d E3 = Eigen::Matrix3d::Zero();
+            E3(0, 0) = eps(0);
+            E3(1, 1) = eps(1);
+            E3(0, 1) = E3(1, 0) = 0.5 * eps(2);        // tensorial shear
+            Eigen::Matrix3d S3 = law_->stress(E3, e.st, dt_, hEl_[eI]);
+            s << S3(0, 0), S3(1, 1), S3(0, 1);
+        } else {
+            s = Dm * eps;
+        }
+        double szz = nuP_[e.phase] * (s(0) + s(1));
+        double pm = (s(0) + s(1) + szz) / 3.0;
+        e.svm = std::sqrt(1.5 * ((s(0) - pm) * (s(0) - pm)
+                                 + (s(1) - pm) * (s(1) - pm)
+                                 + (szz - pm) * (szz - pm) + 2.0 * s(2) * s(2)));
+        // Crush cap (elastic-perfectly-plastic ceiling on the deviator, plus
+        // a cap on mean tension). FDEM has no erosion: crushed elements under
+        // the tool otherwise reach O(1) strain where the geometric stiffness
+        // is no longer covered by the linear stable dt, and the explicit
+        // update pumps energy (measured: 1e6 J from a 148 J impact). Bounding
+        // the deviatoric stress bounds the storable elastic energy and turns
+        // over-compression into plastic dissipation. The cap is far above
+        // every legitimate wave amplitude in the demos.
+        double cap = law_ ? 1e300 : crushCapP_[e.phase];
+        if (e.svm > cap) {
+            double fscale = cap / e.svm;
+            s(0) = pm + (s(0) - pm) * fscale;
+            s(1) = pm + (s(1) - pm) * fscale;
+            s(2) *= fscale;
+            szz = pm + (szz - pm) * fscale;
+            e.svm = cap;
+        }
+        if (!law_ && pm > 3.0 * ftP_[e.phase]) {        // mean-tension cap
+            double shift = pm - 3.0 * ftP_[e.phase];
+            s(0) -= shift; s(1) -= shift;
+        }
+        Eigen::Matrix2d sig;
+        sig << s(0), s(2), s(2), s(1);
+        Eigen::Matrix2d P = R * sig;                   // rotate back
+        // sigma_xx in the GLOBAL frame (output only — the confinement gauge);
+        // P * R^T is the Cauchy stress rotated out of the co-rotated frame
+        Eigen::Matrix2d sigG = P * R.transpose();
+        e.sxx = sigG(0, 0);
+        e.syy = sigG(1, 1);
+        e.sxy = 0.5 * (sigG(0, 1) + sigG(1, 0));
+        e.exx = eps(0);                            // axial strain (gauges)
+        for (int a = 0; a < 3; ++a)
+            f_[e.n[a]] -= e.A0 * thk_ * (P * e.dN.col(a));
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Body force (gravity). Each element hands rho * A0 * thk * g to its three
+// OWN nodes, one third each — the same lumping the mass matrix uses
+// (buildMesh: m_[n] += rho * A0 * thk / 3), so the nodal weight is exactly
+// m_[n] * g however the nodes are duplicated or bound. It acts along -y and
+// is accumulated into f_ with the SAME sign convention as every other
+// external force (f_ is the total nodal force entering v += dt/m * f).
+//
+// Parallelised exactly like elementForces(): node duplication means every
+// element writes only to its own three nodes, so the element loop has no
+// write conflict. Works unchanged in adaptive mode — integrate() sums f_ and
+// m_ over each binding group, and both sums scale identically.
+//
+// gravity = 0 (the default) short-circuits: no existing model changes.
+// ---------------------------------------------------------------------------
+void FdemSolver::bodyForces() {
+    if (gravity_ <= 0.0) return;
+#ifdef _OPENMP
+#pragma omp parallel for schedule(static)
+#endif
+    for (int eI = 0; eI < (int)el_.size(); ++eI) {
+        const Elem& e = el_[eI];
+        double w = rhoP_[e.phase] * e.A0 * thk_ * gravity_ / 3.0;
+        for (int a = 0; a < 3; ++a) f_[e.n[a]].y() -= w;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Cohesive joints, 2-point (node-pair) integration. Per point:
+//   delta   = u(B side) - u(A side); n = outward normal of A (from current
+//             edge midpoints), e = edge tangent (A's CCW direction).
+//   Opening dn = delta.n; tangential dtg = delta.e.
+// Mode I (dn > 0):   sigma = min( (1-D) p dn, envelope(dn) ), envelope
+//   linear ft -> 0 over [dnE, dnF]; the cap binding updates D.
+// jointSoftening = yan replaces that envelope by the exponential reduction
+//   factor f(D) ft of Yan et al. (IJRMMS 169, 2023) eq. 11, with D the
+//   mixed-mode driver of eq. 16 and the origin-secant unloading of eq. 17.
+// Compression:       sigma = p dn (+ small dashpot), no damage.
+// Mode II:           trial tau = p (dtg - slip), capped by
+//   (1-D) c + tanPhi * max(0, -sigma); on the cap, slip flows (return
+//   mapping) and D grows with |slip| / slipF. Friction survives at D = 1.
+// Forces: traction integrated with the trapezoid rule (L/2 per point),
+//   equal and opposite on the two faces.
+// A fully broken joint whose faces have clearly separated or slid by half an
+// edge length goes DEAD: it stops carrying anything and its faces are handed
+// to the general contact.
+// ---------------------------------------------------------------------------
+void FdemSolver::jointForces() {
+    static const bool noTau = std::getenv("RKM_NOTAU") != nullptr;
+
+    // Per-joint state updates (D, slip, tBreak) are private to the joint, so
+    // the loop parallelizes over joints — but the force scatter hits nodes
+    // shared by the up-to-three joints of an element, so each thread
+    // accumulates into its own buffer (touched-list + per-thread seen flags)
+    // and the buffers are reduced SERIALLY IN THREAD ORDER: deterministic
+    // for a fixed thread count.
+    auto processJoint = [&](Joint& J, auto&& addF, long& nb, double& dampW) {
+        if (J.dead || J.bonded) return;    // bonded: node binding carries it
+
+        Eigen::Vector2d pA1 = X0_[J.a1] + u_[J.a1], pA2 = X0_[J.a2] + u_[J.a2];
+        Eigen::Vector2d pB1 = X0_[J.b1] + u_[J.b1], pB2 = X0_[J.b2] + u_[J.b2];
+        Eigen::Vector2d P = 0.5 * (pA1 + pB1), Q = 0.5 * (pA2 + pB2);
+        Eigen::Vector2d ed = Q - P;
+        double L = ed.norm();
+        if (L < 1e-14) return;
+        Eigen::Vector2d e = ed / L;
+        Eigen::Vector2d n(e.y(), -e.x());              // outward from A
+
+        double Ltrib = 0.5 * J.L0 * thk_;
+        double dnMax = -1e30;
+
+        const int ia[2] = {J.a1, J.a2};
+        const int ib[2] = {J.b1, J.b2};
+        for (int k = 0; k < 2; ++k) {
+            Eigen::Vector2d delta = (X0_[ib[k]] + u_[ib[k]])
+                                  - (X0_[ia[k]] + u_[ia[k]]);
+            // dn0: adaptive-insertion opening offset (0 for intrinsic joints).
+            // A joint born under tension starts AT the envelope peak, so the
+            // traction it hands the fresh crack faces equals the traction the
+            // bonded edge was transmitting — no release spike at insertion.
+            double dn = delta.dot(n) + J.dn0;
+            double dtg = delta.dot(e);
+            dnMax = std::max(dnMax, dn);
+
+            // ================= normal traction =========================
+            // Structured as the established codes do (Kratos DEM_KDEM, Yade
+            // ViscoelasticPM/HertzMindlin, LAMMPS granular), after measuring
+            // that this solver's original formulation — a one-sided dashpot
+            // with a constant coefficient whose VISCOUS TERM ALONE was
+            // clipped — has no equivalent anywhere. Two rules carry the fix:
+            //
+            //  (1) The failure criterion is evaluated on the ELASTIC part
+            //      only. A viscous term must never be able to break a joint.
+            //      (Kratos builds sigma on the elastic part and calls
+            //      CalculateNormalForces BEFORE CalculateViscoDamping.)
+            //  (2) An INTACT cohesive joint is BILATERAL: it is a bond, it is
+            //      meant to pull, and clipping it at zero is what turned the
+            //      dashpot into a rectifier — pushing while the faces close,
+            //      resisting nothing while they separate, so every vibration
+            //      cycle injected momentum. Clipping belongs to a BROKEN
+            //      joint acting as a contact, and then it applies to the
+            //      RESULTANT, with the excess handed back to the viscous part
+            //      so the dissipation ledger stays exact (Yade HertzMindlin
+            //      does `Fn = 0; Fvisc += normTemp`). LAMMPS goes further and
+            //      makes the clip flag a FATAL ERROR on a cohesive normal
+            //      model — the rule this code was missing.
+            //
+            // Measured before/after, under STRICTLY ZERO load on the
+            // unstructured intra-grain mesh: 158 broken joints and a 57.5 MPa
+            // phantom grip reaction, against 0 joints and 1.9e-10 MPa.
+            double sigEl;                              // elastic / cohesive
+            if (yanSoft_) {
+                // ---- exponential softening of Yan et al., eq. 9/11-13/16-17 --
+                // The article inserts an EXTRINSIC element that carries ft at
+                // zero opening; rockim keeps an elastic branch of width
+                // dnE = ft/pj (needed by the intrinsic mode, and the adaptive
+                // insertion offset dn0 lands a tension-born joint exactly at
+                // dnE, i.e. at the peak). The article's opening o is therefore
+                // the opening BEYOND the elastic branch, and the critical
+                // opening ot = dnF - dnE is the one calibrated on GfI.
+                double ot = J.dnF - J.dnE;
+                double rn = (ot > 0.0 && dn > J.dnE) ? (dn - J.dnE) / ot : 0.0;
+                double rs = (J.slipF > 0.0) ? std::abs(J.slip[k]) / J.slipF
+                                            : 0.0;
+                // eq. 16, which degenerates into eq. 12 (pure tension) and
+                // eq. 14 (pure shear) when the other driver vanishes
+                double Dnow = std::sqrt(rn * rn + rs * rs);
+                // irreversibility (Fukuda et al. rule quoted by the article):
+                // J.D IS Dmax, it never decreases
+                if (Dnow > J.D) J.D = std::min(1.0, Dnow);
+                double fdY = yan::fD(J.D, yanP_);
+                if (dn >= 0.0) {
+                    // envelope: min(elastic branch, f(D) ft) — the min is what
+                    // makes shear damage cut the tensile strength too, and it
+                    // is continuous at dn = dnE where pj dnE = ft
+                    if (dn > J.omax[k]) J.omax[k] = dn;
+                    double om = J.omax[k];
+                    double sMax = std::min(J.pj * om, fdY * J.ft);
+                    // eq. 17: below omax the element unloads/reloads on the
+                    // secant to the origin. At dn = omax this returns sMax, so
+                    // loading and unloading agree on the envelope.
+                    sigEl = (om > 1e-30) ? sMax * dn / om : 0.0;
+                } else {
+                    sigEl = J.pj * dn;                 // closed: penalty
+                }
+            } else if (dn >= 0.0) {
+                double env = (dn <= J.dnE) ? J.pj * dn
+                           : (dn >= J.dnF) ? 0.0
+                           : J.ft * (J.dnF - dn) / (J.dnF - J.dnE);
+                double tr = (1.0 - J.D) * J.pj * dn;
+                if (tr > env) {
+                    sigEl = env;
+                    if (dn > 1e-30) {
+                        double Dn = 1.0 - env / (J.pj * dn);
+                        if (Dn > J.D) J.D = std::min(1.0, Dn);
+                    }
+                } else sigEl = tr;
+            } else {
+                sigEl = J.pj * dn;                     // closed: penalty
+            }
+
+            double sig = sigEl;
+            if (xiJ_ > 0.0) {
+                Eigen::Vector2d vrel = v_[ib[k]] - v_[ia[k]];
+                double meff = 0.5 * std::min(m_[ia[k]], m_[ib[k]]);
+                double cd = 2.0 * xiJ_ * std::sqrt(J.pj * Ltrib * meff);
+                // hard bound: past m_eff/dt the dashpot reverses the approach
+                // velocity within one step instead of damping it (MOOSE)
+                cd = std::min(cd, meff / dt_);
+                // SIGN. The traction acts on B as -sig*Ltrib*n (it pulls B
+                // back toward A), so a term that OPPOSES the opening rate
+                // vrel.n must carry a PLUS sign. The original code had
+                // `- cd * vrel.dot(n)`, whose power is +cd (vrel.n)^2: the
+                // joint dashpot has been ANTI-damping since the code was
+                // written. The one-sided clip hid it in tension and the
+                // fade-out patch hid it near closure; making the bond
+                // bilateral exposed it at once — every joint of the specimen
+                // broke under zero load.
+                double sigV = cd * vrel.dot(n) / Ltrib;
+                if (J.D < 1.0) {
+                    sig = sigEl + sigV;                // bilateral bond
+                } else if (dn < 0.0) {
+                    sig = std::min(0.0, sigEl + sigV); // contact: clip the SUM
+                }
+                // power of the viscous part: F_B.v_B + F_A.v_A
+                dampW -= (sig - sigEl) * Ltrib * vrel.dot(n) * dt_;
+            }
+
+            // --- tangential traction (damage-plastic, frictional) ---
+            double tauTr = noTau ? 0.0 : J.pj * (dtg - J.slip[k]);
+            // yan: eq. 10, the cohesion is scaled by f(D) instead of (1 - D).
+            // The Coulomb term is left unscaled by default so a crushed joint
+            // keeps residual friction (jointFrictionScaled = 1 for the literal
+            // eq. 10, where f(D) multiplies the whole cap). Shear stays a
+            // return-mapping plasticity, as in the linear law: on the cap this
+            // reproduces tau = f(D) c of eq. 10 for monotonic sliding, and
+            // unloading follows the pj secant rather than the origin secant of
+            // eq. 18 — a stated deviation.
+            double fdS = yanSoft_ ? yan::fD(J.D, yanP_) : 0.0;
+            double coh = yanSoft_ ? fdS * J.coh : (1.0 - J.D) * J.coh;
+            double muS = (yanSoft_ && yanFricScaled_) ? fdS : 1.0;
+            double tauLim = coh + muS * J.tanPhi * std::max(0.0, -sig);
+            double tau = std::clamp(tauTr, -tauLim, tauLim);
+            if (tau != tauTr) {
+                J.slip[k] += (tauTr - tau) / J.pj;     // return mapping
+                double Dt;
+                if (yanSoft_) {
+                    double ot = J.dnF - J.dnE;
+                    double rn = (ot > 0.0 && dn > J.dnE) ? (dn - J.dnE) / ot
+                                                         : 0.0;
+                    double rs = std::abs(J.slip[k]) / J.slipF;
+                    Dt = std::sqrt(rn * rn + rs * rs);   // eq. 16 / 14
+                } else {
+                    Dt = std::abs(J.slip[k]) / J.slipF;
+                }
+                if (Dt > J.D) J.D = std::min(1.0, Dt);
+            }
+
+            Eigen::Vector2d trac = (sig * n + tau * e) * Ltrib;
+            addF(ib[k], -trac);                        // pull B back toward A
+            addF(ia[k], trac);
+        }
+
+        if (J.D >= 1.0) {
+            if (J.tBreak < 0) {
+                J.tBreak = t_; ++nb;
+                // partition of the eq. 16 driver at the breaking instant:
+                // rn = normal (mode I) ratio, rs = sliding (mode II) ratio.
+                // Recomputed here from the same state processJoint used above,
+                // so no extra bookkeeping is carried per step.
+                double otF = J.dnF - J.dnE;
+                double rnF = (otF > 0.0 && dnMax > J.dnE)
+                           ? (dnMax - J.dnE) / otF : 0.0;
+                double sMx = std::max(std::abs(J.slip[0]), std::abs(J.slip[1]));
+                double rsF = (J.slipF > 0.0) ? sMx / J.slipF : 0.0;
+                double den = rnF * rnF + rsF * rsF;
+                J.failMode = (den > 1e-300) ? (rnF * rnF) / den : 1.0;
+                J.rnB = rnF;
+                J.rsB = rsF;
+                J.bmode = (rnF >= rsF) ? 1 : 2;  // 1 traction, 2 cisaillement
+            }
+            // Release to general contact ONLY on clear separation. A crushed
+            // joint sliding under compression must stay alive as the paired
+            // frictional contact of its own faces: killing it by slip hands
+            // interpenetrated faces to the general contact, whose penalty
+            // then releases 1/2 k pen^2 of energy created from nothing (the
+            // pump isolated by the net-work meter).
+            if (dnMax > 3.0 * J.dnF) J.dead = true;
+        }
+    };
+
+#ifdef _OPENMP
+    int nT = omp_get_max_threads();
+    if (nT == 1) {                       // bit-identical to the serial build
+        long nb1 = 0;
+        double dw1 = 0.0;
+        auto addF1 = [&](int i, const Eigen::Vector2d& v) { f_[i] += v; };
+        for (auto& J : jt_) processJoint(J, addF1, nb1, dw1);
+        nBroken_ += nb1;
+        dampWork_ += dw1;
+        return;
+    }
+    if ((int)fTL_.size() != nT) {
+        fTL_.assign(nT, std::vector<Eigen::Vector2d>(
+                            X0_.size(), Eigen::Vector2d::Zero()));
+        seenTL_.assign(nT, std::vector<char>(X0_.size(), 0));
+        touchedTL_.assign(nT, {});
+    }
+    std::vector<long> nbT(nT, 0);
+    std::vector<double> dwT(nT, 0.0);
+#pragma omp parallel
+    {
+        int t = omp_get_thread_num();
+        auto& fb = fTL_[t];
+        auto& seen = seenTL_[t];
+        auto& tl = touchedTL_[t];
+        tl.clear();
+        long nb = 0;
+        double dw = 0.0;
+        auto addF = [&](int i, const Eigen::Vector2d& v) {
+            if (!seen[i]) { seen[i] = 1; tl.push_back(i); }
+            fb[i] += v;
+        };
+#pragma omp for schedule(static)
+        for (int jI = 0; jI < (int)jt_.size(); ++jI)
+            processJoint(jt_[jI], addF, nb, dw);
+        nbT[t] = nb;
+        dwT[t] = dw;
+    }
+    for (int t = 0; t < nT; ++t) {                     // deterministic order
+        for (int i : touchedTL_[t]) {
+            f_[i] += fTL_[t][i];
+            fTL_[t][i].setZero();
+            seenTL_[t][i] = 0;
+        }
+        nBroken_ += nbT[t];
+        dampWork_ += dwT[t];
+    }
+#else
+    long nb = 0;
+    double dw = 0.0;
+    auto addF = [&](int i, const Eigen::Vector2d& v) { f_[i] += v; };
+    for (auto& J : jt_) processJoint(J, addF, nb, dw);
+    nBroken_ += nb;
+    dampWork_ += dw;
+#endif
+}
+
+// ---------------------------------------------------------------------------
+// General node-edge contact between released faces: exterior faces plus the
+// faces of every broken (D >= 1) joint. A cell grid over active edges is
+// rebuilt whenever the broken count changes; nodes of active edges are tested
+// against nearby edges of OTHER elements (skipping the partner across a
+// still-live joint, whose interaction the joint itself handles). Penetration
+// = signed distance along the edge's outward normal, capped at half the mesh
+// size; penalty + tanh-regularised Coulomb friction, reaction distributed to
+// the edge nodes by the projection weights.
+// ---------------------------------------------------------------------------
+void FdemSolver::rebuildContactEdges() {
+    act_ = exterior_;
+    // gcXwindow: on the SHPB assembly all but a few hundred of the ~40 000
+    // exterior faces are bar flanks metres away from anything they could ever
+    // touch. Restricting the ACTIVE set to a window around the specimen is what
+    // makes the contact sweep cost O(interface) instead of O(assembly).
+    if (gcXmin_ > -1e299) {
+        std::vector<BEdge> keep;
+        for (const auto& be : act_) {
+            double xm = 0.5 * (X0_[be.na].x() + X0_[be.nb].x());
+            if (xm >= gcXmin_ && xm <= gcXmax_) keep.push_back(be);
+        }
+        act_.swap(keep);
+    }
+    for (const auto& J : jt_)
+        if (J.dead) {
+            act_.push_back({J.eA, J.a1, J.a2});
+            act_.push_back({J.eB, J.b2, J.b1});        // CCW in B runs opposite
+        }
+    std::vector<char> inAct(X0_.size(), 0);
+    for (const auto& be : act_) inAct[be.na] = inAct[be.nb] = 1;
+    actNodes_.clear();
+    for (int i = 0; i < (int)X0_.size(); ++i)
+        if (inAct[i]) actNodes_.push_back(i);
+}
+
+void FdemSolver::generalContact() {
+    if (std::getenv("RKM_NOGC")) return;               // bisection switch
+    if (actStamp_ != nBroken_ && (actStamp_ < 0 || stepCount_ % 8 == 0)) {
+        rebuildContactEdges();
+        actStamp_ = nBroken_;
+    }
+    if (act_.empty()) return;
+
+    // Grid over current edge midpoints, CLIPPED to a fixed box around the
+    // domain: without the clip, one fast ejected fragment stretches the
+    // bounding box and the per-step grid allocation explodes (this was a
+    // measured 20x slowdown). Debris outside the box no longer needs
+    // resolved contact and is simply skipped.
+    cell_ = gcCell_ > 0.0 ? gcCell_ : 2.0 * hmin_;
+    // Default box: the domain blown up by half its size, which is what a
+    // percussion crater needs. On the 3.55 m x 0.05 m SHPB assembly that box is
+    // 5.3 m x 0.15 m and, binned at 2 hmin = 1.5 mm, allocates 3.5e5 cells
+    // EVERY step for 3 contacting faces. gcBoxMesh keeps the box tight around
+    // the mesh instead (the bars cannot go anywhere: their far ends are driven
+    // and damped).
+    Eigen::Vector2d boxLo(-0.5 * W_, -0.5 * H_);
+    Eigen::Vector2d boxHi(1.5 * W_, 2.0 * H_);
+    if (gcBoxMesh_) {
+        // AABB of the ACTIVE faces (already restricted to the gcXwindow), not
+        // of the whole assembly: the grid then has O(window/cell) buckets
+        // instead of O(assembly/cell), and every node's 3x3 stencil holds a
+        // handful of candidates rather than the entire interface.
+        Eigen::Vector2d lo(1e300, 1e300), hi(-1e300, -1e300);
+        for (const auto& be : act_)
+            for (int nid : {be.na, be.nb}) {
+                Eigen::Vector2d q = X0_[nid] + u_[nid];
+                lo = lo.cwiseMin(q);
+                hi = hi.cwiseMax(q);
+            }
+        if (hi.x() > lo.x()) {
+            Eigen::Vector2d pad(4.0 * cell_, 4.0 * cell_);
+            boxLo = lo - pad;
+            boxHi = hi + pad;
+        }
+    }
+    std::vector<Eigen::Vector2d> mid(act_.size());
+    std::vector<char> inBox(act_.size(), 0);
+    for (std::size_t k = 0; k < act_.size(); ++k) {
+        Eigen::Vector2d P = X0_[act_[k].na] + u_[act_[k].na];
+        Eigen::Vector2d Q = X0_[act_[k].nb] + u_[act_[k].nb];
+        mid[k] = 0.5 * (P + Q);
+        inBox[k] = (mid[k].x() > boxLo.x() && mid[k].x() < boxHi.x()
+                    && mid[k].y() > boxLo.y() && mid[k].y() < boxHi.y());
+    }
+    gmin_ = boxLo - Eigen::Vector2d(cell_, cell_);
+    Eigen::Vector2d span = boxHi - gmin_ + Eigen::Vector2d(cell_, cell_);
+    gx_ = std::max(1, int(span.x() / cell_) + 1);
+    gy_ = std::max(1, int(span.y() / cell_) + 1);
+    grid_.assign((std::size_t)gx_ * gy_, {});
+    for (std::size_t k = 0; k < act_.size(); ++k) {
+        if (!inBox[k]) continue;
+        // Bin the edge into EVERY cell its AABB covers, not only the
+        // midpoint cell: voronoi faces can be several hmin long, and
+        // midpoint-only binning left contacts near the ends of long faces
+        // undetected (outside the node's 3x3 stencil).
+        Eigen::Vector2d P = X0_[act_[k].na] + u_[act_[k].na];
+        Eigen::Vector2d Q = X0_[act_[k].nb] + u_[act_[k].nb];
+        int cx0 = std::clamp(int((std::min(P.x(), Q.x()) - gmin_.x()) / cell_), 0, gx_ - 1);
+        int cx1 = std::clamp(int((std::max(P.x(), Q.x()) - gmin_.x()) / cell_), 0, gx_ - 1);
+        int cy0 = std::clamp(int((std::min(P.y(), Q.y()) - gmin_.y()) / cell_), 0, gy_ - 1);
+        int cy1 = std::clamp(int((std::max(P.y(), Q.y()) - gmin_.y()) / cell_), 0, gy_ - 1);
+        for (int cy = cy0; cy <= cy1; ++cy)
+            for (int cx = cx0; cx <= cx1; ++cx)
+                grid_[(std::size_t)cy * gx_ + cx].push_back((int)k);
+    }
+
+    double cap = 0.6 * hmin_;                          // deep-pen sanity cap
+
+    // Detection is the expensive part (grid sweep + geometry) and is pure:
+    // it parallelizes over nodes into per-thread candidate lists. The
+    // DELICATE part — birth-gap bookkeeping (pen0_), damping, the force
+    // application and the net-work meter — stays SERIAL, walking the
+    // candidates in thread order: deterministic for a fixed thread count,
+    // and none of the energy-pump safeguards touches shared state from two
+    // threads.
+    struct CPair {
+        int i, k;
+        double s, d;
+        Eigen::Vector2d e, nrm;
+    };
+    auto detect = [&](int i, std::vector<CPair>& outC,
+                      std::vector<int>& seenLoc) {
+        Eigen::Vector2d p = X0_[i] + u_[i];
+        if (p.x() <= boxLo.x() || p.x() >= boxHi.x()
+            || p.y() <= boxLo.y() || p.y() >= boxHi.y()) return;
+        int ci = std::clamp(int((p.x() - gmin_.x()) / cell_), 0, gx_ - 1);
+        int cj = std::clamp(int((p.y() - gmin_.y()) / cell_), 0, gy_ - 1);
+        int myElem = elemOf_[i];
+        seenLoc.clear();
+        for (int dj = -1; dj <= 1; ++dj)
+            for (int di = -1; di <= 1; ++di) {
+                int cx = ci + di, cy = cj + dj;
+                if (cx < 0 || cy < 0 || cx >= gx_ || cy >= gy_) continue;
+                for (int k : grid_[(std::size_t)cy * gx_ + cx]) {
+                    const BEdge& be = act_[k];
+                    if (be.elem == myElem) continue;
+                    // AABB binning can list one edge in several stencil
+                    // cells: dedup per NODE with a tiny local list (a node
+                    // meets a few dozen candidates — a shared stamp array
+                    // here caused cache-line ping-pong between threads and
+                    // DOUBLED the contact cost at 18 threads)
+                    if (std::find(seenLoc.begin(), seenLoc.end(), k)
+                        != seenLoc.end()) continue;
+                    seenLoc.push_back(k);
+                    Eigen::Vector2d P = X0_[be.na] + u_[be.na];
+                    Eigen::Vector2d Q = X0_[be.nb] + u_[be.nb];
+                    // Nodes born from the same virtual vertex as an edge end
+                    // are CO-LOCATED with it while the mesh hangs together:
+                    // micron-scale compressive interpenetration otherwise
+                    // turns every such corner into a phantom follower force —
+                    // the energy pump isolated by bisection. The pair is
+                    // re-admitted once it has genuinely moved apart.
+                    if (vOf_[i] == vOf_[be.na]
+                        && (p - P).norm() < 0.25 * hmin_) continue;
+                    if (vOf_[i] == vOf_[be.nb]
+                        && (p - Q).norm() < 0.25 * hmin_) continue;
+                    Eigen::Vector2d ed = Q - P;
+                    double L2 = ed.squaredNorm();
+                    if (L2 < 1e-20) continue;
+                    double s = (p - P).dot(ed) / L2;
+                    if (s < 0.0 || s > 1.0) continue;
+                    Eigen::Vector2d e = ed / std::sqrt(L2);
+                    Eigen::Vector2d nrm(e.y(), -e.x());  // outward of be.elem
+                    // deep-pen cap on the LOCAL element size: with mixed
+                    // voronoi element sizes the global hmin (smallest
+                    // element anywhere) would drop legitimate penetrations
+                    // on large faces
+                    double capk = voronoi_ ? 0.6 * hEl_[be.elem] : cap;
+                    double d = (p - P).dot(nrm);
+                    if (d >= 0.0 || d < -capk) continue; // outside / too deep
+                    outC.push_back({i, k, s, d, e, nrm});
+                }
+            }
+    };
+
+    static std::vector<std::vector<CPair>> cpTL;       // per-thread lists
+    // fork/join costs more than the sweep while few faces are active
+    // (early in a run only the exterior is): go parallel only when the
+    // debris population makes the sweep genuinely heavy
+    bool par = false;
+#ifdef _OPENMP
+    par = omp_get_max_threads() > 1 && actNodes_.size() >= 4096;
+#endif
+    if (par) {
+#ifdef _OPENMP
+        int nT = omp_get_max_threads();
+        if ((int)cpTL.size() < nT) cpTL.assign(nT, {});
+#pragma omp parallel
+        {
+            int t = omp_get_thread_num();
+            cpTL[t].clear();
+            std::vector<int> seenLoc;
+            seenLoc.reserve(64);
+#pragma omp for schedule(static)
+            for (int a = 0; a < (int)actNodes_.size(); ++a)
+                detect(actNodes_[a], cpTL[t], seenLoc);
+        }
+#endif
+    } else {
+        if (cpTL.empty()) cpTL.assign(1, {});
+        for (auto& lst : cpTL) lst.clear();
+        std::vector<int> seenLoc;
+        seenLoc.reserve(64);
+        for (int i : actNodes_) detect(i, cpTL[0], seenLoc);
+    }
+
+    for (auto& lst : cpTL)
+        for (const CPair& cp : lst) {
+            int i = cp.i;
+            const BEdge& be = act_[cp.k];
+            const Eigen::Vector2d& e = cp.e;
+            const Eigen::Vector2d& nrm = cp.nrm;
+            double s = cp.s;
+            double pen = -cp.d;
+                    // Initial-penetration relief: a pair discovered already
+                    // overlapping (rebuild latency, freed faces) must not be
+                    // loaded on its full overlap at birth. The reference
+                    // penetration is recorded on first sight and relaxed on
+                    // a ~1 us time scale, so only NEW approach is resisted.
+                    uint64_t pkey = (uint64_t(uint32_t(i)) << 40)
+                                    ^ (uint64_t(uint32_t(be.na)) << 20)
+                                    ^ uint32_t(be.nb);
+                    auto [it0, isNew] = pen0_.try_emplace(pkey, pen);
+                    if (!isNew) it0->second *= relax_;
+                    pen = std::max(0.0, pen - it0->second);
+                    if (pen <= 0.0) continue;
+                    Eigen::Vector2d vEdge = (1.0 - s) * v_[be.na] + s * v_[be.nb];
+                    Eigen::Vector2d vrel = v_[i] - vEdge;
+                    double cdmp = 2.0 * xiGC_ * std::sqrt(kpGC_ * m_[i]);
+                    double vn = vrel.dot(nrm);
+                    // Quasi-plastic normal contact: the spring pushes at full
+                    // stiffness only while APPROACHING. On release it returns
+                    // a fraction gcRest of that force. The geometric spring on
+                    // rotating segments is a follower force (pen is geometric,
+                    // the work is kinematic): full-stiffness release is what
+                    // kept pumping energy (net-work meter). Crushed-rock
+                    // contacts have restitution ~0.1-0.3 anyway.
+                    double fn = kpGC_ * pen * (vn < 0.0 ? 1.0 : gcRest_)
+                                - cdmp * vn;
+                    if (fn < 0) fn = 0;
+                    double ftg = -muC_ * fn * std::tanh(vrel.dot(e) / vReg_);
+                    Eigen::Vector2d Fc = fn * nrm + ftg * e;
+                    // impulse cap: no single general contact may change this
+                    // node's velocity by more than vCap in one step (deep
+                    // captures by fast-sweeping faces otherwise act as guns)
+                    double capF = 20.0 * m_[i] / dt_;
+                    double Fn2 = Fc.norm();
+                    if (Fn2 > capF) Fc *= capF / Fn2;
+            gcWork_ += Fc.dot(vrel) * dt_;             // net energy meter
+            f_[i] += Fc;
+            f_[be.na] -= (1.0 - s) * Fc;
+            f_[be.nb] -= s * Fc;
+        }
+}
+
+// Rigid tool (disc or flat) against every node — FemSolver's contact law.
+// Per-node force writes are race-free; the tool reaction is reduced through
+// per-thread partial sums added in thread order (deterministic for a fixed
+// thread count).
+void FdemSolver::toolContact() {
+    // BRAZILIAN must be excluded here as well as TENSION. placeTool() returns
+    // early for both, so tool_ keeps its STRUCT DEFAULTS — a disc of radius
+    // 10 mm sitting at the origin — and this routine would press that phantom
+    // obstacle into the specimen at kp_ = E*t. It bit exactly once and hard:
+    // the disc centre sits at (W/2, H/2), so the clearance between the origin
+    // and the rim is 0.2071*W, i.e. 10.36 mm for a 50 mm specimen against a
+    // 10 mm tool. The Red Bohus disc (W = 50 mm) therefore had 82 joints break
+    // at t = 4e-7 s in the LOWER-LEFT quadrant at 40-50 deg under zero applied
+    // load, while the 60 mm verification disc (clearance 12.43 mm) was clean.
+    if (scen_ == Scenario::TENSION || scen_ == Scenario::BRAZILIAN
+        || scen_ == Scenario::SHPB) return;
+    auto nodeFc = [&](int i, Eigen::Vector2d& Fc) {
+        Eigen::Vector2d p = X0_[i] + u_[i];
+        if (tool_.shape == Tool::Shape::PDC) {
+            // Rigid wedge: the cutter is the half-space BEHIND the rake face
+            // and ABOVE the cutting edge. A node is in contact when it is on
+            // the wrong side of the rake face, still within the face extent,
+            // and above the edge — so the rock below the depth of cut is
+            // untouched, exactly as a real cutter leaves it.
+            Eigen::Vector2d n = tool_.rakeNormal();
+            Eigen::Vector2d tdir = tool_.rakeDir();
+            Eigen::Vector2d rel = p - tool_.x;          // from the edge
+            double dn = rel.dot(n);                     // >0 = in front, free
+            double dt2 = rel.dot(tdir);                 // along the face
+            if (dn >= 0.0) return false;
+            if (dt2 < 0.0 || dt2 > tool_.faceLen) return false;
+            // DEEP-PENETRATION CAP on the local element size, exactly as the
+            // general contact does. Capping on the face length instead (6.5 mm
+            // on a 13 mm cutter) let a node of the chip end up millimetres
+            // inside the wedge and produced isolated 32 MN/m spikes on an
+            // otherwise 0.5 MN/m curve — the penalty force is linear in the
+            // penetration, so a node that slips deep dominates everything.
+            double pen = -dn;
+            double capPen = 0.6 * hEl_[elemOf_[i]];
+            if (pen > capPen) pen = capPen;
+            Eigen::Vector2d vrel = v_[i] - tool_.v;
+            double c = 2.0 * xiC_ * std::sqrt(kp_ * m_[i]);
+            double fn = kp_ * pen - c * vrel.dot(n);
+            if (fn < 0) fn = 0;
+            double ftg = -muC_ * fn * std::tanh(vrel.dot(tdir) / vReg_);
+            Fc = fn * n + ftg * tdir;
+        } else if (tool_.shape == Tool::Shape::FLAT) {
+            if (std::abs(p.x() - tool_.x.x()) > 0.5 * tool_.width) return false;
+            double pen = p.y() - tool_.x.y();
+            if (pen <= 0) return false;
+            double c = 2.0 * xiC_ * std::sqrt(kp_ * m_[i]);
+            double fn = kp_ * pen + c * (v_[i].y() - tool_.v.y());
+            if (fn < 0) fn = 0;
+            double ftg = -muC_ * fn * std::tanh((v_[i].x() - tool_.v.x()) / vReg_);
+            Fc = {ftg, -fn};
+        } else {
+            Eigen::Vector2d d = p - tool_.x;
+            double dist = d.norm();
+            if (dist >= tool_.radius || dist < 1e-14) return false;
+            Eigen::Vector2d n = d / dist;
+            Eigen::Vector2d tdir(-n.y(), n.x());
+            double pen = tool_.radius - dist;
+            Eigen::Vector2d vrel = v_[i] - tool_.v;
+            double c = 2.0 * xiC_ * std::sqrt(kp_ * m_[i]);
+            double fn = kp_ * pen - c * vrel.dot(n);
+            if (fn < 0) fn = 0;
+            double ftg = -muC_ * fn * std::tanh(vrel.dot(tdir) / vReg_);
+            Fc = fn * n + ftg * tdir;
+        }
+        return true;
+    };
+#ifdef _OPENMP
+    int nT = omp_get_max_threads();
+    std::vector<Eigen::Vector2d> FT(nT, Eigen::Vector2d::Zero());
+#pragma omp parallel
+    {
+        int t = omp_get_thread_num();
+        Eigen::Vector2d Floc = Eigen::Vector2d::Zero();
+#pragma omp for schedule(static)
+        for (int i = 0; i < (int)X0_.size(); ++i) {
+            Eigen::Vector2d Fc;
+            if (!nodeFc(i, Fc)) continue;
+            f_[i] += Fc;
+            Floc -= Fc;
+        }
+        FT[t] = Floc;
+    }
+    for (const auto& F : FT) tool_.F += F;
+#else
+    for (int i = 0; i < (int)X0_.size(); ++i) {
+        Eigen::Vector2d Fc;
+        if (!nodeFc(i, Fc)) continue;
+        f_[i] += Fc;
+        tool_.F -= Fc;
+    }
+#endif
+}
+
+// ---------------------------------------------------------------------------
+// Brazilian traction pair. Same follower-load machinery as the confinement
+// (current face, lumped L/2 per node), driven by a pressure that grows at
+// loadRate. The two arcs are loaded with the SAME pressure, so the resultant
+// pair is self-balancing to within the mesh's top/bottom asymmetry — reported
+// as arcTop_.F + arcBot_.F, which the history carries so drift is visible
+// rather than silent.
+// ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Rigid platen pair in frictional penalty contact. Shared by the brazilian and
+// by the UCS/triaxial test when loading = platens: in both cases the specimen
+// is held by CONTACT, never clamped, which is how Y-Geo and the FEM-DEM
+// calibration literature load laboratory specimens. Both platens close
+// symmetrically so the specimen does not drift and the Cundall damping forces
+// of the two halves cancel.
+// ---------------------------------------------------------------------------
+void FdemSolver::platenForces() {
+    // ramp resolved here so the dashpot sees the velocity the platen
+    // actually has this step; integrate() reuses it to advance the planes
+    double vg = 0.5 * platenV_;                    // each platen, inward
+    // pullDelay : le chargement axial ne demarre qu'a t = pullDelay. En
+    // triaxial la pression de confinement doit etre etablie et equilibree
+    // AVANT que les plateaux ne se ferment, sinon la courbe contrainte-
+    // deformation demarre sur un etat qui n'est ni uniaxial ni confine.
+    // Defaut 0 : tous les modeles existants sont bit-identiques.
+    double tl = t_ - pullDelay_;
+    if (tl <= 0.0) vg = 0.0;
+    else if (pullRamp_ > 0.0 && tl < pullRamp_)
+        vg *= 0.5 * (1.0 - std::cos(M_PI * tl / pullRamp_));
+    plTop_.v = -vg;                                // downward
+    plBot_.v = +vg;                                // upward
+    plTop_.F.setZero();
+    plBot_.F.setZero();
+    double sF = 0.0, sF2 = 0.0;                    // participation ratio
+    long nC = 0;
+    for (Platen* pl : {&plTop_, &plBot_}) {
+        for (int i = 0; i < (int)X0_.size(); ++i) {
+            if (platenW_[i] <= 0.0) continue;      // not a bearing node
+            Eigen::Vector2d p = X0_[i] + u_[i];
+            if (std::abs(p.x() - pl->xc) > pl->halfW) continue;
+            double pen = -pl->sign * (p.y() - pl->y);
+            if (pen <= 0.0) continue;
+            double kNode = kpPlaten_ * platenW_[i];
+            double c = 2.0 * xiC_ * std::sqrt(kNode * m_[i]);
+            // d(pen)/dt = -(v_node - v_platen) for BOTH platens, so the
+            // dashpot opposes -vrel in both cases
+            double vrel = v_[i].y() - pl->v;
+            double fn = kNode * pen - c * vrel;
+            if (fn < 0.0) fn = 0.0;                // no adhesion on release
+            double ftg = -muC_ * fn * std::tanh((v_[i].x()) / vReg_);
+            Eigen::Vector2d Fc(ftg, pl->sign * fn);   // force ON the node
+            f_[i] += Fc;
+            pl->F -= Fc;                           // reaction ON the platen
+            if (pl->sign < 0) { sF += fn; sF2 += fn * fn; ++nC; }
+        }
+    }
+    // How many nodes actually carry the bearing? The participation ratio
+    // (sum f)^2 / sum f^2 is that number: 1 if a single asperity takes
+    // everything, nC if the load is uniform. Latched with the gauge.
+    if (nBroken_ == 0 && sF2 > 0.0) {
+        gPR_ = sF * sF / sF2;
+        gNC_ = nC;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// End of the brazilian test. peakLocked_ marks the first genuine post-cracking
+// load drop: past it the platens keep closing on two separated halves and the
+// nominal sigma_t rises again for a kinematic reason (measured on
+// bd_yan_adaptatif: 1.30 MPa at the bottom of the drop, 2.10 MPa afterwards,
+// unchanged with the general contact switched off, so it is the crushing of
+// the halves and not a contact artefact). The published brazilian curve stops
+// there. brazStopDelay_ keeps enough steps after the lock for the drop itself
+// to be on the curve.
+bool FdemSolver::finished() const {
+    // meme mecanisme cote compression (ucsStopAfterPeak), voir FdemSolver.hpp
+    if (ucsStop_ && scen_ == Scenario::TENSION && tensionPlatens_)
+        return peakLockedU_ && tLockedU_ >= 0.0
+               && t_ >= tLockedU_ + ucsStopDelay_;
+    if (!brazStop_ || scen_ != Scenario::BRAZILIAN) return false;
+    return peakLocked_ && tLocked_ >= 0.0 && t_ >= tLocked_ + brazStopDelay_;
+}
+
+void FdemSolver::brazilianForces() {
+    if (scen_ != Scenario::BRAZILIAN) return;
+
+    if (brazPlatens_) { platenForces(); return; }
+    brazP_ = loadRate_ * t_;
+    for (LoadArc* arc : {&arcTop_, &arcBot_}) {
+        arc->F.setZero();
+        for (const auto& be : arc->edge) {
+            Eigen::Vector2d P = X0_[be.na] + u_[be.na];
+            Eigen::Vector2d Q = X0_[be.nb] + u_[be.nb];
+            Eigen::Vector2d d = Q - P;
+            double L = d.norm();
+            if (L < 1e-14) continue;
+            Eigen::Vector2d n(d.y() / L, -d.x() / L);   // outward unit normal
+            Eigen::Vector2d Fe = -brazP_ * L * thk_ * n;   // inward
+            f_[be.na] += 0.5 * Fe;
+            f_[be.nb] += 0.5 * Fe;
+            arc->F += Fe;
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Confining pressure as a FOLLOWER load: the traction -p n is recomputed on
+// the CURRENT face (position and orientation both move), lumped L/2 per node.
+// (P -> Q) is the CCW traversal of the owning element, so ((Q-P).y, -(Q-P).x)
+// points OUT of the specimen — the same convention buildFromTriangles fixed
+// for the exterior faces, and the reason this loop can trust it.
+// ---------------------------------------------------------------------------
+void FdemSolver::confiningForces() {
+    if (confP_ == 0.0) return;
+    double p = confP_;
+    if (confRamp_ > 0.0 && t_ < confRamp_)
+        p *= 0.5 * (1.0 - std::cos(M_PI * t_ / confRamp_));
+    for (const auto& be : confEdges_) {
+        Eigen::Vector2d P = X0_[be.na] + u_[be.na];
+        Eigen::Vector2d Q = X0_[be.nb] + u_[be.nb];
+        Eigen::Vector2d d = Q - P;
+        double L = d.norm();
+        if (L < 1e-14) continue;
+        Eigen::Vector2d n(d.y() / L, -d.x() / L);       // outward unit normal
+        Eigen::Vector2d half = -0.5 * p * L * thk_ * n; // inward, half per node
+        f_[be.na] += half;
+        f_[be.nb] += half;
+    }
+}
+
+// Mean sigma_xx over the CORE of the specimen (middle half in both
+// directions), i.e. away from the loaded faces where the pressure has not yet
+// diffused into a uniform state. For a working confinement this must come out
+// at -confiningPressure.
+double FdemSolver::achievedConfinement() const {
+    double sum = 0.0, area = 0.0;
+    for (const auto& e : el_) {
+        Eigen::Vector2d c = (X0_[e.n[0]] + X0_[e.n[1]] + X0_[e.n[2]]) / 3.0;
+        if (std::abs(c.x() - 0.5 * W_) > 0.25 * W_) continue;
+        if (std::abs(c.y() - 0.5 * H_) > 0.25 * H_) continue;
+        sum += e.sxx * e.A0;
+        area += e.A0;
+    }
+    return area > 0.0 ? sum / area : 0.0;
+}
+
+// Area-averaged stress over the core of the disc (r <= 0.15 R), the zone the
+// classical solution describes as uniform enough to call "the centre".
+void FdemSolver::discCentreStress(double& sxx, double& syy) const {
+    double sx = 0.0, sy = 0.0, area = 0.0;
+    double r2 = 0.15 * discR_ * 0.15 * discR_;
+    for (const auto& e : el_) {
+        Eigen::Vector2d c = (X0_[e.n[0]] + X0_[e.n[1]] + X0_[e.n[2]]) / 3.0;
+        if ((c - discC_).squaredNorm() > r2) continue;
+        sx += e.sxx * e.A0;
+        sy += e.syy * e.A0;
+        area += e.A0;
+    }
+    sxx = area > 0.0 ? sx / area : 0.0;
+    syy = area > 0.0 ? sy / area : 0.0;
+}
+
+void FdemSolver::integrate() {
+    if (adaptive_) {
+        // Bound groups integrate as ONE node: forces and masses summed,
+        // Cundall damping and the quiet-boundary terms applied to the sums,
+        // the common velocity written back to every copy. For a singleton
+        // group this reduces exactly to the per-node path below. Groups never
+        // span vertices, so the vertex loop parallelizes cleanly.
+#ifdef _OPENMP
+#pragma omp parallel for schedule(static)
+#endif
+        for (int vv = 0; vv < nVert_; ++vv) {
+            for (const auto& g : grpsOfVert_[vv]) {
+                int i0 = g[0];                         // copies share flags
+                if (flag_[i0] == FIXED) {
+                    if (gripFree_) {
+                        double F = 0.0, M = 0.0;
+                        for (int i : g) { F += f_[i].x(); M += m_[i]; }
+                        double vx = v_[i0].x() + (dt_ / M) * F;
+                        for (int i : g) {
+                            v_[i] = {vx, 0.0};
+                            u_[i] += dt_ * v_[i];
+                        }
+                    } else for (int i : g) v_[i].setZero();
+                    continue;
+                }
+                if (flag_[i0] == DRIVEX) {         // SHPB struck face
+                    double F = 0.0, M = 0.0;
+                    for (int i : g) { F += f_[i].y(); M += m_[i]; }
+                    double vy = v_[i0].y() + (dt_ / M) * F;
+                    for (int i : g) {
+                        v_[i] = {vDrive_, vy};
+                        u_[i] += dt_ * v_[i];
+                    }
+                    continue;
+                }
+                if (flag_[i0] == PRESCRIBED) {
+                    double vg = pullV_;
+                    double tl = t_ - pullDelay_;   // voir platenForces()
+                    if (tl <= 0.0) vg = 0.0;
+                    else if (pullRamp_ > 0.0 && tl < pullRamp_)
+                        vg *= 0.5 * (1.0 - std::cos(M_PI * tl / pullRamp_));
+                    double vx = 0.0;
+                    if (gripFree_) {
+                        double F = 0.0, M = 0.0;
+                        for (int i : g) { F += f_[i].x(); M += m_[i]; }
+                        vx = v_[i0].x() + (dt_ / M) * F;
+                    }
+                    for (int i : g) {
+                        v_[i] = {vx, vg};
+                        u_[i] += dt_ * v_[i];
+                    }
+                    continue;
+                }
+                Eigen::Vector2d F = Eigen::Vector2d::Zero();
+                double M = 0.0, cX = 0.0, cY = 0.0;
+                for (int i : g) {
+                    F += f_[i];
+                    if (kAbsX_[i] > 0) F.x() -= kAbsX_[i] * u_[i].x();
+                    if (kAbsY_[i] > 0) F.y() -= kAbsY_[i] * u_[i].y();
+                    M += m_[i];
+                    cX += cAbsX_[i];
+                    cY += cAbsY_[i];
+                }
+                if (damping_ > 0) {
+                    F.x() -= damping_ * std::abs(F.x())
+                             * (v_[i0].x() > 0 ? 1.0 : (v_[i0].x() < 0 ? -1.0 : 0.0));
+                    F.y() -= damping_ * std::abs(F.y())
+                             * (v_[i0].y() > 0 ? 1.0 : (v_[i0].y() < 0 ? -1.0 : 0.0));
+                }
+                Eigen::Vector2d vn = v_[i0] + (dt_ / M) * F;
+                if (cX > 0) vn.x() /= 1.0 + dt_ * cX / M;
+                if (cY > 0) vn.y() /= 1.0 + dt_ * cY / M;
+                if (flag_[i0] == ROLLERX) vn.x() = 0.0;
+                for (int i : g) {
+                    if (flag_[i0] == ROLLERX) u_[i].x() = 0.0;
+                    v_[i] = vn;
+                    u_[i] += dt_ * vn;
+                }
+            }
+        }
+        if (scen_ == Scenario::BRAZILIAN || (scen_ == Scenario::TENSION
+                                             && tensionPlatens_)) {
+            if (brazPlatens_ || tensionPlatens_) {
+                plTop_.y += dt_ * plTop_.v;
+                plBot_.y += dt_ * plBot_.v;
+            }
+        } else if (scen_ != Scenario::TENSION) {
+            tool_.integrate(dt_);
+        }
+        return;
+    }
+#ifdef _OPENMP
+#pragma omp parallel for schedule(static)
+#endif
+    for (int i = 0; i < (int)X0_.size(); ++i) {
+        if (flag_[i] == FIXED) {
+            // gripFree: frictionless grips — only the axial dof is held, the
+            // lateral one follows the forces. Removes the Saint-Venant
+            // corner concentration of fully clamped grips, which otherwise
+            // decides where a tension specimen breaks (it drowned the
+            // random-strength-field localization in the wbm experiment).
+            if (gripFree_) {
+                v_[i].x() += (dt_ / m_[i]) * f_[i].x();
+                v_[i].y() = 0.0;
+                u_[i] += dt_ * v_[i];
+            } else v_[i].setZero();
+            continue;
+        }
+        if (flag_[i] == DRIVEX) {                      // SHPB struck face
+            // v_x is imposed by the pulse; the LATERAL dof integrates freely
+            // (a bar end is not clamped: clamping it would radiate a shear
+            // wave from the driven face at every step)
+            v_[i].y() += (dt_ / m_[i]) * f_[i].y();
+            v_[i].x() = vDrive_;
+            u_[i] += dt_ * v_[i];
+            continue;
+        }
+        if (flag_[i] == PRESCRIBED) {
+            if (gripFree_) v_[i].x() += (dt_ / m_[i]) * f_[i].x();
+            else v_[i].x() = 0.0;
+            // pullRamp: smooth (cosine) rise of the grip velocity over the
+            // given time instead of a step. A stepped grip launches a stress
+            // transient that localizes failure at the FIRST joint row under
+            // the grip whatever the strength map says (measured: straight
+            // "unzipping" of the top row); ramping over many wave transits
+            // makes the loading quasi-static so the specimen breaks where it
+            // is WEAK, not where it is pulled.
+            double vg = pullV_;
+            if (pullRamp_ > 0.0 && t_ < pullRamp_)
+                vg *= 0.5 * (1.0 - std::cos(M_PI * t_ / pullRamp_));
+            v_[i].y() = vg;
+            u_[i] += dt_ * v_[i];
+            continue;
+        }
+        if (kAbsX_[i] > 0 || kAbsY_[i] > 0) {          // boundary springs
+            f_[i].x() -= kAbsX_[i] * u_[i].x();
+            f_[i].y() -= kAbsY_[i] * u_[i].y();
+        }
+        if (damping_ > 0) {                            // Cundall local damping
+            f_[i].x() -= damping_ * std::abs(f_[i].x())
+                         * (v_[i].x() > 0 ? 1.0 : (v_[i].x() < 0 ? -1.0 : 0.0));
+            f_[i].y() -= damping_ * std::abs(f_[i].y())
+                         * (v_[i].y() > 0 ? 1.0 : (v_[i].y() < 0 ? -1.0 : 0.0));
+        }
+        v_[i] += (dt_ / m_[i]) * f_[i];
+        if (cAbsX_[i] > 0) v_[i].x() /= 1.0 + dt_ * cAbsX_[i] / m_[i];
+        if (cAbsY_[i] > 0) v_[i].y() /= 1.0 + dt_ * cAbsY_[i] / m_[i];
+        if (flag_[i] == ROLLERX) { v_[i].x() = 0.0; u_[i].x() = 0.0; }
+        u_[i] += dt_ * v_[i];
+    }
+    if (scen_ == Scenario::BRAZILIAN || (scen_ == Scenario::TENSION
+                                         && tensionPlatens_)) {
+        if (brazPlatens_ || tensionPlatens_) {         // kinematic planes
+            plTop_.y += dt_ * plTop_.v;                // v ramped in
+            plBot_.y += dt_ * plBot_.v;                // platenForces()
+        }
+    } else if (scen_ != Scenario::TENSION) {
+        tool_.integrate(dt_);
+    }
+}
+
+// Fragments: connected components of elements over still-cohesive joints.
+void FdemSolver::computeFragments() {
+    std::vector<std::vector<int>> adj(el_.size());
+    for (const auto& J : jt_)
+        if (J.D < 1.0) {
+            adj[J.eA].push_back(J.eB);
+            adj[J.eB].push_back(J.eA);
+        }
+    std::fill(fragId_.begin(), fragId_.end(), -1);
+    int nid = 0;
+    std::vector<std::pair<int, double>> mass;
+    for (int s = 0; s < (int)el_.size(); ++s) {
+        if (fragId_[s] >= 0) continue;
+        double mm = 0;
+        std::queue<int> qu;
+        qu.push(s);
+        fragId_[s] = nid;
+        while (!qu.empty()) {
+            int e = qu.front(); qu.pop();
+            mm += rhoP_[el_[e].phase] * el_[e].A0 * thk_;
+            for (int w : adj[e])
+                if (fragId_[w] < 0) { fragId_[w] = nid; qu.push(w); }
+        }
+        mass.push_back({nid, mm});
+        ++nid;
+    }
+    std::sort(mass.begin(), mass.end(),
+              [](auto& a, auto& b) { return a.second > b.second; });
+    std::vector<int> rank(nid);
+    for (int k = 0; k < nid; ++k) rank[mass[k].first] = k;
+    for (auto& fid : fragId_) fid = rank[fid];
+    nFrag_ = nid;
+    double vDet = 0;                                   // volume, phase-neutral
+    for (int e = 0; e < (int)el_.size(); ++e)
+        if (fragId_[e] != 0) vDet += el_[e].A0 * thk_;
+    detachedVol_ = vDet;
+}
+
+// ===========================================================================
+// Output
+// ===========================================================================
+
+void FdemSolver::writeFrame(int frame) {
+    computeFragments();
+
+    std::vector<Eigen::Vector2d> pts(X0_.size());
+    std::vector<Eigen::Vector2d> vel(X0_.size());
+    for (std::size_t i = 0; i < X0_.size(); ++i) {
+        pts[i] = X0_[i] + u_[i];
+        vel[i] = v_[i];
+    }
+    std::vector<std::array<int, 3>> tris(el_.size());
+    std::vector<double> svm(el_.size()), frag(el_.size());
+    std::vector<double> phs(el_.size()), grn(el_.size());
+    std::vector<double> sxx(el_.size()), syy(el_.size());
+    // sigmaXY : le cisaillement manquait dans les .vtu du FDEM 2D alors que
+    // el_[e].sxy est deja calcule par elementForces (l'insertion adaptative
+    // s'en sert). Sans lui, ni les contraintes principales ni l'orientation
+    // des bandes de cisaillement ne sont lisibles en post-traitement.
+    std::vector<double> sxy(el_.size()), exx(el_.size());
+    for (std::size_t e = 0; e < el_.size(); ++e) {
+        tris[e] = el_[e].n;
+        svm[e] = el_[e].svm;
+        frag[e] = fragId_[e];
+        phs[e] = el_[e].phase;
+        grn[e] = el_[e].grain;
+        sxx[e] = el_[e].sxx;
+        syy[e] = el_[e].syy;
+        sxy[e] = el_[e].sxy;                           // shear (was missing)
+        exx[e] = el_[e].exx;                           // axial strain
+    }
+    char name[64];
+    std::snprintf(name, sizeof(name), "/fdem_%04d.vtu", frame);
+    vtk::writeTriMesh(out_ + name, pts, tris,
+                      {{"vonMises", &svm}, {"fragment", &frag},
+                       {"phase", &phs}, {"grain", &grn},
+                       {"sigmaXX", &sxx}, {"sigmaYY", &syy},
+                       // sigmaXY completes the in-plane tensor the solver
+                       // already carries per element (Elem::sxy, set in
+                       // elementStress): without it a post-processor cannot
+                       // form the principal stresses or the shear field.
+                       {"sigmaXY", &sxy}, {"epsXX", &exx}},
+                      {{"velocity", &vel}});
+
+    std::vector<std::array<int, 2>> lines;
+    std::vector<double> Dj, tb, Tp, Fs, Bd, Fm, Bm;
+    for (const auto& J : jt_) {
+        lines.push_back({J.a1, J.a2});
+        Dj.push_back(J.D);
+        tb.push_back(J.tBreak);
+        Tp.push_back(J.type);
+        Fs.push_back(J.stat);
+        Bd.push_back(J.bonded ? 1.0 : 0.0);
+        Fm.push_back(J.failMode);
+        Bm.push_back(J.bmode);
+    }
+    std::snprintf(name, sizeof(name), "/fdem_joints_%04d.vtu", frame);
+    vtk::ScalarField jf{
+        {"damage", &Dj}, {"tBreak", &tb}, {"type", &Tp},
+        {"ftScale", &Fs}, {"bonded", &Bd}, {"breakMode", &Bm}};
+    if (cfg_.getb("writeJointMode", false)) jf["failMode"] = &Fm;
+    vtk::writeLines(out_ + name, pts, lines, jf);
+
+    std::ofstream fm(out_ + "/frames.csv",
+                     frame == 0 ? std::ios::trunc : std::ios::app);
+    if (frame == 0) fm << "frame,t,toolX,toolY\n";
+    // the brazilian has no tool: the platen plane goes in the toolY column so
+    // make_gif.py and the GUI keep reading a meaningful loading position
+    bool noTool = scen_ == Scenario::BRAZILIAN || scen_ == Scenario::SHPB;
+    double tx = noTool ? discC_.x() : tool_.x.x();
+    double ty = noTool ? discC_.y() + discR_ : tool_.x.y();
+    fm << frame << "," << t_ << "," << tx << "," << ty << "\n";
+}
+
+void FdemSolver::historyHeader(std::ostream& os) const {
+    if (scen_ == Scenario::SHPB) {
+        // epsM1 / epsM2 = area-averaged axial strain at monitor points 1 and 2
+        // (fig. 23); vDrive = the prescribed pulse; sxxC/syyC = the stress at
+        // the centre of the disc (fig. 25b reads syyC); nInserted = joints
+        // activated so far (adaptive only).
+        os << "t,vDrive,epsM1,epsM2,sxxC,syyC,nBroken,nFrag,nInserted\n";
+        return;
+    }
+    // (ancienne ligne unique supprimee : elle court-circuitait le bloc
+    // ci-dessous — doublon laisse par la fusion a trois voies)
+    if (scen_ == Scenario::TENSION) {
+        // compression par plateaux : on ajoute la metrologie de l'essai —
+         // trois deformations axiales (machine, faces, extensometre), le
+        // decompte des fissures par MODE (traction / cisaillement), la
+        // pression laterale effectivement atteinte et le marqueur de fin
+        // d'essai peakLocked. Le montage a grips garde EXACTEMENT ses
+        // anciennes colonnes.
+        if (tensionPlatens_)
+            os << "t,gripFy,sigma,sigmaPeak,nBroken,epsPlaten,epsSpec,"
+                  "epsGauge,nBrokTen,nBrokShear,nFrag,confAchieved,"
+                  "peakLocked\n";
+        else
+            os << "t,gripFy,sigma,sigmaPeak,nBroken\n";
+        return;
+    }
+    if (scen_ == Scenario::BRAZILIAN) {
+        // P = vertical force applied on the top arc, Pbot on the bottom one;
+        // their SUM is the unbalanced force that makes the disc drift and must
+        // stay small next to P (mesh asymmetry between the two arcs)
+        // sxxC/syyC = area-averaged stress over the core of the disc, the
+        // quantity the elastic gauge reads; carrying them at every history row
+        // (instead of only at the last intact step) is what lets the gauge be
+        // read in the genuinely elastic part of the loading. peakLocked = the
+        // end-of-test marker: 0 while the test is a valid indirect tension
+        // measurement, 1 once the post-peak drop has been seen and the platens
+        // are only crushing the halves together. Truncate the published curve
+        // at the first row carrying 1.
+        os << "t,P,Pbot,drive,sigmaT,sigmaTpeak,nBroken,nFrag,sxxC,syyC,"
+              "peakLocked\n";
+        return;
+    }
+    os << "t,toolFx,toolFy,toolX,toolY,toolVx,toolVy,work,toolKE,"
+          "nBroken,nFrag,detachedVol,specificEnergy\n";
+}
+
+void FdemSolver::historyRow(std::ostream& os) const {
+    if (scen_ == Scenario::SHPB) {
+        double sx = 0.0, sy = 0.0;
+        if (!shpbNoDisc_) discCentreStress(sx, sy);
+        os << t_ << "," << vDrive_ << "," << epsM1_ << "," << epsM2_ << ","
+           << sx << "," << sy << "," << nBroken_ << "," << nFrag_ << ","
+           << nInserted_ << "\n";
+        return;
+    }
+    if (scen_ == Scenario::TENSION) {
+        os << t_ << "," << gripF_.y() << ","
+           << std::abs(gripF_.y()) / (W_ * thk_) << ","
+           << sigmaPeak_ << "," << nBroken_;
+        if (tensionPlatens_) {
+            double ep = 0.0, es = 0.0, eg = 0.0;
+            gaugeStrain(ep, es, eg);
+            long nT = 0, nS = 0;
+            for (const auto& J : jt_) {
+                if (J.bmode == 1) ++nT;
+                else if (J.bmode == 2) ++nS;
+            }
+            os << "," << ep << "," << es << "," << eg << "," << nT << ","
+               << nS << "," << nFrag_ << "," << confAchieved_ << ","
+               << (peakLockedU_ ? 1 : 0);
+        }
+        os << "\n";
+        return;
+    }
+    if (scen_ == Scenario::BRAZILIAN) {
+        double ft = brazPlatens_ ? plTop_.F.y() : arcTop_.F.y();
+        double fb = brazPlatens_ ? plBot_.F.y() : arcBot_.F.y();
+        double drive = brazPlatens_ ? plTop_.y : brazP_;
+        double sxxC = 0.0, syyC = 0.0;
+        discCentreStress(sxxC, syyC);
+        os << t_ << "," << ft << "," << fb << "," << drive << ","
+           << sigmaT_ << "," << sigmaTpeak_ << "," << nBroken_ << ","
+           << nFrag_ << "," << sxxC << "," << syyC << ","
+           << (peakLocked_ ? 1 : 0) << "\n";
+        return;
+    }
+    double Es = detachedVol_ > 0 ? work_ / detachedVol_ : 0.0;
+    os << t_ << "," << tool_.F.x() << "," << tool_.F.y() << ","
+       << tool_.x.x() << "," << tool_.x.y() << ","
+       << tool_.v.x() << "," << tool_.v.y() << ","
+       << work_ << "," << tool_.ke() << "," << nBroken_ << "," << nFrag_ << ","
+       << detachedVol_ << "," << Es << "\n";
+}
+
+void FdemSolver::finalize() {
+    computeFragments();
+
+    std::ofstream fe(out_ + "/fdem_final_elements.csv");
+    fe << "cx,cy,fragment,phase,grain\n";
+    for (std::size_t e = 0; e < el_.size(); ++e) {
+        Eigen::Vector2d c = Eigen::Vector2d::Zero();
+        for (int a = 0; a < 3; ++a) c += (X0_[el_[e].n[a]] + u_[el_[e].n[a]]);
+        c /= 3.0;
+        fe << c.x() << "," << c.y() << "," << fragId_[e] << ","
+           << el_[e].phase << "," << el_[e].grain << "\n";
+    }
+    // Body-force verification output (Yan et al. section 3.1). Only written
+    // when a body force is active, so no existing run gains a file.
+    if (gravity_ > 0.0) {
+        std::ofstream fg(out_ + "/fdem_nodal_displacement.csv");
+        fg << "x0,y0,ux,uy\n";
+        for (std::size_t i = 0; i < X0_.size(); ++i)
+            fg << X0_[i].x() << "," << X0_[i].y() << ","
+               << u_[i].x() << "," << u_[i].y() << "\n";
+        // Mean settlement of the TOP row (y = H): the quantity the closed-form
+        // solution of a self-weighted confined column predicts.
+        double s = 0.0; long n = 0;
+        for (std::size_t i = 0; i < X0_.size(); ++i)
+            if (X0_[i].y() > H_ - 1e-9) { s += u_[i].y(); ++n; }
+        std::cout << "[FDEM] gravity g = " << gravity_ << " m/s^2, mean top "
+                     "displacement uy = " << (n ? s / n : 0.0) << " m over "
+                  << n << " nodes\n";
+    }
+
+    std::ofstream fj(out_ + "/fdem_final_joints.csv");
+    // breakMode / rn / rs ajoutes en QUEUE de ligne : les colonnes
+    // existantes gardent leur place et leur ordre.
+    fj << "x1,y1,x2,y2,damage,type,breakMode,rn,rs,tBreak,bonded\n";
+    for (const auto& J : jt_) {
+        Eigen::Vector2d P = X0_[J.a1] + u_[J.a1], Q = X0_[J.a2] + u_[J.a2];
+        fj << P.x() << "," << P.y() << "," << Q.x() << "," << Q.y() << ","
+           << J.D << "," << J.type << "," << J.bmode << "," << J.rnB << ","
+           << J.rsB << "," << J.tBreak << "," << (J.bonded ? 1 : 0) << "\n";
+    }
+
+    double keBlock = 0.0;
+    for (std::size_t i = 0; i < X0_.size(); ++i)
+        keBlock += 0.5 * m_[i] * v_[i].squaredNorm();
+    std::cout << "\n[FDEM] ---- summary ----\n"
+              << "[FDEM] block kinetic energy at end: " << keBlock << " J/m\n"
+              << "[FDEM] net work injected by general contact: " << gcWork_
+              << " J/m\n";
+    // A dashpot can only DISSIPATE. A positive figure here means the viscous
+    // branch is injecting energy — the rectifier failure mode — and every
+    // number the run produced is suspect. One multiply per integration point.
+    std::cout << "[FDEM] joint dashpot work: " << dampWork_ << " J/m  ["
+              << (dampWork_ <= 0.0 ? "OK, dissipative"
+                                   : "FAIL - the dashpot INJECTED energy")
+              << "]\n";
+    if (adaptive_)
+        std::cout << "[FDEM] adaptive insertion: " << nInserted_ << " / "
+                  << jt_.size() << " joints inserted ("
+                  << (jt_.empty() ? 0.0 : 100.0 * nInserted_ / jt_.size())
+                  << " %), " << nBroken_ << " fully broken\n";
+    if (scen_ == Scenario::BRAZILIAN
+        || (scen_ == Scenario::TENSION && tensionPlatens_)) {
+        // Free quasi-static check: two platens must read the same force, and
+        // their imbalance IS the inertia the specimen is carrying. Nobody
+        // formalises it as a criterion, every platen-loaded code computes it.
+        double a = std::abs(plTop_.F.y()), b = std::abs(plBot_.F.y());
+        double mn = 0.5 * (a + b);
+        std::cout << "[FDEM] platen balance (|Ftop|-|Fbot|)/mean = "
+                  << (mn > 0.0 ? 100.0 * (a - b) / mn : 0.0)
+                  << " % (quasi-static if a few %)\n";
+    }
+
+    if (voronoi_) {
+        // grain/phase bookkeeping: achieved area fractions and the
+        // inter/intra-granular split of the broken joints — the observable
+        // a GBM exists to produce.
+        std::vector<double> aPh(phases_.n(), 0.0);
+        double aTot = 0.0;
+        for (const auto& e : el_) { aPh[e.phase] += e.A0; aTot += e.A0; }
+        std::cout << "[FDEM] grains: " << nGrains_ << ", phases:";
+        for (int p = 0; p < phases_.n(); ++p)
+            std::cout << " " << phases_.name[p] << " "
+                      << 100.0 * aPh[p] / aTot << "%"
+                      << " (target " << 100.0 * phases_.fraction[p] << "%)";
+        std::cout << "\n";
+        long nt[3] = {0, 0, 0}, nb[3] = {0, 0, 0};
+        for (const auto& J : jt_) {
+            ++nt[J.type];
+            if (J.D >= 1.0) ++nb[J.type];
+        }
+        std::cout << "[FDEM] joints intra/homo/hetero: " << nt[0] << "/"
+                  << nt[1] << "/" << nt[2] << ", broken: " << nb[0] << "/"
+                  << nb[1] << "/" << nb[2];
+        long nbTot = nb[0] + nb[1] + nb[2];
+        if (nbTot > 0)
+            std::cout << "  (intergranular fraction "
+                      << 100.0 * (nb[1] + nb[2]) / (double)nbTot << " %)";
+        std::cout << "\n";
+    }
+
+    if (confP_ > 0.0) {
+        // Falsifiable check of the follower load: away from the loaded faces
+        // the specimen must sit at sigma_xx = -p. A large gap means the
+        // pressure never diffused (ramp too fast / run too short) or something
+        // is holding the surface back (Lysmer springs, grips).
+        double err = 100.0 * (confAchieved_ + confP_) / confP_;
+        std::cout << "[FDEM] confinement: target " << confP_ / 1e6
+                  << " MPa, achieved mean sigma_xx in the core at the end of "
+                     "the ramp = " << confAchieved_ / 1e6 << " MPa (" << err
+                  << " %); at the END of the run (axial load included) "
+                  << achievedConfinement() / 1e6 << " MPa\n";
+    }
+
+    if (scen_ == Scenario::BRAZILIAN) {
+        // Where did it break? A valid brazilian test fails on the LOAD
+        // DIAMETER: the crack runs vertically through the centre. Failure that
+        // wanders off the axis (or crushes under a platen) is not an indirect
+        // tension measurement, so the diametral fraction is reported next to
+        // the strength and must be read WITH it.
+        long nbTot = 0, nbAxis = 0;
+        double band = cfg_.getd("diametralBand", 0.15) * discR_;
+        double sumAbs = 0.0;
+        for (const auto& J : jt_) {
+            if (J.D < 1.0) continue;
+            Eigen::Vector2d mid = 0.5 * (X0_[J.a1] + X0_[J.a2]);
+            double dx = std::abs(mid.x() - discC_.x());
+            ++nbTot;
+            sumAbs += dx / discR_;
+            if (dx <= band) ++nbAxis;
+        }
+        // Parameter-free verification of the setup: on an elastic disc under a
+        // diametral load the centre carries sigma_xx = +2P/(pi D t) (exactly
+        // what the ISRM formula reports) and sigma_yy = -6P/(pi D t). The
+        // RATIO -3 involves no material constant, no geometry and not even the
+        // load: it checks the platens, the disc cut and the stress recovery in
+        // one number. Finite flat platens (instead of the line load of the
+        // closed form) spread the contact and soften both slightly.
+        double rXX = gSigT_ != 0.0 ? gXX_ / gSigT_ : 0.0;
+        bool passXX = rXX > 0.85 && rXX < 1.25;
+        // The ELASTIC-BAND gauge is the one to read: it checks the platens,
+        // the disc cut and the stress recovery where the closed-form solution
+        // actually applies. The single-step gauge above is kept for continuity
+        // but it is read at the last intact step, which on an adaptive run is
+        // already past the onset of core softening, so a low ratio there says
+        // the CENTRE has yielded, not that the setup is wrong.
+        if (eN_ > 0) {
+            double mXX = eSumXX_ / eN_, mYY = eSumYY_ / eN_,
+                   mSig = eSumSig_ / eN_;
+            double eR = mSig != 0.0 ? mXX / mSig : 0.0;
+            std::cout << "[FDEM] brazilian ELASTIC-BAND gauge (sigma_t in ["
+                      << eGaugeLo_ << ", " << eGaugeHi_ << "] x ft, disc "
+                         "intact, " << eN_ << " history steps, "
+                      << 100.0 * eDfrac_ << " % of joints damaged at the top of "
+                         "the band):\n"
+                      << "[FDEM]   mean sigma_t = " << mSig / 1e6
+                      << " MPa, mean centre sigma_xx = " << mXX / 1e6
+                      << " MPa -> ratio " << eR << "  ["
+                      << (eR > 0.85 && eR < 1.25 ? "PASS" : "FAIL")
+                      << "]  (band 0.85-1.25; mean sigma_yy = " << mYY / 1e6
+                      << " MPa, sigma_yy/sigma_xx = "
+                      << (mXX != 0.0 ? mYY / mXX : 0.0) << ")\n";
+        } else {
+            std::cout << "[FDEM] brazilian ELASTIC-BAND gauge: NOT measured — "
+                         "the disc broke before sigma_t reached "
+                      << eGaugeLo_ << " x ft, or the run stopped below it\n";
+        }
+        std::cout << "[FDEM] brazilian elastic gauge (last step before first "
+                     "breakage, sigma_t = " << gSigT_ / 1e6 << " MPa):\n"
+                  << "[FDEM]   centre sigma_xx = " << gXX_ / 1e6
+                  << " MPa, expected +" << gSigT_ / 1e6 << " MPa -> ratio "
+                  << rXX << "  [" << (passXX ? "PASS" : "FAIL")
+                  << "]  (this IS what sigma_t reports, band 0.85-1.25)\n"
+                  << "[FDEM]   centre sigma_yy = " << gYY_ / 1e6
+                  << " MPa, sigma_yy/sigma_xx = "
+                  << (gXX_ != 0.0 ? gYY_ / gXX_ : 0.0)
+                  << " (informative only: -3 is the LINE-load value; a finite "
+                     "bearing cuts the centre compression much more than the "
+                     "tension, so a flattened disc reads well above it)\n";
+        if (brazPlatens_)
+            std::cout << "[FDEM]   bearing: " << gNC_ << " nodes in contact, "
+                         "participation ratio " << gPR_
+                      << " (= effective number carrying the load; 1 means a "
+                         "single asperity takes everything)\n";
+        std::cout << "[FDEM]   sub-critical damage at peak: "
+                  << 100.0 * gDfrac_ << " % of joints above D = 0.01, mean D = "
+                  << gDmean_ << " (diffuse ratcheting of the intrinsic penalty "
+                     "— if this eats the strength it must track the deficit)\n";
+        if (std::getenv("ROCKIM_BRAZ_DEBUG")) {         // load-path profile
+            const int NB = 10;
+            std::vector<double> sx(NB, 0.0), sy(NB, 0.0), ar(NB, 0.0);
+            for (const auto& e : el_) {
+                Eigen::Vector2d c = (X0_[e.n[0]] + X0_[e.n[1]] + X0_[e.n[2]]) / 3.0;
+                if (std::abs(c.x() - discC_.x()) > 0.1 * discR_) continue;
+                int b = (int)((c.y() - (discC_.y() - discR_)) / (2.0 * discR_) * NB);
+                b = std::clamp(b, 0, NB - 1);
+                sx[b] += e.sxx * e.A0; sy[b] += e.syy * e.A0; ar[b] += e.A0;
+            }
+            Eigen::Vector2d fNet = Eigen::Vector2d::Zero();
+            for (int i = 0; i < (int)X0_.size(); ++i) fNet += f_[i];
+            Eigen::Vector2d Ft = brazPlatens_ ? plTop_.F : arcTop_.F;
+            Eigen::Vector2d Fb = brazPlatens_ ? plBot_.F : arcBot_.F;
+            std::cout << "[DBG] Ftop = (" << Ft.x() << ", " << Ft.y()
+                      << ") N, Fbot = (" << Fb.x() << ", " << Fb.y()
+                      << ") N, net nodal = (" << fNet.x() << ", " << fNet.y()
+                      << ") N\n";
+            for (int b = 0; b < NB; ++b)
+                if (ar[b] > 0)
+                    std::cout << "[DBG] band " << b << " sxx = "
+                              << sx[b] / ar[b] / 1e6 << " MPa, syy = "
+                              << sy[b] / ar[b] / 1e6 << " MPa\n";
+        }
+        std::cout << "[FDEM] brazilian (D = " << 2.0 * discR_ << " m, t = "
+                  << thk_ << " m, bearing width " << arcTop_.length << " m):\n"
+                  << "[FDEM]   peak force P = " << peakF_ << " N at t = "
+                  << tPeak_ << " s (" << nBrokenAtPeak_ << " joints already "
+                  << "broken; peak "
+                  << (peakLocked_ ? "LOCKED at the post-failure load drop"
+                                  : "NOT locked — no load drop seen, the run "
+                                    "may have stopped before failure") << ")\n"
+                  << "[FDEM]   indirect tensile strength sigma_t = 2P/(pi D t) = "
+                  << sigmaTpeak_ / 1e6 << " MPa\n"
+                  << "[FDEM]   ratio to the bulk ft (" << mat_.ft / 1e6
+                  << " MPa) = " << sigmaTpeak_ / mat_.ft << "\n";
+        if (nbTot > 0)
+            std::cout << "[FDEM]   crack location: " << nbAxis << " / " << nbTot
+                      << " broken joints within " << 100.0 * band / discR_
+                      << " % of R from the load axis ("
+                      << 100.0 * nbAxis / (double)nbTot
+                      << " % diametral), mean |x-xc|/R = " << sumAbs / nbTot
+                      << "\n";
+        else
+            std::cout << "[FDEM]   NO joint broke: the disc never failed — "
+                         "lengthen T or raise pullV\n";
+        std::cout << "[FDEM]   fragments = " << nFrag_ << "\n";
+        return;
+    }
+
+    if (scen_ == Scenario::TENSION) {
+        if (tensionPlatens_) {
+            // COMPRESSION through platens (UCS / triaxial): the specimen fails
+            // by shear-band formation and the peak is the compressive
+            // strength — comparing it against the tensile ft would print a
+            // nonsense FAIL. Report the raw figures.
+            long nT = 0, nS = 0;
+            for (const auto& J : jt_) {
+                if (J.bmode == 1) ++nT;
+                else if (J.bmode == 2) ++nS;
+            }
+            double ep = 0.0, es = 0.0, eg = 0.0;
+            gaugeStrain(ep, es, eg);
+            std::cout << "[FDEM] uniaxial/triaxial compression (platens):\n"
+                      << "[FDEM]   peak axial stress = " << sigmaPeak_ / 1e6
+                      << " MPa (" << sigmaPeak_ / mat_.ft
+                      << " x ft, cohesion " << mat_.cohesion / 1e6 << " MPa)"
+                      << (peakLockedU_ ? "  [peak LOCKED at the post-failure "
+                                         "load drop]"
+                                      : "  [peak NOT locked: no load drop seen "
+                                        "— the run may have stopped before "
+                                        "failure]") << "\n"
+                      << "[FDEM]   broken joints = " << nBroken_ << " / "
+                      << jt_.size() << " (mode: " << nT << " tensile, " << nS
+                      << " shear";
+            if (nT + nS > 0)
+                std::cout << ", " << 100.0 * nS / (double)(nT + nS)
+                          << " % shear";
+            std::cout << ")\n"
+                      << "[FDEM]   final axial strain: platen " << ep
+                      << ", faces " << es << ", extensometer " << eg << "\n"
+                      << "[FDEM]   fragments = " << nFrag_ << "\n";
+            if (confP_ > 0.0)
+                std::cout << "[FDEM]   confinement: target " << confP_ / 1e6
+                          << " MPa, achieved (gauged in the elastic range) "
+                          << confAchieved_ / 1e6 << " MPa\n";
+            return;
+        }
+        if (!cfg_.getb("verifyFt", true)) {
+            // demo configs with deliberately weakened boundaries: the
+            // macroscopic strength is MEANT to sit below the bulk ft, so a
+            // PASS/FAIL against ft would be noise. Report the ratio instead
+            // (reference: a flat weak-boundary path fails at gbAlphaTen*ft,
+            // tortuosity raises it some percent above that).
+            std::cout << "[FDEM] tension result (GB-controlled, verifyFt=off):\n"
+                      << "[FDEM]   peak macro stress = " << sigmaPeak_ / 1e6
+                      << " MPa = " << sigmaPeak_ / mat_.ft << " x bulk ft"
+                      << " (weak-boundary reference gbAlphaTen = "
+                      << phases_.aTen << ")\n"
+                      << "[FDEM]   broken joints = " << nBroken_ << " / "
+                      << jt_.size() << "\n";
+            return;
+        }
+        double err = 100.0 * (sigmaPeak_ - mat_.ft) / mat_.ft;
+        // On the voronoi mesh the crack must follow a tortuous joint path
+        // whose facets are inclined to the loading axis, so the macroscopic
+        // peak sits ABOVE ft (each inclined facet sees sigma*cos^2). The
+        // verification band is widened on that side and the excess is
+        // expected physics, not an error of the joint law.
+        double hi = voronoi_ ? 25.0 : 5.0;
+        bool pass = err > -5.0 && err < hi;
+        std::cout << "[FDEM] tension verification ("
+                  << (voronoi_ ? "voronoi grains" : "uniform strip") << "):\n"
+                  << "[FDEM]   peak macro stress = " << sigmaPeak_ / 1e6
+                  << " MPa, expected ft = " << mat_.ft / 1e6
+                  << " MPa, error = " << err << " %  ["
+                  << (pass ? "PASS" : "FAIL") << "]\n"
+                  << "[FDEM]   broken joints = " << nBroken_ << " / " << jt_.size()
+                  << "\n";
+        return;
+    }
+    double Es = detachedVol_ > 0 ? work_ / detachedVol_ : 0.0;
+    std::cout << "[FDEM] peak tool force   : " << peakF_ << " N/m\n"
+              << "[FDEM] tool work output  : " << work_ << " J/m";
+    if (tool_.motion == Tool::Motion::FREE)
+        std::cout << "  (tool KE loss: " << toolKE0_ - tool_.ke() << " J/m)";
+    std::cout << "\n[FDEM] broken joints     : " << nBroken_ << " / " << jt_.size()
+              << "\n[FDEM] fragments         : " << nFrag_
+              << " (detached vol " << detachedVol_ << " m^3/m)"
+              << "\n[FDEM] specific energy   : " << Es << " J/m^3\n";
+}
+
+} // namespace rockim

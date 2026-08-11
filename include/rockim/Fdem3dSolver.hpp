@@ -1,0 +1,255 @@
+#pragma once
+// ---------------------------------------------------------------------------
+// Fdem3dSolver — 3D combined finite-discrete element method, extending the
+// 2D FdemSolver to tetrahedra. Every safeguard learned the hard way in 2D is
+// built in from the start (see the README debugging story): consistently
+// outward-oriented faces, joints that die by clear separation only,
+// initial-penetration relief at contact birth, and a quasi-plastic soft
+// debris contact.
+//
+//   * Two mesh front-ends behind one topology builder, as in 2D:
+//     mesh = grid    — structured hex grid split into 6 Kuhn tetrahedra per
+//                      cell (compatible face diagonals), optional jitter;
+//     mesh = voronoi — 3D Voronoi grain structure (Tessellation3) with
+//                      per-grain mineral phases: the GBM mode. Crack paths
+//                      then follow grain boundaries and intra-grain fans.
+//   * Linear tets, CO-ROTATIONAL: R from F by 3 Higham iterations
+//     R <- (R + R^-T)/2 (globally convergent for det F > 0), Biot strain in
+//     the co-rotated frame, crush cap on the deviator + mean-tension cap
+//     (per-phase in the GBM mode).
+//   * Triangular 6-node cohesive joints on every interior face, 3 node-pair
+//     integration points: mode I softens from ft over 2 Gf/ft of opening,
+//     mode II from c over 2 Gf_II/c of frictional slip (vector return
+//     mapping in the face plane), friction tan(phi)(-sigma_n) throughout.
+//     Properties live PER JOINT: intra-grain joints carry the phase
+//     material, grain-boundary joints the attenuated mean of the two phases
+//     (type 0 = intra-grain, 1 = homophase boundary, 2 = heterophase), and
+//     jointWeibullM statistical strengths (independent draws or one
+//     correlated random field, RandomField3) scale ft and cohesion.
+//   * General node-triangle penalty contact (cell grid, clipped box,
+//     birth-gap, quasi-plastic restitution, co-location exclusion; AABB
+//     binning on the voronoi mesh, whose faces outgrow the grid cells).
+//   * Rigid tool: sphere (free percussion / prescribed shear) or
+//     flat-ended punch (percussion), viscous-spring quiet boundaries on
+//     the four lateral faces and the bottom, tension scenario with
+//     pullRamp and gripLateralFree as in 2D.
+// ---------------------------------------------------------------------------
+#include <array>
+#include <cstdint>
+#include <string>
+#include <unordered_map>
+#include <vector>
+
+#include <Eigen/Dense>
+
+#include "rockim/Config.hpp"
+#include "rockim/MatLaw.hpp"
+#include "rockim/Material.hpp"
+#include "rockim/Solver.hpp"
+
+namespace rockim {
+
+class Fdem3dSolver : public Solver {
+public:
+    Fdem3dSolver(const Config& cfg, std::string outDir);
+
+    void init() override;
+    void step() override;
+    void writeFrame(int frame) override;
+    void historyHeader(std::ostream&) const override;
+    void historyRow(std::ostream&) const override;
+    void finalize() override;
+
+private:
+    enum Flag { FREE = 0, FIXED = 1, PRESCRIBED = 2 };
+    enum class Scenario { PERCUSSION, SHEAR, TENSION };
+
+    struct Elem {
+        std::array<int, 4> n;
+        Eigen::Matrix<double, 3, 4> dN;    // reference shape-fn gradients
+        double V0;
+        double svm = 0.0;
+        int phase = 0;                     // mineral phase (index in phases_)
+        int grain = 0;                     // grain id (voronoi) / 0 (grid)
+        MatState st;                       // only used when law_ is set
+        // global Cauchy stress R sig R^T, stored for the adaptive-insertion
+        // face criterion (and cheap to keep: written once per step)
+        Eigen::Matrix3d sigG = Eigen::Matrix3d::Zero();
+    };
+
+    // Triangular cohesive joint. Properties live per joint (GBM): type 0 =
+    // intra-grain (bulk of the phase), 1 = homophase grain boundary, 2 =
+    // heterophase; stat is the Weibull strength factor (output as ftScale).
+    struct Joint {
+        int eA, eB;
+        std::array<int, 3> a, b;            // node pairs (a[k] ~ b[k])
+        double A0;                          // face area
+        double D = 0.0;
+        std::array<Eigen::Vector3d, 3> slip;  // frictional slip per point
+        bool dead = false;
+        double tBreak = -1.0;
+        int type = 0;
+        double pj = 0.0;                    // penalty per area [Pa/m]
+        double ft = 0.0, coh = 0.0;         // strengths [Pa]
+        double Gf = 0.0, GfII = 0.0;        // fracture energies [J/m^2]
+        double dnE = 0.0, dnF = 0.0;        // mode I elastic / final opening
+        double slipF = 0.0;                 // mode II softening slip
+        double tanPhi = 0.0;                // friction
+        double stat = 1.0;                  // Weibull strength factor (output)
+        // ---- adaptive insertion (Yan et al. 2023, ported from FdemSolver) --
+        // bonded = the joint does not exist yet: the co-located node copies
+        // are rigidly bound (exact shared-node FEM) and processJoint skips
+        // it. dn0 is the opening offset stamped at activation for stress
+        // continuity (the newborn joint transmits at zero geometric opening
+        // exactly the traction the bonded face was carrying).
+        bool bonded = false;
+        double dn0 = 0.0;
+    };
+
+    struct BFace {                          // active contact face
+        int elem;
+        std::array<int, 3> n;
+    };
+
+    struct Tool3 {
+        bool free = true;
+        bool flat = false;   // flat-ended cylindrical punch (axis z); x is
+                             // then the center of the bottom face — the 3D
+                             // lift of the 2D FLAT tool (percussion only)
+        double mass = 0.5, radius = 0.015;
+        Eigen::Vector3d x{0, 0, 0}, v{0, 0, 0}, F{0, 0, 0};
+        void integrate(double dt) { if (free) v += (dt / mass) * F; x += dt * v; }
+        double ke() const { return 0.5 * mass * v.squaredNorm(); }
+    };
+
+    void buildMesh();                      // dispatch: grid | voronoi
+    void buildMeshVoronoi();
+    void buildFromTets(const std::vector<Eigen::Vector3d>& vpos,
+                       const std::vector<std::array<int, 4>>& tets,
+                       const std::vector<int>& tetGrain,
+                       const std::vector<int>& grainPhase);
+    void assignJointProps();
+    void applyJointStatistics();
+    // adaptive insertion machinery (insertion = adaptive), as in 2D
+    void buildBindingTables();
+    void rebindVertex(int v);
+    void insertionSweep();
+    void activateJoint(int jI, double sig, const Eigen::Vector3d& tauV,
+                       double fsNow);
+    void placeTool();
+    void setupBoundaries();
+    // triaxial 3D : pression suiveuse sur les faces exterieures LATERALES
+    // d'origine (la membrane de la cellule), rampe cosinus, jauge de la
+    // contrainte laterale atteinte dans le coeur — le portage direct du
+    // confinement 2D (FdemSolver), scenario = tension + pullV < 0.
+    void setupConfinement();
+    void confiningForces();
+    double achievedConfinement() const;
+    void computeStableDt();
+
+    void elementForces();
+    void jointForces();
+    void rebuildContactFaces();
+    void generalContact();
+    void toolContact();
+    void integrate();
+    void computeFragments();
+
+    Config cfg_;
+    std::string out_;
+    Material mat_;
+    PhaseSet phases_;                      // per-phase materials (>= 1)
+    Scenario scen_ = Scenario::PERCUSSION;
+
+    double W_ = 0.08, D_ = 0.08, H_ = 0.06, hmin_ = 4e-3;
+    int nx_ = 20, ny_ = 20, nz_ = 15;
+    bool voronoi_ = false;
+    int nGrains_ = 1;
+
+    // joint law: per-joint properties live in Joint; xiJ_ is the shared
+    // compressive dashpot ratio
+    double xiJ_ = 0.05;
+
+    // ---- adaptive insertion (insertion = adaptive), as in FdemSolver -------
+    // No joint exists at t = 0: bonded faces are handled kinematically (node
+    // groups = connected components of the tet fan around each original
+    // vertex over still-bonded faces), the sweep averages the two elements'
+    // global stress on every bonded face and activates the joint when
+    // sigma_n >= ft or |tau| >= fs (Mohr-Coulomb). Node splitting falls out
+    // of re-running the union-find at the face's three vertices.
+    bool adaptive_ = false;
+    long nInserted_ = 0;
+    std::vector<std::vector<int>> copiesOfVert_;
+    std::vector<std::vector<int>> jointsOfVert_;
+    std::vector<std::vector<std::vector<int>>> grpsOfVert_;
+    int nVert_ = 0;
+    // per-phase element tables (indexed by Elem::phase)
+    std::vector<double> lamP_, mu2P_, crushCapP_, ftP_, rhoP_;
+    // Optional BULK constitutive law (law = dpr | saksala | saksala2011 |
+    // dpdfh) — the coupled configuration of the thesis' vumat_fdem_coupled:
+    // a dissipative bulk PLUS discrete cohesive joints. Simpler than in 2D:
+    // the element loop already works on 3x3 Biot strain, so the law plugs in
+    // directly with no plane-strain embedding. Absent by default, so every
+    // earlier result stays reproducible.
+    std::unique_ptr<MatLaw> law_;
+    std::vector<double> hEl_;              // per-element inscribed size 6V/A
+
+    double kp_ = 0.0, muC_ = 0.5, xiC_ = 0.05, vReg_ = 1e-3;
+    double kpGC_ = 0.0, xiGC_ = 0.8, gcRest_ = 0.2, gcWork_ = 0.0, relax_ = 1.0;
+    std::unordered_map<uint64_t, double> pen0_;
+
+    double damping_ = 0.05, pullV_ = 0.05;
+    double pullRamp_ = 0.0;                // grip velocity rise time [s]
+    bool gripFree_ = false;                // frictionless tension grips
+
+    std::vector<Eigen::Vector3d> X0_, u_, v_, f_;
+    std::vector<double> m_;
+    std::vector<int> flag_, elemOf_, vOf_;
+    std::vector<Elem> el_;
+    std::vector<Joint> jt_;
+    std::vector<int> fragId_;
+    std::vector<BFace> exterior_;
+
+    std::vector<Eigen::Vector3d> cAbs_, kAbs_;
+
+    std::vector<BFace> act_;
+    std::vector<int> actNodes_;
+    // OpenMP scratch: per-thread force buffers for the joint scatter,
+    // reduced serially in thread order (deterministic for a fixed thread
+    // count; 1 thread = bit-identical to the serial build), as in 2D
+    std::vector<std::vector<Eigen::Vector3d>> fTL_;
+    std::vector<std::vector<char>> seenTL_;
+    std::vector<std::vector<int>> touchedTL_;
+    long actStamp_ = -1;
+    double cell_ = 0.0;
+    double cellV_ = 0.0;                   // voronoi contact cell size (2 x
+                                           // median hEl: 2 x hmin would put
+                                           // ~(L/hmin)^3 cells on the box —
+                                           // the dense grid is REALLOCATED
+                                           // every step, ~0.5 GB/step on the
+                                           // percussion demo)
+    Eigen::Vector3d gmin_;
+    int gx_ = 1, gy_ = 1, gz_ = 1;
+    std::vector<std::vector<int>> grid_;   // dense grid (grid mesh)
+    std::unordered_map<uint64_t, std::vector<int>> gridV_;  // sparse (voronoi)
+
+    Tool3 tool_;
+    double toolKE0_ = 0.0;
+
+    // confinement triaxial (0 = inactif)
+    double confP_ = 0.0, confRamp_ = 0.0;
+    double pullDelay_ = 0.0;               // equilibrage de sigma3 avant l'axial
+    std::vector<BFace> confFaces_;         // faces LATERALES d'origine seulement
+    bool confLatched_ = false;
+    double confAchieved_ = 0.0;
+
+    long stepCount_ = 0;
+    double work_ = 0.0, peakF_ = 0.0;
+    long nBroken_ = 0;
+    int nFrag_ = 1;
+    double detachedVol_ = 0.0;
+    Eigen::Vector3d gripF_{0, 0, 0};
+    double sigmaPeak_ = 0.0;
+};
+
+} // namespace rockim
