@@ -86,7 +86,13 @@ private:
         std::array<int, 3> a, b;            // node pairs (a[k] ~ b[k])
         double A0;                          // face area
         double D = 0.0;
-        std::array<Eigen::Vector3d, 3> slip;  // frictional slip per point
+        std::array<Eigen::Vector3d, 3> slip;  // jointShearUnload = plastic : le
+                                           // glissement plastique cumule par le
+                                           // retour radial vectoriel.
+                                           // = origin : l'ORIGINE FIGEE de la
+                                           // secante de l'eq. 18, stampee par
+                                           // activateJoint() (0 en intrinseque),
+                                           // seulement reprojetee dans le plan.
         bool dead = false;
         double tBreak = -1.0;
         int type = 0;
@@ -108,6 +114,9 @@ private:
         // largest opening ever reached per integration point (jointSoftening
         // = yan: the omax of eq. 17 — origin-secant unloading), as in 2D
         std::array<double, 3> omax{{0.0, 0.0, 0.0}};
+        // largest SLIDING ever reached, the s_max of eq. 18, mesure depuis
+        // l'origine figee slip[k] (jointShearUnload = origin seulement)
+        std::array<double, 3> smax{{0.0, 0.0, 0.0}};
         // ---- failure mode, recorded ONCE when D first reaches 1 -----------
         // Ported from the 2D solver: partition of the eq. 16 damage driver at
         // the breaking instant. bmode = 1 tensile, 2 shear, 0 intact;
@@ -197,6 +206,18 @@ private:
     bool yanFricScaled_ = false;
     yan::Params yanP_;
     double yanI_ = 1.0;                    // int_0^1 f(D) dD
+
+    // ---- decharge en CISAILLEMENT (jointShearUnload), miroir exact du 2D ----
+    // plastic (defaut, inchange) : plasticite a retour vectorielle — la
+    //   decharge suit la secante de PENALITE, le glissement plastique reste.
+    // origin : l'eq. 18 de Yan et al., symetrique de l'eq. 17 du mode I — la
+    //   decharge ET la recharge suivent la secante a l'ORIGINE passant par
+    //   (s_max, tau_env(s_max)), avec s_p = (c + tan(phi)|sigma_n|)/p le
+    //   glissement au pic de Munjiza. Forme litterale de l'article.
+    // ⚠️ l'eq. 18 place TOUT le cap dans la secante, frottement de Coulomb
+    // compris : combinee a jointFrictionScaled = 0 elle rend le glissement
+    // frottant reversible. Forme litterale = origin + jointFrictionScaled = 1.
+    bool shearOrigin_ = false;
 
     // Work done by the joint dashpot. A dashpot can only DISSIPATE, so this
     // must stay <= 0 — the direct detector of the rectifier/anti-damping

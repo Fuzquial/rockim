@@ -292,6 +292,26 @@ void FdemSolver::init() {
                   << yanP_.a << ", b = " << yanP_.b << ", c = " << yanP_.c
                   << ", int f(D) dD = " << yanI_ << "\n";
     }
+    // jointShearUnload = plastic (defaut, inchange) | origin — l'eq. 18 de
+    // Yan et al. : decharge ET recharge en cisaillement sur la SECANTE A
+    // L'ORIGINE passant par (s_max, tau_env(s_max)), symetrique exact de
+    // l'eq. 17 du mode I. Voir l'en-tete pour la mise en garde.
+    {
+        std::string ju = cfg_.gets("jointShearUnload", "plastic");
+        if (ju != "plastic" && ju != "origin")
+            throw std::runtime_error("jointShearUnload must be plastic | origin "
+                                     "(got '" + ju + "')");
+        shearOrigin_ = ju == "origin";
+    }
+    if (shearOrigin_) {
+        std::cout << "[FDEM] shear unloading: origin secant (Yan eq. 18)\n";
+        if (!yanFricScaled_)
+            std::cout << "[FDEM] WARNING: jointShearUnload = origin with "
+                         "jointFrictionScaled = 0 — the Coulomb term rides the "
+                         "origin secant, so frictional sliding is REVERSIBLE "
+                         "(no hysteresis loop). Literal article form is "
+                         "origin + jointFrictionScaled = 1.\n";
+    }
     assignJointProps();
     if (adaptive_) {
         for (auto& J : jt_) J.bonded = true;
@@ -2375,6 +2395,8 @@ void FdemSolver::jointForces() {
 
         double Ltrib = 0.5 * J.L0 * thk_;
         double dnMax = -1e30;
+        double rsMaxO = 0.0;               // moteur de mode II du pas courant
+                                           // (jointShearUnload = origin)
 
         const int ia[2] = {J.a1, J.a2};
         const int ib[2] = {J.b1, J.b2};
@@ -2388,6 +2410,42 @@ void FdemSolver::jointForces() {
             double dn = delta.dot(n) + J.dn0;
             double dtg = delta.dot(e);
             dnMax = std::max(dnMax, dn);
+
+            // ---- eq. 18 (jointShearUnload = origin seulement) ---------------
+            // s_max, le plus grand glissement JAMAIS atteint, est mis a jour
+            // ICI — avant la traction normale — parce qu'en mode `origin` le
+            // moteur de mode II de l'eq. 16 en depend, et que ce moteur
+            // alimente D, donc f(D), donc l'enveloppe NORMALE evaluee juste
+            // en dessous.
+            //   * sEff : le glissement compte depuis l'origine STAMPEE. En
+            //     intrinseque J.slip vaut 0 et sEff = dtg ; en insertion
+            //     adaptative activateJoint() y a ecrit -tau0/pj, si bien que
+            //     le joint naissant transmet tau0 a dtg = 0 (continuite en
+            //     cisaillement, symetrique de dn0 en mode I). En mode `origin`
+            //     J.slip n'evolue plus : ce n'est plus un glissement plastique
+            //     mais l'origine figee de la secante.
+            //   * sE : le s_p de Munjiza, glissement au PIC = penalite contre
+            //     l'enveloppe de Mohr-Coulomb NON endommagee, exact symetrique
+            //     de dnE = ft/pj en mode I. La contrainte normale y est prise
+            //     sur sa part geometrique pj*dn (regle (1) de la loi : un
+            //     terme visqueux ne fixe jamais une resistance) — ce qui rend
+            //     le calcul NON CIRCULAIRE, sE ne dependant pas de D.
+            //     Sous confinement la branche elastique s'elargit, exactement
+            //     comme le cap : l'endommagement de mode II demarre quand
+            //     l'enveloppe de Mohr-Coulomb est atteinte, c'est-a-dire au
+            //     meme instant que dans le retour radial — d'ou l'accord des
+            //     deux modes en charge monotone.
+            double smx = 0.0, sEff = 0.0, rsO = 0.0;
+            if (shearOrigin_) {
+                sEff = dtg - J.slip[k];
+                double sm = std::abs(sEff);
+                if (sm > J.smax[k]) J.smax[k] = sm;
+                smx = J.smax[k];
+                double sE = (J.coh + J.tanPhi * std::max(0.0, -J.pj * dn))
+                          / J.pj;
+                rsO = (J.slipF > 0.0 && smx > sE) ? (smx - sE) / J.slipF : 0.0;
+                rsMaxO = std::max(rsMaxO, rsO);
+            }
 
             // ================= normal traction =========================
             // Structured as the established codes do (Kratos DEM_KDEM, Yade
@@ -2427,8 +2485,12 @@ void FdemSolver::jointForces() {
                 // opening ot = dnF - dnE is the one calibrated on GfI.
                 double ot = J.dnF - J.dnE;
                 double rn = (ot > 0.0 && dn > J.dnE) ? (dn - J.dnE) / ot : 0.0;
-                double rs = (J.slipF > 0.0) ? std::abs(J.slip[k]) / J.slipF
-                                            : 0.0;
+                // rs : moteur de mode II. `plastic` le lit sur le glissement
+                // PLASTIQUE cumule par le retour radial ; `origin` sur
+                // (s_max - s_p)/(s_t - s_p), la forme litterale de l'eq. 14.
+                double rs = shearOrigin_
+                    ? rsO
+                    : ((J.slipF > 0.0) ? std::abs(J.slip[k]) / J.slipF : 0.0);
                 // eq. 16, which degenerates into eq. 12 (pure tension) and
                 // eq. 14 (pure shear) when the other driver vanishes
                 double Dnow = std::sqrt(rn * rn + rs * rs);
@@ -2494,33 +2556,51 @@ void FdemSolver::jointForces() {
             }
 
             // --- tangential traction (damage-plastic, frictional) ---
-            double tauTr = noTau ? 0.0 : J.pj * (dtg - J.slip[k]);
             // yan: eq. 10, the cohesion is scaled by f(D) instead of (1 - D).
             // The Coulomb term is left unscaled by default so a crushed joint
             // keeps residual friction (jointFrictionScaled = 1 for the literal
-            // eq. 10, where f(D) multiplies the whole cap). Shear stays a
-            // return-mapping plasticity, as in the linear law: on the cap this
-            // reproduces tau = f(D) c of eq. 10 for monotonic sliding, and
-            // unloading follows the pj secant rather than the origin secant of
-            // eq. 18 — a stated deviation.
+            // eq. 10, where f(D) multiplies the whole cap).
             double fdS = yanSoft_ ? yan::fD(J.D, yanP_) : 0.0;
             double coh = yanSoft_ ? fdS * J.coh : (1.0 - J.D) * J.coh;
             double muS = (yanSoft_ && yanFricScaled_) ? fdS : 1.0;
             double tauLim = coh + muS * J.tanPhi * std::max(0.0, -sig);
-            double tau = std::clamp(tauTr, -tauLim, tauLim);
-            if (tau != tauTr) {
-                J.slip[k] += (tauTr - tau) / J.pj;     // return mapping
-                double Dt;
-                if (yanSoft_) {
-                    double ot = J.dnF - J.dnE;
-                    double rn = (ot > 0.0 && dn > J.dnE) ? (dn - J.dnE) / ot
-                                                         : 0.0;
-                    double rs = std::abs(J.slip[k]) / J.slipF;
-                    Dt = std::sqrt(rn * rn + rs * rs);   // eq. 16 / 14
-                } else {
-                    Dt = std::abs(J.slip[k]) / J.slipF;
+            double tau;
+            if (shearOrigin_) {
+                // ---- eq. 18 : sécante à l'origine ------------------------
+                // Symetrique EXACT de l'eq. 17 ecrite plus haut pour le mode
+                // I : enveloppe = min(branche elastique, cap), evaluee AU
+                // glissement maximal s_max ; l'etat courant est lu sur la
+                // droite qui joint l'origine a ce point. En charge monotone
+                // |dtg| = s_max et l'on retombe sur l'enveloppe ; en decharge
+                // la traction retourne a zero avec le glissement, sans
+                // conserver de glissement plastique.
+                double tauEnv = std::min(J.pj * smx, tauLim);
+                tau = (noTau || smx <= 1e-30) ? 0.0 : tauEnv * sEff / smx;
+                // en `yan`, D a deja ete mis a jour par l'eq. 16 au-dessus
+                if (!yanSoft_ && rsO > J.D) J.D = std::min(1.0, rsO);
+            } else {
+                // ---- retour radial (defaut, inchange) --------------------
+                // Plasticite a retour, comme dans la loi lineaire : sur le cap
+                // cela reproduit tau = f(D) c de l'eq. 10 en glissement
+                // monotone, et la decharge suit la secante de PENALITE plutot
+                // que la secante a l'origine de l'eq. 18 — ecart assume, leve
+                // par jointShearUnload = origin.
+                double tauTr = noTau ? 0.0 : J.pj * (dtg - J.slip[k]);
+                tau = std::clamp(tauTr, -tauLim, tauLim);
+                if (tau != tauTr) {
+                    J.slip[k] += (tauTr - tau) / J.pj;     // return mapping
+                    double Dt;
+                    if (yanSoft_) {
+                        double ot = J.dnF - J.dnE;
+                        double rn = (ot > 0.0 && dn > J.dnE) ? (dn - J.dnE) / ot
+                                                             : 0.0;
+                        double rs = std::abs(J.slip[k]) / J.slipF;
+                        Dt = std::sqrt(rn * rn + rs * rs);   // eq. 16 / 14
+                    } else {
+                        Dt = std::abs(J.slip[k]) / J.slipF;
+                    }
+                    if (Dt > J.D) J.D = std::min(1.0, Dt);
                 }
-                if (Dt > J.D) J.D = std::min(1.0, Dt);
             }
 
             Eigen::Vector2d trac = (sig * n + tau * e) * Ltrib;
@@ -2538,8 +2618,15 @@ void FdemSolver::jointForces() {
                 double otF = J.dnF - J.dnE;
                 double rnF = (otF > 0.0 && dnMax > J.dnE)
                            ? (dnMax - J.dnE) / otF : 0.0;
-                double sMx = std::max(std::abs(J.slip[0]), std::abs(J.slip[1]));
-                double rsF = (J.slipF > 0.0) ? sMx / J.slipF : 0.0;
+                double rsF;
+                if (shearOrigin_) {           // pas de glissement plastique :
+                                              // le moteur est celui de l'eq. 14
+                    rsF = rsMaxO;
+                } else {
+                    double sMx = std::max(std::abs(J.slip[0]),
+                                          std::abs(J.slip[1]));
+                    rsF = (J.slipF > 0.0) ? sMx / J.slipF : 0.0;
+                }
                 double den = rnF * rnF + rsF * rsF;
                 J.failMode = (den > 1e-300) ? (rnF * rnF) / den : 1.0;
                 J.rnB = rnF;

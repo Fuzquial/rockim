@@ -25,15 +25,40 @@ résiduel = la largeur élastique ft/p ≈ nm).
   pas Cundall), jointXi = 0 (pas de dashpot de joint chez eux), adaptatif 4E/h,
   matériau Table 1 en commentaire.
 
-## Chantier A2 — éq. 18, décharge en cisaillement (PETIT, prochaine séance)
+## Chantier A2 — éq. 18, décharge en cisaillement — **FAIT (2026-08-13)**
 
-Aujourd'hui : plasticité à retour (décharge sur la sécante de pénalité,
-glissement plastique conservé) — coïncide avec l'éq. 18 en charge monotone.
-À faire : `jointShearUnload = origin` — état s_max/τ_max par point, décharge et
-recharge sur la sécante à l'origine, cap f(D)·fs inchangé. ~40 lignes + états.
-Validation : charge nulle (0 joint), cas de cisaillement pur monotone
-bit-identique à l'actuel, cycle charge-décharge-recharge contre tracé manuel
-de l'éq. 18. Risque faible, isolé dans processJoint.
+Clé `jointShearUnload = plastic | origin`, 2D **et** 3D, défaut inchangé.
+
+- `plastic` (défaut) : plasticité à retour radial — décharge sur la sécante de
+  **pénalité**, glissement plastique conservé.
+- `origin` : l'éq. 18 — décharge **et** recharge sur la sécante à l'**origine**
+  passant par (s_max, τ_env(s_max)), avec τ_env = min(p·s_max, cap). Symétrique
+  exact de l'éq. 17 déjà en place pour le mode I.
+
+Trois points de conception qui n'étaient pas dans le plan initial et qui se sont
+imposés à l'écriture :
+
+1. **Le glissement au pic est celui de Munjiza**, s_p = (c + tanφ·|σ_n|)/p,
+   évalué sur l'enveloppe de Mohr-Coulomb **non endommagée** et sur la part
+   *géométrique* p·dn de la contrainte normale (règle maison : un terme visqueux
+   ne fixe jamais une résistance). C'est ce qui rend le calcul **non circulaire**
+   — s_p ne dépend pas de D, alors que le cap, lui, en dépend — et c'est ce qui
+   fait démarrer l'endommagement de mode II au **même instant** que le retour
+   radial : les deux modes coïncident en charge monotone, comme annoncé.
+2. **s_max est mis à jour AVANT la traction normale**, parce qu'en `origin` le
+   moteur rs de l'éq. 16 en dépend, et que ce moteur alimente D, donc f(D), donc
+   l'enveloppe normale du même pas.
+3. **`J.slip` change de sens** en `origin` : ce n'est plus un glissement
+   plastique mais l'**origine figée** de la sécante, celle qu'`activateJoint()`
+   estampe à −τ₀/p à l'insertion adaptative. La continuité de contrainte en
+   cisaillement au moment de l'insertion — le pendant de `dn0` en mode I — est
+   donc conservée telle quelle, gratuitement.
+
+⚠️ **Piège signalé au démarrage** : l'éq. 18 place *tout* le cap dans la
+sécante, frottement de Coulomb compris. Avec `jointFrictionScaled = 0` (défaut
+rockim) le glissement frottant devient **réversible** — plus d'hystérésis. La
+forme littérale de l'article est donc `origin` **+** `jointFrictionScaled = 1`,
+et c'est ce que pose désormais `configs_yan/article_exact_base.cfg`.
 
 ## Chantier B — contact par POTENTIEL de Munjiza + NBS (LE morceau, éq. 2-5)
 

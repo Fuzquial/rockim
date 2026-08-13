@@ -141,6 +141,24 @@ void Fdem3dSolver::init() {
                   << yanP_.a << ", b = " << yanP_.b << ", c = " << yanP_.c
                   << ", int f(D) dD = " << yanI_ << "\n";
     }
+    // jointShearUnload = plastic (defaut, inchange) | origin — eq. 18 de Yan
+    // et al., miroir exact du 2D (voir FdemSolver.cpp).
+    {
+        std::string ju = cfg_.gets("jointShearUnload", "plastic");
+        if (ju != "plastic" && ju != "origin")
+            throw std::runtime_error("jointShearUnload must be plastic | origin "
+                                     "(got '" + ju + "')");
+        shearOrigin_ = ju == "origin";
+    }
+    if (shearOrigin_) {
+        std::cout << "[FDEM3D] shear unloading: origin secant (Yan eq. 18)\n";
+        if (!yanFricScaled_)
+            std::cout << "[FDEM3D] WARNING: jointShearUnload = origin with "
+                         "jointFrictionScaled = 0 — the Coulomb term rides the "
+                         "origin secant, so frictional sliding is REVERSIBLE "
+                         "(no hysteresis loop). Literal article form is "
+                         "origin + jointFrictionScaled = 1.\n";
+    }
     assignJointProps();
     if (adaptive_) {
         for (auto& J : jt_) J.bonded = true;
@@ -1063,6 +1081,8 @@ void Fdem3dSolver::jointForces() {
 
         double At = J.A0 / 3.0;
         double dnMax = -1e30;
+        double rsMaxO = 0.0;               // moteur de mode II du pas courant
+                                           // (jointShearUnload = origin)
 
         for (int k = 0; k < 3; ++k) {
             int ia = J.a[k], ib = J.b[k];
@@ -1073,6 +1093,29 @@ void Fdem3dSolver::jointForces() {
             double dn = delta.dot(n) + J.dn0;
             Eigen::Vector3d dt3 = delta - delta.dot(n) * n;
             dnMax = std::max(dnMax, dn);
+
+            // ---- eq. 18 (jointShearUnload = origin) : miroir exact du 2D ----
+            // s_max est mis a jour AVANT la traction normale : en mode
+            // `origin` le moteur de mode II de l'eq. 16 en depend, et ce
+            // moteur alimente D, donc f(D), donc l'enveloppe normale.
+            // sEff = glissement VECTORIEL depuis l'origine figee J.slip[k]
+            // (0 en intrinseque, -tau0/pj stampee a l'insertion : continuite
+            // en cisaillement). sE = s_p de Munjiza, evalue sur l'enveloppe
+            // de Mohr-Coulomb NON endommagee et sur la part geometrique pj*dn
+            // de la contrainte normale — non circulaire, independant de D.
+            Eigen::Vector3d sEff = Eigen::Vector3d::Zero();
+            double smx = 0.0, rsO = 0.0;
+            if (shearOrigin_) {
+                J.slip[k] -= J.slip[k].dot(n) * n;     // origine dans le plan
+                sEff = dt3 - J.slip[k];
+                double sm = sEff.norm();
+                if (sm > J.smax[k]) J.smax[k] = sm;
+                smx = J.smax[k];
+                double sE = (J.coh + J.tanPhi * std::max(0.0, -J.pj * dn))
+                          / J.pj;
+                rsO = (J.slipF > 0.0 && smx > sE) ? (smx - sE) / J.slipF : 0.0;
+                rsMaxO = std::max(rsMaxO, rsO);
+            }
 
             // ================= normal traction =========================
             // The 2026-08-05 2D refonte, ported verbatim (FdemSolver.cpp):
@@ -1093,7 +1136,9 @@ void Fdem3dSolver::jointForces() {
                 // driver D = sqrt(rn^2 + rs^2), origin-secant unloading.
                 double ot = J.dnF - J.dnE;
                 double rn = (ot > 0.0 && dn > J.dnE) ? (dn - J.dnE) / ot : 0.0;
-                double rs = (J.slipF > 0.0) ? J.slip[k].norm() / J.slipF : 0.0;
+                double rs = shearOrigin_
+                    ? rsO
+                    : ((J.slipF > 0.0) ? J.slip[k].norm() / J.slipF : 0.0);
                 double Dnow = std::sqrt(rn * rn + rs * rs);
                 if (Dnow > J.D) J.D = std::min(1.0, Dnow);
                 double fdY = yan::fD(J.D, yanP_);
@@ -1142,8 +1187,6 @@ void Fdem3dSolver::jointForces() {
                 dampW -= (sig - sigEl) * At * vrel.dot(n) * dt_;
             }
 
-            J.slip[k] -= J.slip[k].dot(n) * n;         // keep slip in-plane
-            Eigen::Vector3d tauTr = J.pj * (dt3 - J.slip[k]);
             // yan: cohesion scaled by f(D); Coulomb term unscaled by default
             // so a crushed joint keeps residual friction (jointFrictionScaled
             // = 1 for the literal eq. 10), exactly as in 2D
@@ -1151,22 +1194,38 @@ void Fdem3dSolver::jointForces() {
             double coh = yanSoft_ ? fdS * J.coh : (1.0 - J.D) * J.coh;
             double muS = (yanSoft_ && yanFricScaled_) ? fdS : 1.0;
             double tauLim = coh + muS * J.tanPhi * std::max(0.0, -sig);
-            double tn = tauTr.norm();
-            Eigen::Vector3d tau = tauTr;
-            if (tn > tauLim && tn > 0) {
-                tau *= tauLim / tn;
-                J.slip[k] += (tauTr - tau) / J.pj;     // vector return mapping
-                double Dt2;
-                if (yanSoft_) {
-                    double ot = J.dnF - J.dnE;
-                    double rn = (ot > 0.0 && dn > J.dnE) ? (dn - J.dnE) / ot
-                                                         : 0.0;
-                    double rs = J.slip[k].norm() / J.slipF;
-                    Dt2 = std::sqrt(rn * rn + rs * rs);   // eq. 16 / 14
-                } else {
-                    Dt2 = J.slip[k].norm() / J.slipF;
+            Eigen::Vector3d tau;
+            if (shearOrigin_) {
+                // ---- eq. 18 : secante a l'origine, version vectorielle ----
+                // enveloppe = min(branche elastique, cap) au glissement
+                // maximal ; l'etat courant est lu sur la droite origine ->
+                // (s_max, tau_env). La DIRECTION est celle de sEff, comme le
+                // retour radial prend celle de tauTr.
+                double tauEnv = std::min(J.pj * smx, tauLim);
+                tau.setZero();
+                if (smx > 1e-30) tau = (tauEnv / smx) * sEff;
+                // en `yan`, D a deja ete mis a jour par l'eq. 16 au-dessus
+                if (!yanSoft_ && rsO > J.D) J.D = std::min(1.0, rsO);
+            } else {
+                J.slip[k] -= J.slip[k].dot(n) * n;     // keep slip in-plane
+                Eigen::Vector3d tauTr = J.pj * (dt3 - J.slip[k]);
+                double tn = tauTr.norm();
+                tau = tauTr;
+                if (tn > tauLim && tn > 0) {
+                    tau *= tauLim / tn;
+                    J.slip[k] += (tauTr - tau) / J.pj; // vector return mapping
+                    double Dt2;
+                    if (yanSoft_) {
+                        double ot = J.dnF - J.dnE;
+                        double rn = (ot > 0.0 && dn > J.dnE) ? (dn - J.dnE) / ot
+                                                             : 0.0;
+                        double rs = J.slip[k].norm() / J.slipF;
+                        Dt2 = std::sqrt(rn * rn + rs * rs);   // eq. 16 / 14
+                    } else {
+                        Dt2 = J.slip[k].norm() / J.slipF;
+                    }
+                    if (Dt2 > J.D) J.D = std::min(1.0, Dt2);
                 }
-                if (Dt2 > J.D) J.D = std::min(1.0, Dt2);
             }
 
             Eigen::Vector3d trac = (sig * n + tau) * At;
@@ -1183,10 +1242,15 @@ void Fdem3dSolver::jointForces() {
                 double otF = J.dnF - J.dnE;
                 double rnF = (otF > 0.0 && dnMax > J.dnE)
                            ? (dnMax - J.dnE) / otF : 0.0;
-                double sMx = 0.0;
-                for (int q = 0; q < 3; ++q)
-                    sMx = std::max(sMx, J.slip[q].norm());
-                double rsF = (J.slipF > 0.0) ? sMx / J.slipF : 0.0;
+                double rsF;
+                if (shearOrigin_) {            // pas de glissement plastique
+                    rsF = rsMaxO;
+                } else {
+                    double sMx = 0.0;
+                    for (int q = 0; q < 3; ++q)
+                        sMx = std::max(sMx, J.slip[q].norm());
+                    rsF = (J.slipF > 0.0) ? sMx / J.slipF : 0.0;
+                }
                 double den = rnF * rnF + rsF * rsF;
                 J.failMode = (den > 1e-300) ? (rnF * rnF) / den : 1.0;
                 J.rnB = rnF;

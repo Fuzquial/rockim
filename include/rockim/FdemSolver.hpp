@@ -121,10 +121,19 @@ private:
         int a1, a2, b1, b2;
         double L0;
         double D = 0.0;                    // shared cohesive damage [0..1]
-        double slip[2] = {0.0, 0.0};       // frictional slip per point
+        double slip[2] = {0.0, 0.0};       // jointShearUnload = plastic : le
+                                           // glissement plastique cumule par
+                                           // le retour radial.
+                                           // = origin : l'ORIGINE FIGEE de la
+                                           // secante de l'eq. 18, stampee par
+                                           // activateJoint() (0 en intrinseque),
+                                           // jamais mise a jour ensuite.
         double omax[2] = {0.0, 0.0};       // largest opening ever reached
                                            // (jointSoftening = yan: the omax
                                            // of eq. 17, per integration point)
+        double smax[2] = {0.0, 0.0};       // largest SLIDING ever reached, the
+                                           // s_max of eq. 18 (jointShearUnload
+                                           // = origin only; unused otherwise)
         bool dead = false;                 // faces released to general contact
         double tBreak = -1.0;              // first time D reached 1
         int type = 0;
@@ -303,6 +312,25 @@ private:
     bool yanFricScaled_ = false;
     yan::Params yanP_;
     double yanI_ = 1.0;                    // int_0^1 f(D) dD
+
+    // ---- decharge en CISAILLEMENT (jointShearUnload) -----------------------
+    // plastic (defaut, inchange) : plasticite a retour — la decharge suit la
+    //   secante de PENALITE et le glissement plastique est conserve.
+    // origin : l'eq. 18 de Yan et al., symetrique de l'eq. 17 du mode I — la
+    //   decharge et la recharge suivent la secante a l'ORIGINE passant par
+    //   (s_max, tau_env(s_max)). C'est la forme litterale de l'article.
+    //   Le glissement au pic est le s_p de Munjiza, (c + tan(phi) |sigma_n|)/p,
+    //   evalue sur l'enveloppe NON endommagee et sur la part geometrique pj*dn
+    //   de la contrainte normale : l'endommagement de mode II demarre donc au
+    //   moment ou l'enveloppe de Mohr-Coulomb est atteinte, exactement comme
+    //   dans le retour radial — les deux modes coincident en charge monotone
+    //   et ne different qu'a la decharge.
+    // ⚠️ l'eq. 18 place TOUT le cap dans la secante, frottement de Coulomb
+    // compris ; combinee a jointFrictionScaled = 0 (defaut rockim, frottement
+    // residuel non degrade) elle rend le glissement frottant reversible. La
+    // configuration litterale de l'article est donc origin + fricScaled = 1
+    // (c'est ce que pose configs_yan/article_exact_base.cfg).
+    bool shearOrigin_ = false;
 
     // ---- adaptive insertion (insertion = adaptive) --------------------------
     // No cohesive joint exists at t = 0: every interior edge starts BONDED and

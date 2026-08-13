@@ -30,6 +30,8 @@ CFG = os.path.join(ROOT, "configs")
 RX = {
     "err_pct":   r"error = (-?[\d.eE+]+) %",
     "peak_mpa":  r"peak macro stress = (-?[\d.eE+]+) MPa",
+    "ucs_mpa":   r"peak axial stress = (-?[\d.eE+]+) MPa",
+    "shear_pct": r"([\d.eE+-]+) % shear\)",
     "broken":    r"broken joints\s*[:=]\s*(\d+)",
     "dampwork":  r"joint dashpot work: (-?[\d.eE+-]+) J",
     "yan_int":   r"int f\(D\) dD = ([\d.eE+-]+)",
@@ -60,6 +62,11 @@ TESTS = [
                  ("dampwork", 0.0, 1e-12, True)]),      # <= 0 (tol vers le +)
     dict(name="zeroload_2d_fan", tier="fast", cfg="verify_fdem_voronoi_tension.cfg",
          over=["pullV = 1e-12", "verifyFt = false"],
+         checks=[("broken", 0, 0, True), ("dampwork", 0.0, 1e-12, True)]),
+    # même contrôle sous la loi de décharge en cisaillement de l'eq. 18 : la
+    # sécante à l'origine ne doit rien créer au repos non plus (A2, 2026-08-13)
+    dict(name="zeroload_2d_origin", tier="fast", cfg="verify_fdem_voronoi_tension.cfg",
+         over=["pullV = 1e-12", "verifyFt = false", "jointShearUnload = origin"],
          checks=[("broken", 0, 0, True), ("dampwork", 0.0, 1e-12, True)]),
     # le cas delaunay est LE cas historique du cliquet (158 joints cassés a
     # charge nulle avant correctif) mais coute ~2.5 min : tier full
@@ -93,6 +100,32 @@ TESTS = [
          over=["jointXi = 0", "jointSoftening = yan"],
          checks=[("err_pct", -1.10478, 0.05, True), ("pass_tag", None, 0, True),
                  ("yan_int", 0.386307294744, 1e-6, True)]),
+    # --- A2 : décharge en cisaillement sur sécante à l'origine (eq. 18) -----
+    # forme LITTÉRALE de l'article = origin + jointFrictionScaled = 1.
+    # En traction (mode I dominant) l'écart au retour radial doit rester
+    # marginal : c'est ce que ces deux repères verrouillent.
+    dict(name="fdem_tension_origin", tier="full", cfg="verify_fdem_tension.cfg",
+         over=["jointSoftening = yan", "jointFrictionScaled = 1",
+               "jointShearUnload = origin"],
+         checks=[("err_pct", -1.721, 0.02, True), ("pass_tag", None, 0, True),
+                 ("dampwork", 0.0, 1e-12, True)]),
+    dict(name="fdem3d_tension_origin", tier="full", cfg="verify_fdem3d_tension.cfg",
+         over=["jointXi = 0", "jointSoftening = yan", "jointFrictionScaled = 1",
+               "jointShearUnload = origin"],
+         checks=[("err_pct", -1.08522, 0.05, True), ("pass_tag", None, 0, True)]),
+    dict(name="zeroload_3d_origin", tier="full", cfg="verify_fdem3d_tension.cfg",
+         over=["pullV = 1e-12", "jointShearUnload = origin"],
+         checks=[("broken", 0, 0, True), ("dampwork", 0.0, 1e-12, True)]),
+    # UCS de la fig. 17 de l'article : le SEUL repère du parc dont la rupture
+    # soit pilotée par le CISAILLEMENT (~47 % des joints), et donc le seul qui
+    # exerce vraiment la loi de mode II — insertion adaptative + f(D) comprises.
+    dict(name="ucs_yan_adaptive", tier="full", cfg="../configs_yan/ucs_adap.cfg",
+         checks=[("ucs_mpa", 51.0735, 0.15, True), ("broken", 327, 0, True),
+                 ("inserted", 1288, 0, True)]),
+    dict(name="ucs_yan_origin", tier="full", cfg="../configs_yan/ucs_adap.cfg",
+         over=["jointShearUnload = origin", "jointFrictionScaled = 1"],
+         checks=[("ucs_mpa", 50.3671, 0.15, True), ("broken", 318, 0, True),
+                 ("inserted", 1131, 0, True)]),
     # charge nulle sur le maillage IMPORTE (mesh = file, tets Gmsh) : certifie
     # la machinerie d'import comme les autres controles certifient les leurs
     dict(name="zeroload_3d_filemesh", tier="full", cfg="verify_fdem3d_tension.cfg",
