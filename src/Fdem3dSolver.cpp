@@ -1325,7 +1325,11 @@ void Fdem3dSolver::generalContact() {
                         gridV_[cidx(cx, cy, cz)].push_back((int)k);
         }
     } else {
-        grid_.assign((std::size_t)gx_ * gy_ * gz_, {});
+        // reuse the buckets instead of destroying them: assign() frees every
+        // inner vector every step, clear() keeps their capacity (bit-neutral)
+        std::size_t nCells = (std::size_t)gx_ * gy_ * gz_;
+        if (grid_.size() != nCells) grid_.assign(nCells, {});
+        else for (auto& c : grid_) c.clear();
         for (std::size_t k = 0; k < act_.size(); ++k) {
             if (!inBox[k]) continue;
             int cx = std::clamp(int((cen[k].x() - gmin_.x()) / cell_), 0, gx_ - 1);
@@ -1336,6 +1340,53 @@ void Fdem3dSolver::generalContact() {
     }
 
     double cap = 0.6 * hmin_;
+
+    // ---- geometry of the ACTIVE FACES, computed ONCE per step --------------
+    // The sweep below used to rebuild A/B/C, the face normal (a cross product
+    // AND a sqrt) and the barycentric denominators for EVERY (node, face)
+    // pair — i.e. dozens of times per face on a dense exterior, where the
+    // face has not moved between two of those evaluations. Hoisting it out is
+    // arithmetically NEUTRAL (same values, same pair list, same order) and
+    // removes one sqrt plus ~10 dot products per candidate pair.
+    struct FGeo {
+        Eigen::Vector3d A, v0, v1, nrm, cen;
+        double d00, d01, d11, den, capLoc, rad2;
+        bool ok;
+    };
+    static std::vector<FGeo> fgeo;
+    fgeo.resize(act_.size());
+    for (std::size_t k = 0; k < act_.size(); ++k) {
+        FGeo& g = fgeo[k];
+        g.ok = false;
+        if (!inBox[k]) continue;                  // never binned = never a candidate
+        const BFace& bf = act_[k];
+        g.A = X0_[bf.n[0]] + u_[bf.n[0]];
+        Eigen::Vector3d B = X0_[bf.n[1]] + u_[bf.n[1]];
+        Eigen::Vector3d C = X0_[bf.n[2]] + u_[bf.n[2]];
+        Eigen::Vector3d nr = (B - g.A).cross(C - g.A);
+        double a2 = nr.norm();
+        if (a2 < 1e-18) continue;
+        g.nrm = nr / a2;                          // outward of bf.elem
+        g.v0 = B - g.A;
+        g.v1 = C - g.A;
+        g.d00 = g.v0.dot(g.v0);
+        g.d01 = g.v0.dot(g.v1);
+        g.d11 = g.v1.dot(g.v1);
+        g.den = g.d00 * g.d11 - g.d01 * g.d01;
+        if (g.den < 1e-24) continue;
+        g.capLoc = voronoi_ ? 0.6 * hEl_[bf.elem] : cap;
+        g.cen = cen[k];
+        // EXACT culling sphere. An accepted contact projects INSIDE the
+        // triangle (hence within rMax of its centroid) at a depth <= capLoc,
+        // so an accepted node always lies within rMax + capLoc of the
+        // centroid. Rejecting the others early therefore removes NO pair —
+        // it is a bound, not an approximation.
+        double rMax = std::max({(g.A - g.cen).norm(), (B - g.cen).norm(),
+                                (C - g.cen).norm()});
+        double rc = rMax + g.capLoc;
+        g.rad2 = rc * rc;
+        g.ok = true;
+    }
 
     // Detection is the expensive part (grid sweep + geometry) and is PURE:
     // it parallelizes over nodes into per-thread candidate lists, exactly as
@@ -1351,7 +1402,7 @@ void Fdem3dSolver::generalContact() {
         Eigen::Vector3d nrm;
     };
     auto detect = [&](int i, std::vector<CPair>& outC,
-                      std::vector<int>& done) {
+                      std::vector<int>& stamp) {
         Eigen::Vector3d p = X0_[i] + u_[i];
         if ((p.array() <= boxLo.array()).any()
             || (p.array() >= boxHi.array()).any()) return;
@@ -1359,7 +1410,8 @@ void Fdem3dSolver::generalContact() {
         int cj = std::clamp(int((p.y() - gmin_.y()) / cell_), 0, gy_ - 1);
         int ck = std::clamp(int((p.z() - gmin_.z()) / cell_), 0, gz_ - 1);
         int myElem = elemOf_[i];
-        if (voronoi_) done.clear();
+        // no per-node clear of the dedup structure: the stamp below is keyed
+        // on the node id, which is unique within one sweep
         for (int dk = -1; dk <= 1; ++dk)
         for (int dj = -1; dj <= 1; ++dj)
         for (int di = -1; di <= 1; ++di) {
@@ -1378,13 +1430,16 @@ void Fdem3dSolver::generalContact() {
                 const BFace& bf = act_[k];
                 if (bf.elem == myElem) continue;
                 if (voronoi_) {
-                    if (std::find(done.begin(), done.end(), k) != done.end())
-                        continue;
-                    done.push_back(k);
+                    // AABB binning can list one face in several stencil
+                    // cells: dedup per NODE. A stamp array is O(1) where the
+                    // former linear scan was O(candidates) per candidate,
+                    // i.e. quadratic on the crowded cells of a fine mesh.
+                    if (stamp[k] == i) continue;
+                    stamp[k] = i;
                 }
-                Eigen::Vector3d A = X0_[bf.n[0]] + u_[bf.n[0]];
-                Eigen::Vector3d B = X0_[bf.n[1]] + u_[bf.n[1]];
-                Eigen::Vector3d C = X0_[bf.n[2]] + u_[bf.n[2]];
+                const FGeo& g = fgeo[k];
+                if (!g.ok) continue;
+                if ((p - g.cen).squaredNorm() > g.rad2) continue;   // exact bound
                 bool colocated = false;
                 for (int q = 0; q < 3; ++q)
                     if (vOf_[i] == vOf_[bf.n[q]]) {
@@ -1392,25 +1447,17 @@ void Fdem3dSolver::generalContact() {
                         if ((p - Pq).norm() < 0.25 * hmin_) colocated = true;
                     }
                 if (colocated) continue;
-                Eigen::Vector3d nr = (B - A).cross(C - A);
-                double a2 = nr.norm();
-                if (a2 < 1e-18) continue;
-                Eigen::Vector3d nrm = nr / a2;         // outward of bf.elem
-                double d = (p - A).dot(nrm);
-                double capLoc = voronoi_ ? 0.6 * hEl_[bf.elem] : cap;
-                if (d >= 0.0 || d < -capLoc) continue;
+                double d = (p - g.A).dot(g.nrm);
+                if (d >= 0.0 || d < -g.capLoc) continue;
                 // barycentric inside test of the projection
-                Eigen::Vector3d q = p - d * nrm;
-                Eigen::Vector3d v0 = B - A, v1 = C - A, v2 = q - A;
-                double d00 = v0.dot(v0), d01 = v0.dot(v1), d11 = v1.dot(v1);
-                double d20 = v2.dot(v0), d21 = v2.dot(v1);
-                double den = d00 * d11 - d01 * d01;
-                if (den < 1e-24) continue;
-                double wb = (d11 * d20 - d01 * d21) / den;
-                double wc = (d00 * d21 - d01 * d20) / den;
+                Eigen::Vector3d q = p - d * g.nrm;
+                Eigen::Vector3d v2 = q - g.A;
+                double d20 = v2.dot(g.v0), d21 = v2.dot(g.v1);
+                double wb = (g.d11 * d20 - g.d01 * d21) / g.den;
+                double wc = (g.d00 * d21 - g.d01 * d20) / g.den;
                 double wa = 1.0 - wb - wc;
                 if (wa < 0 || wb < 0 || wc < 0) continue;
-                outC.push_back({i, k, -d, wa, wb, wc, nrm});
+                outC.push_back({i, k, -d, wa, wb, wc, g.nrm});
             }
         }
     };
@@ -1430,19 +1477,17 @@ void Fdem3dSolver::generalContact() {
         {
             int t = omp_get_thread_num();
             cpTL[t].clear();
-            std::vector<int> done;
-            done.reserve(64);
+            std::vector<int> stamp(act_.size(), -1);   // per-node dedup stamp
 #pragma omp for schedule(static)
             for (int a = 0; a < (int)actNodes_.size(); ++a)
-                detect(actNodes_[a], cpTL[t], done);
+                detect(actNodes_[a], cpTL[t], stamp);
         }
 #endif
     } else {
         if (cpTL.empty()) cpTL.assign(1, {});
         for (auto& lst : cpTL) lst.clear();
-        std::vector<int> done;
-        done.reserve(64);
-        for (int i : actNodes_) detect(i, cpTL[0], done);
+        std::vector<int> stamp(act_.size(), -1);
+        for (int i : actNodes_) detect(i, cpTL[0], stamp);
     }
 
     for (auto& lst : cpTL)

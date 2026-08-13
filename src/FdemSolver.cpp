@@ -2702,7 +2702,13 @@ void FdemSolver::generalContact() {
     Eigen::Vector2d span = boxHi - gmin_ + Eigen::Vector2d(cell_, cell_);
     gx_ = std::max(1, int(span.x() / cell_) + 1);
     gy_ = std::max(1, int(span.y() / cell_) + 1);
-    grid_.assign((std::size_t)gx_ * gy_, {});
+    // reuse the buckets instead of destroying them: assign() frees every
+    // inner vector every step, clear() keeps their capacity (bit-neutral)
+    {
+        std::size_t nCells = (std::size_t)gx_ * gy_;
+        if (grid_.size() != nCells) grid_.assign(nCells, {});
+        else for (auto& c : grid_) c.clear();
+    }
     for (std::size_t k = 0; k < act_.size(); ++k) {
         if (!inBox[k]) continue;
         // Bin the edge into EVERY cell its AABB covers, not only the
@@ -2729,20 +2735,54 @@ void FdemSolver::generalContact() {
     // candidates in thread order: deterministic for a fixed thread count,
     // and none of the energy-pump safeguards touches shared state from two
     // threads.
+    // ---- geometry of the active edges, computed ONCE per step --------------
+    // Same hoisting as the 3D solver: the sweep rebuilt P/Q, the edge length
+    // (a sqrt), the outward normal and the local cap for EVERY (node, edge)
+    // pair. Arithmetically neutral — same values, same pair list, same order.
+    struct EGeo {
+        Eigen::Vector2d P, Q, ed, e, nrm, mid;   // Q stored, NOT recomputed as
+        double L2, capk, rad2;                   // P + ed (not bit-identical)
+        bool ok;
+    };
+    static std::vector<EGeo> egeo;
+    egeo.resize(act_.size());
+    for (std::size_t k = 0; k < act_.size(); ++k) {
+        EGeo& g = egeo[k];
+        g.ok = false;
+        if (!inBox[k]) continue;                  // never binned = never a candidate
+        const BEdge& be = act_[k];
+        g.P = X0_[be.na] + u_[be.na];
+        g.Q = X0_[be.nb] + u_[be.nb];
+        g.ed = g.Q - g.P;
+        g.L2 = g.ed.squaredNorm();
+        if (g.L2 < 1e-20) continue;
+        double L = std::sqrt(g.L2);
+        g.e = g.ed / L;
+        g.nrm = Eigen::Vector2d(g.e.y(), -g.e.x());   // outward of be.elem
+        g.capk = voronoi_ ? 0.6 * hEl_[be.elem] : cap;
+        g.mid = 0.5 * (g.P + g.Q);
+        // exact culling disc: an accepted contact projects ONTO the segment
+        // (within L/2 of its midpoint) at a depth <= capk
+        double rc = 0.5 * L + g.capk;
+        g.rad2 = rc * rc;
+        g.ok = true;
+    }
+
     struct CPair {
         int i, k;
         double s, d;
         Eigen::Vector2d e, nrm;
     };
     auto detect = [&](int i, std::vector<CPair>& outC,
-                      std::vector<int>& seenLoc) {
+                      std::vector<int>& stamp) {
         Eigen::Vector2d p = X0_[i] + u_[i];
         if (p.x() <= boxLo.x() || p.x() >= boxHi.x()
             || p.y() <= boxLo.y() || p.y() >= boxHi.y()) return;
         int ci = std::clamp(int((p.x() - gmin_.x()) / cell_), 0, gx_ - 1);
         int cj = std::clamp(int((p.y() - gmin_.y()) / cell_), 0, gy_ - 1);
         int myElem = elemOf_[i];
-        seenLoc.clear();
+        // no per-node clear: the dedup stamp below is keyed on the node id,
+        // which is unique within one sweep
         for (int dj = -1; dj <= 1; ++dj)
             for (int di = -1; di <= 1; ++di) {
                 int cx = ci + di, cy = cj + dj;
@@ -2751,15 +2791,15 @@ void FdemSolver::generalContact() {
                     const BEdge& be = act_[k];
                     if (be.elem == myElem) continue;
                     // AABB binning can list one edge in several stencil
-                    // cells: dedup per NODE with a tiny local list (a node
-                    // meets a few dozen candidates — a shared stamp array
-                    // here caused cache-line ping-pong between threads and
-                    // DOUBLED the contact cost at 18 threads)
-                    if (std::find(seenLoc.begin(), seenLoc.end(), k)
-                        != seenLoc.end()) continue;
-                    seenLoc.push_back(k);
-                    Eigen::Vector2d P = X0_[be.na] + u_[be.na];
-                    Eigen::Vector2d Q = X0_[be.nb] + u_[be.nb];
+                    // cells: dedup per NODE. The stamp array is PER THREAD
+                    // (a shared one caused cache-line ping-pong and DOUBLED
+                    // the contact cost at 18 threads) and O(1), where the
+                    // former local linear scan was O(candidates) each.
+                    if (stamp[k] == i) continue;
+                    stamp[k] = i;
+                    const EGeo& g = egeo[k];
+                    if (!g.ok) continue;
+                    if ((p - g.mid).squaredNorm() > g.rad2) continue;  // exact bound
                     // Nodes born from the same virtual vertex as an edge end
                     // are CO-LOCATED with it while the mesh hangs together:
                     // micron-scale compressive interpenetration otherwise
@@ -2767,24 +2807,14 @@ void FdemSolver::generalContact() {
                     // the energy pump isolated by bisection. The pair is
                     // re-admitted once it has genuinely moved apart.
                     if (vOf_[i] == vOf_[be.na]
-                        && (p - P).norm() < 0.25 * hmin_) continue;
+                        && (p - g.P).norm() < 0.25 * hmin_) continue;
                     if (vOf_[i] == vOf_[be.nb]
-                        && (p - Q).norm() < 0.25 * hmin_) continue;
-                    Eigen::Vector2d ed = Q - P;
-                    double L2 = ed.squaredNorm();
-                    if (L2 < 1e-20) continue;
-                    double s = (p - P).dot(ed) / L2;
+                        && (p - g.Q).norm() < 0.25 * hmin_) continue;
+                    double s = (p - g.P).dot(g.ed) / g.L2;
                     if (s < 0.0 || s > 1.0) continue;
-                    Eigen::Vector2d e = ed / std::sqrt(L2);
-                    Eigen::Vector2d nrm(e.y(), -e.x());  // outward of be.elem
-                    // deep-pen cap on the LOCAL element size: with mixed
-                    // voronoi element sizes the global hmin (smallest
-                    // element anywhere) would drop legitimate penetrations
-                    // on large faces
-                    double capk = voronoi_ ? 0.6 * hEl_[be.elem] : cap;
-                    double d = (p - P).dot(nrm);
-                    if (d >= 0.0 || d < -capk) continue; // outside / too deep
-                    outC.push_back({i, k, s, d, e, nrm});
+                    double d = (p - g.P).dot(g.nrm);
+                    if (d >= 0.0 || d < -g.capk) continue; // outside / too deep
+                    outC.push_back({i, k, s, d, g.e, g.nrm});
                 }
             }
     };
@@ -2805,19 +2835,17 @@ void FdemSolver::generalContact() {
         {
             int t = omp_get_thread_num();
             cpTL[t].clear();
-            std::vector<int> seenLoc;
-            seenLoc.reserve(64);
+            std::vector<int> stamp(act_.size(), -1);   // per-node dedup stamp
 #pragma omp for schedule(static)
             for (int a = 0; a < (int)actNodes_.size(); ++a)
-                detect(actNodes_[a], cpTL[t], seenLoc);
+                detect(actNodes_[a], cpTL[t], stamp);
         }
 #endif
     } else {
         if (cpTL.empty()) cpTL.assign(1, {});
         for (auto& lst : cpTL) lst.clear();
-        std::vector<int> seenLoc;
-        seenLoc.reserve(64);
-        for (int i : actNodes_) detect(i, cpTL[0], seenLoc);
+        std::vector<int> stamp(act_.size(), -1);
+        for (int i : actNodes_) detect(i, cpTL[0], stamp);
     }
 
     for (auto& lst : cpTL)
