@@ -176,6 +176,20 @@ void Fdem3dSolver::init() {
     kpGC_ = cfg_.getd("gcPenaltyFactor", 0.01) * phases_.maxE() * hmin_;
     xiGC_ = cfg_.getd("gcXi", 0.8);
     gcRest_ = cfg_.getd("gcRestitution", 0.2);
+    // contact = potential : 2D seulement pour l'instant — le portage 3D
+    // (recouvrement tet-tet, integrale sur le polyedre) est la phase 2 du
+    // chantier A3. REFUS explicite plutot que retomber en silence sur la
+    // penalite : personne ne doit croire qu'il tourne en potentiel.
+    {
+        std::string cm = cfg_.gets("contact", "penalty");
+        if (cm == "potential")
+            throw std::runtime_error(
+                "contact = potential n'est pas encore porte en 3D (phase 2 "
+                "du chantier A3) — retirer la cle ou utiliser mode = fdem");
+        if (cm != "penalty")
+            throw std::runtime_error("contact must be penalty | potential "
+                                     "(got '" + cm + "')");
+    }
     // gcActivation = full (defaut, inchange) | adaptive — miroir exact du 2D
     // (FdemSolver.hpp) : seules les faces qui PEUVENT toucher sont balayees.
     {

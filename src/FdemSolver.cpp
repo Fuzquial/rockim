@@ -15,6 +15,7 @@
 #include <random>
 #include <stdexcept>
 
+#include "rockim/PotentialContact.hpp"
 #include "rockim/RandomField.hpp"
 #include "rockim/Tessellation.hpp"
 #include "rockim/VtkWriter.hpp"
@@ -329,6 +330,22 @@ void FdemSolver::init() {
     kpGC_ = cfg_.getd("gcPenaltyFactor", 0.01) * phases_.maxE() * thk_;
     xiGC_ = cfg_.getd("gcXi", 0.8);
     gcRest_ = cfg_.getd("gcRestitution", 0.2);
+    // contact = penalty (defaut, inchange) | potential — A3 : le contact
+    // general par POTENTIEL de Munjiza (eq. 2-5 de l'article), paires
+    // d'elements, conservatif, voir PotentialContact.hpp et l'en-tete.
+    {
+        std::string cm = cfg_.gets("contact", "penalty");
+        if (cm != "penalty" && cm != "potential")
+            throw std::runtime_error("contact must be penalty | potential "
+                                     "(got '" + cm + "')");
+        contactPot_ = cm == "potential";
+    }
+    if (contactPot_) {
+        potP_ = cfg_.getd("potPenaltyFactor", 1.0) * phases_.maxE() * thk_;
+        potKt_ = cfg_.getd("potTangentFactor", 1.0) * phases_.maxE() * thk_;
+        std::cout << "[FDEM] contact: Munjiza potential (eq. 2-5), p = "
+                  << potP_ << " N/m, kt = " << potKt_ << " N/m\n";
+    }
     // gcActivation = full (defaut, inchange) | adaptive — voir l'en-tete :
     // seules les faces qui PEUVENT toucher sont balayees (Fukuda et al.).
     {
@@ -2933,6 +2950,182 @@ void FdemSolver::activationSweep() {
     nextSweep_ = stepCount_ + kn;
 }
 
+// ---------------------------------------------------------------------------
+// contact = potential — A3. Paires d'ELEMENTS candidates depuis le jeu actif
+// (compose donc avec gcActivation et gcXwindow), detection O(N) type NBS
+// (binning AABB en grille de hachage, paires uniques par stamp), exclusion
+// des paires liees par un joint VIVANT (le joint porte leur interaction),
+// puis la force distribuee de Munjiza calculee par PotentialContact.hpp et
+// le frottement incremental de l'eq. 4-5. Serie et deterministe.
+// ---------------------------------------------------------------------------
+void FdemSolver::potentialContact() {
+    // table (eMin,eMax) -> joint, batie UNE fois : les paires sont figees a
+    // la construction du maillage, seul l'etat dead evolue
+    if (jointOfPair_.empty() && !jt_.empty()) {
+        jointOfPair_.reserve(2 * jt_.size());
+        for (int j = 0; j < (int)jt_.size(); ++j) {
+            uint64_t a = (uint64_t)std::min(jt_[j].eA, jt_[j].eB);
+            uint64_t b = (uint64_t)std::max(jt_[j].eA, jt_[j].eB);
+            jointOfPair_[(a << 32) | b] = j;
+        }
+    }
+    // ---- (1) elements uniques du jeu actif -------------------------------
+    static std::vector<long> emark;
+    static std::vector<int> elems;
+    static long epoch = 0;
+    if (emark.size() != el_.size()) emark.assign(el_.size(), -1);
+    ++epoch;
+    elems.clear();
+    for (const auto& be : act_)
+        if (emark[be.elem] != epoch) {
+            emark[be.elem] = epoch;
+            elems.push_back(be.elem);
+        }
+    if (elems.size() < 2) return;
+
+    // ---- (2) AABB courantes + binning en grille de hachage ---------------
+    double cl = gcCell_ > 0.0 ? gcCell_ : 2.0 * hmin_;
+    static std::vector<Eigen::Vector2d> elo, ehi;
+    elo.resize(elems.size());
+    ehi.resize(elems.size());
+    static std::unordered_map<uint64_t, std::vector<int>> hg;
+    hg.clear();
+    auto keyIJ = [](long long ix, long long iy) {
+        return (uint64_t)(uint32_t)ix | ((uint64_t)(uint32_t)iy << 32);
+    };
+    for (int q = 0; q < (int)elems.size(); ++q) {
+        const Elem& E = el_[elems[q]];
+        Eigen::Vector2d lo = X0_[E.n[0]] + u_[E.n[0]], hi = lo;
+        for (int a = 1; a < 3; ++a) {
+            Eigen::Vector2d p = X0_[E.n[a]] + u_[E.n[a]];
+            lo = lo.cwiseMin(p);
+            hi = hi.cwiseMax(p);
+        }
+        elo[q] = lo;
+        ehi[q] = hi;
+        long long x0 = (long long)std::floor(lo.x() / cl);
+        long long x1 = (long long)std::floor(hi.x() / cl);
+        long long y0 = (long long)std::floor(lo.y() / cl);
+        long long y1 = (long long)std::floor(hi.y() / cl);
+        for (long long cy = y0; cy <= y1; ++cy)
+            for (long long cx = x0; cx <= x1; ++cx)
+                hg[keyIJ(cx, cy)].push_back(q);
+    }
+
+    // ---- (3) paires candidates -> clip -> forces -------------------------
+    static std::vector<int> pstamp;        // dedup de paire par q courant
+    if (pstamp.size() != elems.size()) pstamp.assign(elems.size(), -1);
+    else std::fill(pstamp.begin(), pstamp.end(), -1);
+
+    for (int q = 0; q < (int)elems.size(); ++q) {
+        long long x0 = (long long)std::floor(elo[q].x() / cl);
+        long long x1 = (long long)std::floor(ehi[q].x() / cl);
+        long long y0 = (long long)std::floor(elo[q].y() / cl);
+        long long y1 = (long long)std::floor(ehi[q].y() / cl);
+        for (long long cy = y0; cy <= y1; ++cy)
+            for (long long cx = x0; cx <= x1; ++cx) {
+                auto it = hg.find(keyIJ(cx, cy));
+                if (it == hg.end()) continue;
+                for (int r : it->second) {
+                    if (r <= q || pstamp[r] == q) continue;
+                    pstamp[r] = q;
+                    if (elo[r].x() > ehi[q].x() || elo[q].x() > ehi[r].x()
+                        || elo[r].y() > ehi[q].y() || elo[q].y() > ehi[r].y())
+                        continue;
+                    // paire canonique (eLo, eHi) : la force ET l'historique
+                    // tangentiel sont exprimes SUR eLo, stables d'un pas a
+                    // l'autre quel que soit l'ordre de la detection
+                    int eLo = std::min(elems[q], elems[r]);
+                    int eHi = std::max(elems[q], elems[r]);
+                    uint64_t pk = ((uint64_t)eLo << 32) | (uint64_t)eHi;
+                    // exclusion : joint VIVANT (bonded ou non mort) — le
+                    // joint porte l'interaction de sa propre paire, contact
+                    // du joint casse-mais-vivant compris. Un joint MORT rend
+                    // la paire au contact general.
+                    auto itJ = jointOfPair_.find(pk);
+                    if (itJ != jointOfPair_.end() && !jt_[itJ->second].dead)
+                        continue;
+                    const Elem& EA = el_[eLo];
+                    const Elem& EB = el_[eHi];
+                    pot::V2 pa[3], pb[3];
+                    for (int k = 0; k < 3; ++k) {
+                        pa[k] = X0_[EA.n[k]] + u_[EA.n[k]];
+                        pb[k] = X0_[EB.n[k]] + u_[EB.n[k]];
+                    }
+                    pot::PairForce R;
+                    if (!pot::pairForce(pa, pb, potP_, R)) continue;
+                    // ---- releve de naissance par AIRE (voir PotHist::aRef),
+                    // constante de temps gcBirthTau (1 us), semantique pen0_
+                    auto [itH, isNewH] = potFt_.try_emplace(pk);
+                    PotHist& H = itH->second;
+                    if (isNewH) H.aRef = R.area;
+                    else H.aRef *= relax_;
+                    double sc = std::max(0.0, 1.0 - H.aRef / R.area);
+                    R.F *= sc;
+                    for (int k = 0; k < 3; ++k) {
+                        R.fA[k] *= sc;
+                        R.fB[k] *= sc;
+                    }
+                    // ---- forces nodales normales + compteur de travail ---
+                    double w = 0.0;
+                    for (int k = 0; k < 3; ++k) {
+                        f_[EA.n[k]] += R.fA[k];
+                        f_[EB.n[k]] += R.fB[k];
+                        w += R.fA[k].dot(v_[EA.n[k]])
+                           + R.fB[k].dot(v_[EB.n[k]]);
+                    }
+                    gcWork_ += w * dt_;
+                    if (gcAdaptive_)       // source de la regle B (A1)
+                        for (int k = 0; k < 3; ++k) {
+                            lastTouch_[EA.n[k]] = stepCount_;
+                            lastTouch_[EB.n[k]] = stepCount_;
+                        }
+                    // ---- frottement incremental (eq. 4-5) ----------------
+                    // ressort tangentiel a HISTOIRE : Ft += -kt (vrel.t) dt,
+                    // plafonne au cap de Coulomb mu |Fn| (glissement). La
+                    // direction normale est celle de la resultante du
+                    // potentiel ; l'historique est tourne dans le plan
+                    // tangent courant a chaque pas.
+                    if (muC_ > 0.0 && potKt_ > 0.0) {
+                        double Fn = R.F.norm();
+                        if (Fn > 1e-300) {
+                            pot::Bary bA, bB;
+                            bA.set(pa[0], pa[1], pa[2]);
+                            bB.set(pb[0], pb[1], pb[2]);
+                            double la[3], lb[3];
+                            bA.lam(R.cen, la);
+                            bB.lam(R.cen, lb);
+                            Eigen::Vector2d vA =
+                                la[0] * v_[EA.n[0]] + la[1] * v_[EA.n[1]]
+                                + la[2] * v_[EA.n[2]];
+                            Eigen::Vector2d vB =
+                                lb[0] * v_[EB.n[0]] + lb[1] * v_[EB.n[1]]
+                                + lb[2] * v_[EB.n[2]];
+                            Eigen::Vector2d vrel = vA - vB;
+                            Eigen::Vector2d nh = R.F / Fn;
+                            Eigen::Vector2d th(-nh.y(), nh.x());
+                            if (H.step < stepCount_ - 1) H.Ft.setZero();
+                            Eigen::Vector2d Ft =
+                                H.Ft - H.Ft.dot(nh) * nh;      // rotation
+                            Ft -= potKt_ * (vrel.dot(th) * dt_) * th;
+                            double cap = muC_ * Fn;
+                            double Ftn = Ft.norm();
+                            if (Ftn > cap && Ftn > 0.0)
+                                Ft *= cap / Ftn;               // glissement
+                            H.Ft = Ft;
+                            H.step = stepCount_;
+                            for (int k = 0; k < 3; ++k) {
+                                f_[EA.n[k]] += la[k] * Ft;
+                                f_[EB.n[k]] -= lb[k] * Ft;
+                            }
+                            gcWork_ += Ft.dot(vrel) * dt_;
+                        }
+                    }
+                }
+            }
+    }
+}
+
 void FdemSolver::generalContact() {
     if (std::getenv("RKM_NOGC")) return;               // bisection switch
     if (gcAdaptive_) {
@@ -2960,6 +3153,10 @@ void FdemSolver::generalContact() {
         actStamp_ = nBroken_;
     }
     if (act_.empty()) return;
+    if (contactPot_) {                     // A3 : contact par potentiel —
+        potentialContact();                // meme jeu actif, autre physique
+        return;
+    }
 
     // Grid over current edge midpoints, CLIPPED to a fixed box around the
     // domain: without the clip, one fast ejected fragment stretches the
@@ -3888,6 +4085,11 @@ void FdemSolver::finalize() {
               << "[FDEM] block kinetic energy at end: " << keBlock << " J/m\n"
               << "[FDEM] net work injected by general contact: " << gcWork_
               << " J/m\n";
+    if (contactPot_)
+        std::cout << "[FDEM] (contact = potential : champ conservatif — un "
+                     "petit residu positif est le biais O(dt) du compteur "
+                     "plus la releve de naissance, pas une pathologie ; en "
+                     "mode penalty tout positif est une injection)\n";
     // A dashpot can only DISSIPATE. A positive figure here means the viscous
     // branch is injecting energy — the rectifier failure mode — and every
     // number the run produced is suspect. One multiply per integration point.
@@ -4171,6 +4373,164 @@ void FdemSolver::finalize() {
               << "\n[FDEM] fragments         : " << nFrag_
               << " (detached vol " << detachedVol_ << " m^3/m)"
               << "\n[FDEM] specific energy   : " << Es << " J/m^3\n";
+}
+
+// ---------------------------------------------------------------------------
+// selftest-potential2d — le test decisif du chantier A3.
+//
+// Deux corps RIGIDES triangulaires (3 ddl chacun : centre + rotation), lies
+// uniquement par le contact par potentiel, sans frottement. Saute-mouton
+// identique au solveur (forces puis v puis x), compteur de travail identique
+// (somme des f.v AVANT le kick). Deux phases :
+//   1. frontale symetrique  — collision elastique de masses egales : A doit
+//      s'arreter, B repartir a v0 ;
+//   2. oblique (B decale)   — couple non nul, le clip est asymetrique et
+//      tourne : la conservation doit tenir aussi en rotation.
+// Verdicts : |W_contact| / KE0 et |dKE| / KE0 au niveau de l'erreur du
+// saute-mouton (<< 1), quantite de mouvement conservee MACHINE (la 3e loi
+// est exacte par construction dans pairForce). Le contact penalite
+// quasi-plastique du solveur dissipe ~80 % d'un rebond PAR CONSTRUCTION :
+// c'est l'ecart categorique que ce test verrouille.
+// ---------------------------------------------------------------------------
+int potentialSelftest(const std::string& csvPath) {
+    using V2 = Eigen::Vector2d;
+    std::ofstream csv(csvPath);
+    csv << "phase,t,xA,vA,xB,vB,area,W,KE\n";
+
+    struct Rigid {
+        V2 c, v;                            // centre, vitesse
+        double th = 0.0, om = 0.0;          // rotation, vitesse angulaire
+        V2 r0[3];                           // sommets dans le repere du corps
+        double m = 3.0, I = 0.0;            // 3 masses ponctuelles unite
+        void pos(V2 p[3]) const {
+            double cs = std::cos(th), sn = std::sin(th);
+            for (int k = 0; k < 3; ++k)
+                p[k] = c + V2(cs * r0[k].x() - sn * r0[k].y(),
+                              sn * r0[k].x() + cs * r0[k].y());
+        }
+        V2 vel(const V2& x) const {         // vitesse rigide au point x
+            V2 r = x - c;
+            return v + om * V2(-r.y(), r.x());
+        }
+        void setTri(const V2& A, const V2& B, const V2& C) {
+            c = (A + B + C) / 3.0;
+            r0[0] = A - c;
+            r0[1] = B - c;
+            r0[2] = C - c;
+            I = r0[0].squaredNorm() + r0[1].squaredNorm()
+              + r0[2].squaredNorm();
+        }
+    };
+
+    const double p = 1.0e3;                 // penalite du potentiel
+    const double dt = 1.0e-4;
+    const double v0 = 1.0;
+    int fails = 0;
+    double worstW = 0.0, worstKE = 0.0, worstP = 0.0;
+
+    for (int phase = 1; phase <= 2; ++phase) {
+        Rigid A, B;
+        // triangle unite pointe vers +x, et son miroir pointe vers -x
+        A.setTri(V2(-1.10, -0.50), V2(-0.10, 0.00), V2(-1.10, 0.50));
+        double yoff = (phase == 2) ? 0.22 : 0.0;   // oblique : couple non nul
+        B.setTri(V2(1.10, -0.50 + yoff), V2(1.10, 0.50 + yoff),
+                 V2(0.10, 0.00 + yoff));
+        A.v = V2(v0, 0.0);
+        B.v = V2(0.0, 0.0);
+
+        double KE0 = 0.5 * A.m * A.v.squaredNorm();
+        V2 P0 = A.m * A.v + B.m * B.v;
+        double W = 0.0, areaMax = 0.0;
+        long nTouch = 0;
+
+        const long nSteps = (long)(3.0 / dt);
+        for (long s = 0; s < nSteps; ++s) {
+            V2 pa[3], pb[3];
+            A.pos(pa);
+            B.pos(pb);
+            pot::PairForce R;
+            V2 FA = V2::Zero(), FB = V2::Zero();
+            double tA = 0.0, tB = 0.0;
+            if (pot::pairForce(pa, pb, p, R)) {
+                ++nTouch;
+                areaMax = std::max(areaMax, R.area);
+                for (int k = 0; k < 3; ++k) {
+                    // compteur de travail du solveur : f.v AVANT le kick
+                    W += (R.fA[k].dot(A.vel(pa[k]))
+                          + R.fB[k].dot(B.vel(pb[k]))) * dt;
+                    FA += R.fA[k];
+                    FB += R.fB[k];
+                    tA += pot::cross2(pa[k] - A.c, R.fA[k]);
+                    tB += pot::cross2(pb[k] - B.c, R.fB[k]);
+                }
+            }
+            A.v += FA / A.m * dt;
+            A.om += tA / A.I * dt;
+            B.v += FB / B.m * dt;
+            B.om += tB / B.I * dt;
+            A.c += A.v * dt;
+            A.th += A.om * dt;
+            B.c += B.v * dt;
+            B.th += B.om * dt;
+            if (s % 200 == 0) {
+                double KE = 0.5 * A.m * A.v.squaredNorm()
+                          + 0.5 * B.m * B.v.squaredNorm()
+                          + 0.5 * A.I * A.om * A.om
+                          + 0.5 * B.I * B.om * B.om;
+                csv << phase << "," << s * dt << "," << A.c.x() << ","
+                    << A.v.x() << "," << B.c.x() << "," << B.v.x() << ","
+                    << (s == 0 ? 0.0 : areaMax) << "," << W << "," << KE
+                    << "\n";
+            }
+        }
+
+        double KE1 = 0.5 * A.m * A.v.squaredNorm()
+                   + 0.5 * B.m * B.v.squaredNorm()
+                   + 0.5 * A.I * A.om * A.om + 0.5 * B.I * B.om * B.om;
+        V2 P1 = A.m * A.v + B.m * B.v;
+        double wRel = std::abs(W) / KE0;
+        double keRel = std::abs(KE1 - KE0) / KE0;
+        double pRel = (P1 - P0).norm() / P0.norm();
+        worstW = std::max(worstW, wRel);
+        worstKE = std::max(worstKE, keRel);
+        worstP = std::max(worstP, pRel);
+        std::cout << "[POT] phase " << phase
+                  << (phase == 1 ? " (frontale)" : " (oblique) ")
+                  << ": contact " << nTouch << " pas, aire max " << areaMax
+                  << "\n[POT]   vA_fin = (" << A.v.x() << ", " << A.v.y()
+                  << "), vB_fin = (" << B.v.x() << ", " << B.v.y()
+                  << "), omB = " << B.om
+                  << "\n[POT]   |W_contact|/KE0 = " << wRel
+                  << ", |dKE|/KE0 = " << keRel
+                  << ", |dP|/|P0| = " << pRel << "\n";
+        if (phase == 1) {
+            // collision elastique de masses egales : transfert quasi total
+            if (std::abs(B.v.x() - v0) > 0.02 || std::abs(A.v.x()) > 0.02)
+                ++fails;
+        }
+    }
+
+    // Seuils. LA preuve de conservation est |dKE|/KE0 (mesure : 3.7e-12 en
+    // frontale, 5.1e-7 en oblique — l'erreur du saute-mouton en rotation) et
+    // la quantite de mouvement MACHINE (3e loi exacte de pairForce). Le
+    // compteur de travail lit v AVANT le kick (la convention gcWork_ du
+    // solveur) : sur une force conservative il porte un biais systematique
+    // POSITIF de Sum |F|^2 dt^2 / 2m — un artefact O(dt) de la mesure, pas
+    // de la physique (mesure : ~8e-4 de KE0 ici, a comparer aux ~80 % que le
+    // contact penalite quasi-plastique dissipe PAR CONSTRUCTION sur le meme
+    // rebond). Ce biais existera aussi dans le gcWork_ des runs en mode
+    // potential : un petit POSITIF n'y est pas une pathologie, contrairement
+    // au mode penalty ou tout positif est une injection.
+    std::cout << "pot_work_rel = " << worstW << "\n"
+              << "pot_ke_rel = " << worstKE << "\n"
+              << "pot_mom_rel = " << worstP << "\n";
+    bool ok = fails == 0 && worstW < 5e-3 && worstKE < 1e-5
+              && worstP < 1e-12;
+    std::cout << (ok ? "[PASS]" : "[FAIL]")
+              << " selftest-potential2d : contact conservatif de Munjiza "
+                 "(la conservation est jugee sur dKE ; le compteur de "
+                 "travail porte un biais O(dt) documente)\n";
+    return ok ? 0 : 1;
 }
 
 } // namespace rockim

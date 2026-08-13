@@ -22,6 +22,7 @@
 #include "rockim/FdemSolver.hpp"
 #include "rockim/Fem3dSolver.hpp"
 #include "rockim/FemSolver.hpp"
+#include "rockim/PotentialContact.hpp"
 #include "rockim/Solver.hpp"
 
 using namespace rockim;
@@ -47,6 +48,13 @@ int main(int argc, char** argv) {
             std::cout << "[rockim] dpdfh selftest traces written to "
                       << csv << "\n";
             return 0;
+        }
+        if (std::string(argv[1]) == "selftest-potential2d") {
+            std::string csv = argc > 2 ? argv[2] : "rockim_potential2d.csv";
+            int rc = potentialSelftest(csv);
+            std::cout << "[rockim] potential2d selftest traces written to "
+                      << csv << "\n";
+            return rc;
         }
         Config cfg = Config::load(argv[1]);
         std::string out = (argc > 2) ? argv[2] : cfg.gets("outputDir", "out");

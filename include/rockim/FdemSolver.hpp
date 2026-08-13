@@ -433,6 +433,55 @@ private:
     std::vector<long> poolTouch_;          // premier pas avec force (diag)
     std::vector<long> actStep_;            // pas d'activation (diag)
     void activationSweep();
+
+    // ---- contact par POTENTIEL de Munjiza (contact = potential) — A3 -------
+    // La forme des eq. 2-5 de Yan et al. 2023 : force normale distribuee
+    // = p ∮ (phi_A - phi_B) n dG sur le bord du RECOUVREMENT des deux
+    // triangles (conservative par construction, 3e loi de Newton machine —
+    // voir PotentialContact.hpp), frottement tangentiel INCREMENTAL a ressort
+    // avec cap de Coulomb (eq. 4-5). Paires d'ELEMENTS (pas noeud-arete),
+    // detection O(N) type NBS : binning AABB en grille de cellules. Une paire
+    // liee par un joint VIVANT est exclue (le joint porte son interaction,
+    // contact du joint casse compris) ; un joint MORT rend la paire au
+    // contact general. Compose avec gcActivation et gcXwindow (le jeu actif
+    // fournit les elements candidats). Le contact OUTIL analytique reste en
+    // penalite (l'outil n'est pas maille — leve par B1, physical groups).
+    bool contactPot_ = false;
+    double potP_ = 0.0;                    // penalite normale [Pa.m = N/m.phi]
+    double potKt_ = 0.0;                   // raideur tangentielle (eq. 4-5)
+    struct PotHist {                       // historique par paire d'elements
+        Eigen::Vector2d Ft{0.0, 0.0};      // force tangentielle sur l'el. MIN
+        long step = -1000;                 // dernier pas vu (peremption du Ft)
+        double aRef = 0.0;                 // releve de naissance par AIRE de
+                                           // recouvrement — le pen0_ exact du
+                                           // potentiel. A la premiere vue,
+                                           // aRef = aire courante ; ensuite il
+                                           // decroit en exp(-t/gcBirthTau) et
+                                           // la force est multipliee par
+                                           // max(0, 1 - aRef/aire) :
+                                           //  * paire nee en APPROCHE reelle :
+                                           //    aRef ~ 0 des la naissance, la
+                                           //    conservation est intacte ;
+                                           //  * paire nee EN RECOUVREMENT (un
+                                           //    joint meurt comprime dans la
+                                           //    zone broyee) : seule la
+                                           //    NOUVELLE approche resiste, et
+                                           //    la sortie sous aRef est LIBRE
+                                           //    — asymetrie du signe ABSORBANT.
+                                           // Une rampe TEMPORELLE fait
+                                           // l'inverse (approche bradee,
+                                           // sortie plein tarif) et INJECTE
+                                           // sur chaque premier cycle —
+                                           // mesure : +936 J/m sans releve,
+                                           // +179 avec rampe temporelle,
+                                           // asymetrie d'etat requise.
+                                           // Jamais reinitialise (parite
+                                           // pen0_) : une paire retrouvee
+                                           // reprend sa force pleine.
+    };
+    std::unordered_map<uint64_t, PotHist> potFt_;
+    std::unordered_map<uint64_t, int> jointOfPair_;   // (eMin,eMax) -> joint
+    void potentialContact();
     // OpenMP scratch: per-thread force buffers for the joint scatter
     std::vector<std::vector<Eigen::Vector2d>> fTL_;
     std::vector<std::vector<char>> seenTL_;

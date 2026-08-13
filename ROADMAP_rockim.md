@@ -23,6 +23,7 @@ validable contre le banc de Mines Paris, (3) robustesse et vitesse.*
 - [x] **Optimisation de la détection du contact 2D+3D** — géométrie hoistée, sphère de rejet exacte, dédoublonnage O(1) : **×2,45 sur le contact, ×1,94 sur le mur, bit-identique**
 - [x] **A2 — décharge en cisaillement sur la sécante à l'origine (éq. 18)**, 2D **et** 3D : clé `jointShearUnload = plastic | origin`, défaut bit-identique (17/17), s_p de Munjiza, `J.slip` réinterprété en origine figée (continuité à l'insertion conservée), avertissement au démarrage sur la réversibilité du frottement, **6 nouveaux repères** dont le premier repère du parc piloté par le cisaillement (UCS fig. 17)
 - [x] **A1 — activation adaptative du contact (Fukuda)**, 2D **et** 3D : clé `gcActivation = full | adaptive`, défaut bit-identique. Règles C/A/B (peau endommagée + anneau, autre corps par union-find, voisinage d'un contact porté), cadence par v_max, cache des faces mortes au timing du mode full. **Percussion 3D ×2,32 bit-identique** (1130 → 488 s, 4 % des faces activées), percussion 2D bit-identique phase débris comprise, UCS −15 % aux mêmes chiffres, SHPB multi-corps armé dès t = 0 et identique sur 83 % du run (au-delà : enveloppe chaotique, le full sous OMP=2 diverge 8× plus tôt). **7 nouveaux repères**, zéro trou d'activation (instrumentation RKM_GCLOG : aucune face touchée avant activation)
+- [x] **A3 (2D) — contact par POTENTIEL de Munjiza (éq. 2-5)** : clé `contact = penalty | potential`, cœur géométrique pur (`PotentialContact.hpp`), intégrale de bord **exacte**, 3e loi machine, **conservatif** (selftest : ΔKE/KE₀ = 3,7e-12, transfert élastique exact ; SHPB incassable : gcWork −2,6 J/m pour 766 en jeu), frottement incrémental éq. 4-5, détection élément-élément O(N) (NBS-équivalente), relève de naissance par **aire** (le pen0_ du potentiel — la rampe temporelle injecte, mesuré et documenté). SHPB : onde incidente = penalty à 3e-6 près. Zone broyée conservative (percussion 2D : e 0,55 → 0,71). **5 nouveaux repères.** Reste : portage 3D (phase 2)
 
 ---
 
@@ -32,7 +33,7 @@ validable contre le banc de Mines Paris, (3) robustesse et vitesse.*
 |---|---|---|---|
 | ~~A1~~ | ~~Activation adaptative du contact (Fukuda)~~ | **FAIT 08-13** | `gcActivation = adaptive`, 2D+3D. Percussion 3D **×2,32 bit-identique** (1130 → 488 s). Le SHPB multi-corps est armé dès t = 0 par la règle « autre corps » |
 | ~~A2~~ | ~~Décharge en cisaillement sur sécante à l'origine (éq. 18)~~ | **FAIT 08-13** | `jointShearUnload = origin`, 2D+3D. UCS 51,07 → 50,37 MPa (−1,4 %), part de cisaillement 47 → 51 % |
-| **A3** | **Contact par POTENTIEL de Munjiza + détection NBS/MR** (éq. 2-5) | gros (1-2 j) | LE chantier structurel. Opt-in `contact = penalty \| potential`. Test décisif : collision élastique sans frottement → `gcWork ≈ 0` machine |
+| **A3** | **Contact par POTENTIEL de Munjiza** (éq. 2-5) — **2D FAIT 08-13**, reste le **portage 3D** (tet-tet) | 3D : ~1 j | `contact = potential`, conservatif (ΔKE/KE₀ = 3,7e-12, transfert élastique exact), détection O(N), relève de naissance par aire. En 3D la clé est refusée en attendant le portage |
 | A4 | Quadrature de Gauss des joints (vs 2-3 points nœud-à-nœud) | moyen | écart déclaré dans les en-têtes |
 | A5 | z(D) de Munjiza | court | optionnel : f(D) de Yan couvre le besoin |
 

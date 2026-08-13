@@ -60,7 +60,55 @@ rockim) le glissement frottant devient **réversible** — plus d'hystérésis. 
 forme littérale de l'article est donc `origin` **+** `jointFrictionScaled = 1`,
 et c'est ce que pose désormais `configs_yan/article_exact_base.cfg`.
 
-## Chantier B — contact par POTENTIEL de Munjiza + NBS (LE morceau, éq. 2-5)
+## Chantier A3 — contact par POTENTIEL de Munjiza (éq. 2-5) — **2D FAIT (2026-08-13)**
+
+Clé `contact = penalty | potential`, défaut inchangé (bit-identique). Le cœur
+géométrique est PUR et isolé dans `include/rockim/PotentialContact.hpp` :
+clip de Sutherland-Hodgman du recouvrement triangle-triangle, potentiel
+φ = 3·min(λ) (la « tente » de Munjiza), intégrale de bord **exacte** (subdivision
+aux traversées des six médianes, trapèze exact par morceau), répartition nodale
+consistante aux mêmes points spatiaux des deux côtés (3e loi machine).
+
+- **Le test décisif** (`rockim selftest-potential2d`) : collision élastique
+  sans frottement, frontale puis oblique — transfert exact (vA → 0 machine,
+  vB → v0), **ΔKE/KE₀ = 3,7e-12**, quantité de mouvement 5e-15. Le compteur de
+  travail de convention solveur porte un biais O(dt) documenté (~8e-4), la
+  conservation se juge sur ΔKE.
+- **Conservation au niveau solveur** : SHPB incassable sans frottement,
+  gcWork = −2,6 J/m pour 766 J/m en jeu (0,3 % = biais du compteur), là où le
+  penalty par défaut (quasi-plastique, gcRest = 0,2) dissiperait ~80 % de
+  chaque rebond par construction.
+- **SHPB réel** : onde incidente identique au penalty à 3e-6 près (pics
+  −0,924477e-3 vs −0,924474e-3), transmise −0,219 vs −0,210e-3 ; le disque
+  casse moins (595 vs 812) — la loi d'interface diffère, écart physique.
+- **La leçon architecturale du chantier** : rockim cache le recouvrement des
+  paires voisines derrière le joint vivant (sa pénalité porte la compression) ;
+  quand un joint meurt COMPRIMÉ, la paire naît déjà en recouvrement et son
+  énergie potentielle p∫φ surgirait du néant (+936 J/m mesurés sur la
+  percussion 2D sans relève, +665 sans frottement). Une rampe temporelle ne
+  suffit PAS (approche bradée / sortie plein tarif → +179 J/m injectés sur les
+  premiers cycles) : la relève doit être un décalage d'ÉTAT — référence sur
+  l'**aire** de recouvrement, décroissante en gcBirthTau, sortie sous la
+  référence LIBRE (signe absorbant garanti, le pen0_ exact du potentiel).
+  Résidu final +27 J/m, borné par un repère de suite. La solution de fond —
+  l'architecture Munjiza où le contact porte la compression des paires
+  voisines dès t = 0 et où le joint ne porte que la cohésion — est notée
+  comme option de phase 3.
+- **Physique** : la zone broyée devient CONSERVATIVE — percussion 2D : rebond
+  e 0,55 → 0,71, 5 casses contre 174 à conditions égales. Le contact
+  quasi-plastique du penalty était un canal de dissipation majeur des runs
+  historiques ; le potentiel est la forme de l'article.
+- **Phase 2 (à faire)** : portage 3D — recouvrement tet-tet (polyèdre),
+  intégrale exacte sur ses faces, mêmes règles de détection/exclusion/relève.
+  En 3D la clé est REFUSÉE explicitement en attendant.
+
+## Chantier B — détection NBS d'origine (note)
+
+La détection actuelle (binning AABB en grille de hachage, paires uniques par
+stamp) est O(N) comme le NBS de Munjiza & Andrews 1998 — le NBS « liste
+chaînée » historique est une optimisation de constante, pas de complexité.
+L'écart structurel restant avec l'article est donc porté par la phase 3D
+ci-dessus, pas par la détection.
 
 Aujourd'hui : pénalité nœud-arête (grille de cellules, birth-gap, contact
 débris quasi-plastique, frottement tanh). L'article : force normale distribuée

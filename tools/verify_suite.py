@@ -38,6 +38,9 @@ RX = {
     "inserted":  r"adaptive insertion: (\d+) / \d+ joints inserted",
     "ratio":     r"measured/expected ratio = ([\d.eE+-]+)",
     "gcact":     r"adaptive contact activation: (\d+) / \d+",
+    "gcwork":    r"net work injected by general contact: (-?[\d.eE+-]+)",
+    "pot_ke":    r"pot_ke_rel = ([\d.eE+-]+)",
+    "pot_mom":   r"pot_mom_rel = ([\d.eE+-]+)",
 }
 
 # ---- définition des tests --------------------------------------------------
@@ -49,6 +52,12 @@ TESTS = [
     dict(name="selftest_saksala2011", tier="fast", selftest="selftest-saksala2011",
          checks=[]),                                    # exit 0 == PASS (throw sinon)
     dict(name="selftest_dpdfh", tier="fast", selftest="selftest-dpdfh", checks=[]),
+    # A3 : LE test decisif du contact par potentiel — collision elastique sans
+    # frottement, conservation jugee sur dKE (3.7e-12 frontale, 5.1e-7 oblique)
+    # et quantite de mouvement machine (3e loi exacte par construction)
+    dict(name="selftest_potential2d", tier="fast", selftest="selftest-potential2d",
+         checks=[("pot_ke", 0.0, 1e-5, True), ("pot_mom", 0.0, 1e-12, True),
+                 ("pass_tag", None, 0, True)]),
     dict(name="yan_integral", tier="fast", cfg="verify_fdem_tension.cfg",
          over=["jointSoftening = yan", "T = 2e-6"],
          # stdout n'imprime que 6 décimales : la vérification à 1e-12 vit dans
@@ -72,6 +81,10 @@ TESTS = [
     # ... ni l'activation adaptative du contact (A1, 2026-08-13)
     dict(name="zeroload_2d_gcadaptive", tier="fast", cfg="verify_fdem_voronoi_tension.cfg",
          over=["pullV = 1e-12", "verifyFt = false", "gcActivation = adaptive"],
+         checks=[("broken", 0, 0, True), ("dampwork", 0.0, 1e-12, True)]),
+    # ... ni le contact par potentiel (A3, 2026-08-13)
+    dict(name="zeroload_2d_potential", tier="fast", cfg="verify_fdem_voronoi_tension.cfg",
+         over=["pullV = 1e-12", "verifyFt = false", "contact = potential"],
          checks=[("broken", 0, 0, True), ("dampwork", 0.0, 1e-12, True)]),
     # le cas delaunay est LE cas historique du cliquet (158 joints cassés a
     # charge nulle avant correctif) mais coute ~2.5 min : tier full
@@ -150,6 +163,30 @@ TESTS = [
     dict(name="shpb_mini_gcadaptive", tier="full", cfg="../configs_yan/shpb_mini.cfg",
          over=["T = 9e-5", "frames = 4", "gcActivation = adaptive"],
          checks=[("broken", 812, 0, True), ("gcact", 122, 0, True)]),
+    # --- A3 : contact par potentiel de Munjiza (contact = potential) --------
+    # Conservation au niveau SOLVEUR : assemblage SHPB incassable sans
+    # frottement — |gcWork| doit rester au niveau du biais du compteur
+    # (mesure -2.6 J/m pour 766 J/m en jeu, 0.3 %), la ou le penalty
+    # quasi-plastique par defaut dissiperait massivement.
+    dict(name="shpb_elastic_potential", tier="full", cfg="../configs_yan/shpb_mini.cfg",
+         over=["T = 9e-5", "frames = 4", "phase.rock.ft = 1e12",
+               "phase.rock.cohesion = 1e12", "phase.rock.Gf = 1e6",
+               "contactMu = 0", "contact = potential"],
+         checks=[("broken", 0, 0, True), ("gcwork", 0.0, 8.0, True)]),
+    # SHPB reel en potentiel : reference de plateforme (chaos de broyage
+    # verrouille, comme les autres). L'onde incidente colle au penalty a
+    # 3e-6 pres ; le disque casse moins (595 vs 812) — loi de contact
+    # differente a l'interface, ecart PHYSIQUE assume et documente.
+    dict(name="shpb_mini_potential", tier="full", cfg="../configs_yan/shpb_mini.cfg",
+         over=["T = 9e-5", "frames = 4", "contact = potential"],
+         checks=[("broken", 595, 0, True)]),
+    # Percussion 2D en potentiel : verrouille (a) la borne du residu
+    # d'injection de la releve de naissance (+27 J/m mesure, garde a 60 —
+    # la regression a +936 sans releve doit rester impossible) et (b) le
+    # comptage debris de plateforme.
+    dict(name="percussion_2d_potential", tier="full", cfg="fdem_percussion.cfg",
+         over=["contact = potential"],
+         checks=[("broken", 5, 0, True), ("gcwork", 0.0, 60.0, True)]),
     # charge nulle sur le maillage IMPORTE (mesh = file, tets Gmsh) : certifie
     # la machinerie d'import comme les autres controles certifient les leurs
     dict(name="zeroload_3d_filemesh", tier="full", cfg="verify_fdem3d_tension.cfg",
