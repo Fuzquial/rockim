@@ -98,9 +98,22 @@ consistante aux mêmes points spatiaux des deux côtés (3e loi machine).
   e 0,55 → 0,71, 5 casses contre 174 à conditions égales. Le contact
   quasi-plastique du penalty était un canal de dissipation majeur des runs
   historiques ; le potentiel est la forme de l'article.
-- **Phase 2 (à faire)** : portage 3D — recouvrement tet-tet (polyèdre),
-  intégrale exacte sur ses faces, mêmes règles de détection/exclusion/relève.
-  En 3D la clé est REFUSÉE explicitement en attendant.
+- **Phase 2 — FAIT (2026-08-13, même séance)** : portage 3D tet-tet. Clip du
+  polyèdre de recouvrement par les 4 demi-espaces (face de coupe reconstruite
+  par tri angulaire, valide par convexité), φ = 4·min(λ), intégration exacte
+  par subdivision aux 12 plans de médiane, lumping nodal consistant. Selftest
+  pointe-contre-face : transfert exact, ΔKE/KE₀ = 2,0e-8, quantité de
+  mouvement machine (le tip-contre-tip de deux tets a été essayé et écarté :
+  répulsion quasi nulle aux sommets — φ → 0 — les cônes broutent en position
+  dégénérée). **Deux gardes nées du contrôle zeroload** : plancher de volume
+  relatif et contrôle de fermeture du polyèdre — les tets exactement TANGENTS
+  (voisins par arête/sommet d'un maillage qui pave l'espace) produisaient des
+  slivers à volume quasi nul mais à grandes faces mal refermées, soit des kN
+  parasites au repos (5 joints cassés à charge nulle, zéro après gardes, et
+  le selftest frontal y a gagné un ordre de grandeur : 1,5e-7 → 2,0e-8).
+  Percussion 3D Gmsh : mêmes 6 joints que la pénalité à T = 5e-5, gcWork
+  −5e-5 J. Coût par paire supérieur au nœud-face (détection à optimiser —
+  réutilisation des seaux) : combiner avec gcActivation = adaptive.
 
 ## Chantier B — détection NBS d'origine (note)
 

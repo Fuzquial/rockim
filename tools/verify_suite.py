@@ -41,6 +41,8 @@ RX = {
     "gcwork":    r"net work injected by general contact: (-?[\d.eE+-]+)",
     "pot_ke":    r"pot_ke_rel = ([\d.eE+-]+)",
     "pot_mom":   r"pot_mom_rel = ([\d.eE+-]+)",
+    "pot3_ke":   r"pot3_ke_rel = ([\d.eE+-]+)",
+    "pot3_mom":  r"pot3_mom_rel = ([\d.eE+-]+)",
 }
 
 # ---- définition des tests --------------------------------------------------
@@ -57,6 +59,11 @@ TESTS = [
     # et quantite de mouvement machine (3e loi exacte par construction)
     dict(name="selftest_potential2d", tier="fast", selftest="selftest-potential2d",
          checks=[("pot_ke", 0.0, 1e-5, True), ("pot_mom", 0.0, 1e-12, True),
+                 ("pass_tag", None, 0, True)]),
+    # ... et son miroir 3D (tet-tet, A3 phase 2) : pointe-contre-face puis
+    # oblique, dKE 2e-8, quantite de mouvement machine
+    dict(name="selftest_potential3d", tier="fast", selftest="selftest-potential3d",
+         checks=[("pot3_ke", 0.0, 1e-5, True), ("pot3_mom", 0.0, 1e-12, True),
                  ("pass_tag", None, 0, True)]),
     dict(name="yan_integral", tier="fast", cfg="verify_fdem_tension.cfg",
          over=["jointSoftening = yan", "T = 2e-6"],
@@ -187,6 +194,14 @@ TESTS = [
     dict(name="percussion_2d_potential", tier="full", cfg="fdem_percussion.cfg",
          over=["contact = potential"],
          checks=[("broken", 5, 0, True), ("gcwork", 0.0, 60.0, True)]),
+    # A3 phase 2 (3D) : charge nulle sous le potentiel tet-tet — c'est CE
+    # controle qui a attrape les slivers de tets tangents (5 joints casses au
+    # repos avant les gardes plancher-de-volume + fermeture du polyedre)
+    # (T reduit a 1e-4 : les slivers existent des le pas 0, la fenetre courte
+    # suffit a les attraper et le controle coute ~5 min au lieu de ~11)
+    dict(name="zeroload_3d_potential", tier="full", cfg="verify_fdem3d_tension.cfg",
+         over=["pullV = 1e-12", "T = 1e-4", "contact = potential"],
+         checks=[("broken", 0, 0, True), ("dampwork", 0.0, 1e-12, True)]),
     # charge nulle sur le maillage IMPORTE (mesh = file, tets Gmsh) : certifie
     # la machinerie d'import comme les autres controles certifient les leurs
     dict(name="zeroload_3d_filemesh", tier="full", cfg="verify_fdem3d_tension.cfg",
@@ -212,6 +227,13 @@ TESTS = [
          over=["meshFile = " + os.path.join(ROOT, "meshes", "box3d_h45.msh"),
                "T = 5e-5", "frames = 4", "gcActivation = adaptive"],
          checks=[("broken", 6, 0, True), ("gcact", 0, 0, True)]),
+    # A3 phase 2 : percussion 3D Gmsh sous le potentiel tet-tet (memes 6
+    # joints que la penalite a ce T — le broyage debute a peine et les
+    # debris n'ont pas encore d'influence), gcWork garde pres de zero
+    dict(name="percussion_3d_gmsh_potential", tier="all", cfg="fdem3d_percussion_base.cfg",
+         over=["meshFile = " + os.path.join(ROOT, "meshes", "box3d_h45.msh"),
+               "T = 5e-5", "frames = 4", "contact = potential"],
+         checks=[("broken", 6, 0, True), ("gcwork", 0.0, 1.0, True)]),
 ]
 
 TIERS = {"fast": ["fast"], "full": ["fast", "full"], "all": ["fast", "full", "all"]}

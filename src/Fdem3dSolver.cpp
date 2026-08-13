@@ -16,6 +16,7 @@
 #include <random>
 #include <stdexcept>
 
+#include "rockim/PotentialContact.hpp"
 #include "rockim/RandomField.hpp"
 #include "rockim/Tessellation3.hpp"
 #include "rockim/VtkWriter.hpp"
@@ -176,19 +177,20 @@ void Fdem3dSolver::init() {
     kpGC_ = cfg_.getd("gcPenaltyFactor", 0.01) * phases_.maxE() * hmin_;
     xiGC_ = cfg_.getd("gcXi", 0.8);
     gcRest_ = cfg_.getd("gcRestitution", 0.2);
-    // contact = potential : 2D seulement pour l'instant — le portage 3D
-    // (recouvrement tet-tet, integrale sur le polyedre) est la phase 2 du
-    // chantier A3. REFUS explicite plutot que retomber en silence sur la
-    // penalite : personne ne doit croire qu'il tourne en potentiel.
+    // contact = penalty (defaut, inchange) | potential — A3 phase 2 : le
+    // contact par POTENTIEL de Munjiza en tet-tet, miroir exact du 2D.
     {
         std::string cm = cfg_.gets("contact", "penalty");
-        if (cm == "potential")
-            throw std::runtime_error(
-                "contact = potential n'est pas encore porte en 3D (phase 2 "
-                "du chantier A3) — retirer la cle ou utiliser mode = fdem");
-        if (cm != "penalty")
+        if (cm != "penalty" && cm != "potential")
             throw std::runtime_error("contact must be penalty | potential "
                                      "(got '" + cm + "')");
+        contactPot_ = cm == "potential";
+    }
+    if (contactPot_) {
+        potP_ = cfg_.getd("potPenaltyFactor", 1.0) * phases_.maxE();
+        potKt_ = cfg_.getd("potTangentFactor", 1.0) * phases_.maxE() * hmin_;
+        std::cout << "[FDEM3D] contact: Munjiza potential (eq. 2-5, tet-tet)"
+                     ", p = " << potP_ << " Pa, kt = " << potKt_ << " N/m\n";
     }
     // gcActivation = full (defaut, inchange) | adaptive — miroir exact du 2D
     // (FdemSolver.hpp) : seules les faces qui PEUVENT toucher sont balayees.
@@ -1517,6 +1519,180 @@ void Fdem3dSolver::activationSweep() {
     nextSweep_ = stepCount_ + kn;
 }
 
+// ---------------------------------------------------------------------------
+// contact = potential — A3 phase 2, miroir exact du 2D (voir FdemSolver.cpp)
+// en paires de TETS : detection O(N) par binning AABB, exclusion des paires
+// liees par un joint vivant, force du polyedre de recouvrement
+// (PotentialContact.hpp / pot3), releve de naissance par VOLUME, frottement
+// incremental vectoriel. Serie et deterministe.
+// ---------------------------------------------------------------------------
+void Fdem3dSolver::potentialContact() {
+    if (jointOfPair_.empty() && !jt_.empty()) {
+        jointOfPair_.reserve(2 * jt_.size());
+        for (int j = 0; j < (int)jt_.size(); ++j) {
+            uint64_t a = (uint64_t)std::min(jt_[j].eA, jt_[j].eB);
+            uint64_t b = (uint64_t)std::max(jt_[j].eA, jt_[j].eB);
+            jointOfPair_[(a << 32) | b] = j;
+        }
+    }
+    // ---- (1) elements uniques du jeu actif -------------------------------
+    static std::vector<long> emark;
+    static std::vector<int> elems;
+    static long epoch = 0;
+    if (emark.size() != el_.size()) emark.assign(el_.size(), -1);
+    ++epoch;
+    elems.clear();
+    for (const auto& bf : act_)
+        if (emark[bf.elem] != epoch) {
+            emark[bf.elem] = epoch;
+            elems.push_back(bf.elem);
+        }
+    if (elems.size() < 2) return;
+
+    // ---- (2) AABB courantes + grille de hachage --------------------------
+    double cl = voronoi_ ? cellV_ : 2.0 * hmin_;
+    static std::vector<Eigen::Vector3d> elo, ehi;
+    elo.resize(elems.size());
+    ehi.resize(elems.size());
+    static std::unordered_map<uint64_t, std::vector<int>> hg;
+    hg.clear();
+    auto keyIJK = [](long long ix, long long iy, long long iz) {
+        return (uint64_t)(ix & 0x1FFFFF) | ((uint64_t)(iy & 0x1FFFFF) << 21)
+               | ((uint64_t)(iz & 0x1FFFFF) << 42);
+    };
+    for (int q = 0; q < (int)elems.size(); ++q) {
+        const Elem& E = el_[elems[q]];
+        Eigen::Vector3d lo = X0_[E.n[0]] + u_[E.n[0]], hi = lo;
+        for (int a = 1; a < 4; ++a) {
+            Eigen::Vector3d p = X0_[E.n[a]] + u_[E.n[a]];
+            lo = lo.cwiseMin(p);
+            hi = hi.cwiseMax(p);
+        }
+        elo[q] = lo;
+        ehi[q] = hi;
+        long long x0 = (long long)std::floor(lo.x() / cl);
+        long long x1 = (long long)std::floor(hi.x() / cl);
+        long long y0 = (long long)std::floor(lo.y() / cl);
+        long long y1 = (long long)std::floor(hi.y() / cl);
+        long long z0 = (long long)std::floor(lo.z() / cl);
+        long long z1 = (long long)std::floor(hi.z() / cl);
+        for (long long cz = z0; cz <= z1; ++cz)
+            for (long long cy = y0; cy <= y1; ++cy)
+                for (long long cx = x0; cx <= x1; ++cx)
+                    hg[keyIJK(cx, cy, cz)].push_back(q);
+    }
+
+    // ---- (3) paires candidates -> clip -> forces -------------------------
+    static std::vector<int> pstamp;
+    if (pstamp.size() != elems.size()) pstamp.assign(elems.size(), -1);
+    else std::fill(pstamp.begin(), pstamp.end(), -1);
+
+    for (int q = 0; q < (int)elems.size(); ++q) {
+        long long x0 = (long long)std::floor(elo[q].x() / cl);
+        long long x1 = (long long)std::floor(ehi[q].x() / cl);
+        long long y0 = (long long)std::floor(elo[q].y() / cl);
+        long long y1 = (long long)std::floor(ehi[q].y() / cl);
+        long long z0 = (long long)std::floor(elo[q].z() / cl);
+        long long z1 = (long long)std::floor(ehi[q].z() / cl);
+        for (long long cz = z0; cz <= z1; ++cz)
+            for (long long cy = y0; cy <= y1; ++cy)
+                for (long long cx = x0; cx <= x1; ++cx) {
+                    auto it = hg.find(keyIJK(cx, cy, cz));
+                    if (it == hg.end()) continue;
+                    for (int r : it->second) {
+                        if (r <= q || pstamp[r] == q) continue;
+                        pstamp[r] = q;
+                        if ((elo[r].array() > ehi[q].array()).any()
+                            || (elo[q].array() > ehi[r].array()).any())
+                            continue;
+                        int eLo = std::min(elems[q], elems[r]);
+                        int eHi = std::max(elems[q], elems[r]);
+                        uint64_t pk = ((uint64_t)eLo << 32) | (uint64_t)eHi;
+                        auto itJ = jointOfPair_.find(pk);
+                        if (itJ != jointOfPair_.end()
+                            && !jt_[itJ->second].dead)
+                            continue;      // le joint vivant porte la paire
+                        const Elem& EA = el_[eLo];
+                        const Elem& EB = el_[eHi];
+                        pot3::V3 pa[4], pb[4];
+                        for (int k = 0; k < 4; ++k) {
+                            pa[k] = X0_[EA.n[k]] + u_[EA.n[k]];
+                            pb[k] = X0_[EB.n[k]] + u_[EB.n[k]];
+                        }
+                        pot3::PairForce3 R;
+                        if (!pot3::pairForce(pa, pb, potP_, R)) continue;
+                        // ---- releve de naissance par VOLUME (cf. 2D) -----
+                        auto [itH, isNewH] = potFt_.try_emplace(pk);
+                        PotHist& H = itH->second;
+                        if (isNewH) H.vRef = R.vol;
+                        else H.vRef *= relax_;
+                        double sc = std::max(0.0, 1.0 - H.vRef / R.vol);
+                        R.F *= sc;
+                        for (int k = 0; k < 4; ++k) {
+                            R.fA[k] *= sc;
+                            R.fB[k] *= sc;
+                        }
+                        double w = 0.0;
+                        for (int k = 0; k < 4; ++k) {
+                            f_[EA.n[k]] += R.fA[k];
+                            f_[EB.n[k]] += R.fB[k];
+                            w += R.fA[k].dot(v_[EA.n[k]])
+                               + R.fB[k].dot(v_[EB.n[k]]);
+                        }
+                        gcWork_ += w * dt_;
+                        if (gcAdaptive_)
+                            for (int k = 0; k < 4; ++k) {
+                                lastTouch_[EA.n[k]] = stepCount_;
+                                lastTouch_[EB.n[k]] = stepCount_;
+                            }
+                        // ---- frottement incremental (eq. 4-5) ------------
+                        if (muC_ > 0.0 && potKt_ > 0.0) {
+                            double Fn = R.F.norm();
+                            if (Fn > 1e-300) {
+                                pot3::Bary4 bA, bB;
+                                bA.set(pa[0], pa[1], pa[2], pa[3]);
+                                bB.set(pb[0], pb[1], pb[2], pb[3]);
+                                double la[4], lb[4];
+                                bA.lam(R.cen, la);
+                                bB.lam(R.cen, lb);
+                                Eigen::Vector3d vA =
+                                    la[0] * v_[EA.n[0]] + la[1] * v_[EA.n[1]]
+                                    + la[2] * v_[EA.n[2]]
+                                    + la[3] * v_[EA.n[3]];
+                                Eigen::Vector3d vB =
+                                    lb[0] * v_[EB.n[0]] + lb[1] * v_[EB.n[1]]
+                                    + lb[2] * v_[EB.n[2]]
+                                    + lb[3] * v_[EB.n[3]];
+                                Eigen::Vector3d vrel = vA - vB;
+                                Eigen::Vector3d nh = R.F / Fn;
+                                if (H.step < stepCount_ - 1) H.Ft.setZero();
+                                Eigen::Vector3d Ft =
+                                    H.Ft - H.Ft.dot(nh) * nh;
+                                Eigen::Vector3d vt =
+                                    vrel - vrel.dot(nh) * nh;
+                                Ft -= potKt_ * dt_ * vt;
+                                double cap = muC_ * Fn;
+                                double Ftn = Ft.norm();
+                                if (Ftn > cap && Ftn > 0.0)
+                                    Ft *= cap / Ftn;
+                                H.Ft = Ft;
+                                H.step = stepCount_;
+                                for (int k = 0; k < 4; ++k) {
+                                    f_[EA.n[k]] += la[k] * Ft;
+                                    f_[EB.n[k]] -= lb[k] * Ft;
+                                }
+                                gcWork_ += Ft.dot(vrel) * dt_;
+                            } else {
+                                H.step = stepCount_;
+                            }
+                        } else {
+                            H.step = stepCount_;
+                        }
+                    }
+                }
+    }
+}
+
 void Fdem3dSolver::generalContact() {
     if (gcAdaptive_) {
         if (!poolBuilt_) rebuildContactFaces();
@@ -1539,6 +1715,10 @@ void Fdem3dSolver::generalContact() {
         actStamp_ = nBroken_;
     }
     if (act_.empty()) return;
+    if (contactPot_) {                     // A3 : contact par potentiel —
+        potentialContact();                // meme jeu actif, autre physique
+        return;
+    }
 
     // Cell size: 2 hmin on the grid mesh (unchanged); on the voronoi mesh
     // hmin is the THINNEST sliver, and (L/hmin)^3 dense cells reallocated
@@ -2214,6 +2394,161 @@ void Fdem3dSolver::finalize() {
               << "\n[FDEM3D] fragments         : " << nFrag_
               << " (detached vol " << detachedVol_ << " m^3)"
               << "\n[FDEM3D] specific energy   : " << Es << " J/m^3\n";
+}
+
+// ---------------------------------------------------------------------------
+// selftest-potential3d — le test decisif du portage 3D (A3 phase 2).
+// Deux TETS rigides (centre + rotation par Rodrigues, equations d'Euler en
+// repere monde), lies uniquement par le contact par potentiel tet-tet, sans
+// frottement. Frontale symetrique (transfert exact attendu) puis oblique
+// (couple non nul, le polyedre de coupe tourne et se deforme). Compteur de
+// travail de convention solveur (f.v avant le kick) — la conservation se
+// juge sur dKE, comme en 2D.
+// ---------------------------------------------------------------------------
+int potentialSelftest3d(const std::string& csvPath) {
+    using V3 = Eigen::Vector3d;
+    using M3 = Eigen::Matrix3d;
+    std::ofstream csv(csvPath);
+    csv << "phase,t,xA,vAx,xB,vBx,vol,W,KE\n";
+
+    struct Rigid {
+        V3 c, v;
+        M3 R;
+        V3 om;
+        V3 r0[4];
+        double m = 4.0;                    // 4 masses ponctuelles unite
+        M3 Ib;                             // inertie en repere corps
+        void setTet(const V3& A, const V3& B, const V3& C, const V3& D) {
+            c = (A + B + C + D) / 4.0;
+            r0[0] = A - c;
+            r0[1] = B - c;
+            r0[2] = C - c;
+            r0[3] = D - c;
+            R.setIdentity();
+            om.setZero();
+            v.setZero();
+            Ib.setZero();
+            for (int k = 0; k < 4; ++k)
+                Ib += r0[k].squaredNorm() * M3::Identity()
+                      - r0[k] * r0[k].transpose();
+        }
+        void pos(V3 p[4]) const {
+            for (int k = 0; k < 4; ++k) p[k] = c + R * r0[k];
+        }
+        V3 vel(const V3& x) const { return v + om.cross(x - c); }
+        M3 Iw() const { return R * Ib * R.transpose(); }
+    };
+    auto rodrigues = [](const V3& w, double dt) {
+        double th = w.norm() * dt;
+        if (th < 1e-30) return M3(M3::Identity());
+        V3 k = w.normalized();
+        M3 K;
+        K << 0, -k.z(), k.y(), k.z(), 0, -k.x(), -k.y(), k.x(), 0;
+        return M3(M3::Identity() + std::sin(th) * K
+                  + (1.0 - std::cos(th)) * K * K);
+    };
+
+    const double p = 1.0e3, dt = 1.0e-4, v0 = 1.0;
+    int fails = 0;
+    double worstW = 0.0, worstKE = 0.0, worstP = 0.0;
+
+    for (int phase = 1; phase <= 2; ++phase) {
+        Rigid A, B;
+        // POINTE-contre-FACE, la configuration generique du contact FDEM :
+        // la BASE de A (a x = -0.10, tournee vers +x) recoit l'APEX de B
+        // (a x = -0.08, pointant vers -x), les deux centroides sur l'axe de
+        // vol. Le tip-contre-tip de deux tets a ete essaye et ecarte : la
+        // repulsion y est quasi nulle (phi -> 0 aux sommets), les deux cones
+        // broutent ~10 000 pas en position degeneree du clip et l'erreur
+        // d'integration s'accumule (mesure : dKE 5e-3, contre 1e-8 ici).
+        A.setTet(V3(-0.10, -0.45, -0.26), V3(-0.10, 0.00, 0.52),
+                 V3(-0.10, 0.45, -0.26), V3(-1.15, 0.00, 0.00));
+        double yoff = (phase == 2) ? 0.18 : 0.0;
+        B.setTet(V3(1.00, -0.45 + yoff, -0.26), V3(1.00, 0.00 + yoff, 0.52),
+                 V3(1.00, 0.45 + yoff, -0.26), V3(-0.08, yoff, 0.00));
+        A.v = V3(v0, 0, 0);
+
+        double KE0 = 0.5 * A.m * A.v.squaredNorm();
+        V3 P0 = A.m * A.v + B.m * B.v;
+        double W = 0.0, volMax = 0.0;
+        long nTouch = 0;
+
+        const long nSteps = (long)(3.0 / dt);
+        for (long s = 0; s < nSteps; ++s) {
+            V3 pa[4], pb[4];
+            A.pos(pa);
+            B.pos(pb);
+            pot3::PairForce3 Rp;
+            V3 FA = V3::Zero(), FB = V3::Zero();
+            V3 tA = V3::Zero(), tB = V3::Zero();
+            if (pot3::pairForce(pa, pb, p, Rp)) {
+                ++nTouch;
+                volMax = std::max(volMax, Rp.vol);
+                for (int k = 0; k < 4; ++k) {
+                    W += (Rp.fA[k].dot(A.vel(pa[k]))
+                          + Rp.fB[k].dot(B.vel(pb[k]))) * dt;
+                    FA += Rp.fA[k];
+                    FB += Rp.fB[k];
+                    tA += (pa[k] - A.c).cross(Rp.fA[k]);
+                    tB += (pb[k] - B.c).cross(Rp.fB[k]);
+                }
+            }
+            auto kick = [&](Rigid& X, const V3& F, const V3& tq) {
+                X.v += F / X.m * dt;
+                M3 I = X.Iw();
+                X.om += I.inverse() * (tq - X.om.cross(I * X.om)) * dt;
+                X.c += X.v * dt;
+                X.R = rodrigues(X.om, dt) * X.R;
+            };
+            kick(A, FA, tA);
+            kick(B, FB, tB);
+            if (s % 200 == 0) {
+                double KE = 0.5 * A.m * A.v.squaredNorm()
+                          + 0.5 * B.m * B.v.squaredNorm()
+                          + 0.5 * A.om.dot(A.Iw() * A.om)
+                          + 0.5 * B.om.dot(B.Iw() * B.om);
+                csv << phase << "," << s * dt << "," << A.c.x() << ","
+                    << A.v.x() << "," << B.c.x() << "," << B.v.x() << ","
+                    << volMax << "," << W << "," << KE << "\n";
+            }
+        }
+
+        double KE1 = 0.5 * A.m * A.v.squaredNorm()
+                   + 0.5 * B.m * B.v.squaredNorm()
+                   + 0.5 * A.om.dot(A.Iw() * A.om)
+                   + 0.5 * B.om.dot(B.Iw() * B.om);
+        V3 P1 = A.m * A.v + B.m * B.v;
+        double wRel = std::abs(W) / KE0;
+        double keRel = std::abs(KE1 - KE0) / KE0;
+        double pRel = (P1 - P0).norm() / P0.norm();
+        worstW = std::max(worstW, wRel);
+        worstKE = std::max(worstKE, keRel);
+        worstP = std::max(worstP, pRel);
+        std::cout << "[POT3] phase " << phase
+                  << (phase == 1 ? " (frontale)" : " (oblique) ")
+                  << ": contact " << nTouch << " pas, volume max " << volMax
+                  << "\n[POT3]   vA_fin = (" << A.v.x() << ", " << A.v.y()
+                  << ", " << A.v.z() << "), vB_fin = (" << B.v.x() << ", "
+                  << B.v.y() << ", " << B.v.z() << "), |omB| = "
+                  << B.om.norm()
+                  << "\n[POT3]   |W_contact|/KE0 = " << wRel
+                  << ", |dKE|/KE0 = " << keRel
+                  << ", |dP|/|P0| = " << pRel << "\n";
+        if (phase == 1) {
+            if (std::abs(B.v.x() - v0) > 0.02 || std::abs(A.v.x()) > 0.02)
+                ++fails;
+        }
+    }
+    std::cout << "pot3_work_rel = " << worstW << "\n"
+              << "pot3_ke_rel = " << worstKE << "\n"
+              << "pot3_mom_rel = " << worstP << "\n";
+    bool ok = fails == 0 && worstW < 5e-3 && worstKE < 1e-4
+              && worstP < 1e-10;
+    std::cout << (ok ? "[PASS]" : "[FAIL]")
+              << " selftest-potential3d : contact conservatif de Munjiza en "
+                 "3D (conservation jugee sur dKE ; biais O(dt) du compteur "
+                 "documente en 2D)\n";
+    return ok ? 0 : 1;
 }
 
 } // namespace rockim

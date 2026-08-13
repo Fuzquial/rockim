@@ -56,6 +56,13 @@ int main(int argc, char** argv) {
                       << csv << "\n";
             return rc;
         }
+        if (std::string(argv[1]) == "selftest-potential3d") {
+            std::string csv = argc > 2 ? argv[2] : "rockim_potential3d.csv";
+            int rc = potentialSelftest3d(csv);
+            std::cout << "[rockim] potential3d selftest traces written to "
+                      << csv << "\n";
+            return rc;
+        }
         Config cfg = Config::load(argv[1]);
         std::string out = (argc > 2) ? argv[2] : cfg.gets("outputDir", "out");
         std::filesystem::create_directories(out);

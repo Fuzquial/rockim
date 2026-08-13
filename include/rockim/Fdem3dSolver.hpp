@@ -312,6 +312,25 @@ private:
                                            // du declencheur historique)
     void activationSweep();
 
+    // ---- contact par POTENTIEL de Munjiza (contact = potential) — A3 -------
+    // Miroir exact du 2D (FdemSolver.hpp) en tet-tet : force distribuee
+    // p ∮ (phi_A - phi_B) n dG sur le bord du POLYEDRE de recouvrement
+    // (PotentialContact.hpp, pot3), frottement incremental vectoriel de
+    // l'eq. 4-5, detection element-element O(N), exclusion des paires liees
+    // par un joint vivant, releve de naissance par VOLUME (le pen0_ du
+    // potentiel — voir la lecon 2D : une rampe temporelle INJECTE).
+    bool contactPot_ = false;
+    double potP_ = 0.0;                    // penalite normale [Pa]
+    double potKt_ = 0.0;                   // raideur tangentielle [N/m]
+    struct PotHist {
+        Eigen::Vector3d Ft{0.0, 0.0, 0.0}; // force tangentielle sur l'el. MIN
+        long step = -1000;
+        double vRef = 0.0;                 // reference de naissance (volume)
+    };
+    std::unordered_map<uint64_t, PotHist> potFt_;
+    std::unordered_map<uint64_t, int> jointOfPair_;
+    void potentialContact();
+
     Tool3 tool_;
     double toolKE0_ = 0.0;
 
