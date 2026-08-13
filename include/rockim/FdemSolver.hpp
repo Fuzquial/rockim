@@ -380,6 +380,59 @@ private:
     // general contact machinery
     std::vector<BEdge> act_;               // active edges (exterior + freed)
     std::vector<int> actNodes_;
+
+    // ---- activation adaptative du contact (gcActivation = adaptive) --------
+    // Fukuda et al. (GPGPU-FDEM) : act_ ne contient que les faces qui PEUVENT
+    // toucher, au lieu de tout l'exterieur balaye a chaque pas. Une face du
+    // pool (l'exterieur, fenetre par gcXwindow) s'active — DEFINITIVEMENT,
+    // l'activation est monotone — par l'une des trois regles :
+    //   (C) peau endommagee : son element porte un joint casse (D >= 1) ou
+    //       mort — le voisinage immediat d'une fissure, active d'office ;
+    //   (A) autre corps : sa sphere englobante approche a moins de gcActMargin
+    //       cellules d'une face d'une AUTRE composante connexe (union-find sur
+    //       les joints porteurs : bonded ou vivants avec D < 1, recalcule
+    //       quand nBroken_ change) — c'est ce qui arme le SHPB multi-corps des
+    //       t = 0 et les debris detaches qui retombent ;
+    //   (B) voisinage d'un contact reel : idem, contre une face active dont
+    //       les noeuds ont deja PORTE une force de contact (estampille
+    //       lastTouch_) — un debris qui racle propage l'activation a la
+    //       surface qu'il aborde, une face active mais inerte ne propage rien
+    //       (sans ce filtre, l'adjacence a gap nul contaminait tout le bord de
+    //       proche en proche).
+    // Le balayage est periodique, cadence par v_max : entre deux balayages
+    // deux surfaces ne peuvent se rapprocher de plus de 2 v_max dt par pas,
+    // la cadence est bornee pour que l'approche reste sous la demi-marge
+    // (facteur de securite 2). Il se declenche aussi des que nBroken_ change
+    // (aligne sur la cadence du rebuild, % 8). Cout : O(N) tous les
+    // gcActEvery pas — mesure nul devant un seul pas de detection.
+    // Approximation ASSUMEE (la meme que Fukuda) : un continuum INTACT ne
+    // peut pas se replier sur lui-meme. gcActivation = full (defaut,
+    // bit-identique) reste la reference.
+    bool gcAdaptive_ = false;
+    double gcActMargin_ = 2.0;             // marge d'activation [cellules]
+    long gcActEvery_ = 64;                 // cadence max du balayage [pas]
+    std::vector<BEdge> pool_;              // exterieur fenetre (fige a l'init)
+    std::vector<char> extOn_;              // drapeau actif, par face du pool
+    std::vector<char> elemDam_;            // regle C : element au bord casse
+                                           // + un anneau par sommet
+    std::vector<std::vector<int>> vElems_; // sommet -> elements (statique)
+    std::vector<int> bodyOf_;              // composante connexe par element
+    std::vector<long> lastTouch_;          // dernier pas ou le NOEUD a porte
+                                           // une force de contact (-1 jamais)
+    long bodyStamp_ = -1;                  // nBroken_ au dernier union-find
+    int nBodies_ = 1;
+    long nextSweep_ = 0;                   // stepCount_ du prochain balayage
+    long sweepBroken_ = -1;                // nBroken_ au dernier balayage
+    bool poolBuilt_ = false;
+    bool haveDead_ = false;                // des faces liberees existent
+    long nActivated_ = 0;                  // compteur (resume de fin de run)
+    std::vector<int> actPool_;             // act idx -> pool idx (-1 liberee)
+    std::vector<BEdge> deadList_;          // cache des faces liberees, ne se
+                                           // rafraichit QUE sur le declencheur
+                                           // historique (timing = mode full)
+    std::vector<long> poolTouch_;          // premier pas avec force (diag)
+    std::vector<long> actStep_;            // pas d'activation (diag)
+    void activationSweep();
     // OpenMP scratch: per-thread force buffers for the joint scatter
     std::vector<std::vector<Eigen::Vector2d>> fTL_;
     std::vector<std::vector<char>> seenTL_;

@@ -37,6 +37,7 @@ RX = {
     "yan_int":   r"int f\(D\) dD = ([\d.eE+-]+)",
     "inserted":  r"adaptive insertion: (\d+) / \d+ joints inserted",
     "ratio":     r"measured/expected ratio = ([\d.eE+-]+)",
+    "gcact":     r"adaptive contact activation: (\d+) / \d+",
 }
 
 # ---- définition des tests --------------------------------------------------
@@ -67,6 +68,10 @@ TESTS = [
     # sécante à l'origine ne doit rien créer au repos non plus (A2, 2026-08-13)
     dict(name="zeroload_2d_origin", tier="fast", cfg="verify_fdem_voronoi_tension.cfg",
          over=["pullV = 1e-12", "verifyFt = false", "jointShearUnload = origin"],
+         checks=[("broken", 0, 0, True), ("dampwork", 0.0, 1e-12, True)]),
+    # ... ni l'activation adaptative du contact (A1, 2026-08-13)
+    dict(name="zeroload_2d_gcadaptive", tier="fast", cfg="verify_fdem_voronoi_tension.cfg",
+         over=["pullV = 1e-12", "verifyFt = false", "gcActivation = adaptive"],
          checks=[("broken", 0, 0, True), ("dampwork", 0.0, 1e-12, True)]),
     # le cas delaunay est LE cas historique du cliquet (158 joints cassés a
     # charge nulle avant correctif) mais coute ~2.5 min : tier full
@@ -126,6 +131,25 @@ TESTS = [
          over=["jointShearUnload = origin", "jointFrictionScaled = 1"],
          checks=[("ucs_mpa", 50.3671, 0.15, True), ("broken", 318, 0, True),
                  ("inserted", 1131, 0, True)]),
+    # --- A1 : activation adaptative du contact (gcActivation) ---------------
+    # La paire percussion 2D est BIT-IDENTIQUE mode a mode (174 joints, memes
+    # energies, fichiers identiques — verifie le 2026-08-13, phase debris
+    # comprise, apres le correctif du cache des faces mortes). La paire SHPB
+    # (multi-corps, contact necessaire des t = 0) est bit-identique a
+    # T = 9e-5 ; au-dela la tempete de fragments entre dans l'enveloppe
+    # chaotique (le mode full lui-meme diverge 8x plus tot sous OMP = 2).
+    dict(name="percussion_2d", tier="full", cfg="fdem_percussion.cfg",
+         checks=[("broken", 174, 0, True), ("dampwork", 0.0, 1e-12, True)]),
+    dict(name="percussion_2d_gcadaptive", tier="full", cfg="fdem_percussion.cfg",
+         over=["gcActivation = adaptive"],
+         checks=[("broken", 174, 0, True), ("gcact", 21, 0, True),
+                 ("dampwork", 0.0, 1e-12, True)]),
+    dict(name="shpb_mini", tier="full", cfg="../configs_yan/shpb_mini.cfg",
+         over=["T = 9e-5", "frames = 4"],
+         checks=[("broken", 812, 0, True)]),
+    dict(name="shpb_mini_gcadaptive", tier="full", cfg="../configs_yan/shpb_mini.cfg",
+         over=["T = 9e-5", "frames = 4", "gcActivation = adaptive"],
+         checks=[("broken", 812, 0, True), ("gcact", 122, 0, True)]),
     # charge nulle sur le maillage IMPORTE (mesh = file, tets Gmsh) : certifie
     # la machinerie d'import comme les autres controles certifient les leurs
     dict(name="zeroload_3d_filemesh", tier="full", cfg="verify_fdem3d_tension.cfg",
@@ -141,6 +165,16 @@ TESTS = [
     dict(name="zeroload_3d_voronoi", tier="all", cfg="verify_fdem3d_voronoi_tension.cfg",
          over=["pullV = 1e-12", "verifyFt = false"],
          checks=[("broken", 0, 0, True), ("dampwork", 0.0, 1e-12, False)]),
+    # A1 en 3D sur le maillage Gmsh importe : paire bit-identique a T = 5e-5
+    # (6 joints, memes energies), et le x2.4 de mur est deja la (265 -> 111 s)
+    dict(name="percussion_3d_gmsh", tier="all", cfg="fdem3d_percussion_base.cfg",
+         over=["meshFile = " + os.path.join(ROOT, "meshes", "box3d_h45.msh"),
+               "T = 5e-5", "frames = 4"],
+         checks=[("broken", 6, 0, True)]),
+    dict(name="percussion_3d_gmsh_gcadaptive", tier="all", cfg="fdem3d_percussion_base.cfg",
+         over=["meshFile = " + os.path.join(ROOT, "meshes", "box3d_h45.msh"),
+               "T = 5e-5", "frames = 4", "gcActivation = adaptive"],
+         checks=[("broken", 6, 0, True), ("gcact", 0, 0, True)]),
 ]
 
 TIERS = {"fast": ["fast"], "full": ["fast", "full"], "all": ["fast", "full", "all"]}

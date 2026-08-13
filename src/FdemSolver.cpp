@@ -329,6 +329,26 @@ void FdemSolver::init() {
     kpGC_ = cfg_.getd("gcPenaltyFactor", 0.01) * phases_.maxE() * thk_;
     xiGC_ = cfg_.getd("gcXi", 0.8);
     gcRest_ = cfg_.getd("gcRestitution", 0.2);
+    // gcActivation = full (defaut, inchange) | adaptive — voir l'en-tete :
+    // seules les faces qui PEUVENT toucher sont balayees (Fukuda et al.).
+    {
+        std::string ga = cfg_.gets("gcActivation", "full");
+        if (ga != "full" && ga != "adaptive")
+            throw std::runtime_error("gcActivation must be full | adaptive "
+                                     "(got '" + ga + "')");
+        gcAdaptive_ = ga == "adaptive";
+    }
+    if (gcAdaptive_) {
+        gcActMargin_ = cfg_.getd("gcActMargin", 2.0);
+        gcActEvery_ = cfg_.geti("gcActEvery", 64);
+        if (!(gcActMargin_ > 0.0))
+            throw std::runtime_error("gcActMargin must be > 0 [cells]");
+        if (gcActEvery_ < 1)
+            throw std::runtime_error("gcActEvery must be >= 1 [steps]");
+        std::cout << "[FDEM] contact activation: adaptive (Fukuda) — margin "
+                  << gcActMargin_ << " cells, sweep <= every "
+                  << gcActEvery_ << " steps\n";
+    }
     relax_ = 1.0;   // set after dt is known (init order): see below
     muC_ = cfg_.getd("contactMu", 0.5);
     xiC_ = cfg_.getd("contactXi", 0.05);
@@ -2711,24 +2731,50 @@ void FdemSolver::jointForces() {
 // the edge nodes by the projection weights.
 // ---------------------------------------------------------------------------
 void FdemSolver::rebuildContactEdges() {
-    act_ = exterior_;
-    // gcXwindow: on the SHPB assembly all but a few hundred of the ~40 000
-    // exterior faces are bar flanks metres away from anything they could ever
-    // touch. Restricting the ACTIVE set to a window around the specimen is what
-    // makes the contact sweep cost O(interface) instead of O(assembly).
-    if (gcXmin_ > -1e299) {
-        std::vector<BEdge> keep;
-        for (const auto& be : act_) {
-            double xm = 0.5 * (X0_[be.na].x() + X0_[be.nb].x());
-            if (xm >= gcXmin_ && xm <= gcXmax_) keep.push_back(be);
+    if (!poolBuilt_) {
+        // gcXwindow: on the SHPB assembly all but a few hundred of the
+        // ~40 000 exterior faces are bar flanks metres away from anything
+        // they could ever touch. Restricting the ACTIVE set to a window
+        // around the specimen is what makes the contact sweep cost
+        // O(interface) instead of O(assembly). The window tests X0_ (initial
+        // positions), so the pool is CONSTANT: built once, kept.
+        pool_ = exterior_;
+        if (gcXmin_ > -1e299) {
+            std::vector<BEdge> keep;
+            for (const auto& be : pool_) {
+                double xm = 0.5 * (X0_[be.na].x() + X0_[be.nb].x());
+                if (xm >= gcXmin_ && xm <= gcXmax_) keep.push_back(be);
+            }
+            pool_.swap(keep);
         }
-        act_.swap(keep);
+        extOn_.assign(pool_.size(), gcAdaptive_ ? 0 : 1);
+        poolBuilt_ = true;
     }
-    for (const auto& J : jt_)
-        if (J.dead) {
-            act_.push_back({J.eA, J.a1, J.a2});
-            act_.push_back({J.eB, J.b2, J.b1});        // CCW in B runs opposite
-        }
+    act_.clear();
+    actPool_.clear();                      // act idx -> pool idx (-1 liberee)
+    if (gcAdaptive_) {                    // sous-ensemble ACTIF, ordre du pool
+        for (std::size_t k = 0; k < pool_.size(); ++k)
+            if (extOn_[k]) {
+                act_.push_back(pool_[k]);
+                actPool_.push_back((int)k);
+            }
+    } else {
+        act_.insert(act_.end(), pool_.begin(), pool_.end());
+        for (std::size_t k = 0; k < pool_.size(); ++k)
+            actPool_.push_back((int)k);
+    }
+    // Les faces liberees viennent du CACHE deadList_, rafraichi UNIQUEMENT
+    // par le declencheur historique (nBroken_ change, pas % 8) dans
+    // generalContact(). Un joint peut mourir SANS casser (separation tardive,
+    // dnMax > 3 dnF longtemps apres D = 1) : le mode full n'integre alors ses
+    // faces qu'au rebuild suivant la casse SUIVANTE. Les recompositions
+    // declenchees par l'activation adaptative reutilisent le cache tel quel,
+    // sinon elles avanceraient cette entree de quelques pas et les deux modes
+    // divergeraient au bit pres (mesure : c'etait LA source de l'ecart).
+    act_.insert(act_.end(), deadList_.begin(), deadList_.end());
+    actPool_.insert(actPool_.end(), deadList_.size(), -1);
+    haveDead_ = !deadList_.empty();
+    if (poolTouch_.empty()) poolTouch_.assign(pool_.size(), -1);
     std::vector<char> inAct(X0_.size(), 0);
     for (const auto& be : act_) inAct[be.na] = inAct[be.nb] = 1;
     actNodes_.clear();
@@ -2736,9 +2782,180 @@ void FdemSolver::rebuildContactEdges() {
         if (inAct[i]) actNodes_.push_back(i);
 }
 
+// ---------------------------------------------------------------------------
+// gcActivation = adaptive — le balayage d'activation. Regles C / A / B de
+// l'en-tete ; monotone ; serie (deterministe). Voir FdemSolver.hpp pour la
+// justification de chaque regle et de la cadence.
+// ---------------------------------------------------------------------------
+void FdemSolver::activationSweep() {
+    // ---- (1) composantes connexes et peau endommagee — seulement quand la
+    // topologie a change (un joint ne change de statut qu'en cassant, et
+    // nBroken_ est incremente a l'instant meme ou D atteint 1)
+    if (bodyStamp_ != nBroken_) {
+        std::vector<int> uf(el_.size());
+        for (int e2 = 0; e2 < (int)el_.size(); ++e2) uf[e2] = e2;
+        auto find = [&](int x) {
+            while (uf[x] != x) { uf[x] = uf[uf[x]]; x = uf[x]; }
+            return x;
+        };
+        elemDam_.assign(el_.size(), 0);
+        for (const auto& J : jt_) {
+            if (J.bonded || (!J.dead && J.D < 1.0)) {
+                int a = find(J.eA), b = find(J.eB);
+                if (a != b) uf[a] = b;
+            } else {
+                elemDam_[J.eA] = elemDam_[J.eB] = 1;   // regle C
+            }
+        }
+        bodyOf_.resize(el_.size());
+        nBodies_ = 0;
+        for (int e2 = 0; e2 < (int)el_.size(); ++e2) {
+            bodyOf_[e2] = find(e2);
+            if (uf[e2] == e2) ++nBodies_;
+        }
+        // regle C etendue d'un ANNEAU : tout element partageant un SOMMET
+        // avec un element au bord casse est peau endommagee aussi. C'est le
+        // coin du bourrelet de cratere : son element n'a encore rien casse,
+        // mais la surface s'y deforme deja et son premier recouvrement peut
+        // preceder tout contact porte — mesure sur la percussion 2D (les deux
+        // faces du bord divergeaient au meme pas quelle que soit la marge).
+        if (vElems_.empty()) {             // topologie STATIQUE : bati une fois
+            int nV = 0;
+            for (int v : vOf_) nV = std::max(nV, v + 1);
+            vElems_.assign(nV, {});
+            for (int nd = 0; nd < (int)vOf_.size(); ++nd)
+                vElems_[vOf_[nd]].push_back(elemOf_[nd]);
+        }
+        std::vector<char> ring(el_.size(), 0);
+        for (int e2 = 0; e2 < (int)el_.size(); ++e2)
+            if (elemDam_[e2])
+                for (int a = 0; a < 3; ++a)
+                    for (int e3 : vElems_[vOf_[el_[e2].n[a]]]) ring[e3] = 1;
+        for (int e2 = 0; e2 < (int)el_.size(); ++e2)
+            if (ring[e2]) elemDam_[e2] = 1;
+        bodyStamp_ = nBroken_;
+    }
+    // ---- (2) un seul corps, rien d'active, rien de casse : rien ne peut
+    // toucher (l'approximation assumee : un continuum intact ne se replie
+    // pas sur lui-meme). Le cas ecrasamment majoritaire d'un run de
+    // traction/UCS avant le pic — et TOUT l'avant-endommagement en percussion.
+    if (nBodies_ <= 1 && nActivated_ == 0 && !haveDead_) {
+        nextSweep_ = stepCount_ + gcActEvery_;
+        return;
+    }
+    // ---- (3) sources et cibles ------------------------------------------
+    double cl = gcCell_ > 0.0 ? gcCell_ : 2.0 * hmin_; // = cell_ de detect()
+    double M = gcActMargin_ * cl;
+    struct SFace {
+        Eigen::Vector2d c;
+        double r;
+        int body, idx;                     // idx dans le pool, -1 = liberee
+        char on, touched;
+    };
+    static std::vector<SFace> sf;
+    sf.clear();
+    auto push = [&](int na, int nb, int elem, char on, int idx) {
+        Eigen::Vector2d P = X0_[na] + u_[na], Q = X0_[nb] + u_[nb];
+        char tch = on && (lastTouch_[na] >= 0 || lastTouch_[nb] >= 0);
+        sf.push_back({0.5 * (P + Q), 0.5 * (Q - P).norm(),
+                      bodyOf_[elem], idx, on, tch});
+    };
+    for (std::size_t k = 0; k < pool_.size(); ++k)
+        push(pool_[k].na, pool_[k].nb, pool_[k].elem, extOn_[k], (int)k);
+    for (const auto& J : jt_)
+        if (J.dead) {
+            push(J.a1, J.a2, J.eA, 1, -1);
+            push(J.b2, J.b1, J.eB, 1, -1);
+        }
+    double rmax = 0.0;
+    for (const auto& s : sf) rmax = std::max(rmax, s.r);
+    // ---- (4) grille de hachage, pas = M + 2 rmax : le pochoir 3x3 couvre
+    // toute paire dont l'ecart des spheres englobantes est < M
+    double cs = M + 2.0 * rmax + 1e-300;
+    static std::unordered_map<uint64_t, std::vector<int>> hg;
+    hg.clear();
+    auto key = [&](const Eigen::Vector2d& p) {
+        long long ix = (long long)std::floor(p.x() / cs);
+        long long iy = (long long)std::floor(p.y() / cs);
+        return (uint64_t(uint32_t(ix)) | (uint64_t(uint32_t(iy)) << 32));
+    };
+    auto keyIJ = [&](long long ix, long long iy) {
+        return (uint64_t(uint32_t(ix)) | (uint64_t(uint32_t(iy)) << 32));
+    };
+    for (int q = 0; q < (int)sf.size(); ++q) hg[key(sf[q].c)].push_back(q);
+    bool changed = false;
+    for (int q = 0; q < (int)sf.size(); ++q) {
+        SFace& f = sf[q];
+        if (f.on || f.idx < 0) continue;               // cibles : pool inactif
+        if (elemDam_[pool_[f.idx].elem]) {             // regle C
+            extOn_[f.idx] = 1;
+            ++nActivated_;
+            changed = true;
+            continue;
+        }
+        long long ix = (long long)std::floor(f.c.x() / cs);
+        long long iy = (long long)std::floor(f.c.y() / cs);
+        bool hit = false;
+        for (long long dy = -1; dy <= 1 && !hit; ++dy)
+            for (long long dx = -1; dx <= 1 && !hit; ++dx) {
+                auto it = hg.find(keyIJ(ix + dx, iy + dy));
+                if (it == hg.end()) continue;
+                for (int g : it->second) {
+                    if (g == q) continue;
+                    const SFace& s = sf[g];
+                    // regle A : autre corps. regle B : deja en contact.
+                    if (!(s.body != f.body || s.touched)) continue;
+                    double gap = (s.c - f.c).norm() - s.r - f.r;
+                    if (gap < M) { hit = true; break; }
+                }
+            }
+        if (hit) {
+            extOn_[f.idx] = 1;
+            ++nActivated_;
+            changed = true;
+        }
+    }
+    if (changed) {
+        rebuildContactEdges();             // recompose (cache mort INCHANGE)
+        if (actStep_.empty()) actStep_.assign(pool_.size(), -1);
+        for (std::size_t k = 0; k < pool_.size(); ++k)
+            if (extOn_[k] && actStep_[k] < 0) actStep_[k] = stepCount_;
+    }
+    // ---- (5) cadence : entre deux balayages, l'approche par pas est bornee
+    // par 2 v_max dt ; on la garde sous la demi-marge (securite 2)
+    double v2 = 0.0;
+    for (const auto& v : v_) v2 = std::max(v2, v.squaredNorm());
+    double closing = 2.0 * std::sqrt(v2) * dt_;
+    long kn = gcActEvery_;
+    if (closing > 1e-300)
+        kn = std::max((long)1,
+                      std::min(gcActEvery_, (long)(0.5 * M / closing)));
+    nextSweep_ = stepCount_ + kn;
+}
+
 void FdemSolver::generalContact() {
     if (std::getenv("RKM_NOGC")) return;               // bisection switch
+    if (gcAdaptive_) {
+        if (!poolBuilt_) rebuildContactEdges();        // le pool avant tout
+        if (lastTouch_.empty()) lastTouch_.assign(X0_.size(), -1);
+        // le balayage se declenche a sa cadence propre ET des que nBroken_
+        // change, aligne sur la cadence % 8 du rebuild : les faces liberees
+        // par les joints frais morts deviennent sources au meme pas que leur
+        // entree dans act_
+        if (stepCount_ >= nextSweep_
+            || (sweepBroken_ != nBroken_
+                && (sweepBroken_ < 0 || stepCount_ % 8 == 0))) {
+            activationSweep();             // peut recomposer act_ (cache mort
+            sweepBroken_ = nBroken_;       // inchange : timing = mode full)
+        }
+    }
     if (actStamp_ != nBroken_ && (actStamp_ < 0 || stepCount_ % 8 == 0)) {
+        deadList_.clear();                 // LE declencheur historique : seul
+        for (const auto& J : jt_)          // endroit ou le cache se rafraichit
+            if (J.dead) {
+                deadList_.push_back({J.eA, J.a1, J.a2});
+                deadList_.push_back({J.eB, J.b2, J.b1});  // CCW oppose dans B
+            }
         rebuildContactEdges();
         actStamp_ = nBroken_;
     }
@@ -2981,6 +3198,16 @@ void FdemSolver::generalContact() {
             f_[i] += Fc;
             f_[be.na] -= (1.0 - s) * Fc;
             f_[be.nb] -= s * Fc;
+            {   // premiere force portee par une face du pool (diagnostic
+                // RKM_GCLOG + source de la regle B en mode adaptatif)
+                int pi = actPool_[cp.k];
+                if (pi >= 0 && poolTouch_[pi] < 0) poolTouch_[pi] = stepCount_;
+            }
+            if (gcAdaptive_) {                         // source de la regle B
+                lastTouch_[i] = stepCount_;
+                lastTouch_[be.na] = stepCount_;
+                lastTouch_[be.nb] = stepCount_;
+            }
         }
 }
 
@@ -3673,6 +3900,20 @@ void FdemSolver::finalize() {
                   << jt_.size() << " joints inserted ("
                   << (jt_.empty() ? 0.0 : 100.0 * nInserted_ / jt_.size())
                   << " %), " << nBroken_ << " fully broken\n";
+    if (gcAdaptive_)
+        std::cout << "[FDEM] adaptive contact activation: " << nActivated_
+                  << " / " << pool_.size() << " exterior faces activated ("
+                  << (pool_.empty() ? 0.0
+                                    : 100.0 * nActivated_ / pool_.size())
+                  << " %)\n";
+    if (std::getenv("RKM_GCLOG")) {        // diagnostic : premiere force et
+        for (std::size_t k = 0; k < poolTouch_.size(); ++k) {  // activation
+            long ac = (k < actStep_.size()) ? actStep_[k] : -1;
+            if (poolTouch_[k] >= 0 || ac >= 0)
+                std::cout << "[GCLOG] pool " << k << " touch " << poolTouch_[k]
+                          << " act " << ac << "\n";
+        }
+    }
     if (scen_ == Scenario::BRAZILIAN
         || (scen_ == Scenario::TENSION && tensionPlatens_)) {
         // Free quasi-static check: two platens must read the same force, and

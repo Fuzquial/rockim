@@ -287,6 +287,31 @@ private:
     std::vector<std::vector<int>> grid_;   // dense grid (grid mesh)
     std::unordered_map<uint64_t, std::vector<int>> gridV_;  // sparse (voronoi)
 
+    // ---- activation adaptative du contact (gcActivation = adaptive) --------
+    // Miroir exact du 2D (voir FdemSolver.hpp pour les trois regles C/A/B, la
+    // cadence par v_max et l'approximation assumee). Pool = tout l'exterieur
+    // (pas de gcXwindow en 3D). Defaut full, bit-identique.
+    bool gcAdaptive_ = false;
+    double gcActMargin_ = 2.0;             // marge d'activation [cellules]
+    long gcActEvery_ = 64;                 // cadence max du balayage [pas]
+    std::vector<BFace> pool_;              // exterieur (fige a l'init)
+    std::vector<char> extOn_;              // drapeau actif, par face du pool
+    std::vector<char> elemDam_;            // regle C : element au bord casse
+                                           // + un anneau par sommet
+    std::vector<std::vector<int>> vElems_; // sommet -> elements (statique)
+    std::vector<int> bodyOf_;              // composante connexe par element
+    std::vector<long> lastTouch_;          // dernier pas de contact du noeud
+    long bodyStamp_ = -1;                  // nBroken_ au dernier union-find
+    int nBodies_ = 1;
+    long nextSweep_ = 0;
+    long sweepBroken_ = -1;
+    bool poolBuilt_ = false;
+    bool haveDead_ = false;
+    long nActivated_ = 0;
+    std::vector<BFace> deadList_;          // cache des faces liberees (timing
+                                           // du declencheur historique)
+    void activationSweep();
+
     Tool3 tool_;
     double toolKE0_ = 0.0;
 

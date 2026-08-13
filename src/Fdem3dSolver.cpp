@@ -176,6 +176,26 @@ void Fdem3dSolver::init() {
     kpGC_ = cfg_.getd("gcPenaltyFactor", 0.01) * phases_.maxE() * hmin_;
     xiGC_ = cfg_.getd("gcXi", 0.8);
     gcRest_ = cfg_.getd("gcRestitution", 0.2);
+    // gcActivation = full (defaut, inchange) | adaptive — miroir exact du 2D
+    // (FdemSolver.hpp) : seules les faces qui PEUVENT toucher sont balayees.
+    {
+        std::string ga = cfg_.gets("gcActivation", "full");
+        if (ga != "full" && ga != "adaptive")
+            throw std::runtime_error("gcActivation must be full | adaptive "
+                                     "(got '" + ga + "')");
+        gcAdaptive_ = ga == "adaptive";
+    }
+    if (gcAdaptive_) {
+        gcActMargin_ = cfg_.getd("gcActMargin", 2.0);
+        gcActEvery_ = cfg_.geti("gcActEvery", 64);
+        if (!(gcActMargin_ > 0.0))
+            throw std::runtime_error("gcActMargin must be > 0 [cells]");
+        if (gcActEvery_ < 1)
+            throw std::runtime_error("gcActEvery must be >= 1 [steps]");
+        std::cout << "[FDEM3D] contact activation: adaptive (Fukuda) — margin "
+                  << gcActMargin_ << " cells, sweep <= every "
+                  << gcActEvery_ << " steps\n";
+    }
 
     placeTool();
     setupBoundaries();
@@ -1312,12 +1332,23 @@ void Fdem3dSolver::jointForces() {
 }
 
 void Fdem3dSolver::rebuildContactFaces() {
-    act_ = exterior_;
-    for (const auto& J : jt_)
-        if (J.dead) {
-            act_.push_back({J.eA, J.a});
-            act_.push_back({J.eB, {J.b[0], J.b[2], J.b[1]}});  // outward in B
-        }
+    if (!poolBuilt_) {                     // le pool est FIXE (pas de fenetre)
+        pool_ = exterior_;
+        extOn_.assign(pool_.size(), gcAdaptive_ ? 0 : 1);
+        poolBuilt_ = true;
+    }
+    act_.clear();
+    if (gcAdaptive_) {                    // sous-ensemble ACTIF, ordre du pool
+        for (std::size_t k = 0; k < pool_.size(); ++k)
+            if (extOn_[k]) act_.push_back(pool_[k]);
+    } else {
+        act_.insert(act_.end(), pool_.begin(), pool_.end());
+    }
+    // faces liberees : depuis le CACHE, rafraichi seulement sur le
+    // declencheur historique — voir le commentaire du 2D (un joint peut
+    // mourir sans casser ; avancer son entree ferait diverger les modes)
+    act_.insert(act_.end(), deadList_.begin(), deadList_.end());
+    haveDead_ = !deadList_.empty();
     std::vector<char> inAct(X0_.size(), 0);
     for (const auto& bf : act_)
         for (int nid : bf.n) inAct[nid] = 1;
@@ -1333,8 +1364,163 @@ void Fdem3dSolver::rebuildContactFaces() {
 // (with per-node pair dedup) and the deep-penetration cap uses the local
 // element size — the 2D general-contact note, applied in 3D. The grid mesh
 // keeps the original midpoint binning, bit-identical.
+// gcActivation = adaptive — le balayage d'activation, miroir exact du 2D
+// (regles C/A/B, cadence par v_max — voir FdemSolver.hpp / .cpp).
+void Fdem3dSolver::activationSweep() {
+    if (bodyStamp_ != nBroken_) {
+        std::vector<int> uf(el_.size());
+        for (int e2 = 0; e2 < (int)el_.size(); ++e2) uf[e2] = e2;
+        auto find = [&](int x) {
+            while (uf[x] != x) { uf[x] = uf[uf[x]]; x = uf[x]; }
+            return x;
+        };
+        elemDam_.assign(el_.size(), 0);
+        for (const auto& J : jt_) {
+            if (J.bonded || (!J.dead && J.D < 1.0)) {
+                int a = find(J.eA), b = find(J.eB);
+                if (a != b) uf[a] = b;
+            } else {
+                elemDam_[J.eA] = elemDam_[J.eB] = 1;   // regle C
+            }
+        }
+        bodyOf_.resize(el_.size());
+        nBodies_ = 0;
+        for (int e2 = 0; e2 < (int)el_.size(); ++e2) {
+            bodyOf_[e2] = find(e2);
+            if (uf[e2] == e2) ++nBodies_;
+        }
+        // regle C etendue d'un ANNEAU par sommet (voir le 2D : le coin du
+        // bourrelet de cratere se deforme avant de rien casser lui-meme)
+        if (vElems_.empty()) {
+            int nV = 0;
+            for (int v : vOf_) nV = std::max(nV, v + 1);
+            vElems_.assign(nV, {});
+            for (int nd = 0; nd < (int)vOf_.size(); ++nd)
+                vElems_[vOf_[nd]].push_back(elemOf_[nd]);
+        }
+        std::vector<char> ring(el_.size(), 0);
+        for (int e2 = 0; e2 < (int)el_.size(); ++e2)
+            if (elemDam_[e2])
+                for (int a = 0; a < 4; ++a)
+                    for (int e3 : vElems_[vOf_[el_[e2].n[a]]]) ring[e3] = 1;
+        for (int e2 = 0; e2 < (int)el_.size(); ++e2)
+            if (ring[e2]) elemDam_[e2] = 1;
+        bodyStamp_ = nBroken_;
+    }
+    if (nBodies_ <= 1 && nActivated_ == 0 && !haveDead_) {
+        nextSweep_ = stepCount_ + gcActEvery_;
+        return;
+    }
+    double cl = voronoi_ ? cellV_ : 2.0 * hmin_;       // = cell_ de detect()
+    double M = gcActMargin_ * cl;
+    struct SFace {
+        Eigen::Vector3d c;
+        double r;
+        int body, idx;
+        char on, touched;
+    };
+    static std::vector<SFace> sf;
+    sf.clear();
+    auto push = [&](const std::array<int, 3>& n3, int elem, char on, int idx) {
+        Eigen::Vector3d A = X0_[n3[0]] + u_[n3[0]];
+        Eigen::Vector3d B = X0_[n3[1]] + u_[n3[1]];
+        Eigen::Vector3d C = X0_[n3[2]] + u_[n3[2]];
+        Eigen::Vector3d c = (A + B + C) / 3.0;
+        double r = std::sqrt(std::max({(A - c).squaredNorm(),
+                                       (B - c).squaredNorm(),
+                                       (C - c).squaredNorm()}));
+        char tch = on && (lastTouch_[n3[0]] >= 0 || lastTouch_[n3[1]] >= 0
+                          || lastTouch_[n3[2]] >= 0);
+        sf.push_back({c, r, bodyOf_[elem], idx, on, tch});
+    };
+    for (std::size_t k = 0; k < pool_.size(); ++k)
+        push(pool_[k].n, pool_[k].elem, extOn_[k], (int)k);
+    for (const auto& J : jt_)
+        if (J.dead) {
+            push(J.a, J.eA, 1, -1);
+            push({J.b[0], J.b[2], J.b[1]}, J.eB, 1, -1);
+        }
+    double rmax = 0.0;
+    for (const auto& s : sf) rmax = std::max(rmax, s.r);
+    double cs = M + 2.0 * rmax + 1e-300;
+    static std::unordered_map<uint64_t, std::vector<int>> hg;
+    hg.clear();
+    auto keyIJK = [&](long long ix, long long iy, long long iz) {
+        return (uint64_t)(ix & 0x1FFFFF) | ((uint64_t)(iy & 0x1FFFFF) << 21)
+               | ((uint64_t)(iz & 0x1FFFFF) << 42);
+    };
+    auto cellOf = [&](const Eigen::Vector3d& p, long long& ix, long long& iy,
+                      long long& iz) {
+        ix = (long long)std::floor(p.x() / cs);
+        iy = (long long)std::floor(p.y() / cs);
+        iz = (long long)std::floor(p.z() / cs);
+    };
+    for (int q = 0; q < (int)sf.size(); ++q) {
+        long long ix, iy, iz;
+        cellOf(sf[q].c, ix, iy, iz);
+        hg[keyIJK(ix, iy, iz)].push_back(q);
+    }
+    bool changed = false;
+    for (int q = 0; q < (int)sf.size(); ++q) {
+        SFace& f = sf[q];
+        if (f.on || f.idx < 0) continue;
+        if (elemDam_[pool_[f.idx].elem]) {             // regle C
+            extOn_[f.idx] = 1;
+            ++nActivated_;
+            changed = true;
+            continue;
+        }
+        long long ix, iy, iz;
+        cellOf(f.c, ix, iy, iz);
+        bool hit = false;
+        for (long long dz = -1; dz <= 1 && !hit; ++dz)
+            for (long long dy = -1; dy <= 1 && !hit; ++dy)
+                for (long long dx = -1; dx <= 1 && !hit; ++dx) {
+                    auto it = hg.find(keyIJK(ix + dx, iy + dy, iz + dz));
+                    if (it == hg.end()) continue;
+                    for (int g : it->second) {
+                        if (g == q) continue;
+                        const SFace& s = sf[g];
+                        if (!(s.body != f.body || s.touched)) continue;
+                        double gap = (s.c - f.c).norm() - s.r - f.r;
+                        if (gap < M) { hit = true; break; }
+                    }
+                }
+        if (hit) {
+            extOn_[f.idx] = 1;
+            ++nActivated_;
+            changed = true;
+        }
+    }
+    if (changed) rebuildContactFaces();    // recompose (cache mort INCHANGE)
+    double v2 = 0.0;
+    for (const auto& v : v_) v2 = std::max(v2, v.squaredNorm());
+    double closing = 2.0 * std::sqrt(v2) * dt_;
+    long kn = gcActEvery_;
+    if (closing > 1e-300)
+        kn = std::max((long)1,
+                      std::min(gcActEvery_, (long)(0.5 * M / closing)));
+    nextSweep_ = stepCount_ + kn;
+}
+
 void Fdem3dSolver::generalContact() {
+    if (gcAdaptive_) {
+        if (!poolBuilt_) rebuildContactFaces();
+        if (lastTouch_.empty()) lastTouch_.assign(X0_.size(), -1);
+        if (stepCount_ >= nextSweep_
+            || (sweepBroken_ != nBroken_
+                && (sweepBroken_ < 0 || stepCount_ % 8 == 0))) {
+            activationSweep();             // peut recomposer (cache inchange)
+            sweepBroken_ = nBroken_;
+        }
+    }
     if (actStamp_ != nBroken_ && (actStamp_ < 0 || stepCount_ % 8 == 0)) {
+        deadList_.clear();                 // le declencheur historique : seul
+        for (const auto& J : jt_)          // endroit ou le cache se rafraichit
+            if (J.dead) {
+                deadList_.push_back({J.eA, J.a});
+                deadList_.push_back({J.eB, {J.b[0], J.b[2], J.b[1]}});
+            }
         rebuildContactFaces();
         actStamp_ = nBroken_;
     }
@@ -1588,6 +1774,12 @@ void Fdem3dSolver::generalContact() {
             f_[bf.n[0]] -= cp.wa * Fc;
             f_[bf.n[1]] -= cp.wb * Fc;
             f_[bf.n[2]] -= cp.wc * Fc;
+            if (gcAdaptive_) {                         // source de la regle B
+                lastTouch_[i] = stepCount_;
+                lastTouch_[bf.n[0]] = stepCount_;
+                lastTouch_[bf.n[1]] = stepCount_;
+                lastTouch_[bf.n[2]] = stepCount_;
+            }
         }
 }
 
@@ -1929,6 +2121,12 @@ void Fdem3dSolver::finalize() {
                   << jt_.size() << " joints inserted ("
                   << (jt_.empty() ? 0.0 : 100.0 * nInserted_ / jt_.size())
                   << " %), " << nBroken_ << " fully broken\n";
+    if (gcAdaptive_)
+        std::cout << "[FDEM3D] adaptive contact activation: " << nActivated_
+                  << " / " << pool_.size() << " exterior faces activated ("
+                  << (pool_.empty() ? 0.0
+                                    : 100.0 * nActivated_ / pool_.size())
+                  << " %)\n";
     if (confP_ > 0.0)
         std::cout << "[FDEM3D] confinement: vise " << -confP_ / 1e6
                   << " MPa lateral, atteint (coeur, apres equilibrage) "

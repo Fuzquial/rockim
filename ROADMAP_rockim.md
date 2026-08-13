@@ -16,12 +16,13 @@ validable contre le banc de Mines Paris, (3) robustesse et vitesse.*
 - [x] **Profileur `ROCKIM_PROF` en 3D**
 - [x] **`mesh = file`** — import Gmsh MSH 2.2 (triangles 2D, tets 3D) + `tools/make_unstructured_mesh.py` + `meshes/box3d_h45.msh` + `configs/fdem3d_percussion_base.cfg`
 - [x] **Avertissement au démarrage** si maillage structuré + scénario de fissuration
-- [x] **`tools/verify_suite.py`** — runner de non-régression (fast/full/all, charge nulle, dampWork ≤ 0), **23/23 PASS**
+- [x] **`tools/verify_suite.py`** — runner de non-régression (fast/full/all, charge nulle, dampWork ≤ 0), **30 repères** (dont percussion 2D/3D, SHPB multi-corps et UCS cisaillante)
 - [x] **`DOCUMENTATION_rockim.md`** — référence exhaustive des clés et des sorties, extraite du code
 - [x] **`bulkViscosity`** (terme 2µD, éq. 6 de Yan) + preset `configs_yan/article_exact_base.cfg` + `PLAN_article_exact.md`
 - [x] **Dépôt git** (branches `main` / `article-exact`) livré en bundle
 - [x] **Optimisation de la détection du contact 2D+3D** — géométrie hoistée, sphère de rejet exacte, dédoublonnage O(1) : **×2,45 sur le contact, ×1,94 sur le mur, bit-identique**
 - [x] **A2 — décharge en cisaillement sur la sécante à l'origine (éq. 18)**, 2D **et** 3D : clé `jointShearUnload = plastic | origin`, défaut bit-identique (17/17), s_p de Munjiza, `J.slip` réinterprété en origine figée (continuité à l'insertion conservée), avertissement au démarrage sur la réversibilité du frottement, **6 nouveaux repères** dont le premier repère du parc piloté par le cisaillement (UCS fig. 17)
+- [x] **A1 — activation adaptative du contact (Fukuda)**, 2D **et** 3D : clé `gcActivation = full | adaptive`, défaut bit-identique. Règles C/A/B (peau endommagée + anneau, autre corps par union-find, voisinage d'un contact porté), cadence par v_max, cache des faces mortes au timing du mode full. **Percussion 3D ×2,32 bit-identique** (1130 → 488 s, 4 % des faces activées), percussion 2D bit-identique phase débris comprise, UCS −15 % aux mêmes chiffres, SHPB multi-corps armé dès t = 0 et identique sur 83 % du run (au-delà : enveloppe chaotique, le full sous OMP=2 diverge 8× plus tôt). **7 nouveaux repères**, zéro trou d'activation (instrumentation RKM_GCLOG : aucune face touchée avant activation)
 
 ---
 
@@ -29,7 +30,7 @@ validable contre le banc de Mines Paris, (3) robustesse et vitesse.*
 
 | # | chantier | effort | note |
 |---|---|---|---|
-| **A1** | **Activation adaptative du contact** (Fukuda) — `act_` contient tout l'extérieur et le balaie à chaque pas ; il reste ~40 % du pas sans débris | court | ⚠️ pas de règle « aucun joint mort → rien » : le SHPB multi-corps a besoin du contact dès t = 0 |
+| ~~A1~~ | ~~Activation adaptative du contact (Fukuda)~~ | **FAIT 08-13** | `gcActivation = adaptive`, 2D+3D. Percussion 3D **×2,32 bit-identique** (1130 → 488 s). Le SHPB multi-corps est armé dès t = 0 par la règle « autre corps » |
 | ~~A2~~ | ~~Décharge en cisaillement sur sécante à l'origine (éq. 18)~~ | **FAIT 08-13** | `jointShearUnload = origin`, 2D+3D. UCS 51,07 → 50,37 MPa (−1,4 %), part de cisaillement 47 → 51 % |
 | **A3** | **Contact par POTENTIEL de Munjiza + détection NBS/MR** (éq. 2-5) | gros (1-2 j) | LE chantier structurel. Opt-in `contact = penalty \| potential`. Test décisif : collision élastique sans frottement → `gcWork ≈ 0` machine |
 | A4 | Quadrature de Gauss des joints (vs 2-3 points nœud-à-nœud) | moyen | écart déclaré dans les en-têtes |
@@ -97,7 +98,6 @@ validable contre le banc de Mines Paris, (3) robustesse et vitesse.*
 
 ## Prochains pas recommandés
 
-1. **A1 — activation adaptative du contact** : le plus court des chantiers restants à fort rendement (~40 % du pas passé à balayer un extérieur sans débris).
+1. **A3 — contact par potentiel + NBS** : le dernier chantier du groupe A, le gros morceau (1-2 j). En 2D d'abord (recouvrement polygonal simple, campagne validée), puis portage 3D.
 2. **B4 — bilan d'énergie par sous-système** : zéro risque, sert deux objectifs à la fois — et c'est lui qui rendra *mesurable* la réversibilité du frottement signalée par A2.
 3. **B1 — physical groups** : le verrou qui ouvre la reproduction du banc de ton labo.
-4. **A3 — contact par potentiel + NBS** : le gros morceau, à faire quand une séance entière peut y être consacrée.
