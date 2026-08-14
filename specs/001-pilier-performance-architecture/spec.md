@@ -4,7 +4,7 @@
 
 **Created**: 2026-08-14
 
-**Status**: Draft — en attente des clarifications C1-C4 (Fernando)
+**Status**: Clarified 2026-08-14 — C1-C4 résolues (réponses Fernando ci-dessous), prêt pour /speckit-plan
 
 **Input**: User description: "s'attaquer au pilier absent : l'architecture de
 calcul (revue biblio 2026-08-13 : rockim au niveau 2023-2025 sur 3 piliers
@@ -142,9 +142,9 @@ cible ; zeroload et bilan d'énergie inchangés.
 - **FR-001**: le dépôt DOIT définir une **charge de référence P1** gelée et
   versionnée : ensemble de configs représentatives du banc (impact insert
   V1, percussion longue pénalité ET potentiel, un cas à maille fine), avec
-  [NEEDS CLARIFICATION C1 : dimensions et taille de maille du banc RÉEL de
-  Mines Paris — éprouvette, insert/taillant, durée physique à simuler —
-  pour dimensionner le cas extrapolé].
+  [RÉSOLU C1 (2026-08-14) : éprouvette ~10-15 cm → cas extrapolé dimensionné
+  à 0,5-2 M de tets (h ≈ 1,5-2,5 mm), durée d'impact ~0,5-1 ms ; hypothèse
+  gelée, affinable si Fernando fournit les plans].
 - **FR-002**: le solveur DOIT produire un profil de coût par module
   (ROCKIM_PROF existant, complété si un module n'est pas couvert) et le
   rapport P1 DOIT consigner : wall par cas, profil, scaling OpenMP mesuré
@@ -156,11 +156,15 @@ cible ; zeroload et bilan d'énergie inchangés.
   domaine à la HOSS) ;
   (c) banc en semaines OU besoin paramétrique/temps réel → issue GPU
   (portage CUDA des noyaux, recettes Fukuda 2019-2024, C&G 2024b) ;
-  avec [NEEDS CLARIFICATION C2 : budget temps acceptable par run de banc —
-  heures ? une nuit ? — et nombre de runs paramétriques visé pour V4] et
-  [NEEDS CLARIFICATION C3 : matériel accessible — GPU (modèle, où : poste
-  labo, cluster école, cloud ?), cluster CPU (cœurs, MPI dispo ?), et la
-  machine Windows de F1 est-elle la machine de production ?].
+  avec [RÉSOLU C2 (2026-08-14) : budget FLEXIBLE, au cas par cas — pas de
+  contrainte dure ; la contrainte implicite reste la calibration V4
+  (dizaines de runs), qui se fera surtout sur les essais courts (UCS/BD),
+  le banc complet servant à la validation] et [RÉSOLU C3 (2026-08-14) :
+  SEULEMENT le poste actuel — ni cluster CPU, ni GPU accessibles →
+  les issues (b) MPI et (c) GPU sont hors de portée MATÉRIELLE aujourd'hui ;
+  la grille devient : (a) CPU-portable confirmé si le banc extrapolé tient
+  en ~heures sur les cœurs du portable ; sinon, le rapport P1 chiffre le
+  manque et sert de dossier pour demander un accès matériel (labo/école)].
 - **FR-004**: le restart/checkpoint DOIT être opt-in (`checkpoint = ...`),
   couvrir l'état COMPLET (nœuds, éléments, joints, historiques de contact,
   compteurs d'énergie, RNG, outil/corps), avec écriture atomique et reprise
@@ -213,9 +217,10 @@ cible ; zeroload et bilan d'énergie inchangés.
 
 - La machine de mesure P1 de cette session (2 cœurs cloud) sert au PROFIL et
   aux rapports de coût RELATIFS ; les chiffres ABSOLUS du banc se rapportent
-  à la machine de production de Fernando [NEEDS CLARIFICATION C4 : specs de
-  cette machine — CPU/cœurs/RAM/GPU éventuel] — le rapport P1 séparera
-  explicitement les deux.
+  à la machine de production de Fernando [RÉSOLU C4 (2026-08-14) : PORTABLE
+  personnel (4-8 cœurs typique, specs exactes à relever lors du re-baseline
+  F1)] — le rapport P1 séparera explicitement les deux et donnera
+  l'extrapolation pour 4 et 8 cœurs.
 - Le banc V3 (piston-taillant-roche) n'étant pas encore assemblé, la charge
   de référence P1 s'appuie sur les cas existants (V1, percussion longue) +
   un cas dimensionné à l'échelle du banc réel ; elle sera re-gelée quand V3
