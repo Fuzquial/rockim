@@ -435,6 +435,11 @@ cible ft exacte). **UCS par platines** : `scenario = tension`, `loading = platen
 (tracés intégrés), `tools/export_abaqus.py <run> <out.inp>` (maillage frame 0 +
 champ ftScale → deck Abaqus mm-t-s-MPa pour validation croisée iso-maillage),
 `tools/yan_point.cpp` (∫f(D)dD en précision machine), `tools/verify_suite.py` (§3.3),
+`tools/crater_metrics.py <run>` (V2/B3 : métriques de cratère depuis les VTU joints —
+R_crater p95 dans la peau de surface, R_max, profondeur, aire cassée, volume
+endommagé/détaché, fissures radiales cassées ET bras endommagés par secteur
+angulaire ; multi-corps V1 géré : surface et fragments rapportés au CORPS IMPACTÉ,
+l'insert n'est pas un débris ; `--plot` vue de dessus, `--csv` export),
 `tools/make_unstructured_mesh.py` (maillages simplexes non structurés uniformes via
 Gmsh — `box3d W D H h out.msh [seed]` / `box2d W H h out.msh [seed]` — pour
 `mesh = file` ; `pip install gmsh`).
