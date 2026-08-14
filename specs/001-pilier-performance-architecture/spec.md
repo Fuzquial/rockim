@@ -159,7 +159,16 @@ cible ; zeroload et bilan d'énergie inchangés.
   avec [RÉSOLU C2 (2026-08-14) : budget FLEXIBLE, au cas par cas — pas de
   contrainte dure ; la contrainte implicite reste la calibration V4
   (dizaines de runs), qui se fera surtout sur les essais courts (UCS/BD),
-  le banc complet servant à la validation] et [RÉSOLU C3 (2026-08-14) :
+  le banc complet servant à la validation] et [AMENDÉ C3 (2026-08-14 soir) : Fernando signale un GPU probable sur son PC
+  et un Mac Apple Silicon (mémoire unifiée) — identification exacte demandée
+  (PC : dxdiag/nvidia-smi ; Mac : puce + RAM). Lecture technique : GPU de
+  portable grand public = FP64 bridé 1/32-1/64 (peu de gain pour un FDEM en
+  double) ; Apple Silicon = pas de FP64 GPU (Metal), MAIS excellent CPU
+  multicœur à très haute bande passante mémoire — candidat de premier ordre
+  pour l'issue (a) OpenMP. La grille P2 profile DEUX machines candidates ;
+  l'issue (c) ne redevient crédible que si le PC porte un vrai GPU récent ET
+  qu'on accepte l'arbitrage FP32-mixte (décision constitution). Historique :]
+  [RÉSOLU C3 (2026-08-14) :
   SEULEMENT le poste actuel — ni cluster CPU, ni GPU accessibles →
   les issues (b) MPI et (c) GPU sont hors de portée MATÉRIELLE aujourd'hui ;
   la grille devient : (a) CPU-portable confirmé si le banc extrapolé tient
@@ -227,6 +236,11 @@ cible ; zeroload et bilan d'énergie inchangés.
   existera (le plan v2 plaçait P1 « dans V3 » — on le décale en amont pour
   débloquer la décision, l'extrapolation en tient lieu).
 - Les données expérimentales (B7) ne sont PAS nécessaires à ce chantier.
+- PREMIÈRE LEÇON P1 (2026-08-14) : le cas banc 842 572 tets a été TUÉ PAR
+  LA MÉMOIRE sur la machine de mesure (7 Go) — l'empreinte à l'init dépasse
+  ~3-5 Go, dominée par MatState ≈ 700 o/élément quelle que soit la loi
+  (le D2 de la roadmap). D2 entre dans le périmètre du pilier : sans lui,
+  le banc ne TIENT PAS dans un portable 8-16 Go, quelle que soit la vitesse.
 - D0 (coût du potentiel en phase débris) est un chantier SÉPARÉ : la charge
   de référence inclut le potentiel tel quel ; si D0 aboutit avant P1, la
   charge est re-mesurée (une ligne de plus, pas un blocage).
