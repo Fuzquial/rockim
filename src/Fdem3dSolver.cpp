@@ -2380,8 +2380,12 @@ void Fdem3dSolver::integrate() {
                     if (vg != 0.0 && pullRamp_ > 0.0 && tv < pullRamp_)
                         vg *= 0.5 * (1.0 - std::cos(M_PI * tv / pullRamp_));
                     for (int i : g) {
-                        // V2/B4 : puissance interne recue par la platine
-                        bw += f_[i].z() * vg * dt_;
+                        // V2/B4 (corrige 2026-08-14, formule Sierra) :
+                        // travail de la LIAISON R = m.a - f en vitesse
+                        // moyenne — les familles comptent deja f.v ici
+                        double vgOld = v_[i].z();
+                        double Rz = m_[i] * (vg - vgOld) / dt_ - f_[i].z();
+                        bw += Rz * 0.5 * (vg + vgOld) * dt_;
                         v_[i] = {vx, vy, vg};
                         u_[i] += dt_ * v_[i];
                     }
@@ -2456,7 +2460,14 @@ void Fdem3dSolver::integrate() {
             double vg = tv <= 0.0 ? 0.0 : pullV_;
             if (vg != 0.0 && pullRamp_ > 0.0 && tv < pullRamp_)
                 vg *= 0.5 * (1.0 - std::cos(M_PI * tv / pullRamp_));
-            bw += f_[i].z() * vg * dt_;        // V2/B4 : platine -> solide
+            {   // V2/B4 (corrige 2026-08-14, formule Sierra) : travail de la
+                // LIAISON R = m.a - f en vitesse moyenne — les familles
+                // comptent deja f.v sur ce noeud (l'ancien +f.vg avait le
+                // signe inverse ET ignorait l'inertie de la rampe)
+                double vgOld = v_[i].z();
+                double Rz = m_[i] * (vg - vgOld) / dt_ - f_[i].z();
+                bw += Rz * 0.5 * (vg + vgOld) * dt_;
+            }
             v_[i].z() = vg;
             u_[i] += dt_ * v_[i];
             continue;

@@ -3840,7 +3840,13 @@ void FdemSolver::integrate() {
                         vx = v_[i0].x() + (dt_ / M) * F;
                     }
                     for (int i : g) {
-                        bw += f_[i].y() * vg * dt_;    // V2/B4 platine
+                        // V2/B4 (corrige 2026-08-14, formule Sierra) : les
+                        // familles comptent deja f.v sur ce noeud ; le mors
+                        // ajoute le travail de la LIAISON R = m.a - f, integre
+                        // en vitesse moyenne (trapeze, coherent leapfrog)
+                        double vgOld = v_[i].y();
+                        double Ry = m_[i] * (vg - vgOld) / dt_ - f_[i].y();
+                        bw += Ry * 0.5 * (vg + vgOld) * dt_;
                         v_[i] = {vx, vg};
                         u_[i] += dt_ * v_[i];
                     }
@@ -3946,7 +3952,14 @@ void FdemSolver::integrate() {
             double vg = pullV_;
             if (pullRamp_ > 0.0 && t_ < pullRamp_)
                 vg *= 0.5 * (1.0 - std::cos(M_PI * t_ / pullRamp_));
-            bw += f_[i].y() * vg * dt_;        // V2/B4 : platine -> solide
+            {   // V2/B4 (corrige 2026-08-14, formule Sierra) : travail de la
+                // LIAISON R = m.a - f en vitesse moyenne — les familles
+                // comptent deja f.v sur ce noeud (l'ancien +f.vg avait le
+                // signe inverse ET ignorait l'inertie de la rampe)
+                double vgOld = v_[i].y();
+                double Ry = m_[i] * (vg - vgOld) / dt_ - f_[i].y();
+                bw += Ry * 0.5 * (vg + vgOld) * dt_;
+            }
             v_[i].y() = vg;
             u_[i] += dt_ * v_[i];
             continue;
