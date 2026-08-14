@@ -2004,7 +2004,14 @@ void FdemSolver::gaugeStrain(double& epsPlaten, double& epsSpec,
 //                                 boundary condition already owns (the tension
 //                                 grips; the struck top face in percussion —
 //                                 the tool is there, not a fluid);
-//   disc                        : the whole perimeter minus the platen strips.
+//   disc                        : the whole perimeter minus the platen strips;
+//   confineFaces = bore         : ONLY the original exterior faces whose
+//                                 midpoint lies within boreSelectR of
+//                                 (boreCX, boreCY) — a pressurized cavity
+//                                 (tunnel / borehole). The same follower load
+//                                 pushes the cavity wall INTO the solid, and
+//                                 faces born from cracking receive nothing,
+//                                 so the fluid never enters the fissures.
 // ---------------------------------------------------------------------------
 void FdemSolver::setupConfinement() {
     confP_ = cfg_.getd("confiningPressure", 0.0);
@@ -2014,15 +2021,29 @@ void FdemSolver::setupConfinement() {
         throw std::runtime_error("confiningPressure must be >= 0 (it is a "
                                  "PRESSURE: positive squeezes the specimen)");
     std::string which = cfg_.gets("confineFaces", "sides");
-    if (which != "sides" && which != "all")
-        throw std::runtime_error("confineFaces must be sides | all (got '"
-                                 + which + "')");
+    if (which != "sides" && which != "all" && which != "bore")
+        throw std::runtime_error("confineFaces must be sides | all | bore "
+                                 "(got '" + which + "')");
     bool all = which == "all";
+    bool bore = which == "bore";
     double tol = 1e-9;
     double hw = cfg_.getd("platenHalfWidth", discR_);
+    double bcx = cfg_.getd("boreCX", 0.5 * W_);
+    double bcy = cfg_.getd("boreCY", 0.5 * H_);
+    double bsr = cfg_.getd("boreSelectR", 0.0);
+    if (bore && bsr <= 0.0)
+        throw std::runtime_error("confineFaces = bore requires boreSelectR > 0 "
+                                 "(faces whose midpoint is within that radius "
+                                 "of boreCX/boreCY are pressurized)");
 
     for (const auto& be : exterior_) {
         Eigen::Vector2d P = X0_[be.na], Q = X0_[be.nb];
+        if (bore) {
+            Eigen::Vector2d mid = 0.5 * (P + Q);
+            double dx = mid.x() - bcx, dy = mid.y() - bcy;
+            if (dx * dx + dy * dy <= bsr * bsr) confEdges_.push_back(be);
+            continue;
+        }
         if (disc_) {
             // skip the faces the platens will press on: a fluid pressure and a
             // rigid platen on the same facet is a double load

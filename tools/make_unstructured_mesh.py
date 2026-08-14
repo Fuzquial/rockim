@@ -36,10 +36,17 @@ def main():
         W, D, H, R, gap, h, hIns = map(float, sys.argv[2:9])
         out = sys.argv[9]
         seed = int(sys.argv[10]) if len(sys.argv) > 10 else 1
+    elif kind == "tunnel":
+        # plaque W x H percee d'un trou circulaire R au centre (2D) —
+        # cavite pressurisee par confineFaces = bore
+        W, H, R, h = map(float, sys.argv[2:6])
+        out = sys.argv[6]
+        seed = int(sys.argv[7]) if len(sys.argv) > 7 else 1
     else:
         raise SystemExit("usage: make_unstructured_mesh.py box3d W D H h out.msh [seed]\n"
                          "       make_unstructured_mesh.py box2d W H h out.msh [seed]\n"
-                         "       make_unstructured_mesh.py bench1 W D H R gap h hIns out.msh [seed]")
+                         "       make_unstructured_mesh.py bench1 W D H R gap h hIns out.msh [seed]\n"
+                         "       make_unstructured_mesh.py tunnel W H R h out.msh [seed]")
 
     gmsh.initialize()
     gmsh.option.setNumber("General.Terminal", 0)
@@ -71,6 +78,12 @@ def main():
         gmsh.option.setNumber("Mesh.Algorithm3D", 1)
         gmsh.option.setNumber("Mesh.OptimizeNetgen", 1)
         gmsh.model.mesh.generate(3)
+    elif kind == "tunnel":
+        plate = gmsh.model.occ.addRectangle(0, 0, 0, W, H)
+        hole = gmsh.model.occ.addDisk(0.5 * W, 0.5 * H, 0, R, R)
+        gmsh.model.occ.cut([(2, plate)], [(2, hole)])
+        gmsh.model.occ.synchronize()
+        gmsh.model.mesh.generate(2)
     else:
         gmsh.model.occ.addRectangle(0, 0, 0, W, H)
         gmsh.model.occ.synchronize()

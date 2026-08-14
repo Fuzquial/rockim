@@ -254,9 +254,22 @@ jante tributaire), `pullV` = taux de FERMETURE total des deux platines,
 
 **Confinement (fdem, fdem3d)** — `confiningPressure` (0 = off, > 0 [Pa]),
 `confiningRamp` (0 en 2D — **toujours en mettre une** ; 2e-4 en 3D), `confineFaces`
-(sides \| all en 2D ; lateral \| all en 3D), `confineGaugeTime` (3×rampe ; instant de
+(sides \| all \| bore en 2D ; lateral \| all en 3D), `confineGaugeTime` (3×rampe ; instant de
 la jauge σ_latéral atteint). Pression SUIVEUSE sur les faces extérieures d'origine
 seulement (pas dans les fissures). tension + pullV < 0 + confinement = triaxial.
+
+**Cavité pressurisée (`confineFaces = bore`, 2D, 2026-08-14)** — pressurise les
+SEULES faces extérieures d'origine dont le milieu est à moins de `boreSelectR`
+de (`boreCX`, `boreCY`) (défauts : centre du bloc) : tunnel/forage sous pression
+→ fissures radiales. Maillage troué : `make_unstructured_mesh.py tunnel W H R h`.
+Montage type : `scenario = tension` + `pullV = 0` (mors immobiles = plaque tenue).
+Cas de référence `configs/tunnel_bore.cfg` (granite, R = 10 mm, 40 MPa) :
+rampe 100 µs → **53 joints rompus** (fissure diamétrale, amorçage ~30 MPa) ;
+rampe 10 µs → **144 joints** (étoile radiale) — N croît avec ṗ, signature
+d'obscuration du banc 6 Abaqus DP-DFH reproduite. ⚠️ Deux limites connues :
+le **bilan B4 ne comptabilise pas le travail du confinement** (résidu [CHECK]
+attendu sur tout run confiné/bore — correction à venir) ; la jauge « achieved
+σ_xx » lit le cœur du bloc, sans signification en mode bore.
 
 **SHPB (`scenario = shpb`, fdem 2D)** — `shpbIncidentLength` (2.0),
 `shpbTransmitLength` (1.5), `shpbBarDiameter` (0.05), `shpbDiscDiameter` (0.05),
