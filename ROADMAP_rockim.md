@@ -72,6 +72,17 @@ Concrètement :
 | B6 | DIF (effet de vitesse) sur les joints | court | le taux de déformation est déjà calculé depuis `bulkViscosity` |
 | **B7** | **Récupérer les données expérimentales d'Aising** | — | pas du code, mais bloquant pour toute validation |
 
+## D. Hydro (OUVERT le 2026-08-14, à lancer APRÈS la clôture de la partie
+## technique — décision Fernando)
+
+Couplage hydro-mécanique 2D d'abord : réseau d'écoulement sur le graphe des
+joints (loi cubique, conductivité ∝ ouverture³ — l'ouverture est déjà
+mesurable), pression appliquée aux lèvres, couplage explicite décalé.
+Cible de validation : initiation de fracture depuis un forage pressurisé
+(`confineFaces = bore` = le cas limite à fluide infiniment mobile).
+Prérequis ABSOLUS : fiabilité 3D close (E0-E3), B4 avec travail du
+confinement, checkpoint/restart. Référence marché : module hydro d'Irazu.
+
 ## C. Robustesse et dette technique (issues de l'audit)
 
 | # | chantier | effort |
