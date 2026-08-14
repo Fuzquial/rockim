@@ -159,7 +159,17 @@ cible ; zeroload et bilan d'énergie inchangés.
   avec [RÉSOLU C2 (2026-08-14) : budget FLEXIBLE, au cas par cas — pas de
   contrainte dure ; la contrainte implicite reste la calibration V4
   (dizaines de runs), qui se fera surtout sur les essais courts (UCS/BD),
-  le banc complet servant à la validation] et [AMENDÉ C3 (2026-08-14 soir) : Fernando signale un GPU probable sur son PC
+  le banc complet servant à la validation] et [RÉSOLU C3-bis (2026-08-14, captures + infos Fernando) : PC = Core Ultra
+  (NPU AI Boost), **31,5 Go RAM**, NVIDIA **RTX 500 Ada Laptop** (4 Go, FP64
+  bridé 1/64 ≈ 0,12 TFLOPS ≈ un CPU multicœur — gain CUDA double précision
+  quasi nul, FP32-mixte seul chemin GPU = arbitrage d'exactitude refusable) ;
+  Mac = **M4 base, 16 Go unifiés, ~120 Go/s** (pas de FP64 GPU ; CPU 10 cœurs
+  excellent en memory-bound). CONSÉQUENCE : l'issue (a) CPU-OpenMP est
+  matériellement désignée — machine de production principale = le PC
+  (31,5 Go : le banc y tient MÊME avant D2), le M4 en seconde machine, les
+  deux en parallèle pour la calibration (runs indépendants). Le rapport P1
+  chiffrera vitesse et scaling ; l'ambiguïté d'ISSUE est levée. Historique :]
+  [AMENDÉ C3 (2026-08-14 soir) : Fernando signale un GPU probable sur son PC
   et un Mac Apple Silicon (mémoire unifiée) — identification exacte demandée
   (PC : dxdiag/nvidia-smi ; Mac : puce + RAM). Lecture technique : GPU de
   portable grand public = FP64 bridé 1/32-1/64 (peu de gain pour un FDEM en
