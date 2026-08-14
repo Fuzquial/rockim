@@ -7,6 +7,29 @@ validable contre le banc de Mines Paris, (3) robustesse et vitesse.*
 
 ---
 
+## Décision de périmètre (Fernando, 2026-08-14) : rockim = FDEM
+
+**rockim se concentre sur `fdem` / `fdem3d`.** La modélisation continue
+(lois fem3d : dpr, saksala, saksala2011, dpdfh) est **déléguée à
+Abaqus + VUMAT**, qui la gère bien — c'est la production de la thèse.
+Concrètement :
+
+- `fem`/`fem3d` et `dem`/`dem3d` passent en **mode gelé** : aucune capacité
+  nouvelle, mais on CONSERVE les selftests (références Fortran 8e-14 /
+  4,7e-12), les repères de la suite et le pipeline de validation croisée
+  rockim ↔ Abaqus (`export_abaqus.py`) — c'est de la vérification, pas du
+  développement ;
+- la **spec 002 (OpenMP étendu) se réduit à `FdemSolver`/`Fdem3dSolver`** —
+  l'efficacité mesurée (~55 % sur 18 threads, 2026-08-14) devient la cible ;
+- le **checkpoint/restart (T030-T036)** n'inventorie plus que les deux
+  solveurs FDEM — le point critique du chantier rétrécit d'autant ;
+- **D2 (mémoire)** se cible sur le MatState du bulk FDEM (élastique/DP —
+  maigre) plutôt que sur les grosses lois continues ;
+- le bulk FDEM reste conforme à l'acquis « grains élastiques (ou DP),
+  tout le softening dans les cohésifs ».
+
+---
+
 ## Fait (2026-08-11 → 13)
 
 - [x] **Audit complet** du solveur (architecture, physique, robustesse, perf) — `AUDIT_rockim_2026-08-11.md`
