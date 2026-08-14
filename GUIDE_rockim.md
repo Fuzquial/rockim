@@ -8,23 +8,35 @@ reste la référence détaillée des modèles et des chiffres de vérification.*
 
 ## 1. Où se trouve rockim
 
+Le dépôt vit en **bundles git** (pas de remote pour l'instant) : le bundle le
+plus récent fait foi, on le clone pour travailler.
+
 | Emplacement | Contenu |
 |---|---|
-| `phd_geothermie\FDEM\rockim\` (base OneDrive, **l'archive de référence**) | `rockim_gbm.tar.gz` (source complète), `FICHE_rockim.md` (historique + verdicts), figures, scripts |
-| `simulations\FDEM\rockim\` (dossier de travail, miroir) | copie identique |
-| `Downloads\rockim_gbm.tar.gz` | copie de commodité ; `Downloads\rockim.tar.gz` = l'archive d'ORIGINE avant extensions |
+| `phd_geothermie\FDEM\rockim\` (base OneDrive, **l'archive de référence**) | bundle le plus récent + `HANDOFF_*.md` (état des chantiers) + docs et rapports ; versions superseded dans `old\` ; `rockim_gbm.tar.gz` = la lignée GBM séparée |
+| clone de travail (ex. `Downloads\rockim_p1`, branche `article-exact`) | **hors OneDrive exprès** : OneDrive verrouille des fichiers pendant la compilation |
 
-L'arborescence de la source, une fois extraite :
+Cloner un bundle (se placer DANS le dossier du bundle) :
+
+```bash
+git clone rockim_2026-08-14h.bundle -b article-exact rockim_p1
+```
+
+L'arborescence du dépôt :
 
 ```
 rockim/
-  src/            le code (un .cpp par solveur + MatLaw.cpp + Tessellation.cpp)
+  src/            le code (un .cpp par solveur + MatLaw.cpp + Tessellation*.cpp)
   include/rockim/ les en-têtes (modèles documentés en tête de fichier)
-  configs/        toutes les configs : démos + vérifications (verify_*.cfg)
-  tools/          rockim_gui.py (interface), bayes_bench.py (banc bayésien),
-                  export_abaqus.py (maillage+champ -> .inp mm-t-s-MPa),
-                  plot_results.py, make_gif.py
+  configs/        toutes les configs : démos + bancs + verifications
+  meshes/         maillages Gmsh generes (mesh = file)
+  tools/          verify_suite.py (LA suite de non-regression), rockim_gui.py,
+                  make_unstructured_mesh.py (maillages multi-corps),
+                  crater_metrics.py, export_abaqus.py, bayes_bench.py, ...
+  specs/          chantiers spec-kit (spec + plan + tasks)
+  .specify/memory/constitution.md   LA discipline du projet (a lire d'abord)
   README.md       référence des modèles (EN) ; GUIDE_rockim.md = ce guide
+  DOCUMENTATION_rockim.md           référence complète clés/sorties
   CMakeLists.txt
 ```
 
@@ -56,7 +68,7 @@ python tools/rockim_gui.py
 ```
 
 Trois zones : configs (édition + sauvegarde), lancement (exe, dossier, threads
-OpenMP, arrêt, **bouton « Suite de vérification »** qui enchaîne les 11 verify_*
+OpenMP, arrêt, **bouton « Suite de vérification »** qui lance la suite
 et affiche PASS/FAIL), et tracés (courbe F–δ, historiques, coupe médiane) pour
 tout dossier `out_*`.
 
@@ -71,7 +83,153 @@ tout dossier `out_*`.
 `1` = résultats bit-identiques au build série ; N fixé = déterministe) ;
 `ROCKIM_PROF=1` (profil par pas en fin de run, mode fdem).
 
-## 4. Écrire une config
+## 4. Pas à pas : une simulation d'impact multi-corps de A à Z
+
+*Exemple fil rouge : l'impact d'un insert sphérique en carbure de tungstène
+(R = 11 mm, 8 m/s) sur un bloc de granite 120×120×120 mm — le « banc » du
+pilier performance, monté le 2026-08-14.*
+
+### 4.1 Le modèle = le maillage (deux corps, zéro joint entre eux)
+
+Depuis V1, un « modèle » multi-corps est un maillage Gmsh où chaque **volume
+physique** devient un corps : joints cohésifs À L'INTÉRIEUR de chaque corps,
+**aucun joint entre corps** — l'interaction passe par le contact général.
+Le générateur fourni fait tout :
+
+```bash
+python tools/make_unstructured_mesh.py bench1 0.12 0.12 0.12 0.011 0.00005 0.0045 0.0028 meshes/mon_banc.msh 1
+```
+
+soit `bench1 W D H R gap h hIns out.msh [seed]` :
+
+| argument | rôle | effet sur le coût |
+|---|---|---|
+| `W D H` | bloc de roche [m] | volume → nombre de tets |
+| `R` | rayon de l'insert sphérique [m] | — |
+| `gap` | jeu initial insert/roche [m] | fixe l'instant du contact : **t = gap / v** |
+| `h`, `hIns` | taille d'élément roche / insert [m] | tets ∝ 1/h³ ; **dt ∝ h_min** — le coût total explose en ~1/h⁴ |
+| `seed` | graine du maillage non structuré | reproductibilité |
+
+Ordres de grandeur mesurés (ce banc) : h = 4,5/2,8 mm → 82 k tets ;
+h = 2/2 mm → 842 k tets. Le résumé du générateur donne le h inscrit
+min/med/max — c'est le **min** qui fixera le pas de temps.
+
+### 4.2 Dimensionner la fenêtre T AVANT tout (leçon payée 4 h)
+
+Trois temps à poser sur une enveloppe avant d'écrire la config :
+
+1. **arrivée au contact** : t₀ = gap / v (ex. 0,05 mm / 8 m/s = 6,25 µs) ;
+2. **durée du contact** (Hertz, ordre de grandeur) :
+   t_c ≈ 2,87 (m² / (R E*² v))^(1/5) — pour l'insert WC de 79 g sur granite :
+   **~90 µs**. E* combiné : 1/E* = (1−ν₁²)/E₁ + (1−ν₂²)/E₂ ;
+3. **ce qu'on veut voir** : chargement seul → T ≈ t₀ + 15 µs suffit ;
+   cycle complet avec REBOND → **T ≳ t₀ + t_c + marge** (ici 120 µs).
+
+Le piège historique (banc P1 v1, 2026-08-14) : gap 0,5 mm et T = 20 µs
+→ contact à 62,5 µs, **jamais atteint** — 4 h de calcul d'approche à vide.
+D'où la règle suivante.
+
+### 4.3 La règle du smoke test — TOUJOURS
+
+Avant tout run > 30 min : le MÊME cas (mêmes clés, même physique) sur un
+maillage réduit, en multithread, quelques minutes. Verdicts à cocher :
+
+- le contact démarre à t₀ prévu (`grpFz` décolle) ;
+- ça casse (`nBroken` > 0) si le cas doit casser ;
+- bilan B4 : résidu < 1 % (en pratique ~1e-5 %), dashpot et Cundall ≤ 0 ;
+- le wall time du smoke, extrapolé (× N_tets × N_pas), confirme le budget.
+
+### 4.4 La config, bloc par bloc
+
+```
+mode = fdem3d              # solveur FDEM 3D (joints cohesifs + contact)
+scenario = percussion
+mesh = file                # maillage Gmsh multi-corps
+meshFile = meshes/mon_banc.msh
+T = 1.2e-4                 # cf. 4.2 !
+frames = 6                 # frames VTU (chaque frame 842k = ~360 Mo en texte)
+
+rho = 2650                 # bloc materiau = defauts globaux (la roche)
+E = 50e9
+nu = 0.25
+ft = 10e6
+cohesion = 25e6
+frictionDeg = 40
+Gf = 70
+gfShearFactor = 10
+
+phases = rock insert       # une phase par volume physique HOMONYME du .msh
+phase.rock.fraction = 0.5  # fractions obligatoires mais SANS effet ici
+phase.insert.fraction = 0.5
+phase.insert.rho = 14500   # l'insert : carbure de tungstene, resistances
+phase.insert.E = 600e9     # hors d'atteinte -> il reste elastique
+phase.insert.ft = 400e6
+phase.insert.cohesion = 800e6
+phase.insert.Gf = 400
+
+jointPenaltyFactor = 20
+
+toolShape = none           # PAS d'outil rigide : l'insert est MAILLE
+groupVel.insert = 0 0 -8   # vitesse initiale du corps 'insert' [m/s]
+trackGroup = insert        # suivi -> colonnes grpZ/grpVz/grpFx..Fz/grpSzz
+
+dampingLocal = 0.05
+absorbing = all            # frontieres de Lysmer
+dtFactor = 0.15
+
+contact = potential        # potentiel de Munjiza (conservatif) | penalty
+gcActivation = adaptive    # activation adaptative (Fukuda) : x2 et plus
+```
+
+Rappels : **unités SI** (m, s, Pa, kg), **point décimal** obligatoire.
+
+### 4.5 Lancer
+
+```bash
+set OMP_NUM_THREADS=1      # 1 = bit-identique, comparable aux refs
+rockim.exe configs\mon_banc.cfg out_mon_banc
+```
+
+`OMP_NUM_THREADS` non posé = tous les cœurs (perf, mais plus de
+bit-identité : l'ordre de sommation flottante change). Deux précautions :
+
+- **budget** : coût ≈ N_tets × N_pas × (µs/tet/pas de la machine) ;
+  N_pas = T / dt et dt ≈ dtFactor × h_min / c_max (c = √(E/ρ) du matériau
+  le plus raide — souvent l'insert). Repères mesurés (Core Ultra, MSVC,
+  potentiel+adaptatif) : ~1,2 µs/tet/pas à 18 threads ;
+- **l'exe d'un run en cours est verrouillé par Windows** : pour continuer à
+  compiler pendant qu'un run tourne, lancer le run sur une COPIE de l'exe
+  (ou compiler sous un autre nom, `/Fe:rockim_dev.exe`).
+
+### 4.6 Suivre un run en cours
+
+`history.csv` s'écrit en continu dans le dossier de sortie — les colonnes
+utiles d'un impact : `t`, `grpZ/grpVz` (cinématique du corps suivi),
+`grpFz` (la F-δ en direct), `grpSzz` (jauge sous l'insert), `nBroken`,
+`eEl/eJnt/eGc/eFric/eCund/eLys` (bilan B4 par sous-système). Avancement =
+dernier `t` / T. Attention : valeurs imprimées en 6 chiffres significatifs —
+les positions évoluent « en escalier » de 1 µm, c'est l'arrondi d'écriture,
+pas la physique.
+
+### 4.7 Dépouiller
+
+1. **Le résumé stdout d'abord** : résidu B4 (doit être ≪ 1 %), dashpot
+   [OK, dissipative], joints cassés (traction/cisaillement), `potential
+   stats` (paires, tGrid/tLoop), fragments, wall time.
+2. **Restitution** : e = |vz sortie| / |vz entrée| du corps suivi
+   (repère : e = 0,71 sur bench1, 2D comme 3D).
+3. **Cratère** : `python tools/crater_metrics.py out_mon_banc` (rayon,
+   profondeur, fissures radiales, bras endommagés — multi-corps géré).
+4. **ParaView** : frames `fdem3d_XXXX.vtu` (+ `_joints` : `damage`, `type`).
+5. Courbes : la GUI (`tools/rockim_gui.py`) ou matplotlib sur `history.csv`.
+
+### 4.8 Archiver
+
+Jalon validé → `git bundle create rockim_<date>.bundle --all` → copie dans
+`phd_geothermie\FDEM\rockim\` (l'ancien bundle part dans `old\`), docs à
+jour DANS LE MÊME COMMIT (constitution §7).
+
+## 5. Écrire une config — référence des clés
 
 Format `clé = valeur`, une par ligne, `#` = commentaire. **Unités SI partout**
 (m, s, Pa, kg — PAS le mm-MPa d'Abaqus) et **point décimal obligatoire** (`0,5`
@@ -80,7 +238,7 @@ inconnues sont ignorées, mais les valeurs invalides et les combinaisons
 incohérentes (ex. `phases` sans `mesh = voronoi`) arrêtent le run avec un
 message explicite.
 
-### 4.1 Bloc commun
+### 5.1 Bloc commun
 
 | clé | rôle (défaut) |
 |---|---|
@@ -94,12 +252,12 @@ message explicite.
 | `dampingLocal` | amortissement de Cundall (0.05 dynamique ; ~0.1 en quasi-statique — 0.7 biaise les mesures de contrainte, cf. README) |
 | `absorbing` | `none` \| `sides` \| `all` (frontières de Lysmer) |
 
-### 4.2 Matériau (partagé par tous les modes)
+### 5.2 Matériau (partagé par tous les modes)
 
 `rho, E, nu, ft, cohesion, frictionDeg, Gf, gfShearFactor` — validation
 stricte (E, rho, ft, cohesion, Gf > 0 ; nu ∈ [0, 0.5) ; frictionDeg < 89).
 
-### 4.3 Outil et chargement
+### 5.3 Outil et chargement
 
 | clé | rôle |
 |---|---|
@@ -109,7 +267,7 @@ stricte (E, rho, ft, cohesion, Gf > 0 ; nu ∈ [0, 0.5) ; frictionDeg < 89).
 | `pullV`, `pullRamp` | vitesse du mors (traction/compression) ; **rampe cosinus** [s] — sans rampe, le transitoire casse au mors quel que soit le matériau |
 | `gripLateralFree` | mors sans frottement latéral (essais uniaxiaux propres) — rampe et mors libres disponibles dans TOUS les modes à scénario tension |
 
-## 5. Les lois de comportement (mode `fem3d`)
+## 6. Les lois de comportement (mode `fem3d`)
 
 Sélection par `law = ...` ; la percussion 3D multi-lois se fait en changeant
 UNE ligne. Fissuration = endommagement lissé + érosion (pas de joints).
@@ -137,7 +295,7 @@ grid (surface courbe absorbante) ; `meshMirror` (défaut on) = Kuhn miroité en
 damier (diagonales alternées — sinon les fissures s'alignent sur LA diagonale
 globale) ; `meshJitter` désordonne les nœuds.
 
-## 6. Le mode GBM (`mesh = voronoi` — FDEM 2D **et** 3D)
+## 7. Le mode GBM (`mesh = voronoi` — FDEM 2D **et** 3D)
 
 Grains de Voronoï + phases minérales + joints cohésifs classés
 (intra-grain / homophase / hétérophase), mêmes clés en 2D (`mode = fdem`)
@@ -173,7 +331,7 @@ Le résumé du run donne les fractions atteintes et la **fraction
 intergranulaire** de la casse ; ParaView colore par `grain`, `phase`,
 `ftScale`, `type` et `damage` des joints.
 
-## 7. Sorties et post-traitement
+## 8. Sorties et post-traitement
 
 | fichier | contenu |
 |---|---|
@@ -201,20 +359,34 @@ centroïdes + `*INITIAL CONDITIONS, TYPE=FIELD, VARIABLE=1` nodal — le
 même champ corrélé σw(x) injectable dans le mécanisme FIELD des VUMAT.
 Autocontrôle : volume total des tets réordonnés (jacobien C3D4 positif).
 
-## 8. Vérifications — à relancer après toute modification
+## 9. Vérifications — à relancer après toute modification
 
-`configs/verify_*.cfg` (ou le bouton de la GUI) : tension FDEM 2D (bit-repère
-−1,29039 %), onde de barre FEM, tension DEM 2D et 3D, tension FDEM3D grille
-(−2,6 %), tension Voronoï 2D (+9…+12 % = tortuosité, normal) et **Voronoï 3D**
-(même bande −5…+25 %), compression DP 3D (analytique, ±5 %), tension ft 3D,
-sur-contrainte de Perzyna aux deux vitesses (±25 %, linéarité ~2), et
-`selftest-saksala2011` (8×10⁻¹⁴ vs Fortran).
+**La** suite de non-régression est `tools/verify_suite.py` (~48 repères) :
 
-## 9. Pièges connus
+```bash
+python tools/verify_suite.py --exe rockim.exe --tier fast
+```
+
+`--tier fast` = 12 tests (~50 s) : selftests des lois (Saksala 2011, DP-DFH),
+conservation du potentiel 2D/3D, intégrale de Yan, barre FEM, tensions
+DEM/Voronoï, et les **zeroload** (charge nulle : 0 joint cassé, travail de
+contact = 0 exact — ils attrapent ce que rien d'autre ne voit).
+`--update-refs` re-baseline les repères. **Les réfs sont PAR PLATEFORME** :
+MSVC et libstdc++ divergent à graine égale (Voronoï/Weibull) — ne jamais
+comparer un pic MSVC à une réf Linux, ni des pics à threads différents.
+Constat 2026-08-14 : la suite fast passe 12/12 sous MSVC sans re-baseline.
+
+## 10. Pièges connus
 
 - **Virgule décimale** → erreur explicite (voulu) ; corriger la config.
+- **Fenêtre T vs gap** : vérifier t_contact = gap/v ≪ T AVANT de lancer
+  (cf. §4.2 — 4 h payées le 2026-08-14 pour un banc qui ne touchait jamais).
 - Un `.exe` fraîchement écrasé peut être verrouillé quelques secondes
-  (antivirus) — relancer.
+  (antivirus) — relancer. Et l'exe d'un **run en cours** est verrouillé tout
+  du long : compiler sous un autre nom pendant ce temps (`/Fe:rockim_dev.exe`).
+- `git clone <bundle>` échoue si on n'est pas dans le dossier du bundle.
+- OneDrive verrouille des fichiers pendant la compilation ; l'antivirus
+  ralentit MSVC dans `Downloads`.
 - `meshMirror = false` restitue l'ancien maillage fem3d à l'identique.
 - Les paramètres des démos sont des ordres de grandeur NON calibrés ; la
   calibration est le rôle du banc bayésien (`tools/bayes_bench.py`).
