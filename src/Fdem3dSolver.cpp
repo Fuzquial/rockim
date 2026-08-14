@@ -1171,7 +1171,17 @@ void Fdem3dSolver::step() {
         gripF_.setZero();
         for (int i = 0; i < (int)X0_.size(); ++i)
             if (flag_[i] == PRESCRIBED) gripF_ += f_[i];
-        sigmaPeak_ = std::max(sigmaPeak_, std::abs(gripF_.z()) / (W_ * D_));
+        double sigNow = std::abs(gripF_.z()) / (W_ * D_);
+        sigmaPeak_ = std::max(sigmaPeak_, sigNow);
+        // Arret post-rupture (opt-in stopPeakDrop, 0 = off) : quand la
+        // contrainte est retombee sous (1 - drop) x pic, l'essai est fini —
+        // le post-pic profond (bande entiere en contact de levres) coute le
+        // prix D0 sans rien apporter a la mesure. Garde : pic significatif
+        // (> 1 MPa) pour ne pas declencher sur le bruit d'avant-charge.
+        if (stopDrop_ < 0.0) stopDrop_ = cfg_.getd("stopPeakDrop", 0.0);
+        if (stopDrop_ > 0.0 && sigmaPeak_ > 1e6
+            && sigNow < (1.0 - stopDrop_) * sigmaPeak_)
+            peakStop_ = true;
     } else {
         peakF_ = std::max(peakF_, tool_.F.norm());
         work_ += -tool_.F.dot(tool_.v) * dt_;
@@ -1226,7 +1236,7 @@ void Fdem3dSolver::checkEnergyAbort() {
     eAbort_ = true;
 }
 
-bool Fdem3dSolver::finished() const { return eAbort_; }
+bool Fdem3dSolver::finished() const { return eAbort_ || peakStop_; }
 
 // Co-rotational linear tet. R from F by Higham iteration R <- (R + R^-T)/2,
 // warm-started from F scaled to unit Frobenius norm of a rotation. The

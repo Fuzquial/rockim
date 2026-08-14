@@ -249,6 +249,9 @@ private:
     double eAbortPct_ = -1.0;  // -1 = pas encore lu dans la config
     bool eAbort_ = false;
     void checkEnergyAbort();
+    // arret post-rupture en tension/compression (opt-in stopPeakDrop)
+    double stopDrop_ = -1.0;
+    bool peakStop_ = false;
     // V2/B2 : force de contact NETTE sur le corps suivi (trackGroup) au pas
     // courant — remise a zero en tete de generalContact, sommee dans les
     // deux lois (penalite et potentiel). La F-delta se lit alors en direct

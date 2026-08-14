@@ -276,6 +276,14 @@ sorties des runs non confinés inchangées au bit). Les résidus [CHECK] à
 ~100 % des runs confinés/bore antérieurs à cette date étaient CE poste
 manquant, pas une injection d'énergie.
 
+**Arrêt post-rupture (`stopPeakDrop`, fdem3d tension, 2026-08-14)** —
+0 = off (défaut) ; sinon, l'essai s'arrête PROPREMENT (hook `finished()` :
+frame + history + summary) dès que la contrainte des mors retombe sous
+(1 − stopPeakDrop) × pic, avec garde anti-bruit (pic > 1 MPa). Motivation :
+le post-pic profond met toute la bande de cisaillement en contact de lèvres
+— le prix D0 par pas — sans rien apporter à la mesure du pic. Décision
+Fernando : « je n'ai pas besoin d'aller loin après la rupture ».
+
 **Moniteur d'énergie runtime (E2 fiabilité, 2026-08-14)** —
 `budgetAbortPct` (0 = off, défaut) : tous les 1024 pas, si le résidu B4
 courant dépasse ce pourcentage de l'échelle (même définition que le résumé),
