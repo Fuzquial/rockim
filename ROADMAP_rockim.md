@@ -41,7 +41,7 @@ validable contre le banc de Mines Paris, (3) robustesse et vitesse.*
 
 | # | chantier | effort | note |
 |---|---|---|---|
-| **B1** | **Physical groups dans `mesh = file`** | moyen (~200 l.) | **LE verrou** : débloque d'un coup le multi-corps piston-taillant-roche, la géométrie réelle (cylindre, insert hémisphérique) et l'affectation correcte des CL |
+| **B1** | ~~Physical groups dans `mesh = file`~~ **FAIT (V1, 2026-08-14)** | — | groupes = corps (zéro joint inter-groupes), phase homonyme / `groupPhase.<nom>`, `groupVel.<nom>`, `trackGroup`, `toolShape = none` (impacteur maillé), résumé par corps, générateur `bench1` (bloc + insert sphérique), contrôle `zeroload_bench1_3d` (0 casse, gcWork = 0 exact) + impact insert→roche |
 | **B2** | Jauge de contrainte dans le taillant | court | copie des moniteurs SHPB 2D (`monEl1_`, moyenne surfacique) |
 | **B3** | Métriques de cratère : rayon, longueur des fissures radiales | court | post-traitement Python sur les VTU de joints |
 | **B4** | **Bilan d'énergie par sous-système** | court (~80 l.) | fissuration, frottement, Lysmer, Cundall, plasticité. Sert la validation *et* la chasse aux pathologies. Zéro risque (instrumentation pure) |
@@ -65,6 +65,7 @@ validable contre le banc de Mines Paris, (3) robustesse et vitesse.*
 
 | # | chantier | effort | gain attendu |
 |---|---|---|---|
+| **D0** | **Potentiel 3D en régime débris** (N1, diagnostic aux compteurs 2026-08-14 ; fait : seaux réutilisés, ordre canonique, SAT complet caché, clip sans copie → 682→448 s à T = 5e-5, tout bit-neutre ; longue 3 474 s vs 488 pénalité). Le poste dominant de la longue est l'**intégration exacte des 33 M de clips avec force** (~70 µs pièce, ≈ 2/3 du run : la subdivision aux 12 plans sur les contacts persistants des débris) ; clips vides ~12 % ; les axes d'arêtes du SAT n'y séparent plus rien | moyen-gros | pistes : intégration allégée en contact persistant (quadrature vs exactitude — à arbitrer), warm-start du polyèdre, cadence des contacts stationnaires, chapeau sans atan2/tri (ordre-équivalence à prouver), plancher PHYSIQUE `potFloor` opt-in |
 | D1 | VTK **binaire** + `frames.csv` tenu ouvert | court | dominant en E/S sur gros maillages |
 | D2 | `MatState` par loi (≈ 700 o/élément quelle que soit la loi) | court | ×4-5 mémoire en élastique/dpr |
 | D3 | OpenMP dans `fem`, `dem`, `dem3d` (zéro pragma aujourd'hui) | moyen | ces modules sont 100 % sériels |
@@ -102,6 +103,6 @@ validable contre le banc de Mines Paris, (3) robustesse et vitesse.*
 *Le groupe A (parité structurelle avec l'article) est terminé : A1 + A2 + A3 faits le 08-13, A4/A5 restent optionnels.*
 
 1. **B4 — bilan d'énergie par sous-système** : zéro risque, et il est devenu URGENT — A3 a montré que la loi de contact pilote un tiers du bilan d'énergie de l'impact ; il faut pouvoir attribuer chaque joule (fissuration, frottement, Lysmer, Cundall, contact) pour arbitrer penalty/potential contre l'expérience.
-2. **B1 — physical groups** : le verrou qui ouvre la reproduction du banc de ton labo (multi-corps piston-taillant-roche, outil MAILLÉ — ce qui mettra aussi l'outil sous le contact potentiel).
+2. ~~B1 — physical groups~~ **FAIT (V1, 2026-08-14)** : l'insert maillé impacte l'éprouvette (deux corps Gmsh, zeroload propre) — la suite est V2/V3 du plan v2 (bilan d'énergie, cratère, piston-taillant-roche).
 3. **E2 — recalibration** : contrepartie obligatoire d'A3 (les calibrations historiques compensaient le puits d'énergie du contact quasi-plastique).
-4. **D-perf du potentiel** : réutilisation des seaux de la détection élément-élément (mesuré : la détection non optimisée coûte ×2,6 sur la percussion 3D sans activation adaptative).
+4. **D0 — chemin clip-vide du potentiel 3D** : le diagnostic est posé (compteurs au résumé) ; fait : seaux, ordre canonique, SAT complet, clip sans copie (682→448 s à T = 5e-5, bit-neutre) ; reste : la percussion longue à ~7× la pénalité — pistes au tableau D et au plan v2.

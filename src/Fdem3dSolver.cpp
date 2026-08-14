@@ -267,9 +267,10 @@ void Fdem3dSolver::buildMesh() {
                                  + mesh + "')");
     voronoi_ = mesh == "voronoi";
     if (mesh == "file") {
-        if (phases_.n() > 1)
-            throw std::runtime_error("'phases' needs the grain machinery: "
-                "mesh = file imports a single-material unstructured mesh");
+        // Plusieurs phases sont admises si (et seulement si) le maillage
+        // porte des groupes physiques nommes : chaque corps prend la phase
+        // homonyme (ou groupPhase.<nom>). La verification se fait dans
+        // buildMeshFile, une fois les groupes connus.
         buildMeshFile();
         return;
     }
@@ -351,6 +352,8 @@ void Fdem3dSolver::buildMeshFile() {
     std::map<long, int> id2idx;
     std::vector<Eigen::Vector3d> vpos;
     std::vector<std::array<int, 4>> tets;
+    std::vector<long> tetPhys;             // tag physique par tet (0 = aucun)
+    std::map<long, std::string> physVol;   // id physique (dim 3) -> nom
     bool sawFormat = false;
     while (std::getline(in, line)) {
         if (line.rfind("$MeshFormat", 0) == 0) {
@@ -361,6 +364,19 @@ void Fdem3dSolver::buildMeshFile() {
                     + std::to_string(ver) + " unsupported — export ASCII 2.2 "
                     "(Gmsh: Mesh.MshFileVersion = 2.2)");
             sawFormat = true;
+        } else if (line.rfind("$PhysicalNames", 0) == 0) {
+            long n = 0;
+            in >> n;
+            for (long k = 0; k < n; ++k) {
+                int dim; long id; std::string nm;
+                in >> dim >> id;
+                std::getline(in, nm);
+                auto q0 = nm.find('"');
+                auto q1 = nm.rfind('"');
+                if (q0 != std::string::npos && q1 > q0)
+                    nm = nm.substr(q0 + 1, q1 - q0 - 1);
+                if (dim == 3) physVol[id] = nm;        // surfaces : plus tard
+            }
         } else if (line.rfind("$Nodes", 0) == 0) {
             long n = 0;
             in >> n;
@@ -376,8 +392,11 @@ void Fdem3dSolver::buildMeshFile() {
             for (long k = 0; k < n; ++k) {
                 long id; int type, ntags;
                 in >> id >> type >> ntags;
-                long tag;
-                for (int t = 0; t < ntags; ++t) in >> tag;
+                long tag, phys = 0;
+                for (int t = 0; t < ntags; ++t) {
+                    in >> tag;
+                    if (t == 0) phys = tag;            // 1er tag = physique
+                }
                 int nn = type == 15 ? 1 : type == 1 ? 2 : type == 2 ? 3
                        : type == 4 ? 4 : -1;
                 if (nn < 0)
@@ -395,8 +414,11 @@ void Fdem3dSolver::buildMeshFile() {
                         vv[q] = it->second;
                     }
                 }
-                if (nn == 4) tets.push_back(vv);       // points/lines/tris:
-            }                                          // boundary — skipped
+                if (nn == 4) {                         // points/lines/tris:
+                    tets.push_back(vv);                // boundary — skipped
+                    tetPhys.push_back(phys);
+                }
+            }
         }
     }
     if (!sawFormat || vpos.empty() || tets.empty())
@@ -412,14 +434,102 @@ void Fdem3dSolver::buildMeshFile() {
     H_ = hi.z() - lo.z();
     if (!(W_ > 0 && D_ > 0 && H_ > 0))
         throw std::runtime_error("meshFile: degenerate bounding box");
-    std::vector<int> tetGrain(tets.size(), 0);         // one implicit grain
-    nGrains_ = 1;
+    // ---- physical groups (V1) : volumes physiques -> groupes/corps ---------
+    // Sans $PhysicalNames : un seul groupe, comportement inchange. Avec :
+    // un groupe par volume physique, materiau = phase du meme nom (ou
+    // groupPhase.<nom>), et buildFromTets ne cree AUCUN joint entre groupes.
+    groupName_.clear();
+    std::map<long, int> phys2grp;
+    if (!physVol.empty()) {
+        for (const auto& [pid, nm] : physVol) {
+            phys2grp[pid] = (int)groupName_.size();
+            groupName_.push_back(nm);
+        }
+    } else {
+        groupName_.push_back("all");
+    }
+    nGroups_ = (int)groupName_.size();
+    if (phases_.n() > 1 && nGroups_ <= 1)
+        throw std::runtime_error("'phases' avec mesh = file exige des groupes "
+            "physiques nommes ($PhysicalNames, dim 3) : sans groupes le "
+            "maillage est un seul corps et une seule phase s'applique");
+    tetGroupTmp_.assign(tets.size(), 0);
+    if (!physVol.empty())
+        for (std::size_t k = 0; k < tets.size(); ++k) {
+            auto it = phys2grp.find(tetPhys[k]);
+            if (it == phys2grp.end())
+                throw std::runtime_error("meshFile: un tet porte le tag "
+                    "physique " + std::to_string(tetPhys[k]) + " sans volume "
+                    "physique declare — nommer TOUS les volumes ou aucun");
+            tetGroupTmp_[k] = it->second;
+        }
+    // phase par groupe : groupPhase.<nom> sinon la phase homonyme sinon 0
+    std::vector<int> grpPhase(nGroups_, 0);
+    for (int g = 0; g < nGroups_; ++g) {
+        std::string want = cfg_.gets("groupPhase." + groupName_[g],
+                                     groupName_[g]);
+        int ph = -1;
+        for (int p = 0; p < phases_.n(); ++p)
+            if (phases_.name[p] == want) ph = p;
+        if (ph < 0) {
+            ph = 0;
+            if (phases_.n() > 1)
+                std::cout << "[FDEM3D] WARNING: groupe '" << groupName_[g]
+                          << "' sans phase homonyme ni groupPhase — phase 0 ("
+                          << phases_.name[0] << ")\n";
+        }
+        grpPhase[g] = ph;
+    }
+    std::vector<int> tetGrain = tetGroupTmp_;          // grain = groupe (VTU)
+    nGrains_ = nGroups_;
     voronoi_ = true;             // non-uniform sizing paths (local h, sparse
                                  // contact grid) — a file mesh is not a grid
     std::cout << "[FDEM3D] mesh = file: '" << path << "' — "
               << vpos.size() << " nodes, " << tets.size()
               << " tets, box " << W_ << " x " << D_ << " x " << H_ << " m\n";
-    buildFromTets(vpos, tets, tetGrain, {0});
+    if (nGroups_ > 1) {
+        std::cout << "[FDEM3D] physical groups: " << nGroups_ << " corps —";
+        for (int g = 0; g < nGroups_; ++g)
+            std::cout << " " << groupName_[g] << " (phase "
+                      << phases_.name[grpPhase[g]] << ")";
+        std::cout << "\n";
+    }
+    buildFromTets(vpos, tets, tetGrain, grpPhase);
+    // groupe par element (ordre des elements = ordre des tets)
+    elemGroup_.assign(el_.size(), 0);
+    for (std::size_t e = 0; e < el_.size(); ++e)
+        elemGroup_[e] = tetGroupTmp_[e];
+    // vitesse initiale par groupe : groupVel.<nom> = "vx vy vz"
+    for (int g = 0; g < nGroups_; ++g) {
+        std::string vs = cfg_.gets("groupVel." + groupName_[g], "");
+        if (vs.empty()) continue;
+        std::istringstream iss(vs);
+        double vx = 0, vy = 0, vz = 0;
+        if (!(iss >> vx >> vy >> vz))
+            throw std::runtime_error("groupVel." + groupName_[g]
+                                     + " : attendu \"vx vy vz\"");
+        long nset = 0;
+        for (std::size_t e = 0; e < el_.size(); ++e)
+            if (elemGroup_[e] == g)
+                for (int a = 0; a < 4; ++a) {
+                    v_[el_[e].n[a]] = {vx, vy, vz};
+                    ++nset;
+                }
+        std::cout << "[FDEM3D] groupVel." << groupName_[g] << " = (" << vx
+                  << ", " << vy << ", " << vz << ") m/s sur " << nset
+                  << " noeuds\n";
+    }
+    // groupe suivi dans history.csv (colonnes grpZ, grpVz)
+    {
+        std::string tg = cfg_.gets("trackGroup", "");
+        if (!tg.empty()) {
+            for (int g = 0; g < nGroups_; ++g)
+                if (groupName_[g] == tg) trackGroup_ = g;
+            if (trackGroup_ < 0)
+                throw std::runtime_error("trackGroup: groupe '" + tg
+                                         + "' inconnu");
+        }
+    }
     hmin_ = 1e30;
     for (double h : hEl_) hmin_ = std::min(hmin_, h);
 }
@@ -543,6 +653,15 @@ void Fdem3dSolver::buildFromTets(const std::vector<Eigen::Vector3d>& vpos,
 
     for (auto& [key, lst] : faces) {
         if (lst.size() == 2) {
+            // V1 — physical groups : AUCUN joint entre deux groupes ; les
+            // deux faces deviennent exterieures et l'interface est portee
+            // par le contact general (penalite ou potentiel)
+            if (!tetGroupTmp_.empty()
+                && tetGroupTmp_[lst[0].elem] != tetGroupTmp_[lst[1].elem]) {
+                exterior_.push_back({lst[0].elem, lst[0].nn});
+                exterior_.push_back({lst[1].elem, lst[1].nn});
+                continue;
+            }
             Joint J;
             J.eA = lst[0].elem;
             J.eB = lst[1].elem;
@@ -836,11 +955,20 @@ void Fdem3dSolver::placeTool() {
     tool_.mass   = cfg_.getd("toolMass", 0.5);
     tool_.radius = cfg_.getd("toolRadius", 0.015);
     double gap = cfg_.getd("toolGap", 1e-4);
-    // toolShape = sphere | flat ('disc' accepted as the 2D synonym); shear
-    // forces the sphere, exactly as 2D shear forces the disc
+    // toolShape = sphere | flat ('disc' accepted as the 2D synonym) | none.
+    // none (V1) : PAS d'outil analytique — l'outil est un corps MAILLE
+    // (physical group + groupVel), et toolContact / tool_.integrate sont
+    // court-circuites DUR (lecon du disque fantome brezilien 2D).
     std::string sh = cfg_.gets("toolShape", "sphere");
+    if (sh == "none") {
+        toolNone_ = true;
+        tool_.free = false;
+        tool_.x = {1e9, 1e9, 1e9};         // hors de portee de tout
+        tool_.v.setZero();
+        return;
+    }
     if (sh != "sphere" && sh != "disc" && sh != "flat")
-        throw std::runtime_error("toolShape must be sphere | flat (3D)");
+        throw std::runtime_error("toolShape must be sphere | flat | none (3D)");
     tool_.flat = sh == "flat" && scen_ == Scenario::PERCUSSION;
     if (scen_ == Scenario::PERCUSSION) {
         tool_.free = true;
@@ -1548,18 +1676,34 @@ void Fdem3dSolver::potentialContact() {
             elems.push_back(bf.elem);
         }
     if (elems.size() < 2) return;
+    auto potTic = std::chrono::steady_clock::now();   // diagnostic (resume)
 
-    // ---- (2) AABB courantes + grille de hachage --------------------------
+    // ---- (2) AABB courantes + grille DENSE a seaux REUTILISES (N1) -------
+    // Miroir du 2D : la grille de hachage reallouait chaque seau a chaque
+    // pas (la detection dominait le cout, x2,6 mesure sur la percussion 3D).
+    // Boite fixe comme la grille de faces, seaux clear() sans liberation.
     double cl = voronoi_ ? cellV_ : 2.0 * hmin_;
+    Eigen::Vector3d ebLo(-0.5 * W_, -0.5 * D_, -0.5 * H_);
+    Eigen::Vector3d ebHi(1.5 * W_, 1.5 * D_, 2.0 * H_);
+    Eigen::Vector3d egMin = ebLo - Eigen::Vector3d::Constant(cl);
+    Eigen::Vector3d espan = ebHi - egMin + Eigen::Vector3d::Constant(cl);
+    int egx = std::max(1, int(espan.x() / cl) + 1);
+    int egy = std::max(1, int(espan.y() / cl) + 1);
+    int egz = std::max(1, int(espan.z() / cl) + 1);
+    auto ecid = [&](int cx, int cy, int cz) {
+        return ((std::size_t)cz * egy + cy) * egx + cx;
+    };
     static std::vector<Eigen::Vector3d> elo, ehi;
     elo.resize(elems.size());
     ehi.resize(elems.size());
-    static std::unordered_map<uint64_t, std::vector<int>> hg;
-    hg.clear();
-    auto keyIJK = [](long long ix, long long iy, long long iz) {
-        return (uint64_t)(ix & 0x1FFFFF) | ((uint64_t)(iy & 0x1FFFFF) << 21)
-               | ((uint64_t)(iz & 0x1FFFFF) << 42);
-    };
+    static std::vector<char> einb;
+    einb.resize(elems.size());
+    static std::vector<std::vector<int>> eg;
+    {
+        std::size_t nC = (std::size_t)egx * egy * egz;
+        if (eg.size() != nC) eg.assign(nC, {});
+        else for (auto& c : eg) c.clear();
+    }
     for (int q = 0; q < (int)elems.size(); ++q) {
         const Elem& E = el_[elems[q]];
         Eigen::Vector3d lo = X0_[E.n[0]] + u_[E.n[0]], hi = lo;
@@ -1570,48 +1714,68 @@ void Fdem3dSolver::potentialContact() {
         }
         elo[q] = lo;
         ehi[q] = hi;
-        long long x0 = (long long)std::floor(lo.x() / cl);
-        long long x1 = (long long)std::floor(hi.x() / cl);
-        long long y0 = (long long)std::floor(lo.y() / cl);
-        long long y1 = (long long)std::floor(hi.y() / cl);
-        long long z0 = (long long)std::floor(lo.z() / cl);
-        long long z1 = (long long)std::floor(hi.z() / cl);
-        for (long long cz = z0; cz <= z1; ++cz)
-            for (long long cy = y0; cy <= y1; ++cy)
-                for (long long cx = x0; cx <= x1; ++cx)
-                    hg[keyIJK(cx, cy, cz)].push_back(q);
+        einb[q] = (hi.array() > ebLo.array()).all()
+                  && (lo.array() < ebHi.array()).all();
+        if (!einb[q]) continue;
+        int x0 = std::clamp(int((lo.x() - egMin.x()) / cl), 0, egx - 1);
+        int x1 = std::clamp(int((hi.x() - egMin.x()) / cl), 0, egx - 1);
+        int y0 = std::clamp(int((lo.y() - egMin.y()) / cl), 0, egy - 1);
+        int y1 = std::clamp(int((hi.y() - egMin.y()) / cl), 0, egy - 1);
+        int z0 = std::clamp(int((lo.z() - egMin.z()) / cl), 0, egz - 1);
+        int z1 = std::clamp(int((hi.z() - egMin.z()) / cl), 0, egz - 1);
+        for (int cz = z0; cz <= z1; ++cz)
+            for (int cy = y0; cy <= y1; ++cy)
+                for (int cx = x0; cx <= x1; ++cx)
+                    eg[ecid(cx, cy, cz)].push_back(q);
     }
 
-    // ---- (3) paires candidates -> clip -> forces -------------------------
+    // ---- (3) paires candidates, en ordre CANONIQUE (voir 2D) -------------
     static std::vector<int> pstamp;
     if (pstamp.size() != elems.size()) pstamp.assign(elems.size(), -1);
     else std::fill(pstamp.begin(), pstamp.end(), -1);
-
+    static std::vector<uint64_t> pairs;
+    pairs.clear();
     for (int q = 0; q < (int)elems.size(); ++q) {
-        long long x0 = (long long)std::floor(elo[q].x() / cl);
-        long long x1 = (long long)std::floor(ehi[q].x() / cl);
-        long long y0 = (long long)std::floor(elo[q].y() / cl);
-        long long y1 = (long long)std::floor(ehi[q].y() / cl);
-        long long z0 = (long long)std::floor(elo[q].z() / cl);
-        long long z1 = (long long)std::floor(ehi[q].z() / cl);
-        for (long long cz = z0; cz <= z1; ++cz)
-            for (long long cy = y0; cy <= y1; ++cy)
-                for (long long cx = x0; cx <= x1; ++cx) {
-                    auto it = hg.find(keyIJK(cx, cy, cz));
-                    if (it == hg.end()) continue;
-                    for (int r : it->second) {
+        if (!einb[q]) continue;
+        int x0 = std::clamp(int((elo[q].x() - egMin.x()) / cl), 0, egx - 1);
+        int x1 = std::clamp(int((ehi[q].x() - egMin.x()) / cl), 0, egx - 1);
+        int y0 = std::clamp(int((elo[q].y() - egMin.y()) / cl), 0, egy - 1);
+        int y1 = std::clamp(int((ehi[q].y() - egMin.y()) / cl), 0, egy - 1);
+        int z0 = std::clamp(int((elo[q].z() - egMin.z()) / cl), 0, egz - 1);
+        int z1 = std::clamp(int((ehi[q].z() - egMin.z()) / cl), 0, egz - 1);
+        for (int cz = z0; cz <= z1; ++cz)
+            for (int cy = y0; cy <= y1; ++cy)
+                for (int cx = x0; cx <= x1; ++cx)
+                    for (int r : eg[ecid(cx, cy, cz)]) {
                         if (r <= q || pstamp[r] == q) continue;
                         pstamp[r] = q;
                         if ((elo[r].array() > ehi[q].array()).any()
                             || (elo[q].array() > ehi[r].array()).any())
                             continue;
-                        int eLo = std::min(elems[q], elems[r]);
-                        int eHi = std::max(elems[q], elems[r]);
-                        uint64_t pk = ((uint64_t)eLo << 32) | (uint64_t)eHi;
+                        uint64_t a = (uint64_t)std::min(elems[q], elems[r]);
+                        uint64_t b = (uint64_t)std::max(elems[q], elems[r]);
+                        pairs.push_back((a << 32) | b);
+                    }
+    }
+    std::sort(pairs.begin(), pairs.end());
+    {
+        auto t1 = std::chrono::steady_clock::now();
+        potStats_.tGrid += std::chrono::duration<double>(t1 - potTic).count();
+        potTic = t1;
+    }
+    potStats_.pairs += pairs.size();
+
+    for (uint64_t pk : pairs) {
+        {
+            {
+                        int eLo = (int)(pk >> 32);
+                        int eHi = (int)(pk & 0xFFFFFFFFu);
                         auto itJ = jointOfPair_.find(pk);
                         if (itJ != jointOfPair_.end()
-                            && !jt_[itJ->second].dead)
+                            && !jt_[itJ->second].dead) {
+                            ++potStats_.joint;
                             continue;      // le joint vivant porte la paire
+                        }
                         const Elem& EA = el_[eLo];
                         const Elem& EB = el_[eHi];
                         pot3::V3 pa[4], pb[4];
@@ -1619,12 +1783,30 @@ void Fdem3dSolver::potentialContact() {
                             pa[k] = X0_[EA.n[k]] + u_[EA.n[k]];
                             pb[k] = X0_[EB.n[k]] + u_[EB.n[k]];
                         }
+                        // pre-filtre d'axe separateur avec cache par paire :
+                        // en regime etabli un voisin tangent coute UN test de
+                        // plan au lieu d'un clip complet (bit-neutre — voir
+                        // PotentialContact.hpp)
+                        auto& H = potFt_[pk];
+                        {
+                            const int h0 = H.sepAxis;
+                            if (pot3::separated(pa, pb, H.sepAxis)) {
+                                if (H.sepAxis == h0) ++potStats_.sepHint;
+                                else if (H.sepAxis < 8) ++potStats_.sepFace;
+                                else ++potStats_.sepEdge;
+                                continue;
+                            }
+                        }
                         pot3::PairForce3 R;
-                        if (!pot3::pairForce(pa, pb, potP_, R)) continue;
+                        if (!pot3::pairForce(pa, pb, potP_, R)) {
+                            ++potStats_.clipMiss;
+                            continue;
+                        }
+                        ++potStats_.clipHit;
                         // ---- releve de naissance par VOLUME (cf. 2D) -----
-                        auto [itH, isNewH] = potFt_.try_emplace(pk);
-                        PotHist& H = itH->second;
-                        if (isNewH) H.vRef = R.vol;
+                        // vRef < 0 = premiere fois en recouvrement (l'entree
+                        // peut preexister via le cache d'axe separateur)
+                        if (H.vRef < 0.0) H.vRef = R.vol;
                         else H.vRef *= relax_;
                         double sc = std::max(0.0, 1.0 - H.vRef / R.vol);
                         R.F *= sc;
@@ -1640,21 +1822,27 @@ void Fdem3dSolver::potentialContact() {
                                + R.fB[k].dot(v_[EB.n[k]]);
                         }
                         gcWork_ += w * dt_;
+                        // barycentriques du centroide : estampilles PONDEREES
+                        // de la regle B + frottement (voir le 2D — estampiller
+                        // tous les noeuds sur-propageait l'activation : 96 %
+                        // des faces activees mesurees sur la percussion longue)
+                        pot3::Bary4 bA, bB;
+                        bA.set(pa[0], pa[1], pa[2], pa[3]);
+                        bB.set(pb[0], pb[1], pb[2], pb[3]);
+                        double la[4], lb[4];
+                        bA.lam(R.cen, la);
+                        bB.lam(R.cen, lb);
                         if (gcAdaptive_)
                             for (int k = 0; k < 4; ++k) {
-                                lastTouch_[EA.n[k]] = stepCount_;
-                                lastTouch_[EB.n[k]] = stepCount_;
+                                if (la[k] > 0.1)
+                                    lastTouch_[EA.n[k]] = stepCount_;
+                                if (lb[k] > 0.1)
+                                    lastTouch_[EB.n[k]] = stepCount_;
                             }
                         // ---- frottement incremental (eq. 4-5) ------------
                         if (muC_ > 0.0 && potKt_ > 0.0) {
                             double Fn = R.F.norm();
                             if (Fn > 1e-300) {
-                                pot3::Bary4 bA, bB;
-                                bA.set(pa[0], pa[1], pa[2], pa[3]);
-                                bB.set(pb[0], pb[1], pb[2], pb[3]);
-                                double la[4], lb[4];
-                                bA.lam(R.cen, la);
-                                bB.lam(R.cen, lb);
                                 Eigen::Vector3d vA =
                                     la[0] * v_[EA.n[0]] + la[1] * v_[EA.n[1]]
                                     + la[2] * v_[EA.n[2]]
@@ -1691,6 +1879,8 @@ void Fdem3dSolver::potentialContact() {
                     }
                 }
     }
+    potStats_.tLoop += std::chrono::duration<double>(
+        std::chrono::steady_clock::now() - potTic).count();
 }
 
 void Fdem3dSolver::generalContact() {
@@ -1981,7 +2171,7 @@ void Fdem3dSolver::generalContact() {
 // writes are race-free; the tool reaction is reduced through per-thread
 // partial sums added in thread order (deterministic per thread count).
 void Fdem3dSolver::toolContact() {
-    if (scen_ == Scenario::TENSION) return;
+    if (scen_ == Scenario::TENSION || toolNone_) return;
     auto nodeFc = [&](int i, Eigen::Vector3d& Fc) {
         Eigen::Vector3d p = X0_[i] + u_[i];
         if (tool_.flat) {
@@ -2111,7 +2301,7 @@ void Fdem3dSolver::integrate() {
                 }
             }
         }
-        if (scen_ != Scenario::TENSION) tool_.integrate(dt_);
+        if (scen_ != Scenario::TENSION && !toolNone_) tool_.integrate(dt_);
         return;
     }
 #ifdef _OPENMP
@@ -2158,7 +2348,7 @@ void Fdem3dSolver::integrate() {
                 v_[i](a) /= 1.0 + dt_ * cAbs_[i](a) / m_[i];
         u_[i] += dt_ * v_[i];
     }
-    if (scen_ != Scenario::TENSION) tool_.integrate(dt_);
+    if (scen_ != Scenario::TENSION && !toolNone_) tool_.integrate(dt_);
 }
 
 void Fdem3dSolver::computeFragments() {
@@ -2254,7 +2444,9 @@ void Fdem3dSolver::writeFrame(int frame) {
 void Fdem3dSolver::historyHeader(std::ostream& os) const {
     if (scen_ == Scenario::TENSION) { os << "t,gripFz,sigma,sigmaPeak,nBroken\n"; return; }
     os << "t,toolFx,toolFy,toolFz,toolX,toolY,toolZ,toolVx,toolVy,toolVz,"
-          "work,toolKE,nBroken,nFrag,detachedVol,specificEnergy\n";
+          "work,toolKE,nBroken,nFrag,detachedVol,specificEnergy";
+    if (trackGroup_ >= 0) os << ",grpZ,grpVz";         // corps suivi (V1)
+    os << "\n";
 }
 
 void Fdem3dSolver::historyRow(std::ostream& os) const {
@@ -2269,7 +2461,24 @@ void Fdem3dSolver::historyRow(std::ostream& os) const {
        << "," << tool_.x.x() << "," << tool_.x.y() << "," << tool_.x.z()
        << "," << tool_.v.x() << "," << tool_.v.y() << "," << tool_.v.z()
        << "," << work_ << "," << tool_.ke() << "," << nBroken_ << ","
-       << nFrag_ << "," << detachedVol_ << "," << Es << "\n";
+       << nFrag_ << "," << detachedVol_ << "," << Es;
+    if (trackGroup_ >= 0) {
+        // corps suivi : z du centroide massique et vz moyenne (ponderation
+        // par les masses nodales — les noeuds appartiennent a un seul corps)
+        double mz = 0.0, mvz = 0.0, mm = 0.0;
+        for (std::size_t e = 0; e < el_.size(); ++e) {
+            if (elemGroup_[e] != trackGroup_) continue;
+            for (int a = 0; a < 4; ++a) {
+                int i = el_[e].n[a];
+                mm += m_[i];
+                mz += m_[i] * (X0_[i].z() + u_[i].z());
+                mvz += m_[i] * v_[i].z();
+            }
+        }
+        os << "," << (mm > 0 ? mz / mm : 0.0)
+           << "," << (mm > 0 ? mvz / mm : 0.0);
+    }
+    os << "\n";
 }
 
 void Fdem3dSolver::finalize() {
@@ -2292,6 +2501,15 @@ void Fdem3dSolver::finalize() {
     std::cout << "\n[FDEM3D] ---- summary ----\n"
               << "[FDEM3D] block kinetic energy at end: " << keBlock << " J\n"
               << "[FDEM3D] net work by general contact: " << gcWork_ << " J\n";
+    if (contactPot_ && potStats_.pairs > 0) {
+        const auto& S = potStats_;
+        std::cout << "[FDEM3D] potential stats: " << S.pairs << " paires ("
+                  << S.joint << " joint vivant, " << S.sepHint << " sep-hint, "
+                  << S.sepFace << " sep-face, " << S.sepEdge << " sep-arete, "
+                  << S.clipMiss << " clip-vide, " << S.clipHit
+                  << " clip-force), tGrid = " << S.tGrid
+                  << " s, tLoop = " << S.tLoop << " s\n";
+    }
     // A dashpot can only DISSIPATE. A positive figure here means the viscous
     // branch is injecting energy — the rectifier failure mode — and every
     // number the run produced is suspect (2D lesson, now measured in 3D too).
@@ -2315,6 +2533,24 @@ void Fdem3dSolver::finalize() {
                   << jt_.size() << " joints inserted ("
                   << (jt_.empty() ? 0.0 : 100.0 * nInserted_ / jt_.size())
                   << " %), " << nBroken_ << " fully broken\n";
+    if (nGroups_ > 1) {                    // V1 : bilan par corps
+        for (int g = 0; g < nGroups_; ++g) {
+            double ke = 0.0, mvz = 0.0, mm = 0.0;
+            for (std::size_t e = 0; e < el_.size(); ++e) {
+                if (elemGroup_[e] != g) continue;
+                for (int a = 0; a < 4; ++a) {
+                    int i = el_[e].n[a];
+                    ke += 0.5 * m_[i] * v_[i].squaredNorm();
+                    mm += m_[i];
+                    mvz += m_[i] * v_[i].z();
+                }
+            }
+            std::cout << "[FDEM3D] corps '" << groupName_[g] << "': KE = "
+                      << ke << " J, vz moyenne = "
+                      << (mm > 0 ? mvz / mm : 0.0) << " m/s, masse = "
+                      << mm << " kg\n";
+        }
+    }
     if (gcAdaptive_)
         std::cout << "[FDEM3D] adaptive contact activation: " << nActivated_
                   << " / " << pool_.size() << " exterior faces activated ("

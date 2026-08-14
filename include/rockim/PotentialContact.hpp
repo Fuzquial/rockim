@@ -367,6 +367,63 @@ struct PairForce3 {
     double vol;                            // volume de S
 };
 
+// Test d'AXE SEPARATEUR sur les 8 plans de faces, avec CACHE du plan gagnant
+// (hint, a la Baraff) : les voisins tangents d'un maillage qui pave l'espace
+// dominent les paires candidates, et leur clip complet — qui echoue toujours
+// — dominait le cout de la detection (mesure : -6 % seulement en optimisant
+// la grille). En regime etabli, une paire tangente coute UN test de plan
+// (~16 produits scalaires). STRICTEMENT conservatif : on ne declare separe
+// que si tous les sommets de l'autre tet sont du cote exterieur (d >= 0) —
+// le recouvrement est alors de mesure nulle et le clip l'aurait rejete :
+// bit-neutre par construction. hint = -1 si aucun plan connu.
+inline bool separated(const V3 pa[4], const V3 pb[4], int& hint) {
+    static const int TF[4][3] = {{1, 2, 3}, {0, 3, 2}, {0, 1, 3}, {0, 2, 1}};
+    static const int TE[6][2] = {{0, 1}, {0, 2}, {0, 3},
+                                 {1, 2}, {1, 3}, {2, 3}};
+    // axes 0-7 : plans de faces (0-3 = A, 4-7 = B) ; axes 8-43 : produits
+    // croises d'aretes (8 + 6 iA + iB) — le jeu COMPLET du SAT pour deux
+    // polytopes convexes : toute paire disjointe possede un axe separateur
+    // dans cet ensemble, donc le clip complet n'est paye que par les paires
+    // REELLEMENT en recouvrement. Mesure sans les axes d'aretes : sur la
+    // surface deformee de la phase debris, la majorite des paires disjointes
+    // echappait aux 8 plans de faces et payait le clip a chaque pas.
+    auto test = [&](int axis) {
+        if (axis < 8) {
+            const V3* S = axis < 4 ? pa : pb;
+            const V3* O = axis < 4 ? pb : pa;
+            const int f = axis & 3;
+            const V3& A = S[TF[f][0]];
+            V3 n = (S[TF[f][1]] - A).cross(S[TF[f][2]] - A);
+            for (int k = 0; k < 4; ++k)
+                if (n.dot(O[k] - A) < 0.0) return false;
+            return true;
+        }
+        const int ia = (axis - 8) / 6, ib = (axis - 8) % 6;
+        V3 ea = pa[TE[ia][1]] - pa[TE[ia][0]];
+        V3 eb = pb[TE[ib][1]] - pb[TE[ib][0]];
+        V3 n = ea.cross(eb);
+        double nn = n.squaredNorm();
+        if (nn < 1e-300) return false;         // aretes paralleles : axe nul
+        double aLo = 1e300, aHi = -1e300, bLo = 1e300, bHi = -1e300;
+        for (int k = 0; k < 4; ++k) {
+            double da = n.dot(pa[k]);
+            double db = n.dot(pb[k]);
+            aLo = std::min(aLo, da); aHi = std::max(aHi, da);
+            bLo = std::min(bLo, db); bHi = std::max(bHi, db);
+        }
+        return aHi <= bLo || bHi <= aLo;       // intervalles disjoints
+    };
+    if (hint >= 0 && test(hint)) return true;
+    for (int axis = 0; axis < 44; ++axis) {
+        if (axis == hint) continue;
+        if (test(axis)) {
+            hint = axis;
+            return true;
+        }
+    }
+    return false;                           // recouvrement reel (SAT complet)
+}
+
 inline bool pairForce(const V3 pa[4], const V3 pb[4], double p,
                       PairForce3& R) {
     Bary4 bA, bB;
@@ -376,12 +433,19 @@ inline bool pairForce(const V3 pa[4], const V3 pb[4], double p,
 
     // faces sortantes d'un tet positif : (1,2,3) (0,3,2) (0,1,3) (0,2,1)
     static const int TF[4][3] = {{1, 2, 3}, {0, 3, 2}, {0, 1, 3}, {0, 2, 1}};
-    Poly3 P, Q;
-    P.clear();
+    // PING-PONG src/dst : l'ancienne copie `P = Q` apres chaque plan de coupe
+    // deplacait ~9 Ko de Poly3 quatre fois par clip — mesure aux compteurs :
+    // 51 M de clips VIDES (contacts rasants de la phase debris) payaient
+    // ~5 us chacun, 52 % du run percussion. Echanger deux pointeurs produit
+    // exactement les memes flottants : bit-neutre par construction.
+    Poly3 PA, PB;
+    Poly3* src = &PA;
+    Poly3* dst = &PB;
+    src->clear();
     for (int f = 0; f < 4; ++f) {
-        P.nV[P.nF] = 3;
-        for (int i = 0; i < 3; ++i) P.v[P.nF][i] = pa[TF[f][i]];
-        ++P.nF;
+        src->nV[src->nF] = 3;
+        for (int i = 0; i < 3; ++i) src->v[src->nF][i] = pa[TF[f][i]];
+        ++src->nF;
     }
     // tolerance de rasance RELATIVE a la taille des tets
     double scale = 0.0;
@@ -394,10 +458,11 @@ inline bool pairForce(const V3 pa[4], const V3 pb[4], double p,
         V3 n = (pb[TF[f][1]] - A).cross(pb[TF[f][2]] - A);
         double nn = n.norm();
         if (nn < 1e-300) return false;
-        clipHalf(P, n / nn, A, Q, tol);
-        P = Q;
-        if (P.nF < 3) return false;        // plus de volume
+        clipHalf(*src, n / nn, A, *dst, tol);
+        std::swap(src, dst);
+        if (src->nF < 3) return false;     // plus de volume
     }
+    const Poly3& P = *src;
 
     // volume + centroide par decoupage en tets depuis le barycentre, et
     // controle de FERMETURE : pour un polyedre clos, la somme des normales

@@ -5,6 +5,12 @@
 #
 #   python3 tools/make_unstructured_mesh.py box3d W D H h out.msh [seed]
 #   python3 tools/make_unstructured_mesh.py box2d W H   h out.msh [seed]
+#   python3 tools/make_unstructured_mesh.py bench1 W D H R gap h hIns out.msh [seed]
+#
+# bench1 (V1) : DEUX corps — bloc W x D x H (volume physique "rock") et
+# INSERT spherique de rayon R centre au-dessus (volume physique "insert"),
+# separes de `gap`, mailles a h (roche) et hIns (insert). C'est le premier
+# jalon de la trajectoire Solidity : l'impact insert-roche en maille.
 #
 # Sortie : Gmsh MSH 2.2 ASCII (tets type 4 en 3D, triangles type 2 en 2D).
 # Gmsh est LE mailleur de la pratique FDEM (Akantu, OpenFDEM, litterature) ;
@@ -26,9 +32,14 @@ def main():
         W, H, h = map(float, sys.argv[2:5])
         out = sys.argv[5]
         seed = int(sys.argv[6]) if len(sys.argv) > 6 else 1
+    elif kind == "bench1":
+        W, D, H, R, gap, h, hIns = map(float, sys.argv[2:9])
+        out = sys.argv[9]
+        seed = int(sys.argv[10]) if len(sys.argv) > 10 else 1
     else:
         raise SystemExit("usage: make_unstructured_mesh.py box3d W D H h out.msh [seed]\n"
-                         "       make_unstructured_mesh.py box2d W H h out.msh [seed]")
+                         "       make_unstructured_mesh.py box2d W H h out.msh [seed]\n"
+                         "       make_unstructured_mesh.py bench1 W D H R gap h hIns out.msh [seed]")
 
     gmsh.initialize()
     gmsh.option.setNumber("General.Terminal", 0)
@@ -44,6 +55,22 @@ def main():
         gmsh.option.setNumber("Mesh.Algorithm3D", 1)  # Delaunay 3D
         gmsh.option.setNumber("Mesh.OptimizeNetgen", 1)
         gmsh.model.mesh.generate(3)
+    elif kind == "bench1":
+        rock = gmsh.model.occ.addBox(0, 0, 0, W, D, H)
+        ins = gmsh.model.occ.addSphere(0.5 * W, 0.5 * D, H + gap + R, R)
+        gmsh.model.occ.synchronize()
+        gmsh.model.addPhysicalGroup(3, [rock], name="rock")
+        gmsh.model.addPhysicalGroup(3, [ins], name="insert")
+        # taille locale : fine sur l'insert, h partout ailleurs
+        gmsh.option.setNumber("Mesh.MeshSizeMin", min(h, hIns))
+        gmsh.option.setNumber("Mesh.MeshSizeMax", h)
+        insPts = gmsh.model.getBoundary([(3, ins)], recursive=True)
+        for dim, tag in insPts:
+            if dim == 0:
+                gmsh.model.mesh.setSize([(0, tag)], hIns)
+        gmsh.option.setNumber("Mesh.Algorithm3D", 1)
+        gmsh.option.setNumber("Mesh.OptimizeNetgen", 1)
+        gmsh.model.mesh.generate(3)
     else:
         gmsh.model.occ.addRectangle(0, 0, 0, W, H)
         gmsh.model.occ.synchronize()
@@ -52,7 +79,7 @@ def main():
     gmsh.write(out)
     # bilan qualite : diametre inscrit min/med (ce qui pilote le dt rockim)
     import numpy as np
-    if kind == "box3d":
+    if kind in ("box3d", "bench1"):
         _, _, conn = gmsh.model.mesh.getElements(3)
         tets = np.array(conn[0], dtype=int).reshape(-1, 4)
         tags, xyz, _ = gmsh.model.mesh.getNodes()

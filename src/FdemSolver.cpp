@@ -2983,16 +2983,31 @@ void FdemSolver::potentialContact() {
         }
     if (elems.size() < 2) return;
 
-    // ---- (2) AABB courantes + binning en grille de hachage ---------------
+    // ---- (2) AABB courantes + grille DENSE a seaux REUTILISES (N1) -------
+    // La grille de hachage reallouait chaque seau a chaque pas (mesure : la
+    // detection dominait le cout du potentiel, x2,6 sur la percussion 3D).
+    // Grille dense fenetree comme celle des faces : boite fixe autour du
+    // domaine, seaux clear() sans liberation, elements hors boite ignores
+    // (meme regle que le contact noeud-face — un debris parti n'est plus
+    // resolu).
     double cl = gcCell_ > 0.0 ? gcCell_ : 2.0 * hmin_;
+    Eigen::Vector2d ebLo(-0.5 * W_, -0.5 * H_);
+    Eigen::Vector2d ebHi(1.5 * W_, 2.0 * H_);
+    Eigen::Vector2d egMin = ebLo - Eigen::Vector2d(cl, cl);
+    Eigen::Vector2d espan = ebHi - egMin + Eigen::Vector2d(cl, cl);
+    int egx = std::max(1, int(espan.x() / cl) + 1);
+    int egy = std::max(1, int(espan.y() / cl) + 1);
     static std::vector<Eigen::Vector2d> elo, ehi;
     elo.resize(elems.size());
     ehi.resize(elems.size());
-    static std::unordered_map<uint64_t, std::vector<int>> hg;
-    hg.clear();
-    auto keyIJ = [](long long ix, long long iy) {
-        return (uint64_t)(uint32_t)ix | ((uint64_t)(uint32_t)iy << 32);
-    };
+    static std::vector<char> einb;
+    einb.resize(elems.size());
+    static std::vector<std::vector<int>> eg;
+    {
+        std::size_t nC = (std::size_t)egx * egy;
+        if (eg.size() != nC) eg.assign(nC, {});
+        else for (auto& c : eg) c.clear();
+    }
     for (int q = 0; q < (int)elems.size(); ++q) {
         const Elem& E = el_[elems[q]];
         Eigen::Vector2d lo = X0_[E.n[0]] + u_[E.n[0]], hi = lo;
@@ -3003,41 +3018,53 @@ void FdemSolver::potentialContact() {
         }
         elo[q] = lo;
         ehi[q] = hi;
-        long long x0 = (long long)std::floor(lo.x() / cl);
-        long long x1 = (long long)std::floor(hi.x() / cl);
-        long long y0 = (long long)std::floor(lo.y() / cl);
-        long long y1 = (long long)std::floor(hi.y() / cl);
-        for (long long cy = y0; cy <= y1; ++cy)
-            for (long long cx = x0; cx <= x1; ++cx)
-                hg[keyIJ(cx, cy)].push_back(q);
+        einb[q] = (hi.x() > ebLo.x() && lo.x() < ebHi.x()
+                   && hi.y() > ebLo.y() && lo.y() < ebHi.y());
+        if (!einb[q]) continue;
+        int x0 = std::clamp(int((lo.x() - egMin.x()) / cl), 0, egx - 1);
+        int x1 = std::clamp(int((hi.x() - egMin.x()) / cl), 0, egx - 1);
+        int y0 = std::clamp(int((lo.y() - egMin.y()) / cl), 0, egy - 1);
+        int y1 = std::clamp(int((hi.y() - egMin.y()) / cl), 0, egy - 1);
+        for (int cy = y0; cy <= y1; ++cy)
+            for (int cx = x0; cx <= x1; ++cx)
+                eg[(std::size_t)cy * egx + cx].push_back(q);
     }
 
-    // ---- (3) paires candidates -> clip -> forces -------------------------
+    // ---- (3) paires candidates, en ordre CANONIQUE -----------------------
+    // Les paires sont collectees puis TRIEES par (eLo, eHi) : l'ordre de
+    // traitement — donc l'ordre des sommes de forces — devient independant
+    // de l'implementation de la detection. Toute optimisation future de la
+    // grille (ou un portage GPU) est alors bit-neutre par construction.
     static std::vector<int> pstamp;        // dedup de paire par q courant
     if (pstamp.size() != elems.size()) pstamp.assign(elems.size(), -1);
     else std::fill(pstamp.begin(), pstamp.end(), -1);
-
+    static std::vector<uint64_t> pairs;
+    pairs.clear();
     for (int q = 0; q < (int)elems.size(); ++q) {
-        long long x0 = (long long)std::floor(elo[q].x() / cl);
-        long long x1 = (long long)std::floor(ehi[q].x() / cl);
-        long long y0 = (long long)std::floor(elo[q].y() / cl);
-        long long y1 = (long long)std::floor(ehi[q].y() / cl);
-        for (long long cy = y0; cy <= y1; ++cy)
-            for (long long cx = x0; cx <= x1; ++cx) {
-                auto it = hg.find(keyIJ(cx, cy));
-                if (it == hg.end()) continue;
-                for (int r : it->second) {
+        if (!einb[q]) continue;
+        int x0 = std::clamp(int((elo[q].x() - egMin.x()) / cl), 0, egx - 1);
+        int x1 = std::clamp(int((ehi[q].x() - egMin.x()) / cl), 0, egx - 1);
+        int y0 = std::clamp(int((elo[q].y() - egMin.y()) / cl), 0, egy - 1);
+        int y1 = std::clamp(int((ehi[q].y() - egMin.y()) / cl), 0, egy - 1);
+        for (int cy = y0; cy <= y1; ++cy)
+            for (int cx = x0; cx <= x1; ++cx)
+                for (int r : eg[(std::size_t)cy * egx + cx]) {
                     if (r <= q || pstamp[r] == q) continue;
                     pstamp[r] = q;
                     if (elo[r].x() > ehi[q].x() || elo[q].x() > ehi[r].x()
                         || elo[r].y() > ehi[q].y() || elo[q].y() > ehi[r].y())
                         continue;
-                    // paire canonique (eLo, eHi) : la force ET l'historique
-                    // tangentiel sont exprimes SUR eLo, stables d'un pas a
-                    // l'autre quel que soit l'ordre de la detection
-                    int eLo = std::min(elems[q], elems[r]);
-                    int eHi = std::max(elems[q], elems[r]);
-                    uint64_t pk = ((uint64_t)eLo << 32) | (uint64_t)eHi;
+                    uint64_t a = (uint64_t)std::min(elems[q], elems[r]);
+                    uint64_t b = (uint64_t)std::max(elems[q], elems[r]);
+                    pairs.push_back((a << 32) | b);
+                }
+    }
+    std::sort(pairs.begin(), pairs.end());
+
+    for (uint64_t pk : pairs) {
+        {
+            int eLo = (int)(pk >> 32);
+            int eHi = (int)(pk & 0xFFFFFFFFu);
                     // exclusion : joint VIVANT (bonded ou non mort) — le
                     // joint porte l'interaction de sa propre paire, contact
                     // du joint casse-mais-vivant compris. Un joint MORT rend
@@ -3075,10 +3102,24 @@ void FdemSolver::potentialContact() {
                            + R.fB[k].dot(v_[EB.n[k]]);
                     }
                     gcWork_ += w * dt_;
-                    if (gcAdaptive_)       // source de la regle B (A1)
+                    // barycentriques du centroide du recouvrement : servent
+                    // aux estampilles PONDEREES de la regle B et au frottement
+                    pot::Bary bA, bB;
+                    bA.set(pa[0], pa[1], pa[2]);
+                    bB.set(pb[0], pb[1], pb[2]);
+                    double la[3], lb[3];
+                    bA.lam(R.cen, la);
+                    bB.lam(R.cen, lb);
+                    // estampilles regle B (A1) PONDEREES : seuls les noeuds
+                    // qui FONT FACE au contact (poids barycentrique > 0,1)
+                    // deviennent sources d'activation. L'estampillage de tous
+                    // les noeuds des deux elements sur-propageait la regle B
+                    // (mesure : 96 % des faces activees sur la percussion 3D
+                    // longue, contre 4 % en penalite noeud-face).
+                    if (gcAdaptive_)
                         for (int k = 0; k < 3; ++k) {
-                            lastTouch_[EA.n[k]] = stepCount_;
-                            lastTouch_[EB.n[k]] = stepCount_;
+                            if (la[k] > 0.1) lastTouch_[EA.n[k]] = stepCount_;
+                            if (lb[k] > 0.1) lastTouch_[EB.n[k]] = stepCount_;
                         }
                     // ---- frottement incremental (eq. 4-5) ----------------
                     // ressort tangentiel a HISTOIRE : Ft += -kt (vrel.t) dt,
@@ -3089,12 +3130,6 @@ void FdemSolver::potentialContact() {
                     if (muC_ > 0.0 && potKt_ > 0.0) {
                         double Fn = R.F.norm();
                         if (Fn > 1e-300) {
-                            pot::Bary bA, bB;
-                            bA.set(pa[0], pa[1], pa[2]);
-                            bB.set(pb[0], pb[1], pb[2]);
-                            double la[3], lb[3];
-                            bA.lam(R.cen, la);
-                            bB.lam(R.cen, lb);
                             Eigen::Vector2d vA =
                                 la[0] * v_[EA.n[0]] + la[1] * v_[EA.n[1]]
                                 + la[2] * v_[EA.n[2]];
@@ -3121,8 +3156,7 @@ void FdemSolver::potentialContact() {
                             gcWork_ += Ft.dot(vrel) * dt_;
                         }
                     }
-                }
-            }
+        }
     }
 }
 

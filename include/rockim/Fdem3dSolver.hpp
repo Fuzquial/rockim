@@ -325,10 +325,28 @@ private:
     struct PotHist {
         Eigen::Vector3d Ft{0.0, 0.0, 0.0}; // force tangentielle sur l'el. MIN
         long step = -1000;
-        double vRef = 0.0;                 // reference de naissance (volume)
+        double vRef = -1.0;                // reference de naissance (volume) ;
+                                           // < 0 = jamais recouvert (l'entree
+                                           // peut preexister via le cache
+                                           // d'axe separateur)
+        int sepAxis = -1;                  // plan separateur en cache (Baraff)
     };
     std::unordered_map<uint64_t, PotHist> potFt_;
     std::unordered_map<uint64_t, int> jointOfPair_;
+    // Compteurs DIAGNOSTIQUES du potentiel (issues par paire + chronos de
+    // sections), cumules sur le run et imprimes au resume. Aucune influence
+    // sur la physique — pur observatoire pour piloter l'optimisation N1.
+    struct PotStats {
+        uint64_t pairs = 0;      // candidates AABB (apres dedup, hors joint)
+        uint64_t joint = 0;      // ecartees : joint vivant porte la paire
+        uint64_t sepHint = 0;    // separees par l'axe en cache (1 test)
+        uint64_t sepFace = 0;    // separees par scan, axe de face (0-7)
+        uint64_t sepEdge = 0;    // separees par scan, axe d'arete (8-43)
+        uint64_t clipMiss = 0;   // clip complet -> pas de recouvrement reel
+        uint64_t clipHit = 0;    // clip complet -> force appliquee
+        double tGrid = 0.0;      // s : grille + collecte + tri des paires
+        double tLoop = 0.0;      // s : boucle des paires (SAT + clips)
+    } potStats_;
     void potentialContact();
 
     Tool3 tool_;
@@ -340,6 +358,20 @@ private:
     std::vector<BFace> confFaces_;         // faces LATERALES d'origine seulement
     bool confLatched_ = false;
     double confAchieved_ = 0.0;
+
+    // ---- physical groups Gmsh (mesh = file) — V1 ---------------------------
+    // $PhysicalNames (dim 3) -> un GROUPE par volume physique : materiau par
+    // groupe (phase du meme nom, ou groupPhase.<nom>), PAS de joint entre
+    // groupes (les deux faces vont a exterior_ : l'interface est un contact,
+    // penalite ou potentiel) — c'est le multi-corps piston-taillant-roche.
+    // groupVel.<nom> = "vx vy vz" donne une vitesse initiale au groupe :
+    // l'outil MAILLE remplace l'outil analytique (toolShape = none).
+    std::vector<int> elemGroup_;           // groupe par element (vide = mono)
+    std::vector<int> tetGroupTmp_;         // par tet, pour buildFromTets
+    std::vector<std::string> groupName_;
+    int nGroups_ = 1;
+    bool toolNone_ = false;                // toolShape = none : outil maille
+    int trackGroup_ = -1;                  // groupe suivi dans history.csv
 
     long stepCount_ = 0;
     double work_ = 0.0, peakF_ = 0.0;

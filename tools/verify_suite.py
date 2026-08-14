@@ -38,7 +38,7 @@ RX = {
     "inserted":  r"adaptive insertion: (\d+) / \d+ joints inserted",
     "ratio":     r"measured/expected ratio = ([\d.eE+-]+)",
     "gcact":     r"adaptive contact activation: (\d+) / \d+",
-    "gcwork":    r"net work injected by general contact: (-?[\d.eE+-]+)",
+    "gcwork":    r"net work (?:injected )?by general contact: (-?[\d.eE+-]+)",
     "pot_ke":    r"pot_ke_rel = ([\d.eE+-]+)",
     "pot_mom":   r"pot_mom_rel = ([\d.eE+-]+)",
     "pot3_ke":   r"pot3_ke_rel = ([\d.eE+-]+)",
@@ -184,9 +184,14 @@ TESTS = [
     # verrouille, comme les autres). L'onde incidente colle au penalty a
     # 3e-6 pres ; le disque casse moins (595 vs 812) — loi de contact
     # differente a l'interface, ecart PHYSIQUE assume et documente.
+    # ref 595 -> 578 le 13/08 au soir : l'ordre CANONIQUE des paires (N1) a
+    # change une fois pour toutes l'ordre des sommes de forces en tempete de
+    # fragments (enveloppe chaotique, cf. controle OMP=2). C'est le DERNIER
+    # changement d'ordre possible : l'ordre est desormais independant de
+    # l'implementation de la detection.
     dict(name="shpb_mini_potential", tier="full", cfg="../configs_yan/shpb_mini.cfg",
          over=["T = 9e-5", "frames = 4", "contact = potential"],
-         checks=[("broken", 595, 0, True)]),
+         checks=[("broken", 578, 0, True)]),
     # Percussion 2D en potentiel : verrouille (a) la borne du residu
     # d'injection de la releve de naissance (+27 J/m mesure, garde a 60 —
     # la regression a +936 sans releve doit rester impossible) et (b) le
@@ -234,6 +239,20 @@ TESTS = [
          over=["meshFile = " + os.path.join(ROOT, "meshes", "box3d_h45.msh"),
                "T = 5e-5", "frames = 4", "contact = potential"],
          checks=[("broken", 6, 0, True), ("gcwork", 0.0, 1.0, True)]),
+    # V1 : DEUX CORPS (groupes physiques Gmsh — insert sphere + bloc, aucun
+    # joint inter-corps) au repos : l'insert immobile a 0.5 mm au-dessus ne
+    # doit RIEN ressentir — 0 casse, travail de contact exactement nul.
+    dict(name="zeroload_bench1_3d", tier="full", cfg="fdem3d_bench1_insert.cfg",
+         over=["meshFile = " + os.path.join(ROOT, "meshes", "bench1_insert.msh"),
+               "T = 2e-5", "frames = 2", "groupVel.insert = 0 0 0"],
+         checks=[("broken", 0, 0, True), ("gcwork", 0.0, 0.0, True)]),
+    # V1 : l'impact complet insert -> roche (2.53 J a -8 m/s). Reference du
+    # 2026-08-14 : 12 joints (2 traction / 10 cisaillement), rebond a
+    # +5.67 m/s (e = 0.71 — la restitution du potentiel, cf. percussion 2D),
+    # gcWork absorbant. ~45 min : le prix du jalon multi-corps.
+    dict(name="bench1_insert_impact", tier="all", cfg="fdem3d_bench1_insert.cfg",
+         over=["meshFile = " + os.path.join(ROOT, "meshes", "bench1_insert.msh")],
+         checks=[("broken", 12, 0, True), ("gcwork", 0.0, 1.0, True)]),
 ]
 
 TIERS = {"fast": ["fast"], "full": ["fast", "full"], "all": ["fast", "full", "all"]}
