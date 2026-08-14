@@ -3661,8 +3661,10 @@ void FdemSolver::platenForces() {
 // finished() (frame + history + summary ecrits). Voir Fdem3dSolver pour le
 // commentaire complet.
 void FdemSolver::checkEnergyAbort() {
-    if (eAbortPct_ < 0.0)
+    if (eAbortPct_ < 0.0) {
         eAbortPct_ = cfg_.getd("budgetAbortPct", 0.0);
+        eAbortMin_ = cfg_.getd("budgetAbortMin", 0.0);   // plancher absolu [J/m]
+    }
     if (eAbortPct_ <= 0.0 || eAbort_) return;
     double ke = 0.0;
     for (std::size_t i = 0; i < X0_.size(); ++i)
@@ -3676,7 +3678,8 @@ void FdemSolver::checkEnergyAbort() {
     double scale = std::max({keInit_, ke, gross, 1e-30});
     if (scale < 1e-12) return;             // charge nulle : pas de verdict
     double resid = (ke - keInit_) - sumW;
-    if (std::abs(resid) <= 0.01 * eAbortPct_ * scale) return;
+    if (std::abs(resid) <= 0.01 * eAbortPct_ * scale
+        || std::abs(resid) <= eAbortMin_) return;
     int iw = 0; double vw = 0.0;           // hotspot : le noeud le plus rapide
     for (std::size_t i = 0; i < X0_.size(); ++i) {
         double vn = v_[i].squaredNorm();

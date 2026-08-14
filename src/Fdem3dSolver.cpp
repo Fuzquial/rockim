@@ -1207,6 +1207,10 @@ void Fdem3dSolver::step() {
 void Fdem3dSolver::checkEnergyAbort() {
     if (eAbortPct_ < 0.0) {                // lecture paresseuse, une fois
         eAbortPct_ = cfg_.getd("budgetAbortPct", 0.0);
+        // plancher ABSOLU [J] : en quasi-statique le flux part de zero et le
+        // critere relatif declenche sur le bruit de fermeture des rampes
+        // (mesure : 1,2 mJ = 7,4 % d'une echelle de 8 mJ, hotspot 0,05 m/s)
+        eAbortMin_ = cfg_.getd("budgetAbortMin", 0.0);
     }
     if (eAbortPct_ <= 0.0 || eAbort_) return;
     double ke = 0.0;
@@ -1221,7 +1225,8 @@ void Fdem3dSolver::checkEnergyAbort() {
     double scale = std::max({keInit_, ke, gross, 1e-30});
     if (scale < 1e-12) return;             // charge nulle : pas de verdict
     double resid = (ke - keInit_) - sumW;
-    if (std::abs(resid) <= 0.01 * eAbortPct_ * scale) return;
+    if (std::abs(resid) <= 0.01 * eAbortPct_ * scale
+        || std::abs(resid) <= eAbortMin_) return;
     int iw = 0; double vw = 0.0;           // hotspot : le noeud le plus rapide
     for (std::size_t i = 0; i < X0_.size(); ++i) {
         double vn = v_[i].squaredNorm();

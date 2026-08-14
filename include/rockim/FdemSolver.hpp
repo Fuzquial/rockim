@@ -545,6 +545,7 @@ private:
     double confWork_ = 0.0;    // pression de confinement/bore -> solide
     // E2 : moniteur d'energie runtime (opt-in budgetAbortPct, 0 = off)
     double eAbortPct_ = -1.0;  // -1 = pas encore lu dans la config
+    double eAbortMin_ = 0.0;   // plancher absolu [J/m]
     bool eAbort_ = false;
     void checkEnergyAbort();
     double biasW_ = 0.0;       // correction leapfrog EXACTE : les compteurs
