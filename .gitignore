@@ -1,6 +1,1 @@
-build/
-out_*/
-*.o
-*.obj
-nohup.out
-__pycache__/
+meshes/p1_banc_h20.msh
