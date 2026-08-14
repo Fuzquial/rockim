@@ -532,6 +532,21 @@ private:
     // that a one-sided viscous term produces, and it costs one multiply per
     // integration point.
     double dampWork_ = 0.0;
+    // ---- V2/B4 : bilan d'energie par sous-systeme (miroir du 3D) ----------
+    // Instrumentation PURE : KE(t) - KE(0) = elWork_ + jointWork_ + gcWork_
+    // + cundWork_ + lysWork_ + toolWork_ + bcWork_ + residu O(dt).
+    double elWork_ = 0.0;      // forces internes des elements
+    double jointWork_ = 0.0;   // tractions des joints (visqueux INCLUS)
+    double cundWork_ = 0.0;    // damping local de Cundall (<= 0)
+    double lysWork_ = 0.0;     // frontieres absorbantes (ressort+amortisseur)
+    double gcFricWork_ = 0.0;  // part tangentielle du contact general
+    double toolWork_ = 0.0;    // outil rigide -> solide
+    double bcWork_ = 0.0;      // platines/grips (PRESCRIBED) -> solide
+    double biasW_ = 0.0;       // correction leapfrog EXACTE : les compteurs
+                               // lisent v- ; le theoreme discret veut
+                               // (v- + v+)/2 -> ecart = f_tot^2 dt^2 / 2m par
+                               // noeud et par pas, accumule ici (>= 0)
+    double keInit_ = -1.0;     // KE au premier pas (< 0 = pas encore prise)
     Platen plTop_, plBot_;                 // displacement control
     double platenV_ = 0.0;                 // CLOSURE rate; each platen v/2
     LoadArc arcTop_, arcBot_;              // load control

@@ -2270,8 +2270,9 @@ void FdemSolver::step() {
 void FdemSolver::elementForces() {
     // node duplication makes this loop embarrassingly parallel: every
     // element writes only its OWN three nodes
+    double wEl = 0.0;                      // V2/B4 : travail de ce pas
 #ifdef _OPENMP
-#pragma omp parallel for schedule(static)
+#pragma omp parallel for schedule(static) reduction(+:wEl)
 #endif
     for (int eI = 0; eI < (int)el_.size(); ++eI) {
         Elem& e = el_[eI];
@@ -2357,9 +2358,13 @@ void FdemSolver::elementForces() {
         e.syy = sigG(1, 1);
         e.sxy = 0.5 * (sigG(0, 1) + sigG(1, 0));
         e.exx = eps(0);                            // axial strain (gauges)
-        for (int a = 0; a < 3; ++a)
-            f_[e.n[a]] -= e.A0 * thk_ * (P * e.dN.col(a));
+        for (int a = 0; a < 3; ++a) {
+            Eigen::Vector2d fe = e.A0 * thk_ * (P * e.dN.col(a));
+            f_[e.n[a]] -= fe;
+            wEl -= fe.dot(v_[e.n[a]]);     // V2/B4 : lecture pure
+        }
     }
+    elWork_ += wEl * dt_;
 }
 
 // ---------------------------------------------------------------------------
@@ -2418,7 +2423,8 @@ void FdemSolver::jointForces() {
     // accumulates into its own buffer (touched-list + per-thread seen flags)
     // and the buffers are reduced SERIALLY IN THREAD ORDER: deterministic
     // for a fixed thread count.
-    auto processJoint = [&](Joint& J, auto&& addF, long& nb, double& dampW) {
+    auto processJoint = [&](Joint& J, auto&& addF, long& nb, double& dampW,
+                            double& jw) {
         if (J.dead || J.bonded) return;    // bonded: node binding carries it
 
         Eigen::Vector2d pA1 = X0_[J.a1] + u_[J.a1], pA2 = X0_[J.a2] + u_[J.a2];
@@ -2643,6 +2649,9 @@ void FdemSolver::jointForces() {
             Eigen::Vector2d trac = (sig * n + tau * e) * Ltrib;
             addF(ib[k], -trac);                        // pull B back toward A
             addF(ia[k], trac);
+            // V2/B4 : travail TOTAL des tractions (visqueux inclus, isole
+            // dans dampW) — lecture pure des vitesses
+            jw += trac.dot(v_[ia[k]] - v_[ib[k]]) * dt_;
         }
 
         if (J.D >= 1.0) {
@@ -2684,11 +2693,12 @@ void FdemSolver::jointForces() {
     int nT = omp_get_max_threads();
     if (nT == 1) {                       // bit-identical to the serial build
         long nb1 = 0;
-        double dw1 = 0.0;
+        double dw1 = 0.0, jw1 = 0.0;
         auto addF1 = [&](int i, const Eigen::Vector2d& v) { f_[i] += v; };
-        for (auto& J : jt_) processJoint(J, addF1, nb1, dw1);
+        for (auto& J : jt_) processJoint(J, addF1, nb1, dw1, jw1);
         nBroken_ += nb1;
         dampWork_ += dw1;
+        jointWork_ += jw1;
         return;
     }
     if ((int)fTL_.size() != nT) {
@@ -2698,7 +2708,7 @@ void FdemSolver::jointForces() {
         touchedTL_.assign(nT, {});
     }
     std::vector<long> nbT(nT, 0);
-    std::vector<double> dwT(nT, 0.0);
+    std::vector<double> dwT(nT, 0.0), jwT(nT, 0.0);
 #pragma omp parallel
     {
         int t = omp_get_thread_num();
@@ -2707,16 +2717,17 @@ void FdemSolver::jointForces() {
         auto& tl = touchedTL_[t];
         tl.clear();
         long nb = 0;
-        double dw = 0.0;
+        double dw = 0.0, jw = 0.0;
         auto addF = [&](int i, const Eigen::Vector2d& v) {
             if (!seen[i]) { seen[i] = 1; tl.push_back(i); }
             fb[i] += v;
         };
 #pragma omp for schedule(static)
         for (int jI = 0; jI < (int)jt_.size(); ++jI)
-            processJoint(jt_[jI], addF, nb, dw);
+            processJoint(jt_[jI], addF, nb, dw, jw);
         nbT[t] = nb;
         dwT[t] = dw;
+        jwT[t] = jw;
     }
     for (int t = 0; t < nT; ++t) {                     // deterministic order
         for (int i : touchedTL_[t]) {
@@ -2726,14 +2737,16 @@ void FdemSolver::jointForces() {
         }
         nBroken_ += nbT[t];
         dampWork_ += dwT[t];
+        jointWork_ += jwT[t];
     }
 #else
     long nb = 0;
-    double dw = 0.0;
+    double dw = 0.0, jw = 0.0;
     auto addF = [&](int i, const Eigen::Vector2d& v) { f_[i] += v; };
-    for (auto& J : jt_) processJoint(J, addF, nb, dw);
+    for (auto& J : jt_) processJoint(J, addF, nb, dw, jw);
     nBroken_ += nb;
     dampWork_ += dw;
+    jointWork_ += jw;
 #endif
 }
 
@@ -3154,6 +3167,7 @@ void FdemSolver::potentialContact() {
                                 f_[EB.n[k]] -= lb[k] * Ft;
                             }
                             gcWork_ += Ft.dot(vrel) * dt_;
+                            gcFricWork_ += Ft.dot(vrel) * dt_;  // V2/B4
                         }
                     }
         }
@@ -3426,6 +3440,8 @@ void FdemSolver::generalContact() {
                     double Fn2 = Fc.norm();
                     if (Fn2 > capF) Fc *= capF / Fn2;
             gcWork_ += Fc.dot(vrel) * dt_;             // net energy meter
+            // V2/B4 : part tangentielle (ftg*e est normal a nrm, cap scale)
+            gcFricWork_ += (Fc - Fc.dot(nrm) * nrm).dot(vrel) * dt_;
             f_[i] += Fc;
             f_[be.na] -= (1.0 - s) * Fc;
             f_[be.nb] -= s * Fc;
@@ -3516,7 +3532,8 @@ void FdemSolver::toolContact() {
 #ifdef _OPENMP
     int nT = omp_get_max_threads();
     std::vector<Eigen::Vector2d> FT(nT, Eigen::Vector2d::Zero());
-#pragma omp parallel
+    double tw = 0.0;                       // V2/B4 : travail outil -> solide
+#pragma omp parallel reduction(+:tw)
     {
         int t = omp_get_thread_num();
         Eigen::Vector2d Floc = Eigen::Vector2d::Zero();
@@ -3525,16 +3542,19 @@ void FdemSolver::toolContact() {
             Eigen::Vector2d Fc;
             if (!nodeFc(i, Fc)) continue;
             f_[i] += Fc;
+            tw += Fc.dot(v_[i]) * dt_;
             Floc -= Fc;
         }
         FT[t] = Floc;
     }
     for (const auto& F : FT) tool_.F += F;
+    toolWork_ += tw;
 #else
     for (int i = 0; i < (int)X0_.size(); ++i) {
         Eigen::Vector2d Fc;
         if (!nodeFc(i, Fc)) continue;
         f_[i] += Fc;
+        toolWork_ += Fc.dot(v_[i]) * dt_;  // V2/B4
         tool_.F -= Fc;
     }
 #endif
@@ -3703,6 +3723,14 @@ void FdemSolver::discCentreStress(double& sxx, double& syy) const {
 }
 
 void FdemSolver::integrate() {
+    // V2/B4 : KE au premier pas (vitesses initiales intactes), compteurs purs
+    if (keInit_ < 0.0) {
+        double ke0 = 0.0;
+        for (std::size_t i = 0; i < X0_.size(); ++i)
+            ke0 += 0.5 * m_[i] * v_[i].squaredNorm();
+        keInit_ = ke0;
+    }
+    double cw = 0.0, lw = 0.0, bw = 0.0, bias = 0.0;
     if (adaptive_) {
         // Bound groups integrate as ONE node: forces and masses summed,
         // Cundall damping and the quiet-boundary terms applied to the sums,
@@ -3710,7 +3738,7 @@ void FdemSolver::integrate() {
         // group this reduces exactly to the per-node path below. Groups never
         // span vertices, so the vertex loop parallelizes cleanly.
 #ifdef _OPENMP
-#pragma omp parallel for schedule(static)
+#pragma omp parallel for schedule(static) reduction(+:cw,lw,bw,bias)
 #endif
         for (int vv = 0; vv < nVert_; ++vv) {
             for (const auto& g : grpsOfVert_[vv]) {
@@ -3750,6 +3778,7 @@ void FdemSolver::integrate() {
                         vx = v_[i0].x() + (dt_ / M) * F;
                     }
                     for (int i : g) {
+                        bw += f_[i].y() * vg * dt_;    // V2/B4 platine
                         v_[i] = {vx, vg};
                         u_[i] += dt_ * v_[i];
                     }
@@ -3759,21 +3788,40 @@ void FdemSolver::integrate() {
                 double M = 0.0, cX = 0.0, cY = 0.0;
                 for (int i : g) {
                     F += f_[i];
-                    if (kAbsX_[i] > 0) F.x() -= kAbsX_[i] * u_[i].x();
-                    if (kAbsY_[i] > 0) F.y() -= kAbsY_[i] * u_[i].y();
+                    if (kAbsX_[i] > 0) {
+                        double fk = kAbsX_[i] * u_[i].x();
+                        F.x() -= fk;
+                        lw -= fk * v_[i0].x() * dt_;   // V2/B4 ressort
+                    }
+                    if (kAbsY_[i] > 0) {
+                        double fk = kAbsY_[i] * u_[i].y();
+                        F.y() -= fk;
+                        lw -= fk * v_[i0].y() * dt_;
+                    }
                     M += m_[i];
                     cX += cAbsX_[i];
                     cY += cAbsY_[i];
                 }
                 if (damping_ > 0) {
-                    F.x() -= damping_ * std::abs(F.x())
+                    double fdx = damping_ * std::abs(F.x())
                              * (v_[i0].x() > 0 ? 1.0 : (v_[i0].x() < 0 ? -1.0 : 0.0));
-                    F.y() -= damping_ * std::abs(F.y())
+                    F.x() -= fdx;
+                    cw -= fdx * v_[i0].x() * dt_;      // V2/B4 Cundall
+                    double fdy = damping_ * std::abs(F.y())
                              * (v_[i0].y() > 0 ? 1.0 : (v_[i0].y() < 0 ? -1.0 : 0.0));
+                    F.y() -= fdy;
+                    cw -= fdy * v_[i0].y() * dt_;
                 }
+                bias += F.squaredNorm() * dt_ * dt_ / (2.0 * M);
                 Eigen::Vector2d vn = v_[i0] + (dt_ / M) * F;
-                if (cX > 0) vn.x() /= 1.0 + dt_ * cX / M;
-                if (cY > 0) vn.y() /= 1.0 + dt_ * cY / M;
+                if (cX > 0) {
+                    vn.x() /= 1.0 + dt_ * cX / M;
+                    lw -= cX * vn.x() * vn.x() * dt_;  // V2/B4 amortisseur
+                }
+                if (cY > 0) {
+                    vn.y() /= 1.0 + dt_ * cY / M;
+                    lw -= cY * vn.y() * vn.y() * dt_;
+                }
                 if (flag_[i0] == ROLLERX) vn.x() = 0.0;
                 for (int i : g) {
                     if (flag_[i0] == ROLLERX) u_[i].x() = 0.0;
@@ -3782,6 +3830,10 @@ void FdemSolver::integrate() {
                 }
             }
         }
+        cundWork_ += cw;                   // V2/B4
+        lysWork_ += lw;
+        bcWork_ += bw;
+        biasW_ += bias;
         if (scen_ == Scenario::BRAZILIAN || (scen_ == Scenario::TENSION
                                              && tensionPlatens_)) {
             if (brazPlatens_ || tensionPlatens_) {
@@ -3794,7 +3846,7 @@ void FdemSolver::integrate() {
         return;
     }
 #ifdef _OPENMP
-#pragma omp parallel for schedule(static)
+#pragma omp parallel for schedule(static) reduction(+:cw,lw,bw,bias)
 #endif
     for (int i = 0; i < (int)X0_.size(); ++i) {
         if (flag_[i] == FIXED) {
@@ -3832,26 +3884,44 @@ void FdemSolver::integrate() {
             double vg = pullV_;
             if (pullRamp_ > 0.0 && t_ < pullRamp_)
                 vg *= 0.5 * (1.0 - std::cos(M_PI * t_ / pullRamp_));
+            bw += f_[i].y() * vg * dt_;        // V2/B4 : platine -> solide
             v_[i].y() = vg;
             u_[i] += dt_ * v_[i];
             continue;
         }
         if (kAbsX_[i] > 0 || kAbsY_[i] > 0) {          // boundary springs
-            f_[i].x() -= kAbsX_[i] * u_[i].x();
-            f_[i].y() -= kAbsY_[i] * u_[i].y();
+            double fkx = kAbsX_[i] * u_[i].x();
+            double fky = kAbsY_[i] * u_[i].y();
+            f_[i].x() -= fkx;
+            f_[i].y() -= fky;
+            lw -= (fkx * v_[i].x() + fky * v_[i].y()) * dt_;  // V2/B4
         }
         if (damping_ > 0) {                            // Cundall local damping
-            f_[i].x() -= damping_ * std::abs(f_[i].x())
+            double fdx = damping_ * std::abs(f_[i].x())
                          * (v_[i].x() > 0 ? 1.0 : (v_[i].x() < 0 ? -1.0 : 0.0));
-            f_[i].y() -= damping_ * std::abs(f_[i].y())
+            f_[i].x() -= fdx;
+            double fdy = damping_ * std::abs(f_[i].y())
                          * (v_[i].y() > 0 ? 1.0 : (v_[i].y() < 0 ? -1.0 : 0.0));
+            f_[i].y() -= fdy;
+            cw -= (fdx * v_[i].x() + fdy * v_[i].y()) * dt_;  // V2/B4
         }
+        bias += f_[i].squaredNorm() * dt_ * dt_ / (2.0 * m_[i]);
         v_[i] += (dt_ / m_[i]) * f_[i];
-        if (cAbsX_[i] > 0) v_[i].x() /= 1.0 + dt_ * cAbsX_[i] / m_[i];
-        if (cAbsY_[i] > 0) v_[i].y() /= 1.0 + dt_ * cAbsY_[i] / m_[i];
+        if (cAbsX_[i] > 0) {
+            v_[i].x() /= 1.0 + dt_ * cAbsX_[i] / m_[i];
+            lw -= cAbsX_[i] * v_[i].x() * v_[i].x() * dt_;    // V2/B4
+        }
+        if (cAbsY_[i] > 0) {
+            v_[i].y() /= 1.0 + dt_ * cAbsY_[i] / m_[i];
+            lw -= cAbsY_[i] * v_[i].y() * v_[i].y() * dt_;
+        }
         if (flag_[i] == ROLLERX) { v_[i].x() = 0.0; u_[i].x() = 0.0; }
         u_[i] += dt_ * v_[i];
     }
+    cundWork_ += cw;                       // V2/B4
+    lysWork_ += lw;
+    bcWork_ += bw;
+    biasW_ += bias;
     if (scen_ == Scenario::BRAZILIAN || (scen_ == Scenario::TENSION
                                          && tensionPlatens_)) {
         if (brazPlatens_ || tensionPlatens_) {         // kinematic planes
@@ -4020,7 +4090,8 @@ void FdemSolver::historyHeader(std::ostream& os) const {
         return;
     }
     os << "t,toolFx,toolFy,toolX,toolY,toolVx,toolVy,work,toolKE,"
-          "nBroken,nFrag,detachedVol,specificEnergy\n";
+          "nBroken,nFrag,detachedVol,specificEnergy"
+          ",eEl,eJnt,eGc,eFric,eCund,eLys\n";   // V2/B4 (travaux cumules)
 }
 
 void FdemSolver::historyRow(std::ostream& os) const {
@@ -4068,7 +4139,9 @@ void FdemSolver::historyRow(std::ostream& os) const {
        << tool_.x.x() << "," << tool_.x.y() << ","
        << tool_.v.x() << "," << tool_.v.y() << ","
        << work_ << "," << tool_.ke() << "," << nBroken_ << "," << nFrag_ << ","
-       << detachedVol_ << "," << Es << "\n";
+       << detachedVol_ << "," << Es
+       << "," << elWork_ << "," << jointWork_ << "," << gcWork_ << ","
+       << gcFricWork_ << "," << cundWork_ << "," << lysWork_ << "\n";  // B4
 }
 
 void FdemSolver::finalize() {
@@ -4131,6 +4204,64 @@ void FdemSolver::finalize() {
               << (dampWork_ <= 0.0 ? "OK, dissipative"
                                    : "FAIL - the dashpot INJECTED energy")
               << "]\n";
+    {   // ---- V2/B4 : bilan d'energie par sous-systeme (miroir du 3D) -----
+        // KE(t) - KE(0) = somme des travaux par famille + residu O(dt).
+        // U_el en invariants isotropes (plane strain, szz = nu (sxx+syy)) ;
+        // E de la phase retrouve de Dm(2,2) = G — exact en elastique, approx
+        // sous law/caps. Toutes les grandeurs 2D sont PAR METRE d'epaisseur
+        // (thk_ inclus), comme le reste du resume.
+        double uEl = 0.0;
+        for (const auto& e : el_) {
+            double nu = nuP_[e.phase];
+            double Eph = 2.0 * (1.0 + nu) * DmP_[e.phase](2, 2);
+            double szz = nu * (e.sxx + e.syy);
+            double ss = e.sxx * e.sxx + e.syy * e.syy + szz * szz
+                      + 2.0 * e.sxy * e.sxy;
+            double trs = e.sxx + e.syy + szz;
+            uEl += e.A0 * thk_ * ((1.0 + nu) * ss - nu * trs * trs)
+                   / (2.0 * Eph);
+        }
+        double uSpr = 0.0;                 // ressorts absorbants (stocke)
+        for (std::size_t i = 0; i < X0_.size(); ++i) {
+            if (kAbsX_[i] > 0) uSpr += 0.5 * kAbsX_[i] * u_[i].x() * u_[i].x();
+            if (kAbsY_[i] > 0) uSpr += 0.5 * kAbsY_[i] * u_[i].y() * u_[i].y();
+        }
+        double sumW = elWork_ + jointWork_ + gcWork_ + cundWork_ + lysWork_
+                    + toolWork_ + bcWork_ + biasW_;
+        double dKE = keBlock - keInit_;
+        double resid = dKE - sumW;
+        // echelle du verdict : le flux BRUT echange (la somme signee est ~0
+        // precisement quand le bilan boucle — premier faux CHECK mesure sur
+        // la percussion outil rigide : residu 0.014 J sur 1.53 J injectes,
+        // soit 0.9 %, juge a 147 % de la somme signee)
+        double gross = std::abs(elWork_) + std::abs(jointWork_)
+                     + std::abs(gcWork_) + std::abs(cundWork_)
+                     + std::abs(lysWork_) + std::abs(toolWork_)
+                     + std::abs(bcWork_);
+        double scale = std::max({keInit_, keBlock, gross, 1e-30});
+        bool zeroCase = scale < 1e-12;     // charge nulle : verdict en absolu
+        std::cout << "[FDEM] energy budget (V2/B4): KE " << keInit_ << " -> "
+                  << keBlock << " J/m\n"
+                  << "[FDEM]   elements     : " << -elWork_
+                  << " J/m preleve (stocke elastique " << uEl << " J/m)\n"
+                  << "[FDEM]   joints       : " << -(jointWork_ - dampWork_)
+                  << " J/m cohesif (fissuration + stocke), dashpot "
+                  << -dampWork_ << " J/m\n"
+                  << "[FDEM]   contact      : " << -gcWork_
+                  << " J/m (dont frottement " << -gcFricWork_ << " J/m)\n"
+                  << "[FDEM]   Cundall      : " << -cundWork_ << " J/m\n"
+                  << "[FDEM]   frontieres   : " << -lysWork_
+                  << " J/m (dont stocke ressorts " << uSpr << " J/m)\n"
+                  << "[FDEM]   outil->solide: " << toolWork_
+                  << " J/m, platines/grips: " << bcWork_ << " J/m\n"
+                  << "[FDEM]   integration  : +" << biasW_
+                  << " J/m (correction leapfrog f^2 dt^2/2m)\n"
+                  << "[FDEM]   residu       : " << resid << " J/m ("
+                  << 100.0 * std::abs(resid) / scale << " % de l'echelle) ["
+                  << (zeroCase ? "OK (zero machine)"
+                      : std::abs(resid) <= 0.01 * scale ? "OK" : "CHECK")
+                  << "]\n";
+    }
     if (adaptive_)
         std::cout << "[FDEM] adaptive insertion: " << nInserted_ << " / "
                   << jt_.size() << " joints inserted ("

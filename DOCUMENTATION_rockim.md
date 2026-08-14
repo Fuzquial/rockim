@@ -114,7 +114,7 @@ Colonne « portée » : modes qui lisent la clé. Défauts entre parenthèses.
 | `geometry` (box ; disc si brazilian, shpb si shpb) | box \| disc (fdem) ; box \| cylinder (fem3d) | fdem, fem3d |
 | `mesh` (grid) | grid \| voronoi (GBM) \| **file** (maillage non structuré importé, « à la Yan ») | fdem, fdem3d |
 | `meshFile` (requis si mesh = file) | chemin d'un Gmsh MSH 2.2 ASCII (type 2 en 2D, type 4 en 3D) ; boîte translatée à l'origine, W/H/D relus de l'enveloppe ; générer via `tools/make_unstructured_mesh.py` | fdem, fdem3d |
-| **groupes physiques** (V1, 3D) | si le MSH porte des `$PhysicalNames` (dim 3), chaque volume physique devient un **corps** : AUCUN joint cohésif entre deux groupes (les faces deviennent extérieures, l'interaction passe par le contact général), matériau du corps = **phase homonyme** (ou `groupPhase.<nom> = <phase>` ; sans correspondance : phase 0 + WARNING — `phases` avec mesh = file **exige** des groupes nommés), `groupVel.<nom> = vx vy vz` (vitesse initiale du corps), `trackGroup = <nom>` (colonnes `grpZ`,`grpVz` dans history.csv : centroïde massique + vitesse moyenne), résumé par corps (KE, vz, masse) en fin de run. Avec `toolShape = none` (percussion), l'outil analytique est retiré : l'impacteur est un corps MAILLÉ du fichier — générateur fourni : `make_unstructured_mesh.py bench1 W D H R gap h hIns out.msh [seed]` (bloc + insert sphérique séparés de `gap`, groupes `rock`/`insert`) ; contrôle deux-corps au repos : `zeroload_bench1_3d` (0 casse, gcWork = 0 exact) | fdem3d |
+| **groupes physiques** (V1, 3D) | si le MSH porte des `$PhysicalNames` (dim 3), chaque volume physique devient un **corps** : AUCUN joint cohésif entre deux groupes (les faces deviennent extérieures, l'interaction passe par le contact général), matériau du corps = **phase homonyme** (ou `groupPhase.<nom> = <phase>` ; sans correspondance : phase 0 + WARNING — `phases` avec mesh = file **exige** des groupes nommés), `groupVel.<nom> = vx vy vz` (vitesse initiale du corps), `trackGroup = <nom>` (colonnes history : `grpZ`,`grpVz` — centroïde massique + vitesse moyenne — et V2/B2 : `grpFx,grpFy,grpFz` — force de contact NETTE sur le corps au pas courant, sommée dans les deux lois de contact : la F-δ se lit en direct — et `grpSzz` — jauge σzz moyenne volumique du corps), résumé par corps (KE, vz, masse) en fin de run. Avec `toolShape = none` (percussion), l'outil analytique est retiré : l'impacteur est un corps MAILLÉ du fichier — générateur fourni : `make_unstructured_mesh.py bench1 W D H R gap h hIns out.msh [seed]` (bloc + insert sphérique séparés de `gap`, groupes `rock`/`insert`) ; contrôle deux-corps au repos : `zeroload_bench1_3d` (0 casse, gcWork = 0 exact) | fdem3d |
 | `T` (2.5e-4 fdem ; 2e-4 3D ; 2e-4 fem ; 2.5e-4 dem) | durée physique [s] | tous |
 | `frames` (50) | nombre de frames VTU écrites | tous |
 | `outputDir` (out) | dossier de sortie si absent de la CLI | tous |
@@ -302,17 +302,40 @@ Tous les fichiers vont dans le dossier de sortie. Fréquences : VTU toutes les
 
 | scénario | colonnes |
 |---|---|
-| percussion / shear | `t, toolFx, toolFy, toolX, toolY, toolVx, toolVy, work, toolKE, nBroken, nFrag, detachedVol, specificEnergy` |
+| percussion / shear | `t, toolFx, toolFy, toolX, toolY, toolVx, toolVy, work, toolKE, nBroken, nFrag, detachedVol, specificEnergy` + `eEl, eJnt, eGc, eFric, eCund, eLys` (V2/B4 : travaux cumulés par famille, signés — négatif = prélevé au solide) |
 | tension (grips) | `t, gripFy, sigma, sigmaPeak, nBroken` |
 | tension (platens) | + `epsPlaten, epsSpec, epsGauge, nBrokTen, nBrokShear, nFrag, confAchieved, peakLocked` |
 | brazilian | `t, P, Pbot, drive, sigmaT, sigmaTpeak, nBroken, nFrag, sxxC, syyC, peakLocked` |
 | shpb | `t, vDrive, epsM1, epsM2, sxxC, syyC, nBroken, nFrag, nInserted` |
 
 fdem3d : `t, gripFz, sigma, sigmaPeak, nBroken` (tension) ; percussion/shear comme en
-2D avec les trois composantes. fem/fem3d/dem/dem3d : variantes proches (force outil,
+2D avec les trois composantes (+ `grpZ, grpVz` si `trackGroup`, + les six colonnes
+énergie V2/B4). fem/fem3d/dem/dem3d : variantes proches (force outil,
 travail, casse). ⚠️ `sigmaPeak` est un max glissant qui attrape la sonnerie
 post-rupture : recalculer les pics depuis les courbes échantillonnées, ou lire le pic
 verrouillé (`peakLocked`).
+
+**Bilan d'énergie par sous-système (V2/B4, fdem + fdem3d, 2026-08-14).** Le
+résumé de fin de run imprime un bloc `energy budget` : théorème
+travail-énergie sur les nœuds, `KE(t) − KE(0) = Σ travaux par famille +
+résidu`. Postes : éléments (−elWork, avec l'élastique stocké à la volée lu
+sur le Cauchy stocké — invariants isotropes, exact en élastique, approché
+sous law/caps), joints cohésifs (fissuration + stocké = −(jointWork −
+dampWork)), dashpot, contact général (dont part frottement `gcFricWork`),
+Cundall, frontières (amortisseurs + ressorts stockés), outil→solide,
+platines, et **`integration`** : la correction leapfrog EXACTE
+`f²dt²/2m` par nœud et par pas — les compteurs par famille lisent v⁻, le
+théorème discret veut (v⁻+v⁺)/2 ; sur la percussion 2D grille ce poste vaut
++2443 J/m (forces de contact violentes du cas divergent connu) et sa prise
+en compte fait passer le résidu de 91 % à **0,017 %**. Mesures de recette :
+percussion 2D 0,017 %, percussion 3D 0,005 %, zeroload deux-corps −5e-24 J.
+Le verdict (OK ≤ 1 % du flux BRUT échangé ; « zero machine » à charge
+nulle) est verrouillé par l'extracteur `budget` de la suite
+(zeroload_bench1_3d ≤ 1e-12, bench1_insert_impact ≤ 1 % de KE₀).
+Instrumentation PURE : aucune trajectoire ne change (suite fast 12/12
+bit-identique) ; les compteurs multi-threads se réduisent en ordre de
+thread (même statut que dampWork_). Périmètre : percussion/impact complet ;
+en quasi-statique les platines sont comptées à v imposée (approx O(dt)).
 
 ### 6.2 Frames VTK (ParaView)
 

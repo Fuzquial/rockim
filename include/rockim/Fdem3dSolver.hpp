@@ -224,6 +224,36 @@ private:
     // failure modes (2D lesson, 2026-08-05). One multiply per point.
     double dampWork_ = 0.0;
 
+    // ---- V2/B4 : bilan d'energie par sous-systeme (instrumentation PURE,
+    // aucun flottant de la physique ne change ; biais O(dt) des compteurs
+    // travail comme gcWork_, documente). Theoreme travail-energie :
+    //   KE(t) - KE(0) = elWork_ + jointWork_ + gcWork_ + cundWork_
+    //                 + lysWork_ + toolWork_ + bcWork_ + residu(O(dt))
+    // Postes lisibles : -elWork_ = elastique stocke + caps ; -(jointWork_ -
+    // dampWork_) = cohesif (fissuration + stocke transitoire) ; -cundWork_ =
+    // amortissement local Cundall ; -lysWork_ = amortisseurs de Lysmer ;
+    // gcFricWork_ = part frottement de gcWork_ ; toolWork_ = travail de
+    // l'outil rigide SUR le solide ; bcWork_ = travail des noeuds PRESCRIBED
+    // (platines). Les compteurs multi-threads se reduisent en ordre de
+    // thread, meme statut de reproductibilite que dampWork_.
+    double elWork_ = 0.0;      // forces internes des elements
+    double jointWork_ = 0.0;   // tractions des joints (visqueux INCLUS)
+    double cundWork_ = 0.0;    // damping local de Cundall (<= 0)
+    double lysWork_ = 0.0;     // amortisseurs frontiere (<= 0)
+    double gcFricWork_ = 0.0;  // part tangentielle du contact general
+    double toolWork_ = 0.0;    // outil rigide -> solide
+    double bcWork_ = 0.0;      // platines (PRESCRIBED) -> solide
+    // V2/B2 : force de contact NETTE sur le corps suivi (trackGroup) au pas
+    // courant — remise a zero en tete de generalContact, sommee dans les
+    // deux lois (penalite et potentiel). La F-delta se lit alors en direct
+    // dans history (grpFx/y/z) au lieu de M dv/dt.
+    Eigen::Vector3d grpF_ = Eigen::Vector3d::Zero();
+    double biasW_ = 0.0;       // correction leapfrog EXACTE : les compteurs
+                               // lisent v- ; le theoreme discret veut
+                               // (v- + v+)/2 -> ecart = f_tot^2 dt^2 / 2m par
+                               // noeud et par pas, accumule ici (>= 0)
+    double keInit_ = -1.0;     // KE du solide au premier pas (< 0 = non prise)
+
     // ---- adaptive insertion (insertion = adaptive), as in FdemSolver -------
     // No joint exists at t = 0: bonded faces are handled kinematically (node
     // groups = connected components of the tet fan around each original

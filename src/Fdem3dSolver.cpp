@@ -1187,8 +1187,10 @@ void Fdem3dSolver::step() {
 // Node duplication makes the loop embarrassingly parallel, as in 2D:
 // every element writes only its OWN four nodes.
 void Fdem3dSolver::elementForces() {
+    double wEl = 0.0;                      // V2/B4 : travail des forces
+                                           // internes ce pas (compteur pur)
 #ifdef _OPENMP
-#pragma omp parallel for schedule(static)
+#pragma omp parallel for schedule(static) reduction(+:wEl)
 #endif
     for (int eI = 0; eI < (int)el_.size(); ++eI) {
         Elem& e = el_[eI];
@@ -1221,9 +1223,13 @@ void Fdem3dSolver::elementForces() {
         sig = dev + pm * Eigen::Matrix3d::Identity();
         Eigen::Matrix3d P = R * sig;
         e.sigG = P * R.transpose();        // global Cauchy (insertion sweep)
-        for (int a = 0; a < 4; ++a)
-            f_[e.n[a]] -= e.V0 * (P * e.dN.col(a));
+        for (int a = 0; a < 4; ++a) {
+            Eigen::Vector3d fe = e.V0 * (P * e.dN.col(a));
+            f_[e.n[a]] -= fe;
+            wEl -= fe.dot(v_[e.n[a]]);     // V2/B4 : travail (lecture pure)
+        }
     }
+    elWork_ += wEl * dt_;
 }
 
 // Triangular cohesive joints, 3 node-pair integration points (A0/3 each).
@@ -1233,7 +1239,8 @@ void Fdem3dSolver::elementForces() {
 // PER JOINT (GBM). Parallel as in 2D: per-joint state is private, the
 // force scatter goes through per-thread buffers reduced in thread order.
 void Fdem3dSolver::jointForces() {
-    auto processJoint = [&](Joint& J, auto&& addF, long& nb, double& dampW) {
+    auto processJoint = [&](Joint& J, auto&& addF, long& nb, double& dampW,
+                            double& jw) {
         if (J.dead || J.bonded) return;    // bonded: node binding carries it
         Eigen::Vector3d P1 = 0.5 * ((X0_[J.a[0]] + u_[J.a[0]]) + (X0_[J.b[0]] + u_[J.b[0]]));
         Eigen::Vector3d P2 = 0.5 * ((X0_[J.a[1]] + u_[J.a[1]]) + (X0_[J.b[1]] + u_[J.b[1]]));
@@ -1395,6 +1402,9 @@ void Fdem3dSolver::jointForces() {
             Eigen::Vector3d trac = (sig * n + tau) * At;
             addF(ib, -trac);
             addF(ia, trac);
+            // V2/B4 : travail TOTAL des tractions de joint (visqueux inclus,
+            // deja isole dans dampW) — lecture pure des vitesses
+            jw += trac.dot(v_[ia] - v_[ib]) * dt_;
         }
 
         if (J.D >= 1.0) {
@@ -1435,7 +1445,7 @@ void Fdem3dSolver::jointForces() {
             touchedTL_.assign(nT, {});
         }
         std::vector<long> nbT(nT, 0);
-        std::vector<double> dwT(nT, 0.0);
+        std::vector<double> dwT(nT, 0.0), jwT(nT, 0.0);
 #pragma omp parallel
         {
             int t = omp_get_thread_num();
@@ -1444,16 +1454,17 @@ void Fdem3dSolver::jointForces() {
             auto& tl = touchedTL_[t];
             tl.clear();
             long nb = 0;
-            double dw = 0.0;
+            double dw = 0.0, jw = 0.0;
             auto addF = [&](int i, const Eigen::Vector3d& v3) {
                 if (!seen[i]) { seen[i] = 1; tl.push_back(i); }
                 fb[i] += v3;
             };
 #pragma omp for schedule(static)
             for (int jI = 0; jI < (int)jt_.size(); ++jI)
-                processJoint(jt_[jI], addF, nb, dw);
+                processJoint(jt_[jI], addF, nb, dw, jw);
             nbT[t] = nb;
             dwT[t] = dw;
+            jwT[t] = jw;
         }
         for (int t = 0; t < nT; ++t) {
             for (int i : touchedTL_[t]) {
@@ -1463,16 +1474,18 @@ void Fdem3dSolver::jointForces() {
             }
             nBroken_ += nbT[t];
             dampWork_ += dwT[t];
+            jointWork_ += jwT[t];
         }
         return;
     }
 #endif
     long nb1 = 0;                        // 1 thread: bit-identical to serial
-    double dw1 = 0.0;
+    double dw1 = 0.0, jw1 = 0.0;
     auto addF1 = [&](int i, const Eigen::Vector3d& v3) { f_[i] += v3; };
-    for (auto& J : jt_) processJoint(J, addF1, nb1, dw1);
+    for (auto& J : jt_) processJoint(J, addF1, nb1, dw1, jw1);
     nBroken_ += nb1;
     dampWork_ += dw1;
+    jointWork_ += jw1;
 }
 
 void Fdem3dSolver::rebuildContactFaces() {
@@ -1822,6 +1835,10 @@ void Fdem3dSolver::potentialContact() {
                                + R.fB[k].dot(v_[EB.n[k]]);
                         }
                         gcWork_ += w * dt_;
+                        if (trackGroup_ >= 0) {        // V2/B2
+                            if (elemGroup_[eLo] == trackGroup_) grpF_ += R.F;
+                            if (elemGroup_[eHi] == trackGroup_) grpF_ -= R.F;
+                        }
                         // barycentriques du centroide : estampilles PONDEREES
                         // de la regle B + frottement (voir le 2D — estampiller
                         // tous les noeuds sur-propageait l'activation : 96 %
@@ -1870,6 +1887,13 @@ void Fdem3dSolver::potentialContact() {
                                     f_[EB.n[k]] -= lb[k] * Ft;
                                 }
                                 gcWork_ += Ft.dot(vrel) * dt_;
+                                gcFricWork_ += Ft.dot(vrel) * dt_;  // V2/B4
+                                if (trackGroup_ >= 0) {  // V2/B2
+                                    if (elemGroup_[eLo] == trackGroup_)
+                                        grpF_ += Ft;
+                                    if (elemGroup_[eHi] == trackGroup_)
+                                        grpF_ -= Ft;
+                                }
                             } else {
                                 H.step = stepCount_;
                             }
@@ -1884,6 +1908,7 @@ void Fdem3dSolver::potentialContact() {
 }
 
 void Fdem3dSolver::generalContact() {
+    grpF_.setZero();                       // V2/B2 : force du pas courant
     if (gcAdaptive_) {
         if (!poolBuilt_) rebuildContactFaces();
         if (lastTouch_.empty()) lastTouch_.assign(X0_.size(), -1);
@@ -2154,10 +2179,16 @@ void Fdem3dSolver::generalContact() {
             double Fn2 = Fc.norm();
             if (Fn2 > capF) Fc *= capF / Fn2;
             gcWork_ += Fc.dot(vrel) * dt_;
+            // V2/B4 : part tangentielle (ftv est normal a nrm, le cap scale)
+            gcFricWork_ += (Fc - Fc.dot(nrm) * nrm).dot(vrel) * dt_;
             f_[i] += Fc;
             f_[bf.n[0]] -= cp.wa * Fc;
             f_[bf.n[1]] -= cp.wb * Fc;
             f_[bf.n[2]] -= cp.wc * Fc;
+            if (trackGroup_ >= 0) {        // V2/B2 (lecture pure)
+                if (elemGroup_[elemOf_[i]] == trackGroup_) grpF_ += Fc;
+                if (elemGroup_[bf.elem] == trackGroup_) grpF_ -= Fc;
+            }
             if (gcAdaptive_) {                         // source de la regle B
                 lastTouch_[i] = stepCount_;
                 lastTouch_[bf.n[0]] = stepCount_;
@@ -2211,7 +2242,8 @@ void Fdem3dSolver::toolContact() {
 #ifdef _OPENMP
     int nT = omp_get_max_threads();
     std::vector<Eigen::Vector3d> FT(nT, Eigen::Vector3d::Zero());
-#pragma omp parallel
+    double tw = 0.0;                       // V2/B4 : travail outil -> solide
+#pragma omp parallel reduction(+:tw)
     {
         int t = omp_get_thread_num();
         Eigen::Vector3d Floc = Eigen::Vector3d::Zero();
@@ -2220,29 +2252,41 @@ void Fdem3dSolver::toolContact() {
             Eigen::Vector3d Fc;
             if (!nodeFc(i, Fc)) continue;
             f_[i] += Fc;
+            tw += Fc.dot(v_[i]) * dt_;
             Floc -= Fc;
         }
         FT[t] = Floc;
     }
     for (const auto& F : FT) tool_.F += F;
+    toolWork_ += tw;
 #else
     for (int i = 0; i < (int)X0_.size(); ++i) {
         Eigen::Vector3d Fc;
         if (!nodeFc(i, Fc)) continue;
         f_[i] += Fc;
+        toolWork_ += Fc.dot(v_[i]) * dt_;  // V2/B4 : outil -> solide
         tool_.F -= Fc;
     }
 #endif
 }
 
 void Fdem3dSolver::integrate() {
+    // V2/B4 : KE du solide au premier pas (les vitesses initiales — groupVel,
+    // percussion — sont encore intactes avant la premiere integration)
+    if (keInit_ < 0.0) {
+        double ke0 = 0.0;
+        for (std::size_t i = 0; i < X0_.size(); ++i)
+            ke0 += 0.5 * m_[i] * v_[i].squaredNorm();
+        keInit_ = ke0;
+    }
+    double cw = 0.0, lw = 0.0, bw = 0.0, bias = 0.0;  // V2/B4 compteurs
     if (adaptive_) {
         // Bound groups integrate as ONE node (sum of forces and masses,
         // damping and quiet-boundary terms on the sums), exactly as in the
         // 2D solver. Copies of a group share flags (same position) and stay
         // bit-identical: groups only ever split, never merge.
 #ifdef _OPENMP
-#pragma omp parallel for schedule(static)
+#pragma omp parallel for schedule(static) reduction(+:cw,lw,bw,bias)
 #endif
         for (int vv = 0; vv < nVert_; ++vv) {
             for (const auto& g : grpsOfVert_[vv]) {
@@ -2273,6 +2317,8 @@ void Fdem3dSolver::integrate() {
                     if (vg != 0.0 && pullRamp_ > 0.0 && tv < pullRamp_)
                         vg *= 0.5 * (1.0 - std::cos(M_PI * tv / pullRamp_));
                     for (int i : g) {
+                        // V2/B4 : puissance interne recue par la platine
+                        bw += f_[i].z() * vg * dt_;
                         v_[i] = {vx, vy, vg};
                         u_[i] += dt_ * v_[i];
                     }
@@ -2284,28 +2330,43 @@ void Fdem3dSolver::integrate() {
                 for (int i : g) {
                     F += f_[i];
                     for (int a = 0; a < 3; ++a)
-                        if (kAbs_[i](a) > 0) F(a) -= kAbs_[i](a) * u_[i](a);
+                        if (kAbs_[i](a) > 0) {
+                            double fk = kAbs_[i](a) * u_[i](a);
+                            F(a) -= fk;
+                            lw -= fk * v_[i0](a) * dt_;   // V2/B4 ressort
+                        }
                     cS += cAbs_[i];
                     M += m_[i];
                 }
                 if (damping_ > 0)
-                    for (int a = 0; a < 3; ++a)
-                        F(a) -= damping_ * std::abs(F(a))
+                    for (int a = 0; a < 3; ++a) {
+                        double fd = damping_ * std::abs(F(a))
                                 * (v_[i0](a) > 0 ? 1.0 : (v_[i0](a) < 0 ? -1.0 : 0.0));
+                        F(a) -= fd;
+                        cw -= fd * v_[i0](a) * dt_;       // V2/B4 Cundall
+                    }
+                bias += F.squaredNorm() * dt_ * dt_ / (2.0 * M);
                 Eigen::Vector3d vn = v_[i0] + (dt_ / M) * F;
                 for (int a = 0; a < 3; ++a)
-                    if (cS(a) > 0) vn(a) /= 1.0 + dt_ * cS(a) / M;
+                    if (cS(a) > 0) {
+                        vn(a) /= 1.0 + dt_ * cS(a) / M;
+                        lw -= cS(a) * vn(a) * vn(a) * dt_;  // V2/B4 amortisseur
+                    }
                 for (int i : g) {
                     v_[i] = vn;
                     u_[i] += dt_ * vn;
                 }
             }
         }
+        cundWork_ += cw;                   // V2/B4
+        lysWork_ += lw;
+        bcWork_ += bw;
+        biasW_ += bias;
         if (scen_ != Scenario::TENSION && !toolNone_) tool_.integrate(dt_);
         return;
     }
 #ifdef _OPENMP
-#pragma omp parallel for schedule(static)
+#pragma omp parallel for schedule(static) reduction(+:cw,lw,bw,bias)
 #endif
     for (int i = 0; i < (int)X0_.size(); ++i) {
         if (flag_[i] == FIXED) {
@@ -2332,22 +2393,37 @@ void Fdem3dSolver::integrate() {
             double vg = tv <= 0.0 ? 0.0 : pullV_;
             if (vg != 0.0 && pullRamp_ > 0.0 && tv < pullRamp_)
                 vg *= 0.5 * (1.0 - std::cos(M_PI * tv / pullRamp_));
+            bw += f_[i].z() * vg * dt_;        // V2/B4 : platine -> solide
             v_[i].z() = vg;
             u_[i] += dt_ * v_[i];
             continue;
         }
         for (int a = 0; a < 3; ++a) {
-            if (kAbs_[i](a) > 0) f_[i](a) -= kAbs_[i](a) * u_[i](a);
-            if (damping_ > 0)
-                f_[i](a) -= damping_ * std::abs(f_[i](a))
+            if (kAbs_[i](a) > 0) {
+                double fk = kAbs_[i](a) * u_[i](a);
+                f_[i](a) -= fk;
+                lw -= fk * v_[i](a) * dt_;     // V2/B4 : ressort frontiere
+            }
+            if (damping_ > 0) {
+                double fd = damping_ * std::abs(f_[i](a))
                             * (v_[i](a) > 0 ? 1.0 : (v_[i](a) < 0 ? -1.0 : 0.0));
+                f_[i](a) -= fd;
+                cw -= fd * v_[i](a) * dt_;     // V2/B4 : Cundall (<= 0)
+            }
         }
+        bias += f_[i].squaredNorm() * dt_ * dt_ / (2.0 * m_[i]);
         v_[i] += (dt_ / m_[i]) * f_[i];
         for (int a = 0; a < 3; ++a)
-            if (cAbs_[i](a) > 0)
+            if (cAbs_[i](a) > 0) {
                 v_[i](a) /= 1.0 + dt_ * cAbs_[i](a) / m_[i];
+                lw -= cAbs_[i](a) * v_[i](a) * v_[i](a) * dt_;  // amortisseur
+            }
         u_[i] += dt_ * v_[i];
     }
+    cundWork_ += cw;                       // V2/B4
+    lysWork_ += lw;
+    bcWork_ += bw;
+    biasW_ += bias;
     if (scen_ != Scenario::TENSION && !toolNone_) tool_.integrate(dt_);
 }
 
@@ -2445,7 +2521,10 @@ void Fdem3dSolver::historyHeader(std::ostream& os) const {
     if (scen_ == Scenario::TENSION) { os << "t,gripFz,sigma,sigmaPeak,nBroken\n"; return; }
     os << "t,toolFx,toolFy,toolFz,toolX,toolY,toolZ,toolVx,toolVy,toolVz,"
           "work,toolKE,nBroken,nFrag,detachedVol,specificEnergy";
-    if (trackGroup_ >= 0) os << ",grpZ,grpVz";         // corps suivi (V1)
+    if (trackGroup_ >= 0)                              // corps suivi (V1+V2)
+        os << ",grpZ,grpVz,grpFx,grpFy,grpFz,grpSzz";
+    // V2/B4 : travaux cumules par famille (signes : negatif = preleve)
+    os << ",eEl,eJnt,eGc,eFric,eCund,eLys";
     os << "\n";
 }
 
@@ -2477,7 +2556,18 @@ void Fdem3dSolver::historyRow(std::ostream& os) const {
         }
         os << "," << (mm > 0 ? mz / mm : 0.0)
            << "," << (mm > 0 ? mvz / mm : 0.0);
+        // V2/B2 : force de contact nette du pas + jauge sigma_zz volumique
+        double vsum = 0.0, szz = 0.0;
+        for (std::size_t e = 0; e < el_.size(); ++e) {
+            if (elemGroup_[e] != trackGroup_) continue;
+            vsum += el_[e].V0;
+            szz += el_[e].V0 * el_[e].sigG(2, 2);
+        }
+        os << "," << grpF_.x() << "," << grpF_.y() << "," << grpF_.z()
+           << "," << (vsum > 0 ? szz / vsum : 0.0);
     }
+    os << "," << elWork_ << "," << jointWork_ << "," << gcWork_ << ","
+       << gcFricWork_ << "," << cundWork_ << "," << lysWork_;   // V2/B4
     os << "\n";
 }
 
@@ -2517,6 +2607,62 @@ void Fdem3dSolver::finalize() {
               << (dampWork_ <= 0.0 ? "OK, dissipative"
                                    : "FAIL - the dashpot INJECTED energy")
               << "]\n";
+    {   // ---- V2/B4 : bilan d'energie par sous-systeme -------------------
+        // Theoreme travail-energie sur les noeuds : KE(t) - KE(0) = somme
+        // des travaux par famille de forces + residu O(dt) (les compteurs
+        // lisent v au moment de l'application, leapfrog). U_el se lit sur
+        // le Cauchy stocke sigG (invariants par rotation, compliance
+        // isotrope de la PHASE — exact en elastique, approx sous law/caps).
+        double uEl = 0.0;
+        for (const auto& e : el_) {
+            double mu2 = mu2P_[e.phase], lam = lamP_[e.phase];
+            double ss = e.sigG.squaredNorm(), trs = e.sigG.trace();
+            uEl += e.V0 * (ss - lam * trs * trs / (3.0 * lam + mu2))
+                   / (2.0 * mu2);
+        }
+        double uSpr = 0.0;                 // ressorts absorbants (stocke)
+        for (std::size_t i = 0; i < X0_.size(); ++i)
+            for (int a = 0; a < 3; ++a)
+                if (kAbs_[i](a) > 0)
+                    uSpr += 0.5 * kAbs_[i](a) * u_[i](a) * u_[i](a);
+        double sumW = elWork_ + jointWork_ + gcWork_ + cundWork_ + lysWork_
+                    + toolWork_ + bcWork_ + biasW_;
+        double dKE = keBlock - keInit_;
+        double resid = dKE - sumW;
+        // echelle du verdict : le flux BRUT echange (la somme signee est ~0
+        // precisement quand le bilan boucle — premier faux CHECK mesure sur
+        // la percussion outil rigide : residu 0.014 J sur 1.53 J injectes,
+        // soit 0.9 %, juge a 147 % de la somme signee)
+        double gross = std::abs(elWork_) + std::abs(jointWork_)
+                     + std::abs(gcWork_) + std::abs(cundWork_)
+                     + std::abs(lysWork_) + std::abs(toolWork_)
+                     + std::abs(bcWork_);
+        double scale = std::max({keInit_, keBlock, gross, 1e-30});
+        // a charge nulle l'echelle est elle-meme un zero machine : le ratio
+        // de deux zeros n'a pas de sens, le verdict se rend sur l'absolu
+        bool zeroCase = scale < 1e-12;
+        std::cout << "[FDEM3D] energy budget (V2/B4): KE " << keInit_
+                  << " -> " << keBlock << " J\n"
+                  << "[FDEM3D]   elements     : " << -elWork_
+                  << " J preleve (stocke elastique " << uEl << " J)\n"
+                  << "[FDEM3D]   joints       : " << -(jointWork_ - dampWork_)
+                  << " J cohesif (fissuration + stocke), dashpot "
+                  << -dampWork_ << " J\n"
+                  << "[FDEM3D]   contact      : " << -gcWork_
+                  << " J (dont frottement " << -gcFricWork_ << " J)\n"
+                  << "[FDEM3D]   Cundall      : " << -cundWork_ << " J\n"
+                  << "[FDEM3D]   frontieres   : " << -lysWork_
+                  << " J (dont stocke ressorts " << uSpr << " J)\n"
+                  << "[FDEM3D]   outil->solide: " << toolWork_
+                  << " J, platines: " << bcWork_ << " J\n"
+                  << "[FDEM3D]   integration  : +" << biasW_
+                  << " J (correction leapfrog f^2 dt^2/2m)\n"
+                  << "[FDEM3D]   residu       : " << resid << " J ("
+                  << 100.0 * std::abs(resid) / scale << " % de l'echelle) ["
+                  << (zeroCase ? "OK (zero machine)"
+                      : std::abs(resid) <= 0.01 * scale ? "OK" : "CHECK")
+                  << "]\n";
+    }
     {   // failure-mode census (breakMode: 1 = tensile, 2 = shear)
         long nTm = 0, nSm = 0;
         for (const auto& J : jt_) {

@@ -39,6 +39,7 @@ RX = {
     "ratio":     r"measured/expected ratio = ([\d.eE+-]+)",
     "gcact":     r"adaptive contact activation: (\d+) / \d+",
     "gcwork":    r"net work (?:injected )?by general contact: (-?[\d.eE+-]+)",
+    "budget":    r"residu\s+: (-?[\d.eE+-]+) J",
     "pot_ke":    r"pot_ke_rel = ([\d.eE+-]+)",
     "pot_mom":   r"pot_mom_rel = ([\d.eE+-]+)",
     "pot3_ke":   r"pot3_ke_rel = ([\d.eE+-]+)",
@@ -245,14 +246,16 @@ TESTS = [
     dict(name="zeroload_bench1_3d", tier="full", cfg="fdem3d_bench1_insert.cfg",
          over=["meshFile = " + os.path.join(ROOT, "meshes", "bench1_insert.msh"),
                "T = 2e-5", "frames = 2", "groupVel.insert = 0 0 0"],
-         checks=[("broken", 0, 0, True), ("gcwork", 0.0, 0.0, True)]),
+         checks=[("broken", 0, 0, True), ("gcwork", 0.0, 0.0, True),
+                 ("budget", 0.0, 1e-12, True)]),   # V2/B4 : bilan clos au repos
     # V1 : l'impact complet insert -> roche (2.53 J a -8 m/s). Reference du
     # 2026-08-14 : 12 joints (2 traction / 10 cisaillement), rebond a
     # +5.67 m/s (e = 0.71 — la restitution du potentiel, cf. percussion 2D),
     # gcWork absorbant. ~45 min : le prix du jalon multi-corps.
     dict(name="bench1_insert_impact", tier="all", cfg="fdem3d_bench1_insert.cfg",
          over=["meshFile = " + os.path.join(ROOT, "meshes", "bench1_insert.msh")],
-         checks=[("broken", 12, 0, True), ("gcwork", 0.0, 1.0, True)]),
+         checks=[("broken", 12, 0, True), ("gcwork", 0.0, 1.0, True),
+                 ("budget", 0.0, 0.026, True)]),   # V2/B4 : residu <= 1 % de KE0
 ]
 
 TIERS = {"fast": ["fast"], "full": ["fast", "full"], "all": ["fast", "full", "all"]}
