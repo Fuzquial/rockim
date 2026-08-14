@@ -45,7 +45,7 @@ validable contre le banc de Mines Paris, (3) robustesse et vitesse.*
 | **B2** | ~~Jauge de contrainte dans le taillant~~ **FAIT (V2, 2026-08-14)** | — | `grpFx/y/z` (force de contact nette sur le corps suivi, les deux lois) + `grpSzz` (σzz moyen volumique du corps) dans history ; la version « tranche à position donnée » attendra le banc V3 |
 | **B3** | ~~Métriques de cratère~~ **FAIT (V2, 2026-08-14)** | — | `tools/crater_metrics.py` : R_crater/R_max/profondeur/aire cassée/volumes endommagé-détaché/fissures radiales + bras endommagés par secteur, multi-corps géré ; validé sur bench1 (cône hertzien R 4,6 mm) et percussion longue (R 8,5 mm, étoile 12 bras à 18 mm) |
 | **B4** | ~~Bilan d'énergie par sous-système~~ **FAIT (V2, 2026-08-14)** | — | travaux par famille (éléments, joints, dashpot, contact+frottement, Cundall, Lysmer, outil, platines) + correction leapfrog exacte f²dt²/2m ; résidu : 0,017 % (percussion 2D), 0,005 % (3D), zéro machine au repos ; bloc `energy budget` au résumé, 6 colonnes history, extracteur `budget` dans la suite ; 2D et 3D, bit-neutre (12/12) |
-| B5 | Algorithme de « brossage » des fragments (anti-gravité, β = 0,8) | court | pour comparer la masse simulée à la masse collectée |
+| B5 | ~~Brossage des fragments~~ **FAIT (V2, 2026-08-14)** | — | `crater_metrics.py --brush beta` : volume brossable = β × détachés dans le bol (percussion longue : 96,4 mm³ sur 120,5 détachés) ; masse = ρ × volume |
 | B6 | DIF (effet de vitesse) sur les joints | court | le taux de déformation est déjà calculé depuis `bulkViscosity` |
 | **B7** | **Récupérer les données expérimentales d'Aising** | — | pas du code, mais bloquant pour toute validation |
 

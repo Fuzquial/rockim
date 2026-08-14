@@ -64,6 +64,9 @@ def main():
     ap.add_argument("--skin", type=float, default=None)
     ap.add_argument("--plot", default=None)
     ap.add_argument("--csv", default=None)
+    ap.add_argument("--brush", type=float, default=0.8,
+                    help="V2/B5 : fraction beta du volume detache situe dans "
+                         "le bol du cratere recuperable par brossage (0.8)")
     a = ap.parse_args()
 
     jfiles = sorted(glob.glob(os.path.join(a.run, "fdem3d_joints_*.vtu")))
@@ -142,7 +145,7 @@ def main():
     # tet est endommage si son centroide est a moins de h_tet du centroide
     # d'un joint endommage (approximation de post-traitement, honnete pour
     # une metrique de volume ; la table exacte viendra avec les besoins V3).
-    vDam = vDet = 0.0
+    vDam = vDet = vBrush = 0.0
     if ef:
         hT = np.cbrt(np.median(V))
         inBody = (grain == body) if body is not None else np.ones(len(V), bool)
@@ -156,7 +159,14 @@ def main():
         # autres corps — l'insert — ne sont pas des debris)
         fb = frag[inBody].astype(int)
         fMain = np.bincount(fb).argmax()
-        vDet = float(V[inBody & (frag != fMain)].sum())
+        detached = inBody & (frag != fMain)
+        vDet = float(V[detached].sum())
+        # V2/B5 : brossage — le banc collecte les debris qui REPOSENT dans
+        # le bol ; brossable = fragment detache dont le centroide est
+        # au-dessus du fond du cratere, pondere par beta (fraction non
+        # collee, Solidity). NB depth est calcule plus haut sur les joints.
+        inBowl = detached & (CE[:, 2] > zSurf - depth)
+        vBrush = a.brush * float(V[inBowl].sum())
 
     # fissures radiales par secteur : portee max des joints casses AU-DELA
     # du rayon du cratere
@@ -185,6 +195,8 @@ def main():
     if ef:
         print(f"[crater] volume endommage      = {vDam * 1e9:.1f} mm^3")
         print(f"[crater] volume detache        = {vDet * 1e9:.1f} mm^3")
+        print(f"[crater] volume brosse (B5)    = {vBrush * 1e9:.1f} mm^3 "
+              f"(beta = {a.brush} ; masse = rho x volume)")
     print(f"[crater] fissures radiales     : {nRad}/{a.sectors} secteurs, "
           f"portee moy {reach[reach > 0].mean() * 1e3 if nRad else 0.0:.2f} mm, "
           f"max {reach.max() * 1e3:.2f} mm")
@@ -204,6 +216,7 @@ def main():
             f.write(f"radialReachMax,{reach.max()},m\n")
             f.write(f"damagedSectors,{nRadD},-\n")
             f.write(f"damagedReachMax,{reachD.max()},m\n")
+            f.write(f"vBrushed,{vBrush},m3\n")
         print("[crater] csv ->", a.csv)
 
     if a.plot:

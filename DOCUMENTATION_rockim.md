@@ -439,7 +439,9 @@ champ ftScale → deck Abaqus mm-t-s-MPa pour validation croisée iso-maillage),
 R_crater p95 dans la peau de surface, R_max, profondeur, aire cassée, volume
 endommagé/détaché, fissures radiales cassées ET bras endommagés par secteur
 angulaire ; multi-corps V1 géré : surface et fragments rapportés au CORPS IMPACTÉ,
-l'insert n'est pas un débris ; `--plot` vue de dessus, `--csv` export),
+l'insert n'est pas un débris ; V2/B5 : `--brush beta` (0.8) — volume brossable =
+β × fragments détachés dont le centroïde est dans le bol du cratère, la masse
+collectée du banc étant ρ × volume ; `--plot` vue de dessus, `--csv` export),
 `tools/make_unstructured_mesh.py` (maillages simplexes non structurés uniformes via
 Gmsh — `box3d W D H h out.msh [seed]` / `box2d W H h out.msh [seed]` — pour
 `mesh = file` ; `pip install gmsh`).
