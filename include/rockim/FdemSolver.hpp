@@ -542,6 +542,11 @@ private:
     double gcFricWork_ = 0.0;  // part tangentielle du contact general
     double toolWork_ = 0.0;    // outil rigide -> solide
     double bcWork_ = 0.0;      // platines/grips (PRESCRIBED) -> solide
+    double confWork_ = 0.0;    // pression de confinement/bore -> solide
+    // E2 : moniteur d'energie runtime (opt-in budgetAbortPct, 0 = off)
+    double eAbortPct_ = -1.0;  // -1 = pas encore lu dans la config
+    bool eAbort_ = false;
+    void checkEnergyAbort();
     double biasW_ = 0.0;       // correction leapfrog EXACTE : les compteurs
                                // lisent v- ; le theoreme discret veut
                                // (v- + v+)/2 -> ecart = f_tot^2 dt^2 / 2m par

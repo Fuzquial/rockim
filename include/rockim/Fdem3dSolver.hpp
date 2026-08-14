@@ -59,6 +59,7 @@ public:
     void writeFrame(int frame) override;
     void historyHeader(std::ostream&) const override;
     void historyRow(std::ostream&) const override;
+    bool finished() const override;        // E2 : moniteur d'energie
     void finalize() override;
 
 private:
@@ -243,6 +244,11 @@ private:
     double gcFricWork_ = 0.0;  // part tangentielle du contact general
     double toolWork_ = 0.0;    // outil rigide -> solide
     double bcWork_ = 0.0;      // platines (PRESCRIBED) -> solide
+    double confWork_ = 0.0;    // pression de confinement/bore -> solide
+    // E2 : moniteur d'energie runtime (opt-in budgetAbortPct, 0 = off)
+    double eAbortPct_ = -1.0;  // -1 = pas encore lu dans la config
+    bool eAbort_ = false;
+    void checkEnergyAbort();
     // V2/B2 : force de contact NETTE sur le corps suivi (trackGroup) au pas
     // courant — remise a zero en tete de generalContact, sommee dans les
     // deux lois (penalite et potentiel). La F-delta se lit alors en direct

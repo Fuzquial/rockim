@@ -2274,6 +2274,7 @@ void FdemSolver::step() {
     t_ += dt_;
 
     if ((++stepCount_ & 1023) == 0) {                  // cheap stability guard
+        checkEnergyAbort();                // opt-in (budgetAbortPct), E2
         if (!std::isfinite(work_) || !std::isfinite(u_[0].x()))
             throw std::runtime_error("FDEM instability (NaN) — reduce dtFactor");
     }
@@ -3655,7 +3656,42 @@ void FdemSolver::platenForces() {
 // the halves and not a contact artefact). The published brazilian curve stops
 // there. brazStopDelay_ keeps enough steps after the lock for the drop itself
 // to be on the curve.
+// E2 (fiabilite) : moniteur d'energie runtime, opt-in par budgetAbortPct —
+// meme definition de residu/echelle que le resume B4, arret PROPRE via
+// finished() (frame + history + summary ecrits). Voir Fdem3dSolver pour le
+// commentaire complet.
+void FdemSolver::checkEnergyAbort() {
+    if (eAbortPct_ < 0.0)
+        eAbortPct_ = cfg_.getd("budgetAbortPct", 0.0);
+    if (eAbortPct_ <= 0.0 || eAbort_) return;
+    double ke = 0.0;
+    for (std::size_t i = 0; i < X0_.size(); ++i)
+        ke += 0.5 * m_[i] * v_[i].squaredNorm();
+    double sumW = elWork_ + jointWork_ + gcWork_ + cundWork_ + lysWork_
+                + toolWork_ + bcWork_ + confWork_ + biasW_;
+    double gross = std::abs(elWork_) + std::abs(jointWork_)
+                 + std::abs(gcWork_) + std::abs(cundWork_)
+                 + std::abs(lysWork_) + std::abs(toolWork_)
+                 + std::abs(bcWork_) + std::abs(confWork_);
+    double scale = std::max({keInit_, ke, gross, 1e-30});
+    if (scale < 1e-12) return;             // charge nulle : pas de verdict
+    double resid = (ke - keInit_) - sumW;
+    if (std::abs(resid) <= 0.01 * eAbortPct_ * scale) return;
+    int iw = 0; double vw = 0.0;           // hotspot : le noeud le plus rapide
+    for (std::size_t i = 0; i < X0_.size(); ++i) {
+        double vn = v_[i].squaredNorm();
+        if (vn > vw) { vw = vn; iw = (int)i; }
+    }
+    std::cout << "[FDEM] ENERGY ABORT (budgetAbortPct = " << eAbortPct_
+              << ") a t = " << t_ << " s : residu B4 " << resid << " J/m = "
+              << 100.0 * std::abs(resid) / scale
+              << " % de l'echelle. Hotspot : noeud " << iw << ", |v| = "
+              << std::sqrt(vw) << " m/s\n";
+    eAbort_ = true;
+}
+
 bool FdemSolver::finished() const {
+    if (eAbort_) return true;              // E2 : moniteur d'energie
     // meme mecanisme cote compression (ucsStopAfterPeak), voir FdemSolver.hpp
     if (ucsStop_ && scen_ == Scenario::TENSION && tensionPlatens_)
         return peakLockedU_ && tLockedU_ >= 0.0
@@ -3708,6 +3744,8 @@ void FdemSolver::confiningForces() {
         Eigen::Vector2d half = -0.5 * p * L * thk_ * n; // inward, half per node
         f_[be.na] += half;
         f_[be.nb] += half;
+        // V2/B4 : travail de la pression sur le solide (compteur en v-)
+        confWork_ += dt_ * (half.dot(v_[be.na]) + half.dot(v_[be.nb]));
     }
 }
 
@@ -4248,7 +4286,7 @@ void FdemSolver::finalize() {
             if (kAbsY_[i] > 0) uSpr += 0.5 * kAbsY_[i] * u_[i].y() * u_[i].y();
         }
         double sumW = elWork_ + jointWork_ + gcWork_ + cundWork_ + lysWork_
-                    + toolWork_ + bcWork_ + biasW_;
+                    + toolWork_ + bcWork_ + confWork_ + biasW_;
         double dKE = keBlock - keInit_;
         double resid = dKE - sumW;
         // echelle du verdict : le flux BRUT echange (la somme signee est ~0
@@ -4258,7 +4296,7 @@ void FdemSolver::finalize() {
         double gross = std::abs(elWork_) + std::abs(jointWork_)
                      + std::abs(gcWork_) + std::abs(cundWork_)
                      + std::abs(lysWork_) + std::abs(toolWork_)
-                     + std::abs(bcWork_);
+                     + std::abs(bcWork_) + std::abs(confWork_);
         double scale = std::max({keInit_, keBlock, gross, 1e-30});
         bool zeroCase = scale < 1e-12;     // charge nulle : verdict en absolu
         std::cout << "[FDEM] energy budget (V2/B4): KE " << keInit_ << " -> "
@@ -4274,8 +4312,11 @@ void FdemSolver::finalize() {
                   << "[FDEM]   frontieres   : " << -lysWork_
                   << " J/m (dont stocke ressorts " << uSpr << " J/m)\n"
                   << "[FDEM]   outil->solide: " << toolWork_
-                  << " J/m, platines/grips: " << bcWork_ << " J/m\n"
-                  << "[FDEM]   integration  : +" << biasW_
+                  << " J/m, platines/grips: " << bcWork_ << " J/m\n";
+        if (confP_ > 0.0)                  // sortie inchangee si pas confine
+            std::cout << "[FDEM]   confinement  : " << confWork_
+                      << " J/m (pression suiveuse -> solide)\n";
+        std::cout << "[FDEM]   integration  : +" << biasW_
                   << " J/m (correction leapfrog f^2 dt^2/2m)\n"
                   << "[FDEM]   residu       : " << resid << " J/m ("
                   << 100.0 * std::abs(resid) / scale << " % de l'echelle) ["

@@ -1083,6 +1083,10 @@ void Fdem3dSolver::confiningForces() {
         f_[bf.n[0]] += F;
         f_[bf.n[1]] += F;
         f_[bf.n[2]] += F;
+        // V2/B4 : travail de la pression sur le solide (compteur en v-,
+        // la correction leapfrog globale couvre le demi-pas comme ailleurs)
+        confWork_ += dt_ * (F.dot(v_[bf.n[0]]) + F.dot(v_[bf.n[1]])
+                            + F.dot(v_[bf.n[2]]));
     }
 }
 
@@ -1175,10 +1179,54 @@ void Fdem3dSolver::step() {
 
     integrate();
     t_ += dt_;
-    if ((++stepCount_ & 1023) == 0)
+    if ((++stepCount_ & 1023) == 0) {
         if (!std::isfinite(work_) || !std::isfinite(u_[0].x()))
             throw std::runtime_error("FDEM3D instability (NaN)");
+        checkEnergyAbort();                // opt-in (budgetAbortPct), E2
+    }
 }
+
+// ---------------------------------------------------------------------------
+// E2 (fiabilite) : moniteur d'energie runtime — l'« energy sanity abort » des
+// codes de production. Opt-in par budgetAbortPct (0 = off, defaut) : si le
+// residu B4 courant depasse budgetAbortPct % de l'echelle (meme definition
+// que le resume), on arrete PROPREMENT via finished() : derniere frame,
+// derniere ligne d'history et summary sont ecrits — un run qui diverge laisse
+// ainsi son autopsie au lieu de 2,4 MJ de debris (cas gele du 2026-08-07).
+// ---------------------------------------------------------------------------
+void Fdem3dSolver::checkEnergyAbort() {
+    if (eAbortPct_ < 0.0) {                // lecture paresseuse, une fois
+        eAbortPct_ = cfg_.getd("budgetAbortPct", 0.0);
+    }
+    if (eAbortPct_ <= 0.0 || eAbort_) return;
+    double ke = 0.0;
+    for (std::size_t i = 0; i < X0_.size(); ++i)
+        ke += 0.5 * m_[i] * v_[i].squaredNorm();
+    double sumW = elWork_ + jointWork_ + gcWork_ + cundWork_ + lysWork_
+                + toolWork_ + bcWork_ + confWork_ + biasW_;
+    double gross = std::abs(elWork_) + std::abs(jointWork_)
+                 + std::abs(gcWork_) + std::abs(cundWork_)
+                 + std::abs(lysWork_) + std::abs(toolWork_)
+                 + std::abs(bcWork_) + std::abs(confWork_);
+    double scale = std::max({keInit_, ke, gross, 1e-30});
+    if (scale < 1e-12) return;             // charge nulle : pas de verdict
+    double resid = (ke - keInit_) - sumW;
+    if (std::abs(resid) <= 0.01 * eAbortPct_ * scale) return;
+    int iw = 0; double vw = 0.0;           // hotspot : le noeud le plus rapide
+    for (std::size_t i = 0; i < X0_.size(); ++i) {
+        double vn = v_[i].squaredNorm();
+        if (vn > vw) { vw = vn; iw = (int)i; }
+    }
+    std::cout << "[FDEM3D] ENERGY ABORT (budgetAbortPct = " << eAbortPct_
+              << ") a t = " << t_ << " s : residu B4 " << resid << " J = "
+              << 100.0 * std::abs(resid) / scale
+              << " % de l'echelle. Hotspot : noeud " << iw << ", |v| = "
+              << std::sqrt(vw) << " m/s, position ("
+              << (X0_[iw] + u_[iw]).transpose() << ")\n";
+    eAbort_ = true;
+}
+
+bool Fdem3dSolver::finished() const { return eAbort_; }
 
 // Co-rotational linear tet. R from F by Higham iteration R <- (R + R^-T)/2,
 // warm-started from F scaled to unit Frobenius norm of a rotation. The
@@ -2626,7 +2674,7 @@ void Fdem3dSolver::finalize() {
                 if (kAbs_[i](a) > 0)
                     uSpr += 0.5 * kAbs_[i](a) * u_[i](a) * u_[i](a);
         double sumW = elWork_ + jointWork_ + gcWork_ + cundWork_ + lysWork_
-                    + toolWork_ + bcWork_ + biasW_;
+                    + toolWork_ + bcWork_ + confWork_ + biasW_;
         double dKE = keBlock - keInit_;
         double resid = dKE - sumW;
         // echelle du verdict : le flux BRUT echange (la somme signee est ~0
@@ -2636,7 +2684,7 @@ void Fdem3dSolver::finalize() {
         double gross = std::abs(elWork_) + std::abs(jointWork_)
                      + std::abs(gcWork_) + std::abs(cundWork_)
                      + std::abs(lysWork_) + std::abs(toolWork_)
-                     + std::abs(bcWork_);
+                     + std::abs(bcWork_) + std::abs(confWork_);
         double scale = std::max({keInit_, keBlock, gross, 1e-30});
         // a charge nulle l'echelle est elle-meme un zero machine : le ratio
         // de deux zeros n'a pas de sens, le verdict se rend sur l'absolu
@@ -2654,8 +2702,11 @@ void Fdem3dSolver::finalize() {
                   << "[FDEM3D]   frontieres   : " << -lysWork_
                   << " J (dont stocke ressorts " << uSpr << " J)\n"
                   << "[FDEM3D]   outil->solide: " << toolWork_
-                  << " J, platines: " << bcWork_ << " J\n"
-                  << "[FDEM3D]   integration  : +" << biasW_
+                  << " J, platines: " << bcWork_ << " J\n";
+        if (confP_ > 0.0)                  // sortie inchangee si pas confine
+            std::cout << "[FDEM3D]   confinement  : " << confWork_
+                      << " J (pression suiveuse -> solide)\n";
+        std::cout << "[FDEM3D]   integration  : +" << biasW_
                   << " J (correction leapfrog f^2 dt^2/2m)\n"
                   << "[FDEM3D]   residu       : " << resid << " J ("
                   << 100.0 * std::abs(resid) / scale << " % de l'echelle) ["

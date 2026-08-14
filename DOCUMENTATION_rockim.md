@@ -266,10 +266,24 @@ Montage type : `scenario = tension` + `pullV = 0` (mors immobiles = plaque tenue
 Cas de référence `configs/tunnel_bore.cfg` (granite, R = 10 mm, 40 MPa) :
 rampe 100 µs → **53 joints rompus** (fissure diamétrale, amorçage ~30 MPa) ;
 rampe 10 µs → **144 joints** (étoile radiale) — N croît avec ṗ, signature
-d'obscuration du banc 6 Abaqus DP-DFH reproduite. ⚠️ Deux limites connues :
-le **bilan B4 ne comptabilise pas le travail du confinement** (résidu [CHECK]
-attendu sur tout run confiné/bore — correction à venir) ; la jauge « achieved
-σ_xx » lit le cœur du bloc, sans signification en mode bore.
+d'obscuration du banc 6 Abaqus DP-DFH reproduite. ⚠️ Limite connue : la jauge
+« achieved σ_xx » lit le cœur du bloc, sans signification en mode bore.
+
+**Bilan B4 et confinement (corrigé 2026-08-14 soir)** — le travail de la
+pression suiveuse est désormais comptabilisé (`confWork_`, ligne
+« confinement » du résumé, imprimée seulement si `confiningPressure > 0` —
+sorties des runs non confinés inchangées au bit). Les résidus [CHECK] à
+~100 % des runs confinés/bore antérieurs à cette date étaient CE poste
+manquant, pas une injection d'énergie.
+
+**Moniteur d'énergie runtime (E2 fiabilité, 2026-08-14)** —
+`budgetAbortPct` (0 = off, défaut) : tous les 1024 pas, si le résidu B4
+courant dépasse ce pourcentage de l'échelle (même définition que le résumé),
+**arrêt PROPRE** via le hook `finished()` : dernière frame, dernière ligne
+d'history et summary sont écrits, avec l'empreinte du hotspot (nœud le plus
+rapide). Un run qui diverge laisse son autopsie au lieu de mégajoules de
+débris. Typique : `budgetAbortPct = 5` en production, off pour les études
+de diagnostic (E0) où l'on VEUT voir la divergence se développer.
 
 **SHPB (`scenario = shpb`, fdem 2D)** — `shpbIncidentLength` (2.0),
 `shpbTransmitLength` (1.5), `shpbBarDiameter` (0.05), `shpbDiscDiameter` (0.05),
