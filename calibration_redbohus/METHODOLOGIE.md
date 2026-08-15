@@ -147,6 +147,129 @@ l'information que le pré-classement de Ye jette).
 
 ---
 
+## 8bis. L'algorithme, brique par brique — justification sourcée
+
+```
+1.  LHS maximin de 60 jeux sur les paramètres retenus
+2.  simuler les 4 essais par jeu (3 graines pour le brésilien)
+3.  répéter jusqu'à convergence :
+        a. entraîner un GP (Matérn 5/2, ARD) par sortie
+        b. choisir 10 nouveaux jeux par acquisition EHVI multi-objectif
+        c. les simuler, les ajouter à la base
+4.  NSGA-II sur l'émulateur → front de Pareto
+5.  MCMC sur l'émulateur → postérieur, intervalles, corrélations
+6.  validation par runs directs + prédiction σ₃ = 75 et 100
+```
+
+### (a) Le cadre : émulateur GP + calibration bayésienne + discrépance
+
+**Kennedy & O'Hagan (2001)**, *Bayesian calibration of computer models*,
+JRSS-B **63**(3), 425-464 — le cadre de référence du domaine. Deux processus
+gaussiens : l'**émulateur** η qui interpole le code coûteux avec son incertitude
+d'interpolation, et la **discrépance** δ qui représente l'écart structurel
+modèle/réalité. Le postérieur des paramètres intègre les trois sources
+d'incertitude : interpolation, discrépance, erreur d'observation.
+
+→ **Pourquoi c'est le bon cadre ici** : notre enveloppe expérimentale est
+concave alors que les joints sont Mohr-Coulomb — il y a un biais structurel
+connu. Sans terme de discrépance, le postérieur serait artificiellement
+resserré autour d'un compromis biaisé (Brynjarsdóttir & O'Hagan, 2014).
+Les fondations du krigeage pour codes coûteux : **Sacks, Welch, Mitchell &
+Wynn (1989)**, *Design and Analysis of Computer Experiments*, Statistical
+Science 4(4), 409-435.
+
+### (b) Le GP plutôt qu'un réseau de neurones
+
+Régime « petites données » : 5-9 paramètres, quelques centaines de points.
+Le GP donne une **variance de prédiction** — sans elle, ni enrichissement
+adaptatif ni postérieur honnête. **Bu et al. (2026)** obtiennent d'ailleurs
+R² = 0,96 avec leur GP à l = 4 mm ; ils ne l'écartent que dans un régime
+(99 roches, 3 456 points, 7 paramètres) qui n'est pas le nôtre — et leur
+propre résultat montre que le meilleur R² **direct** (forêt aléatoire) est
+mauvais en **inverse**, ce qui disqualifie le critère qu'ils auraient utilisé
+pour éliminer le GP.
+
+### (c) ARD comme criblage — remplace l'analyse de Pearson
+
+Le noyau à **longueurs de corrélation par dimension** (Automatic Relevance
+Determination) apprend une échelle par paramètre ; l'inverse de la longueur
+mesure la pertinence de la dimension, et sur des entrées standardisées les
+longueurs se lisent directement comme des mesures d'importance — procédure
+de *screening* documentée comme telle dans le **toolkit MUCM / mogp-emulator**
+(`ProcAutomaticRelevanceDetermination`), origine **Neal (1996)** puis
+**Williams & Rasmussen**, *Gaussian Processes for Machine Learning* (2006),
+§5.1.
+
+→ **Avantage sur le Pearson de Jiang et al. (2025)** : l'ARD capture les
+effets **non linéaires et les interactions**, là où un coefficient de Pearson
+ne voit que la corrélation linéaire — et il sort gratuitement de l'émulateur,
+sans les 80 runs d'un criblage mono-variable.
+→ **Réserve à garder** : l'ARD naïf a des limites documentées pour la
+sélection de variables (**Paananen et al., arXiv:1712.08048**) — on croisera
+donc les longueurs ARD avec une sensibilité de la prédictive avant de figer
+un paramètre.
+
+### (d) L'enrichissement adaptatif plutôt qu'un plan unique
+
+Origine : **Jones, Schonlau & Welch (1998)**, *Efficient Global Optimization
+of Expensive Black-Box Functions*, J. Global Optim. 13, 455-492 (critère
+Expected Improvement). Pour la **calibration** spécifiquement :
+- **Teixeira et al. (2025)**, *Surrogate-aided Bayesian calibration with
+  adaptive learning strategies*, Mech. Syst. Signal Process. **237**, 113014 ;
+- **Adaptive GP surrogates for Bayesian inference** (arXiv:1809.10784) et
+  **Posterior sampling with adaptive GP in Bayesian parameter identification**
+  (arXiv:2411.17858) : le GP est raffiné par apprentissage actif, les points
+  d'entraînement sont choisis pour **représenter au mieux le postérieur à
+  échantillonner** — « réduction significative de l'effort de calcul par
+  rapport aux plans statiques » ;
+- **Adaptive multi-output GP for large-scale parameter estimation**,
+  Engineering Computations **41**(6), 2024 ;
+- côté DEM : la littérature récente identifie explicitement le **nombre de
+  simulations d'entraînement** comme le verrou de la calibration par
+  surrogate (Sci. Rep. **14**, 2024, transfer learning pour DEM).
+
+→ **Ce que ça change** : les trois articles tirent tout d'un coup (3 456,
+328, 231 runs) ; l'enrichissement place les points là où l'émulateur est
+incertain **dans la zone plausible** — d'où l'estimation ~120 runs au lieu
+de 800.
+
+### (e) NSGA-II sur l'émulateur + acquisition EHVI
+
+- **Deb et al. (2002)**, *A fast and elitist multiobjective genetic algorithm:
+  NSGA-II*, IEEE Trans. Evol. Comput. 6(2), 182-197 — l'algorithme employé
+  par **Ye et al. (2025)** ;
+- **Emmerich, Deutz & Klinkenberg (2011)** : *Hypervolume-based expected
+  improvement — monotonicity properties and exact computation* (EHVI) ;
+  version parallèle différentiable : **Daulton, Balandat & Bakshy (2020)**,
+  NeurIPS (qEHVI).
+
+→ **Pourquoi les deux et pas l'un ou l'autre** : NSGA-II est robuste mais
+**exige un très grand nombre d'évaluations** — inacceptable sur le simulateur,
+gratuit sur l'émulateur. Les comparaisons publiées (TSEMO vs ParEGO vs EHVI
+vs NSGA-II, 9 problèmes à budget 150 évaluations) montrent que l'optimisation
+bayésienne est **bien plus économe en échantillons** : on l'utilise donc pour
+CHOISIR les runs (EHVI), et NSGA-II pour explorer le front une fois
+l'émulateur en place.
+
+### (f) Le front de Pareto plutôt qu'une somme pondérée
+
+Justification empirique interne aux trois articles : le conflit
+traction/compression est mesuré indépendamment par **Ye** (il doit privilégier
+l'UCS), **Bu** (BTS R² 0,74 → 0,90 en retirant c et φ des cibles) et **Jiang**
+(R² 0,65 sur la résistance en traction, sa pire sortie). Une somme pondérée
+cacherait ce compromis dans un choix de poids arbitraire ; le front le rend
+**visible et chiffré**.
+
+### (g) Option multi-fidélité (phase E)
+
+**Adaptive sampling of multi-fidelity Gaussian process** (arXiv:1907.11739)
+et EHVI multi-fidélité (Emmerich et al., 2021) : apprendre la relation
+2D (40-120 s) → 3D (30-60 min) sur quelques dizaines de paires pour prédire
+le 3D au prix du 2D. Pertinent pour le contrôle 3D final ; à trancher après
+la phase A.
+
+---
+
 ## 9. Ce qui reste à trancher (validation demandée)
 
 1. **Architecture** : lancer la phase A comparative (recommandé), ou aller
