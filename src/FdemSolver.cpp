@@ -245,6 +245,14 @@ void FdemSolver::init() {
         double lcMax = 0.0;
         for (double h : hEl_) lcMax = std::max(lcMax, h);
         law_ = MatLaw::make(cfg_.gets("law", "elastic"), mat_, cfg_, lcMax);
+        // C2 (audit 2026-08-11, corrige 2026-08-15) : centroide INITIAL de
+        // l'element, requis par le hash spatial des tirages de Weibull de
+        // dpdfh (z = 0 en 2D). Sans lui tous les elements tirent la meme
+        // resistance et l'heterogeneite DFH est morte.
+        for (auto& e : el_) {
+            Eigen::Vector2d c = (X0_[e.n[0]] + X0_[e.n[1]] + X0_[e.n[2]]) / 3.0;
+            e.st.x0 = Eigen::Vector3d(c.x(), c.y(), 0.0);
+        }
         std::cout << "[FDEM] bulk law = " << law_->name()
                   << " (plane strain), elements " << el_.size()
                   << ", lc max = " << lcMax << " m\n";

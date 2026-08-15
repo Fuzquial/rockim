@@ -104,6 +104,14 @@ void Fdem3dSolver::init() {
         double lcMax = 0.0;
         for (double h : hEl_) lcMax = std::max(lcMax, h);
         law_ = MatLaw::make(cfg_.gets("law", "elastic"), mat_, cfg_, lcMax);
+        // C2 (audit 2026-08-11, corrige 2026-08-15) : le centroide INITIAL de
+        // chaque element doit etre renseigne AVANT le premier appel a la loi.
+        // dpdfh en tire ses trois seuils de Weibull par hash spatial 64 bits
+        // (exactement comme la VUMAT hashe coordMp) : sans lui, tous les
+        // elements partagent le meme hash — heterogeneite DFH morte.
+        for (auto& e : el_)
+            e.st.x0 = 0.25 * (X0_[e.n[0]] + X0_[e.n[1]]
+                              + X0_[e.n[2]] + X0_[e.n[3]]);
         std::cout << "[FDEM3D] bulk law = " << law_->name() << ", "
                   << el_.size() << " tets, lc max = " << lcMax << " m\n";
     }
