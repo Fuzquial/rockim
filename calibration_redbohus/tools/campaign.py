@@ -108,7 +108,10 @@ def cfg_text(p, test, seed):
         body = UCS + ("confiningPressure = %de6\nconfiningRamp = 2e-4\n"
                       "confineFaces = sides\nconfineGaugeTime = 6e-4\n"
                       "pullDelay = 6e-4\n" % s3)
-    mat = "".join("%s = %g\n" % (k, v) for k, v in p.items())
+    # les valeurs non numeriques (ex. law = dpdfh) passent telles quelles
+    mat = "".join("%s = %s\n" % (k, ("%g" % v) if isinstance(v, (int, float))
+                                     else v)
+                  for k, v in p.items())
     return body + MESH + SCHEMES + mat + "seed = %d\n" % seed
 
 

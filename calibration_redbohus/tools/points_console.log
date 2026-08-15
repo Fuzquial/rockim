@@ -1,0 +1,7 @@
+1 jeux x 4 essais = 4 runs, 3 en parallele
+  [  1/  4] PAR_elast              ucs    pic=76.2309  bts=           332 s
+  [  2/  4] PAR_elast              bts    pic=         bts=12.3473      0 s
+  [  3/  4] PAR_elast              tx20   pic=143.545  bts=           395 s
+  [  4/  4] PAR_elast              tx50   pic=257.748  bts=           358 s
+ecrit C:\Users\fuzquianoalricabi\Downloads\rockim_p1\calibration_redbohus\points_results.csv
+TERMINE 

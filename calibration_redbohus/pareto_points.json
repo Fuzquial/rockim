@@ -1,0 +1,10 @@
+{
+ "PAR_elast": {
+  "ft": 20840000.0,
+  "cohesion": 12660000.0,
+  "frictionDeg": 30.49,
+  "Gf": 66.27,
+  "gfShearFactor": 3.205,
+  "crushCap": 1312000000.0
+ }
+}
