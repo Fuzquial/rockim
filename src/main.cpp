@@ -42,6 +42,13 @@ int main(int argc, char** argv) {
                       << csv << "\n";
             return 0;
         }
+        if (std::string(argv[1]) == "selftest-mc") {
+            std::string csv = argc > 2 ? argv[2] : "rockim_mc.csv";
+            int rc = mcSelftest(csv);
+            std::cout << "[rockim] mc selftest traces written to " << csv
+                      << "\n";
+            return rc;
+        }
         if (std::string(argv[1]) == "selftest-dpdfh") {
             std::string csv = argc > 2 ? argv[2] : "rockim_dpdfh.csv";
             dpdfhSelftest(csv);

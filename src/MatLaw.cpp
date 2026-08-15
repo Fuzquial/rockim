@@ -8,6 +8,7 @@
 #include <cmath>
 #include <fstream>
 #include <functional>
+#include <iostream>
 #include <stdexcept>
 
 namespace rockim {
@@ -29,6 +30,142 @@ public:
         return elastic(eps);
     }
     std::string name() const override { return "elastic"; }
+};
+
+// ---------------------------------------------------------------------------
+// MOHR-COULOMB elasto-plastique — la loi de Ye, Zhang, Chen & Li (IJRMMS 194,
+// 2025, 106233) « MC-FDEM » : elements solides elasto-plastiques Mohr-Coulomb
+// collaborant avec les joints cohesifs, ou toute la fissuration reste dans les
+// joints et toute la dissipation PLASTIQUE dans le bulk (leur §2.2.1.1,
+// eq. 1-3). Cinq parametres : E, nu (elastique) puis c, phi, psi (plastique).
+//
+// Surface, en convention TRACTION POSITIVE et s1 >= s2 >= s3 :
+//     f = (s1 - s3) + (s1 + s3) sin(phi) - 2 c cos(phi)
+// (compression uniaxiale : sc = 2 c cos/(1-sin) ; traction uniaxiale :
+//  st = 2 c cos/(1+sin) — le cut-off de traction est celui du critere).
+// Potentiel NON ASSOCIE (dilatance psi) : g = (s1 - s3) + (s1 + s3) sin(psi).
+//
+// Retour en contraintes principales facon Clausen & Krabbenhoft : plan
+// principal, puis les deux ARETES (compression / extension) quand l'ordre
+// s1 >= s2 >= s3 est viole, puis l'APEX quand le point depasse le sommet du
+// cone. C'est le vrai Mohr-Coulomb a aretes, pas l'approximation lisse de
+// Drucker-Prager (law = dpr).
+// ---------------------------------------------------------------------------
+class MohrCoulombLaw : public MatLaw {
+public:
+    MohrCoulombLaw(const Material& m, double coh, double phiDeg, double psiDeg)
+        : MatLaw(m), c_(coh) {
+        sphi_ = std::sin(phiDeg * M_PI / 180.0);
+        cphi_ = std::cos(phiDeg * M_PI / 180.0);
+        spsi_ = std::sin(psiDeg * M_PI / 180.0);
+        // a^T D b du retour sur le plan principal (D isotrope) :
+        //   4 [(lam + G) sin(phi) sin(psi) + G]
+        denom_ = 4.0 * ((lam_ + G_) * sphi_ * spsi_ + G_);
+        apex_ = (sphi_ > 1e-12) ? c_ * cphi_ / sphi_ : 0.0;   // c cot(phi)
+    }
+
+    Eigen::Matrix3d stress(const Eigen::Matrix3d& eps, MatState& s,
+                           double, double) const override {
+        Eigen::Matrix3d sigTr = elastic(eps - s.epsP);
+        Eigen::SelfAdjointEigenSolver<Eigen::Matrix3d> es(sigTr);
+        Eigen::Vector3d ev = es.eigenvalues();               // croissant
+        Eigen::Matrix3d V = es.eigenvectors();
+        // reordonner en s1 >= s2 >= s3 (colonnes des vecteurs suivent)
+        Eigen::Vector3d p(ev(2), ev(1), ev(0));
+        Eigen::Matrix3d Q;
+        Q.col(0) = V.col(2); Q.col(1) = V.col(1); Q.col(2) = V.col(0);
+
+        double f = yieldF(p);
+        if (f <= 0.0) return sigTr;                          // elastique
+
+        Eigen::Vector3d pRet = returnMap(p);
+        Eigen::Matrix3d sig = Q * pRet.asDiagonal() * Q.transpose();
+        // increment plastique : ce que l'elasticite ne porte plus
+        s.epsP = eps - complianceApply(sig);
+        return sig;
+    }
+
+    std::string name() const override { return "mc"; }
+
+private:
+    double yieldF(const Eigen::Vector3d& p) const {
+        return (p(0) - p(2)) + (p(0) + p(2)) * sphi_ - 2.0 * c_ * cphi_;
+    }
+
+    // eps = D^-1 : sig pour un isotrope
+    Eigen::Matrix3d complianceApply(const Eigen::Matrix3d& sig) const {
+        double tr = sig.trace();
+        return (sig - (lam_ / (2.0 * G_ + 3.0 * lam_)) * tr
+                      * Eigen::Matrix3d::Identity()) / (2.0 * G_);
+    }
+
+    // retour sur le plan principal : sig = sigTr - dlam D b, b = dg/dsig
+    Eigen::Vector3d planeReturn(const Eigen::Vector3d& p) const {
+        double dlam = yieldF(p) / denom_;
+        double b1 = 1.0 + spsi_, b3 = -(1.0 - spsi_);
+        Eigen::Vector3d Db;                                  // D b (isotrope)
+        Db(0) = (lam_ + 2.0 * G_) * b1 + lam_ * b3;
+        Db(1) = lam_ * (b1 + b3);
+        Db(2) = lam_ * b1 + (lam_ + 2.0 * G_) * b3;
+        return p - dlam * Db;
+    }
+
+    // Retour sur une ARETE : deux surfaces actives. l = 1 : arete de
+    // COMPRESSION (s1 = s2), l = 2 : arete d'EXTENSION (s2 = s3). Systeme
+    // 2x2 sur les deux multiplicateurs, ecrit avec les memes gradients.
+    Eigen::Vector3d edgeReturn(const Eigen::Vector3d& p, int l) const {
+        Eigen::Vector3d a1(1.0 + sphi_, 0.0, -(1.0 - sphi_));
+        Eigen::Vector3d b1(1.0 + spsi_, 0.0, -(1.0 - spsi_));
+        Eigen::Vector3d a2, b2;
+        if (l == 1) {                    // f(s2, s3) active en plus
+            a2 = Eigen::Vector3d(0.0, 1.0 + sphi_, -(1.0 - sphi_));
+            b2 = Eigen::Vector3d(0.0, 1.0 + spsi_, -(1.0 - spsi_));
+        } else {                         // f(s1, s2) active en plus
+            a2 = Eigen::Vector3d(1.0 + sphi_, -(1.0 - sphi_), 0.0);
+            b2 = Eigen::Vector3d(1.0 + spsi_, -(1.0 - spsi_), 0.0);
+        }
+        auto D = [&](const Eigen::Vector3d& v) {
+            Eigen::Vector3d r;
+            double tr = v.sum();
+            for (int i = 0; i < 3; ++i) r(i) = lam_ * tr + 2.0 * G_ * v(i);
+            return r;
+        };
+        Eigen::Vector3d Db1 = D(b1), Db2 = D(b2);
+        Eigen::Matrix2d A;
+        A << a1.dot(Db1), a1.dot(Db2), a2.dot(Db1), a2.dot(Db2);
+        Eigen::Vector2d rhs(a1.dot(p) - 2.0 * c_ * cphi_,
+                            a2.dot(p) - 2.0 * c_ * cphi_);
+        Eigen::Vector2d dl = A.fullPivLu().solve(rhs);
+        dl(0) = std::max(dl(0), 0.0);
+        dl(1) = std::max(dl(1), 0.0);
+        return p - dl(0) * Db1 - dl(1) * Db2;
+    }
+
+    Eigen::Vector3d returnMap(const Eigen::Vector3d& p) const {
+        Eigen::Vector3d r = planeReturn(p);
+        if (r(0) >= r(1) && r(1) >= r(2)) {                  // ordre conserve
+            return apexClamp(r);
+        }
+        // l'ordre est viole : le point appartient a une arete
+        int l = (r(0) < r(1)) ? 1 : 2;
+        Eigen::Vector3d re = edgeReturn(p, l);
+        // tri de securite : le retour d'arete rend deux valeurs egales
+        double v[3] = {re(0), re(1), re(2)};
+        std::sort(v, v + 3, std::greater<double>());
+        return apexClamp(Eigen::Vector3d(v[0], v[1], v[2]));
+    }
+
+    // APEX : si le retour a franchi le sommet du cone (traction hydrostatique
+    // au-dela de c cot(phi)), le point s'y projette — sinon le materiau
+    // « tirerait » plus que sa cohesion ne le permet.
+    Eigen::Vector3d apexClamp(const Eigen::Vector3d& r) const {
+        if (sphi_ <= 1e-12) return r;
+        double m = r.sum() / 3.0;
+        if (m <= apex_) return r;
+        return Eigen::Vector3d::Constant(apex_);
+    }
+
+    double c_, sphi_, cphi_, spsi_, denom_, apex_;
 };
 
 // ---------------------------------------------------------------------------
@@ -979,6 +1116,77 @@ private:
 
 } // namespace
 
+// ---------------------------------------------------------------------------
+// Autotest POINT MATERIEL de la loi mc : on charge un point en compression
+// uniaxiale, en traction uniaxiale et en compression triaxiale a plusieurs
+// confinements, et on compare le plateau plastique aux formules exactes de
+// Mohr-Coulomb. Aucun ajustement n'est possible — soit le retour est juste,
+// soit il ne l'est pas.
+//   sc = 2 c cos/(1 - sin)   st = 2 c cos/(1 + sin)
+//   s1 = s3 (1 + sin)/(1 - sin) + sc      (compression triaxiale)
+// ---------------------------------------------------------------------------
+int mcSelftest(const std::string& csvPath) {
+    Material m;
+    m.E = 52e9; m.nu = 0.25; m.rho = 2620.0;
+    m.cohesion = 25e6; m.phiDeg = 40.0; m.ft = 10e6; m.Gf = 70.0;
+    Config cfg;
+    auto law = MatLaw::make("mc", m, cfg, 1e-3);
+
+    const double sphi = std::sin(m.phiDeg * M_PI / 180.0);
+    const double cphi = std::cos(m.phiDeg * M_PI / 180.0);
+    const double sc = 2.0 * m.cohesion * cphi / (1.0 - sphi);
+    const double st = 2.0 * m.cohesion * cphi / (1.0 + sphi);
+    const double N = (1.0 + sphi) / (1.0 - sphi);
+    const double lam = m.E * m.nu / ((1.0 + m.nu) * (1.0 - 2.0 * m.nu));
+    const double G = m.G();
+
+    std::ofstream out(csvPath);
+    out << "case,sigma3_MPa,plateau_MPa,exact_MPa,err_pct\n";
+    double worst = 0.0;
+
+    auto run = [&](const char* tag, double s3, double sgn) {
+        // pilotage en deformation axiale, confinement lateral maintenu par
+        // correction elastique iterative (etat homogene : un seul point)
+        MatState st_;
+        Eigen::Matrix3d eps = Eigen::Matrix3d::Zero(), sig;
+        double e11 = 0.0, exact = 0.0;
+        for (int k = 0; k < 4000; ++k) {
+            e11 += sgn * 2.5e-6;
+            eps(0, 0) = e11;
+            // deformations laterales telles que s22 = s33 = s3 (elastique
+            // isotrope) : e22 = e33 = (s3 (1 - nu) ... ) — resolu par
+            // iterations de point fixe sur l'etat courant
+            for (int it = 0; it < 40; ++it) {
+                sig = law->stress(eps, st_, 1.0, 1e-3);
+                double err = 0.5 * (sig(1, 1) + sig(2, 2)) - s3;
+                if (std::abs(err) < 1e-3) break;
+                double dlat = -err / (2.0 * (lam + G));
+                eps(1, 1) += dlat; eps(2, 2) += dlat;
+            }
+        }
+        sig = law->stress(eps, st_, 1.0, 1e-3);
+        double plateau = sig(0, 0);
+        // traction : s1 = st ; compression (s3 <= 0) : s1 = N s3 - sc
+        exact = (sgn > 0) ? st : (N * s3 - sc);
+        double err = 100.0 * (plateau - exact) / std::abs(exact);
+        worst = std::max(worst, std::abs(err));
+        out << tag << "," << s3 / 1e6 << "," << plateau / 1e6 << ","
+            << exact / 1e6 << "," << err << "\n";
+        std::cout << "[mc] " << tag << " s3 = " << s3 / 1e6
+                  << " MPa : plateau " << plateau / 1e6 << " MPa, exact "
+                  << exact / 1e6 << " MPa, ecart " << err << " %\n";
+    };
+
+    run("traction", 0.0, +1.0);
+    run("compression", 0.0, -1.0);
+    run("triaxial", -10e6, -1.0);
+    run("triaxial", -25e6, -1.0);
+    run("triaxial", -50e6, -1.0);
+    std::cout << "[mc] ecart max = " << worst << " % ["
+              << (worst < 1.0 ? "OK" : "FAIL") << "]\n";
+    return worst < 1.0 ? 0 : 1;
+}
+
 std::unique_ptr<MatLaw> MatLaw::make(const std::string& kind,
                                      const Material& m, const Config& c,
                                      double lcMax) {
@@ -990,6 +1198,20 @@ std::unique_ptr<MatLaw> MatLaw::make(const std::string& kind,
     } else if (kind == "dpr") {
         law = std::make_unique<PlasticDamageLaw>(m, 0.0, 0.0, 0.0, erodeD,
                                                  erodeEpv);
+    } else if (kind == "mc") {
+        // Mohr-Coulomb elasto-plastique de Ye et al. (IJRMMS 194, 2025) :
+        // c, phi du bloc materiau par defaut, dilatance psi = 0 (non associe)
+        double coh = c.getd("mcCohesion", m.cohesion);
+        double phi = c.getd("mcFrictionDeg", m.phiDeg);
+        double psi = c.getd("mcDilationDeg", 0.0);
+        if (!(coh > 0.0))
+            throw std::runtime_error("mcCohesion must be > 0");
+        if (!(phi >= 0.0 && phi < 89.0))
+            throw std::runtime_error("mcFrictionDeg must be in [0, 89)");
+        if (!(psi >= 0.0 && psi <= phi))
+            throw std::runtime_error("mcDilationDeg must be in [0, "
+                                     "mcFrictionDeg] (associe si psi = phi)");
+        law = std::make_unique<MohrCoulombLaw>(m, coh, phi, psi);
     } else if (kind == "saksala") {
         double eta = c.getd("saksalaEta", 0.05e6);     // [Pa s]
         if (!(eta > 0.0))

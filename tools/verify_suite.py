@@ -55,6 +55,10 @@ TESTS = [
     dict(name="selftest_saksala2011", tier="fast", selftest="selftest-saksala2011",
          checks=[]),                                    # exit 0 == PASS (throw sinon)
     dict(name="selftest_dpdfh", tier="fast", selftest="selftest-dpdfh", checks=[]),
+    # loi mc (Mohr-Coulomb de Ye et al. 2025) : plateaux plastiques compares
+    # aux formules exactes en traction, compression et 3 confinements —
+    # exit 0 si l'ecart max est < 1 % (mesure : 0,13 %, et 1e-9 % en compression)
+    dict(name="selftest_mc", tier="fast", selftest="selftest-mc", checks=[]),
     # A3 : LE test decisif du contact par potentiel — collision elastique sans
     # frottement, conservation jugee sur dKE (3.7e-12 frontale, 5.1e-7 oblique)
     # et quantite de mouvement machine (3e loi exacte par construction)

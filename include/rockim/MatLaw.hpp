@@ -183,6 +183,12 @@ protected:
 // ifx-compiled reference. Returns 0.
 int saksala2011Selftest(const std::string& csvPath);
 
+// Autotest point-materiel de la loi mc (Mohr-Coulomb de Ye et al. 2025) :
+// compare les plateaux plastiques aux formules exactes de Mohr-Coulomb en
+// traction, compression uniaxiale et compression triaxiale. Retourne 0 si
+// l'ecart max est < 1 %.
+int mcSelftest(const std::string& csvPath);
+
 // Same idea for the DP-DFH port: replays the four material-point paths of
 // VUMATS/dfh/test_kstdfh.f90 (two tension rates, deviatoric compression,
 // oblique tension with shears) and writes the same CSV (stresses in MPa).
