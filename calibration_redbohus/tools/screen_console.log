@@ -1,0 +1,42 @@
+13 jeux x 3 essais = 39 runs, 3 en parallele
+  [  1/ 39] C                      ucs    pic=228.499  bts=           673 s
+  [  2/ 39] C                      bts    pic=         bts=30.3867     71 s
+  [  3/ 39] C                      tx20   pic=330.1    bts=           531 s
+  [  4/ 39] ft_lo                  ucs    pic=226.044  bts=           688 s
+  [  5/ 39] ft_lo                  bts    pic=         bts=28.2922     24 s
+  [  6/ 39] ft_lo                  tx20   pic=325.829  bts=           357 s
+  [  7/ 39] ft_hi                  ucs    pic=231.205  bts=           480 s
+  [  8/ 39] ft_hi                  bts    pic=         bts=32.306      35 s
+  [  9/ 39] ft_hi                  tx20   pic=330.293  bts=           331 s
+  [ 10/ 39] cohesion_lo            ucs    pic=117.848  bts=           414 s
+  [ 11/ 39] cohesion_lo            bts    pic=         bts=14.1901     17 s
+  [ 12/ 39] cohesion_lo            tx20   pic=257.862  bts=           226 s
+  [ 13/ 39] cohesion_hi            ucs    pic=398.963  bts=           360 s
+  [ 14/ 39] cohesion_hi            bts    pic=         bts=37.0399     14 s
+  [ 15/ 39] cohesion_hi            tx20   pic=467.747  bts=           205 s
+  [ 16/ 39] frictionDeg_lo         ucs    pic=127.296  bts=            63 s
+  [ 17/ 39] frictionDeg_lo         bts    pic=         bts=22.2114     11 s
+  [ 18/ 39] frictionDeg_lo         tx20   pic=301.892  bts=           304 s
+  [ 19/ 39] frictionDeg_hi         ucs    pic=500.887  bts=           430 s
+  [ 20/ 39] frictionDeg_hi         bts    pic=         bts=36.1447     16 s
+  [ 21/ 39] frictionDeg_hi         tx20   pic=474.516  bts=           154 s
+  [ 22/ 39] Gf_lo                  ucs    pic=192.278  bts=           328 s
+  [ 23/ 39] Gf_lo                  bts    pic=         bts=28.9159     13 s
+  [ 24/ 39] Gf_lo                  tx20   pic=288.298  bts=           330 s
+  [ 25/ 39] Gf_hi                  ucs    pic=292.036  bts=           242 s
+  [ 26/ 39] Gf_hi                  bts    pic=         bts=33.0754     15 s
+  [ 27/ 39] Gf_hi                  tx20   pic=396.662  bts=           193 s
+  [ 28/ 39] gfShearFactor_lo       ucs    pic=179.664  bts=           236 s
+  [ 29/ 39] gfShearFactor_lo       bts    pic=         bts=25.0455     12 s
+  [ 30/ 39] gfShearFactor_lo       tx20   pic=274.394  bts=           269 s
+  [ 31/ 39] gfShearFactor_hi       ucs    pic=236.146  bts=           517 s
+  [ 32/ 39] gfShearFactor_hi       bts    pic=         bts=30.5812     15 s
+  [ 33/ 39] gfShearFactor_hi       tx20   pic=339.429  bts=           241 s
+  [ 34/ 39] crushCap_lo            ucs    pic=220.438  bts=           263 s
+  [ 35/ 39] crushCap_lo            bts    pic=         bts=28.8325     16 s
+  [ 36/ 39] crushCap_lo            tx20   pic=252.472  bts=           142 s
+  [ 37/ 39] crushCap_hi            ucs    pic=228.499  bts=           345 s
+  [ 38/ 39] crushCap_hi            bts    pic=         bts=30.3867     15 s
+  [ 39/ 39] crushCap_hi            tx20   pic=330.1    bts=           204 s
+ecrit C:\Users\fuzquianoalricabi\Downloads\rockim_p1\calibration_redbohus\screen_results.csv
+TERMINE 
