@@ -123,9 +123,28 @@ PATS = {
 }
 
 
+def parse(log):
+    out = {}
+    for k, pat in PATS.items():
+        m = re.search(pat, log)
+        out[k] = m.group(1) if m else ""
+    return out
+
+
 def one_run(job):
     tag, p, test, seed = job
     name = "%s_%s_s%d" % (tag, test, seed)
+    # --- REPRISE : un run deja termine (log contenant son wall time) est
+    # relu tel quel. Indispensable ici : la campagne est longue et le
+    # processus parent peut etre tue (antivirus, session) — on ne repaie
+    # jamais un calcul deja fait.
+    prev = os.path.join(RUND, name + ".log")
+    if os.path.exists(prev):
+        old = open(prev, errors="replace").read()
+        if "wall time" in old:
+            out = {"test": test, "seed": seed, "rc": 0, "elapsed_s": 0.0}
+            out.update(parse(old))
+            return tag, out
     cfg = os.path.join(CFGD, "c_%s.cfg" % name)
     with open(cfg, "w") as f:
         f.write(cfg_text(p, test, seed))
@@ -143,9 +162,7 @@ def one_run(job):
         f.write(log)
     out = {"test": test, "seed": seed, "rc": rc,
            "elapsed_s": round(time.time() - t0, 1)}
-    for k, pat in PATS.items():
-        m = re.search(pat, log)
-        out[k] = m.group(1) if m else ""
+    out.update(parse(log))
     return tag, out
 
 

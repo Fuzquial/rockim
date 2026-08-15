@@ -1,1 +1,135 @@
 44 jeux x 3 essais = 132 runs, 3 en parallele
+  [  1/132] L000                   ucs    pic=317.318  bts=             0 s
+  [  2/132] L000                   bts    pic=         bts=37.0405      0 s
+  [  3/132] L000                   tx20   pic=382.782  bts=             0 s
+  [  4/132] L001                   ucs    pic=63.6659  bts=             0 s
+  [  5/132] L001                   bts    pic=         bts=12.9714      0 s
+  [  6/132] L001                   tx20   pic=113.957  bts=             0 s
+  [  7/132] L002                   ucs    pic=223.819  bts=             0 s
+  [  8/132] L002                   bts    pic=         bts=18.1628      0 s
+  [  9/132] L002                   tx20   pic=634.315  bts=             0 s
+  [ 10/132] L003                   ucs    pic=275.806  bts=             0 s
+  [ 11/132] L003                   bts    pic=         bts=22.3         0 s
+  [ 12/132] L003                   tx20   pic=593.17   bts=             0 s
+  [ 13/132] L004                   ucs    pic=134.096  bts=             0 s
+  [ 14/132] L004                   bts    pic=         bts=24.7407      0 s
+  [ 15/132] L004                   tx20   pic=187.224  bts=             0 s
+  [ 16/132] L005                   ucs    pic=607.074  bts=             0 s
+  [ 17/132] L005                   bts    pic=         bts=37.0477      0 s
+  [ 18/132] L005                   tx20   pic=771.606  bts=             0 s
+  [ 19/132] L006                   ucs    pic=247.52   bts=             0 s
+  [ 20/132] L006                   bts    pic=         bts=36.95        0 s
+  [ 21/132] L006                   tx20   pic=322.227  bts=             0 s
+  [ 22/132] L007                   ucs    pic=615.408  bts=             0 s
+  [ 23/132] L007                   bts    pic=         bts=36.6269      0 s
+  [ 24/132] L007                   tx20   pic=686.242  bts=             0 s
+  [ 25/132] L008                   ucs    pic=330.58   bts=             0 s
+  [ 26/132] L008                   bts    pic=         bts=37.0399      0 s
+  [ 27/132] L008                   tx20   pic=435.087  bts=             0 s
+  [ 28/132] L009                   ucs    pic=313.458  bts=             0 s
+  [ 29/132] L009                   bts    pic=         bts=37.0646      0 s
+  [ 30/132] L009                   tx20   pic=585.73   bts=             0 s
+  [ 31/132] L010                   ucs    pic=176.488  bts=             0 s
+  [ 32/132] L010                   bts    pic=         bts=25.9094      0 s
+  [ 33/132] L010                   tx20   pic=381.736  bts=             0 s
+  [ 34/132] L011                   ucs    pic=108.932  bts=             0 s
+  [ 35/132] L011                   bts    pic=         bts=18.1023      0 s
+  [ 36/132] L011                   tx20   pic=163.635  bts=             0 s
+  [ 37/132] L012                   ucs    pic=179.683  bts=             0 s
+  [ 38/132] L012                   bts    pic=         bts=31.8693      0 s
+  [ 39/132] L012                   tx20   pic=218.676  bts=             0 s
+  [ 40/132] L013                   ucs    pic=734.393  bts=             0 s
+  [ 41/132] L013                   bts    pic=         bts=35.9821      0 s
+  [ 42/132] L013                   tx20   pic=673.022  bts=             0 s
+  [ 43/132] L014                   ucs    pic=353.439  bts=             0 s
+  [ 44/132] L014                   bts    pic=         bts=35.3271      0 s
+  [ 45/132] L014                   tx20   pic=505.365  bts=             0 s
+  [ 46/132] L015                   ucs    pic=137.221  bts=             0 s
+  [ 47/132] L015                   bts    pic=         bts=24.3237      0 s
+  [ 48/132] L015                   tx20   pic=200.344  bts=             0 s
+  [ 49/132] L016                   ucs    pic=196.566  bts=             0 s
+  [ 50/132] L016                   bts    pic=         bts=31.6105      0 s
+  [ 51/132] L016                   tx20   pic=238.587  bts=             0 s
+  [ 52/132] L017                   ucs    pic=273.039  bts=             0 s
+  [ 53/132] L017                   bts    pic=         bts=37.0182      0 s
+  [ 54/132] L017                   tx20   pic=330.777  bts=             0 s
+  [ 55/132] L018                   ucs    pic=364.211  bts=             0 s
+  [ 56/132] L018                   bts    pic=         bts=37.0376      0 s
+  [ 57/132] L018                   tx20   pic=827.547  bts=             0 s
+  [ 58/132] L019                   ucs    pic=312.299  bts=             0 s
+  [ 59/132] L019                   bts    pic=         bts=37.0806      0 s
+  [ 60/132] L019                   tx20   pic=380.688  bts=             0 s
+  [ 61/132] L020                   ucs    pic=232.375  bts=             0 s
+  [ 62/132] L020                   bts    pic=         bts=25.5525      0 s
+  [ 63/132] L020                   tx20   pic=380.447  bts=             0 s
+  [ 64/132] L021                   ucs    pic=187.313  bts=             0 s
+  [ 65/132] L021                   bts    pic=         bts=29.492       0 s
+  [ 66/132] L021                   tx20   pic=238.195  bts=           399 s
+  [ 67/132] L022                   ucs    pic=415.494  bts=             0 s
+  [ 68/132] L022                   bts    pic=         bts=37.0805      0 s
+  [ 69/132] L022                   tx20   pic=504.025  bts=             0 s
+  [ 70/132] L023                   ucs    pic=522.105  bts=           334 s
+  [ 71/132] L023                   bts    pic=         bts=37.0742      0 s
+  [ 72/132] L023                   tx20   pic=684.217  bts=           172 s
+  [ 73/132] L024                   ucs    pic=733.256  bts=           300 s
+  [ 74/132] L024                   bts    pic=         bts=33.7093     16 s
+  [ 75/132] L024                   tx20   pic=334.536  bts=           171 s
+  [ 76/132] L025                   ucs    pic=352.481  bts=           227 s
+  [ 77/132] L025                   bts    pic=         bts=37.0389     23 s
+  [ 78/132] L025                   tx20   pic=438.289  bts=           278 s
+  [ 79/132] L026                   ucs    pic=1111.02  bts=           275 s
+  [ 80/132] L026                   bts    pic=         bts=37.0627     23 s
+  [ 81/132] L026                   tx20   pic=680.822  bts=           194 s
+  [ 82/132] L027                   ucs    pic=292.989  bts=           271 s
+  [ 83/132] L027                   bts    pic=         bts=36.7593     21 s
+  [ 84/132] L027                   tx20   pic=372.808  bts=           224 s
+  [ 85/132] L028                   ucs    pic=72.5833  bts=           135 s
+  [ 86/132] L028                   bts    pic=         bts=14.2457     16 s
+  [ 87/132] L028                   tx20   pic=116.391  bts=           326 s
+  [ 88/132] L029                   ucs    pic=146.649  bts=           481 s
+  [ 89/132] L029                   bts    pic=         bts=22.8817     32 s
+  [ 90/132] L029                   tx20   pic=228.616  bts=           323 s
+  [ 91/132] L030                   ucs    pic=247.49   bts=           692 s
+  [ 92/132] L030                   bts    pic=         bts=20.9926     29 s
+  [ 93/132] L030                   tx20   pic=269.912  bts=           318 s
+  [ 94/132] L031                   ucs    pic=246.057  bts=           200 s
+  [ 95/132] L031                   bts    pic=         bts=36.9924     37 s
+  [ 96/132] L031                   tx20   pic=293.832  bts=           381 s
+  [ 97/132] L032                   ucs    pic=469.2    bts=           475 s
+  [ 98/132] L032                   bts    pic=         bts=36.5507     33 s
+  [ 99/132] L032                   tx20   pic=667.478  bts=           334 s
+  [100/132] L033                   ucs    pic=177.286  bts=           406 s
+  [101/132] L033                   bts    pic=         bts=32.1402     38 s
+  [102/132] L033                   tx20   pic=224.833  bts=           413 s
+  [103/132] L034                   ucs    pic=182.945  bts=           711 s
+  [104/132] L034                   bts    pic=         bts=26.6632     33 s
+  [105/132] L034                   tx20   pic=286.205  bts=           436 s
+  [106/132] L035                   ucs    pic=155.078  bts=           513 s
+  [107/132] L035                   bts    pic=         bts=23.2211     24 s
+  [108/132] L035                   tx20   pic=235.061  bts=           440 s
+  [109/132] L036                   ucs    pic=216.715  bts=           558 s
+  [110/132] L036                   bts    pic=         bts=26.7733     37 s
+  [111/132] L036                   tx20   pic=347.601  bts=           412 s
+  [112/132] L037                   ucs    pic=329.366  bts=           450 s
+  [113/132] L037                   bts    pic=         bts=26.4869     37 s
+  [114/132] L037                   tx20   pic=370.746  bts=           304 s
+  [115/132] L038                   ucs    pic=333.671  bts=           531 s
+  [116/132] L038                   bts    pic=         bts=29.2426     32 s
+  [117/132] L038                   tx20   pic=766.933  bts=           346 s
+  [118/132] L039                   ucs    pic=184.893  bts=           107 s
+  [119/132] L039                   bts    pic=         bts=33.6515     30 s
+  [120/132] L039                   tx20   pic=224.543  bts=           386 s
+  [121/132] L040                   ucs    pic=332.597  bts=           548 s
+  [122/132] L040                   bts    pic=         bts=36.5341     46 s
+  [123/132] L040                   tx20   pic=448.8    bts=           346 s
+  [124/132] L041                   ucs    pic=260.071  bts=           380 s
+  [125/132] L041                   bts    pic=         bts=36.7909     30 s
+  [126/132] L041                   tx20   pic=321.082  bts=           365 s
+  [127/132] L042                   ucs    pic=493.819  bts=           443 s
+  [128/132] L042                   bts    pic=         bts=37.0399     30 s
+  [129/132] L042                   tx20   pic=633.441  bts=           309 s
+  [130/132] L043                   ucs    pic=178.562  bts=           109 s
+  [131/132] L043                   bts    pic=         bts=32.0783     24 s
+  [132/132] L043                   tx20   pic=216.669  bts=           183 s
+ecrit C:\Users\fuzquianoalricabi\Downloads\rockim_p1\calibration_redbohus\lhs_results.csv
+TERMINE 
