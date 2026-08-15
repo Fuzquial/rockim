@@ -3617,6 +3617,7 @@ void FdemSolver::platenForces() {
     plBot_.F.setZero();
     double sF = 0.0, sF2 = 0.0;                    // participation ratio
     long nC = 0;
+    double pw = 0.0;                               // V2/B4 : platine -> solide
     for (Platen* pl : {&plTop_, &plBot_}) {
         for (int i = 0; i < (int)X0_.size(); ++i) {
             if (platenW_[i] <= 0.0) continue;      // not a bearing node
@@ -3635,9 +3636,16 @@ void FdemSolver::platenForces() {
             Eigen::Vector2d Fc(ftg, pl->sign * fn);   // force ON the node
             f_[i] += Fc;
             pl->F -= Fc;                           // reaction ON the platen
+            pw += Fc.dot(v_[i]);                   // V2/B4 (2026-08-15) :
+            // les plateaux RIGIDES poussent par contact penalise — leur
+            // travail sur le solide n'etait compte NULLE PART (4e trou
+            // designe par le moniteur E2, apres confinement 2D/3D et mors).
+            // Meme convention que les autres familles : (force appliquee au
+            // noeud) . v-, le biais O(dt) est couvert par biasW_.
             if (pl->sign < 0) { sF += fn; sF2 += fn * fn; ++nC; }
         }
     }
+    bcWork_ += pw * dt_;                           // poste « platines/grips »
     // How many nodes actually carry the bearing? The participation ratio
     // (sum f)^2 / sum f^2 is that number: 1 if a single asperity takes
     // everything, nC if the load is uniform. Latched with the gauge.
