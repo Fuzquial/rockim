@@ -24,9 +24,17 @@ SPACE = {"ft": (20e6, 60e6), "cohesion": (10e6, 90e6),
          "frictionDeg": (15.0, 60.0), "Gf": (30.0, 300.0),
          "gfShearFactor": (1.0, 12.0), "crushCap": (200e6, 1500e6)}
 
-# cibles experimentales (targets_redbohus.json) : (valeur, ecart-type)
-TARGETS = {"ucs": (126.6, 21.4), "bts": (10.27, 0.98), "tx20": (424.8, 2.8)}
-OBS = {"ucs": "ucs_peak_MPa", "bts": "bts_sigma_t_MPa", "tx20": "tx20_peak_MPa"}
+# cibles experimentales : (valeur, ecart-type EXPERIMENTAL)
+# eps_pic ajoute le 2026-08-16 : a raideur identique les eprouvettes simulees
+# cassaient deux fois trop tot — deux jeux peuvent donner le meme pic avec des
+# deformations au pic tres differentes (argument de Ye et al. : calibrer sur la
+# courbe, pas sur un scalaire). La cible triaxiale est tres serree (+-2 %) ;
+# celle de l'UCS repose sur 2 essais locaux exploitables sur 4, d'ou son grand
+# ecart-type (les deux autres sont tronques avant le pic par le decrochage).
+TARGETS = {"ucs": (126.6, 21.4), "bts": (10.27, 0.98), "tx20": (424.8, 2.8),
+           "tx20eps": (0.661, 0.014), "ucseps": (0.234, 0.075)}
+OBS = {"ucs": "ucs_peak_MPa", "bts": "bts_sigma_t_MPa", "tx20": "tx20_peak_MPa",
+       "tx20eps": "tx20_eps_pk", "ucseps": "ucs_eps_pk"}
 
 
 def load(path):
@@ -109,14 +117,15 @@ def fit(path):
         print("  GP %-5s  R2(train) = %.3f   ARD = %s"
               % (k, g.score(Xn, y), ard[k]))
     # --- pertinence ARD : longueur courte = parametre influent -------------
-    print("\npertinence ARD (1/longueur, normalisee par sortie) :")
-    print("%-15s %8s %8s %8s" % ("parametre", "UCS", "BTS", "tx20"))
+    keys = list(OBS)
+    print("\npertinence ARD (1/longueur, normalisee par sortie, %) :")
+    print("%-15s" % "parametre" + "".join("%9s" % k for k in keys))
     for i, p in enumerate(PARAMS):
-        v = []
-        for k in OBS:
+        line = "%-15s" % p
+        for k in keys:
             inv = 1.0 / np.array([ard[k][q] for q in PARAMS])
-            v.append(inv[i] / inv.sum() * 100.0)
-        print("%-15s %8.1f %8.1f %8.1f" % (p, v[0], v[1], v[2]))
+            line += "%9.1f" % (inv[i] / inv.sum() * 100.0)
+        print(line)
 
     # --- objectifs : erreur relative ponderee par l'ecart-type experimental
     def objs(xn):
@@ -153,7 +162,8 @@ def fit(path):
     # --- posterieur bayesien (Metropolis sur l'emulateur) ------------------
     # vraisemblance gaussienne ponderee par les ecarts-types EXPERIMENTAUX,
     # plus un terme de discrepance de modele (Kennedy & O'Hagan 2001)
-    disc = {"ucs": 0.10, "bts": 0.10, "tx20": 0.15}     # 10-15 % de biais
+    disc = {"ucs": 0.10, "bts": 0.10, "tx20": 0.15,
+            "tx20eps": 0.15, "ucseps": 0.20}            # 10-20 % de biais
     def logpost(xn):
         if np.any(xn < 0) or np.any(xn > 1):
             return -np.inf
@@ -187,14 +197,15 @@ def fit(path):
               open(os.path.join(BASE, "calibration_result.json"), "w"), indent=1)
 
     # --- figures ------------------------------------------------------------
-    fig, ax = plt.subplots(1, 3, figsize=(13, 4))
+    fig, ax = plt.subplots(1, len(TARGETS), figsize=(4.3 * len(TARGETS), 4))
     for a, k in zip(ax, TARGETS):
         yp = gps[k].predict(Xn)
         a.plot(Y[k], yp, "o", ms=4)
         lim = [min(Y[k].min(), yp.min()), max(Y[k].max(), yp.max())]
         a.plot(lim, lim, "k--", lw=0.8)
         a.axhline(TARGETS[k][0], color="C3", lw=1, ls=":")
-        a.set_xlabel("rockim (MPa)"); a.set_ylabel("émulateur GP (MPa)")
+        u = "%" if k.endswith("eps") else "MPa"
+        a.set_xlabel("rockim (%s)" % u); a.set_ylabel("émulateur GP (%s)" % u)
         a.set_title("%s — R² = %.3f" % (k, gps[k].score(Xn, Y[k])))
     fig.suptitle("Émulateur GP (Matérn 5/2 ARD) — qualité d'ajustement")
     fig.tight_layout()
