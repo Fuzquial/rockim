@@ -1,0 +1,3 @@
+# sorties de runs : volumineuses et regenerables (VTU, history, csv)
+runs/
+figures/*.png

@@ -1,6 +1,0 @@
-case,sigma3_MPa,plateau_MPa,exact_MPa,err_pct
-traction,0,23.286,23.3154,-0.126037
-compression,0,-107.225,-107.225,-3.03307e-09
-triaxial,-10,-153.214,-153.214,-2.12269e-09
-triaxial,-25,-222.198,-222.198,-1.46365e-09
-triaxial,-50,-337.171,-337.171,-9.64593e-10
