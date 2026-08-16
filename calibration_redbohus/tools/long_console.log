@@ -1,0 +1,7 @@
+1 jeux x 4 essais = 4 runs, 3 en parallele
+  [  1/  4] CALT                   tx20   pic=350.89   bts=          1266 s
+  [  2/  4] CALT                   tx50   pic=814.418  bts=           784 s
+  [  3/  4] CALT                   tx75   pic=1002.28  bts=           679 s
+  [  4/  4] CALT                   tx100  pic=1222.43  bts=           376 s
+ecrit C:\Users\fuzquianoalricabi\Downloads\rockim_p1\calibration_redbohus\points_results.csv
+TERMINE 

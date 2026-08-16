@@ -69,7 +69,7 @@ budgetAbortMin = 0.05
 UCS = """mode = fdem
 scenario = tension
 loading = platens
-T = 4e-3
+T = 6.5e-3
 frames = 2
 W = 0.04
 H = 0.08
