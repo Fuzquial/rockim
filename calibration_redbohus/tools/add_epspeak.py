@@ -10,7 +10,7 @@ tres differentes : en ne calibrant que sur les pics, l'emulateur ne les
 distingue pas. C'est l'argument de Ye et al. (2025) — calibrer sur la courbe,
 pas sur un scalaire.
 """
-import csv, glob, json, os
+import csv, glob, json, os, sys
 import numpy as np
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -18,22 +18,33 @@ BASE = os.path.normpath(os.path.join(HERE, ".."))
 RUNS = os.path.join(BASE, "runs")
 
 
-def eps_peak(run):
-    """Deformation de l'eprouvette au pic de contrainte (%)."""
+def eps_peak(run, col="epsGauge"):
+    """Deformation au pic (%), mesuree par l'EXTENSOMETRE INTERIEUR.
+
+    Correction du 2026-08-16 : j'utilisais epsSpec (raccourcissement des
+    FACES), alors que les jauges experimentales sont collees au milieu de
+    l'eprouvette. L'equivalent numerique est epsGauge, decrit dans le solveur
+    comme « affranchi du contact ET des effets de bord ». L'ecart n'etait pas
+    physique : au pic, epsSpec = 0,550 % contre epsGauge = 0,658 % et
+    0,661 % mesure — les faces se deforment moins que le coeur parce que le
+    frottement des plateaux les bride (effet de tonneau), sur l'eprouvette
+    reelle comme dans le modele."""
     p = os.path.join(RUNS, run, "history.csv")
     if not os.path.exists(p):
         return ""
     rows = [r for r in csv.DictReader(open(p))
             if all(v not in (None, "") for v in r.values())]
-    if len(rows) < 10 or "epsSpec" not in rows[0]:
+    if len(rows) < 10 or col not in rows[0]:
         return ""
     s = np.abs(np.array([float(r["sigma"]) for r in rows]))
-    e = np.abs(np.array([float(r["epsSpec"]) for r in rows]))
-    return round(float(e[int(np.argmax(s))]) * 100.0, 4)
+    e = np.abs(np.array([float(r[col]) for r in rows]))
+    v = float(e[int(np.argmax(s))]) * 100.0
+    return round(v, 4) if v > 1e-6 else ""
 
 
 def main():
-    src = os.path.join(BASE, "lhs_results.csv")
+    src = os.path.join(BASE, sys.argv[1] if len(sys.argv) > 1
+                       else "lhs_results.csv")
     rows = list(csv.DictReader(open(src)))
     for r in rows:
         r["ucs_eps_pk"] = eps_peak("%s_ucs_s4211" % r["tag"])

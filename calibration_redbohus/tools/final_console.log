@@ -1,0 +1,7 @@
+1 jeux x 4 essais = 4 runs, 3 en parallele
+  [  1/  4] CAL1                   ucs    pic=121.491  bts=           602 s
+  [  2/  4] CAL1                   bts    pic=         bts=12.2484     10 s
+  [  3/  4] CAL1                   tx20   pic=390.877  bts=           378 s
+  [  4/  4] CAL1                   tx50   pic=625.941  bts=           277 s
+ecrit C:\Users\fuzquianoalricabi\Downloads\rockim_p1\calibration_redbohus\points_results.csv
+TERMINE 
