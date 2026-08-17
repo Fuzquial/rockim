@@ -14,7 +14,7 @@ plus récent fait foi, on le clone pour travailler.
 | Emplacement | Contenu |
 |---|---|
 | `phd_geothermie\FDEM\rockim\` (base OneDrive, **l'archive de référence**) | bundle le plus récent + `HANDOFF_*.md` (état des chantiers) + docs et rapports ; versions superseded dans `old\` ; `rockim_gbm.tar.gz` = la lignée GBM séparée |
-| clone de travail (ex. `Downloads\rockim_p1`, branche `article-exact`) | **hors OneDrive exprès** : OneDrive verrouille des fichiers pendant la compilation |
+| clone de travail : `simulations\FDEM\rockim\rockim_p1\` (branche `article-exact`) | déplacé là le 2026-08-17 (il était dans `Downloads`) ; `simulations` n'est **pas** synchronisé OneDrive, donc pas de fichier verrouillé pendant la compilation |
 
 Cloner un bundle (se placer DANS le dossier du bundle) :
 
@@ -385,8 +385,9 @@ Constat 2026-08-14 : la suite fast passe 12/12 sous MSVC sans re-baseline.
   (antivirus) — relancer. Et l'exe d'un **run en cours** est verrouillé tout
   du long : compiler sous un autre nom pendant ce temps (`/Fe:rockim_dev.exe`).
 - `git clone <bundle>` échoue si on n'est pas dans le dossier du bundle.
-- OneDrive verrouille des fichiers pendant la compilation ; l'antivirus
-  ralentit MSVC dans `Downloads`.
+- OneDrive verrouille des fichiers pendant la compilation : ne jamais compiler
+  depuis `phd_geothermie\`. Le clone de travail vit dans `simulations\`, qui est
+  un dossier local ordinaire.
 - `meshMirror = false` restitue l'ancien maillage fem3d à l'identique.
 - Les paramètres des démos sont des ordres de grandeur NON calibrés ; la
   calibration est le rôle du banc bayésien (`tools/bayes_bench.py`).

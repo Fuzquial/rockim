@@ -787,10 +787,23 @@ void Fdem3dSolver::assignJointProps() {
 // ---------------------------------------------------------------------------
 void Fdem3dSolver::applyJointStatistics() {
     double m = cfg_.getd("jointWeibullM", 0.0);
-    if (m <= 0.0) return;                              // deterministic joints
-    if (m <= 1.0)
+    // Effet d'echelle statistique de Weibull, MEME CONVENTION que les VUMAT
+    // DP-DFH d'Abaqus (VUMATS/dfh/vumat_kstdfh_psivar.f) :
+    //     sig_k = sigw * (Zeff/V_el)^(1/m),   V_el = charLength^3
+    // Ici le "point materiel" d'un joint est la face entre deux tetras : son
+    // volume represente est la moyenne des deux volumes adjacents. Le rapport
+    // DP-DFH (eq. 42, §13.1) impose ce recalage pour toute etude d'objectivite
+    // STRUCTURALE : la variante a V_el fige (vumat_psivar_rc99_veff1.f, qui ne
+    // differe que par V_el = 1 mm3) est reservee aux controles au point
+    // materiel et desactive l'effet d'echelle.
+    // OPT-IN : sans jointSizeEffect, ce bloc est saute et les resultats sont
+    // inchanges au bit pres.
+    bool szOn = cfg_.getb("jointSizeEffect", false);
+    if (m <= 0.0 && !szOn) return;                     // deterministic joints
+    if (m > 0.0 && m <= 1.0)
         throw std::runtime_error("jointWeibullM must be > 1 (typical rock "
                                  "values 5-30)");
+    if (m <= 0.0) for (auto& J : jt_) J.stat = 1.0;    // taille seule
     double ell = cfg_.getd("strengthCorrLength", 0.0);
     unsigned fseed = (unsigned)cfg_.geti("fieldSeed",
                                          cfg_.geti("seed", 12345) + 777);
@@ -801,6 +814,7 @@ void Fdem3dSolver::applyJointStatistics() {
     };
 
     double xmin = 1e300, xmax = 0.0, xsum = 0.0;
+    if (m > 0.0) {
     if (ell > 0.0) {
         double ellB = cfg_.getd("strengthCorrLengthB", ell);
         double ang = cfg_.getd("strengthCorrAngleDeg", 0.0);
@@ -816,6 +830,8 @@ void Fdem3dSolver::applyJointStatistics() {
         std::uniform_real_distribution<double> U(0.0, 1.0);
         for (auto& J : jt_) J.stat = weib(U(rng));
     }
+    }
+    if (szOn) applyJointSizeEffect(m);
     for (auto& J : jt_) {
         J.ft *= J.stat;
         J.coh *= J.stat;
@@ -827,11 +843,67 @@ void Fdem3dSolver::applyJointStatistics() {
         xmax = std::max(xmax, J.stat);
         xsum += J.stat;
     }
-    std::cout << "[FDEM3D] joint strength statistics: Weibull m = " << m
-              << (ell > 0.0 ? " correlated, ell = " + std::to_string(ell)
-                            : std::string(" independent per joint"))
-              << ", factor mean/min/max = " << xsum / jt_.size() << "/"
-              << xmin << "/" << xmax << "\n";
+    if (m > 0.0)
+        std::cout << "[FDEM3D] joint strength statistics: Weibull m = " << m
+                  << (ell > 0.0 ? " correlated, ell = " + std::to_string(ell)
+                                : std::string(" independent per joint"))
+                  << ", factor mean/min/max = " << xsum / jt_.size() << "/"
+                  << xmin << "/" << xmax << "\n";
+    if (szOn)
+        std::cout << "[FDEM3D] TOTAL ft factor (Weibull x taille) "
+                     "mean/min/max = " << xsum / jt_.size() << "/"
+                  << xmin << "/" << xmax << "\n";
+}
+
+// ---------------------------------------------------------------------------
+// Effet d'echelle statistique : ft <- ft * (Zeff/V_J)^(1/m), la formule des
+// VUMAT DP-DFH (sig_k = sigw*(Zeff/V_el)^(1/m)) transposee au joint cohesif.
+// V_J = moyenne des volumes des deux tetras adjacents : le volume de matiere
+// que le lien echantillonne. Gf n'est PAS recale (energie de fissuration =
+// propriete du materiau, pas une resistance au pic gouvernee par le maillon
+// faible) ; dnF/slipF sont donc recalcules par l'appelant apres coup, ce qui
+// raccourcit la branche adoucissante quand ft monte — consequence assumee.
+// Le facteur est replie dans J.stat, donc le champ ftScale des VTU montre le
+// facteur TOTAL sans changer l'ecriture.
+// ---------------------------------------------------------------------------
+void Fdem3dSolver::applyJointSizeEffect(double mWeib) {
+    double mS = cfg_.getd("jointSizeEffectM", mWeib);
+    if (!(mS > 1.0))
+        throw std::runtime_error("jointSizeEffect: exposant invalide — poser "
+            "jointSizeEffectM > 1 (ou jointWeibullM). C'est le meme m que la "
+            "dispersion : eq. 42 du rapport DP-DFH");
+    // Zeff : volume de REFERENCE auquel ft/cohesion de la config sont
+    // declares. Doit etre une constante PHYSIQUE, jamais deduite du maillage —
+    // un Zeff qui suivrait la moyenne du maillage rendrait le facteur moyen
+    // egal a 1 et desactiverait l'effet d'echelle (le piege du §13.1).
+    // Defaut 1e-9 m3 = 1 mm3, le Zeff par defaut des VUMAT (echelle de
+    // l'indentation, cf. Table 3 du rapport).
+    double Zeff = cfg_.getd("jointZeff", 1e-9);
+    if (!(Zeff > 0.0))
+        throw std::runtime_error("jointZeff doit etre > 0 [m^3]");
+    double cap = cfg_.getd("jointSizeEffectClamp", 5.0);
+    if (!(cap >= 1.0))
+        throw std::runtime_error("jointSizeEffectClamp doit etre >= 1");
+    double fmin = 1e300, fmax = 0.0, fsum = 0.0, vmin = 1e300, vmax = 0.0;
+    std::size_t nclip = 0;
+    for (auto& J : jt_) {
+        double Vj = 0.5 * (el_[J.eA].V0 + el_[J.eB].V0);
+        double f = 1.0;
+        if (Vj > 0.0) f = std::pow(Zeff / Vj, 1.0 / mS);
+        if (f > cap)            { f = cap;       ++nclip; }
+        else if (f < 1.0 / cap) { f = 1.0 / cap; ++nclip; }
+        J.stat *= f;
+        fmin = std::min(fmin, f); fmax = std::max(fmax, f); fsum += f;
+        vmin = std::min(vmin, Vj); vmax = std::max(vmax, Vj);
+    }
+    std::cout << "[FDEM3D] effet d'echelle (Zeff/V_J)^(1/m) : Zeff = " << Zeff
+              << " m^3, m = " << mS << ", V_J min/max = " << vmin << "/"
+              << vmax << " m^3, facteur mean/min/max = " << fsum / jt_.size()
+              << "/" << fmin << "/" << fmax << "\n";
+    if (nclip)
+        std::cout << "[FDEM3D] WARNING: " << nclip << " joints bornes a "
+                  << cap << "x (jointSizeEffectClamp) — maillage tres "
+                     "heterogene ou Zeff mal choisi\n";
 }
 
 // ===========================================================================

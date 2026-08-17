@@ -44,6 +44,7 @@ RX = {
     "pot_mom":   r"pot_mom_rel = ([\d.eE+-]+)",
     "pot3_ke":   r"pot3_ke_rel = ([\d.eE+-]+)",
     "pot3_mom":  r"pot3_mom_rel = ([\d.eE+-]+)",
+    "szfac":     r"facteur mean/min/max = ([\d.eE+-]+)",
 }
 
 # ---- définition des tests --------------------------------------------------
@@ -103,6 +104,18 @@ TESTS = [
     dict(name="zeroload_2d_delaunay", tier="full", cfg="verify_fdem_voronoi_tension.cfg",
          over=["pullV = 1e-12", "grainMesh = delaunay", "verifyFt = false"],
          checks=[("broken", 0, 0, True), ("dampwork", 0.0, 1e-12, True)]),
+    # effet d'echelle statistique (eq. 42 du rapport DP-DFH, convention des
+    # VUMAT sig_k = sigw*(Zeff/V_el)^(1/m)) : maillage UNIFORME, donc le
+    # facteur est analytique et unique. Deux Zeff a trois decades d'ecart
+    # verifient l'exposant, pas seulement le niveau.
+    dict(name="sizeeffect_2d_zeff1mm3", tier="fast", cfg="verify_fdem_tension.cfg",
+         over=["jointSizeEffect = 1", "jointSizeEffectM = 24",
+               "jointZeff = 1e-9", "T = 1e-9", "verifyFt = false"],
+         checks=[("szfac", 0.736079, 1e-5, True)]),
+    dict(name="sizeeffect_2d_zeff1cm3", tier="fast", cfg="verify_fdem_tension.cfg",
+         over=["jointSizeEffect = 1", "jointSizeEffectM = 24",
+               "jointZeff = 1e-6", "T = 1e-9", "verifyFt = false"],
+         checks=[("szfac", 0.981577, 1e-5, True)]),
     # --- tier full : bit-repères 2D longs, adaptatif, 3D grille -------------
     dict(name="fdem_tension", tier="full", cfg="verify_fdem_tension.cfg",
          checks=[("err_pct", -1.38789, 0.01, True), ("pass_tag", None, 0, True),

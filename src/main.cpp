@@ -116,20 +116,34 @@ int main(int argc, char** argv) {
 
         std::ofstream hist(out + "/history.csv");
         solver->historyHeader(hist);
+        // history.csv est vide jusqu'a la fin si on laisse l'OS bufferiser :
+        // impossible de suivre un run en cours, et un run TUE laisse une
+        // derniere ligne tronquee au milieu du tampon (constate le 2026-08-14
+        // sur out_banc_mid : 26 colonnes au lieu de 28, terminees par ",-").
+        // On vide donc apres CHAQUE ligne : histEvery borne le nombre de
+        // lignes a ~2000 sur tout le run, le cout est negligeable, et le
+        // fichier se termine toujours sur une ligne complete. Purement I/O :
+        // aucun effet sur le calcul (bit-neutre par construction).
+        bool histFlush = cfg.getb("historyFlush", true);
+        auto histRow = [&] {
+            solver->historyRow(hist);
+            if (histFlush) hist.flush();
+        };
+        hist.flush();
 
         auto t0 = std::chrono::steady_clock::now();
         int frame = 0;
         long nextPct = 10;
         for (long i = 0; i < nSteps; ++i) {
             if (i % outEvery == 0) solver->writeFrame(frame++);
-            if (i % histEvery == 0) solver->historyRow(hist);
+            if (i % histEvery == 0) histRow();
             solver->step();
             if (solver->finished()) {
                 std::cout << "\n[rockim] solver requested an early stop at t = "
                           << solver->time() << " s (" << i + 1 << " / " << nSteps
                           << " steps)\n";
                 solver->writeFrame(frame++);
-                solver->historyRow(hist);
+                histRow();
                 break;
             }
             if (100 * (i + 1) / nSteps >= nextPct) {
@@ -139,7 +153,7 @@ int main(int argc, char** argv) {
             }
         }
         solver->writeFrame(frame);
-        solver->historyRow(hist);
+        histRow();
         solver->finalize();
 
         auto t1 = std::chrono::steady_clock::now();

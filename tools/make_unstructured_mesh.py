@@ -36,6 +36,18 @@ def main():
         W, D, H, R, gap, h, hIns = map(float, sys.argv[2:9])
         out = sys.argv[9]
         seed = int(sys.argv[10]) if len(sys.argv) > 10 else 1
+    elif kind == "bench1g":
+        # bench1 GRADUE : meme geometrie, mais la roche est fine dans un
+        # CYLINDRE sous le point d'impact et grossiere ailleurs. Impose par le
+        # diagnostic du 2026-08-17 : resoudre le contact de Hertz demande
+        # ~15 elements sur le rayon de contact (dx < 0.5 mm), ce qu'un
+        # raffinement uniforme du bloc 120^3 mettrait hors d'atteinte.
+        #   hFin  : taille dans la zone fine
+        #   rFin  : rayon du cylindre fin (autour de l'axe d'impact)
+        #   dFin  : profondeur du cylindre fin sous la surface
+        W, D, H, R, gap, h, hIns, hFin, rFin, dFin = map(float, sys.argv[2:12])
+        out = sys.argv[12]
+        seed = int(sys.argv[13]) if len(sys.argv) > 13 else 1
     elif kind == "tunnel":
         # plaque W x H percee d'un trou circulaire R au centre (2D) —
         # cavite pressurisee par confineFaces = bore
@@ -73,6 +85,46 @@ def main():
         gmsh.option.setNumber("Mesh.MeshSizeMax", h)
         insPts = gmsh.model.getBoundary([(3, ins)], recursive=True)
         for dim, tag in insPts:
+            if dim == 0:
+                gmsh.model.mesh.setSize([(0, tag)], hIns)
+        gmsh.option.setNumber("Mesh.Algorithm3D", 1)
+        gmsh.option.setNumber("Mesh.OptimizeNetgen", 1)
+        gmsh.model.mesh.generate(3)
+    elif kind == "bench1g":
+        rock = gmsh.model.occ.addBox(0, 0, 0, W, D, H)
+        ins = gmsh.model.occ.addSphere(0.5 * W, 0.5 * D, H + gap + R, R)
+        gmsh.model.occ.synchronize()
+        gmsh.model.addPhysicalGroup(3, [rock], name="rock")
+        gmsh.model.addPhysicalGroup(3, [ins], name="insert")
+        # Champ de taille : hFin dans le cylindre (axe d'impact, rayon rFin,
+        # profondeur dFin sous la surface), h au loin, transition lissee sur
+        # une longueur egale a rFin pour eviter un saut de taille brutal (qui
+        # degrade la qualite et donc le dt).
+        cx, cy, zTop = 0.5 * W, 0.5 * D, H
+        f = gmsh.model.mesh.field.add("MathEval")
+        # r = distance a l'axe ; p = profondeur sous la surface
+        expr = ("%.9g + (%.9g - %.9g) * max(0, min(1, (sqrt((x-%.9g)^2 + "
+                "(y-%.9g)^2)/%.9g - 1)))" % (hFin, h, hFin, cx, cy, rFin))
+        exprZ = ("%.9g + (%.9g - %.9g) * max(0, min(1, ((%.9g - z)/%.9g - 1)))"
+                 % (hFin, h, hFin, zTop, dFin))
+        # L'insert est ENTIEREMENT au-dessus de z = H : on lui impose hIns dans
+        # le champ lui-meme. Sans cela, MeshSizeFromPoints = 0 rend inerte le
+        # setSize() pose sur ses sommets, la sphere tombe dans la zone fine du
+        # champ (elle est sur l'axe d'impact) et se fait mailler a hFin —
+        # constate le 2026-08-17 : 62 752 tets dans l'insert au lieu de ~1 400,
+        # soit 28 % du maillage pour 0,3 % du volume.
+        step = "max(0, min(1, (z - %.9g)/%.9g))" % (zTop, 1e-4)
+        rockF = "Max(%s, %s)" % (expr, exprZ)
+        gmsh.model.mesh.field.setString(
+            f, "F", "(1 - %s)*(%s) + (%s)*%.9g" % (step, rockF, step, hIns))
+        gmsh.model.mesh.field.setAsBackgroundMesh(f)
+        gmsh.option.setNumber("Mesh.MeshSizeExtendFromBoundary", 0)
+        gmsh.option.setNumber("Mesh.MeshSizeFromPoints", 0)
+        gmsh.option.setNumber("Mesh.MeshSizeFromCurvature", 0)
+        gmsh.option.setNumber("Mesh.MeshSizeMin", min(hFin, hIns))
+        gmsh.option.setNumber("Mesh.MeshSizeMax", h)
+        # l'insert garde sa propre finesse (il porte le contact)
+        for dim, tag in gmsh.model.getBoundary([(3, ins)], recursive=True):
             if dim == 0:
                 gmsh.model.mesh.setSize([(0, tag)], hIns)
         gmsh.option.setNumber("Mesh.Algorithm3D", 1)

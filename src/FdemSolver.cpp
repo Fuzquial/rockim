@@ -1409,10 +1409,16 @@ void FdemSolver::assignJointProps() {
 // ---------------------------------------------------------------------------
 void FdemSolver::applyJointStatistics() {
     double m = cfg_.getd("jointWeibullM", 0.0);
-    if (m <= 0.0) return;                              // deterministic joints
-    if (m <= 1.0)
+    // Effet d'echelle statistique de Weibull — voir le commentaire detaille de
+    // Fdem3dSolver::applyJointSizeEffect. Meme convention que les VUMAT DP-DFH
+    // (sig_k = sigw*(Zeff/V_el)^(1/m)). OPT-IN : sans jointSizeEffect, chemin
+    // inchange et resultats identiques au bit pres.
+    bool szOn = cfg_.getb("jointSizeEffect", false);
+    if (m <= 0.0 && !szOn) return;                     // deterministic joints
+    if (m > 0.0 && m <= 1.0)
         throw std::runtime_error("jointWeibullM must be > 1 (typical rock "
                                  "values 5-30)");
+    if (m <= 0.0) for (auto& J : jt_) J.stat = 1.0;    // taille seule
     double ell = cfg_.getd("strengthCorrLength", 0.0);
     unsigned fseed = (unsigned)cfg_.geti("fieldSeed",
                                          cfg_.geti("seed", 12345) + 777);
@@ -1423,6 +1429,7 @@ void FdemSolver::applyJointStatistics() {
     };
 
     double xmin = 1e300, xmax = 0.0, xsum = 0.0;
+    if (m > 0.0) {
     if (ell > 0.0) {
         // anisotropic option: a second length across the first (bands) and
         // an orientation — the foliation-like texture knob
@@ -1440,6 +1447,8 @@ void FdemSolver::applyJointStatistics() {
         std::uniform_real_distribution<double> U(0.0, 1.0);
         for (auto& J : jt_) J.stat = weib(U(rng));
     }
+    }
+    if (szOn) applyJointSizeEffect(m);
     for (auto& J : jt_) {
         J.ft *= J.stat;
         J.coh *= J.stat;
@@ -1451,11 +1460,58 @@ void FdemSolver::applyJointStatistics() {
         xmax = std::max(xmax, J.stat);
         xsum += J.stat;
     }
-    std::cout << "[FDEM] joint strength statistics: Weibull m = " << m
-              << (ell > 0.0 ? " correlated, ell = " + std::to_string(ell)
-                            : std::string(" independent per joint"))
-              << ", factor mean/min/max = " << xsum / jt_.size() << "/"
-              << xmin << "/" << xmax << "\n";
+    if (m > 0.0)
+        std::cout << "[FDEM] joint strength statistics: Weibull m = " << m
+                  << (ell > 0.0 ? " correlated, ell = " + std::to_string(ell)
+                                : std::string(" independent per joint"))
+                  << ", factor mean/min/max = " << xsum / jt_.size() << "/"
+                  << xmin << "/" << xmax << "\n";
+    if (szOn)
+        std::cout << "[FDEM] TOTAL ft factor (Weibull x taille) "
+                     "mean/min/max = " << xsum / jt_.size() << "/"
+                  << xmin << "/" << xmax << "\n";
+}
+
+// ---------------------------------------------------------------------------
+// Effet d'echelle statistique 2D : ft <- ft * (Zeff/V_J)^(1/m).
+// ATTENTION a l'epaisseur : en 2D le volume represente vaut aire x thickness,
+// et `thickness` vaut souvent 1 m (valeur conventionnelle, pas physique). Zeff
+// doit donc etre declare de façon COHERENTE avec l'epaisseur employee — sinon
+// le facteur est correct en tendance mais faux en niveau. Le log imprime V_J
+// pour permettre de le verifier d'un coup d'oeil.
+// ---------------------------------------------------------------------------
+void FdemSolver::applyJointSizeEffect(double mWeib) {
+    double mS = cfg_.getd("jointSizeEffectM", mWeib);
+    if (!(mS > 1.0))
+        throw std::runtime_error("jointSizeEffect: exposant invalide — poser "
+            "jointSizeEffectM > 1 (ou jointWeibullM)");
+    double Zeff = cfg_.getd("jointZeff", 1e-9);        // 1 mm^3, defaut VUMAT
+    if (!(Zeff > 0.0))
+        throw std::runtime_error("jointZeff doit etre > 0 [m^3]");
+    double cap = cfg_.getd("jointSizeEffectClamp", 5.0);
+    if (!(cap >= 1.0))
+        throw std::runtime_error("jointSizeEffectClamp doit etre >= 1");
+    double fmin = 1e300, fmax = 0.0, fsum = 0.0, vmin = 1e300, vmax = 0.0;
+    std::size_t nclip = 0;
+    for (auto& J : jt_) {
+        double Vj = 0.5 * (el_[J.eA].A0 + el_[J.eB].A0) * thk_;
+        double f = 1.0;
+        if (Vj > 0.0) f = std::pow(Zeff / Vj, 1.0 / mS);
+        if (f > cap)            { f = cap;       ++nclip; }
+        else if (f < 1.0 / cap) { f = 1.0 / cap; ++nclip; }
+        J.stat *= f;
+        fmin = std::min(fmin, f); fmax = std::max(fmax, f); fsum += f;
+        vmin = std::min(vmin, Vj); vmax = std::max(vmax, Vj);
+    }
+    std::cout << "[FDEM] effet d'echelle (Zeff/V_J)^(1/m) : Zeff = " << Zeff
+              << " m^3, m = " << mS << ", V_J = aire x thickness ("
+              << thk_ << " m) min/max = " << vmin << "/" << vmax
+              << " m^3, facteur mean/min/max = " << fsum / jt_.size()
+              << "/" << fmin << "/" << fmax << "\n";
+    if (nclip)
+        std::cout << "[FDEM] WARNING: " << nclip << " joints bornes a " << cap
+                  << "x (jointSizeEffectClamp) — maillage tres heterogene, "
+                     "Zeff mal choisi, ou thickness non physique\n";
 }
 
 // ===========================================================================

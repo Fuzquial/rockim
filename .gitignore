@@ -1,1 +1,35 @@
-meshes/p1_banc_h20.msh
+# ---------------------------------------------------------------------------
+# .gitignore rockim — etendu le 2026-08-17.
+# Avant : une seule ligne (meshes/p1_banc_h20.msh). Consequence, 632 Mo de
+# sorties de calcul et 156 Mo de maillages etaient candidats au commit.
+# Principe : on versionne ce qui est ECRIT (source, configs, outils, docs,
+# figures) ; on exclut ce qui est PRODUIT (sorties de run, maillages generes,
+# binaires, objets, journaux) et qui se regenere par une commande documentee.
+# ---------------------------------------------------------------------------
+
+# --- sorties de calcul (des centaines de Mo de VTU) ---
+out_*/
+runs/
+calibration_redbohus/runs/
+*.vtu
+*.odb
+
+# --- maillages GENERES : reproduits par tools/make_unstructured_mesh.py,
+#     dont la ligne de commande figure en tete de chaque config ---
+meshes/*.msh
+
+# --- produits de compilation ---
+*.obj
+*.exe
+*.lib
+*.pdb
+*.o
+*.a
+
+# --- journaux et traces de run ---
+*.log
+rockim_*.csv
+
+# --- livraison par bundle : l'archive fait foi, jamais le depot ---
+*.bundle
+old/

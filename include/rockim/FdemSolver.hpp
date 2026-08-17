@@ -234,6 +234,7 @@ private:
                             const std::vector<int>& grainPhase);
     void assignJointProps();
     void applyJointStatistics();
+    void applyJointSizeEffect(double mWeib);  // eq. 42 : ft *= (Zeff/V_J)^(1/m)
     void placeTool();
     // adaptive insertion machinery (insertion = adaptive)
     void buildBindingTables();
