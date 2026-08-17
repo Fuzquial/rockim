@@ -2631,17 +2631,30 @@ void Fdem3dSolver::writeFrame(int frame) {
     std::vector<std::array<int, 4>> tets(el_.size());
     std::vector<double> svm(el_.size()), frag(el_.size());
     std::vector<double> phs(el_.size()), grn(el_.size());
+    // Le 3D n'ecrivait QUE vonMises : impossible de distinguer ce qui tire de
+    // ce qui cisaille alors que les deux modes de rupture le font. On sort donc
+    // les deux moteurs, decomposition spectrale du Cauchy stocke sigG :
+    //   sigma1  = contrainte principale MAJEURE, > 0 = TRACTION (moteur mode I)
+    //   tauMax  = (sigma1 - sigma3)/2, cisaillement maximal  (moteur mode II)
+    // Purement sortie : aucun effet sur le calcul (bit-neutre), le cout d'une
+    // decomposition 3x3 n'etant paye qu'aux ecritures de frame.
+    std::vector<double> sg1(el_.size()), tmx(el_.size());
     for (std::size_t e = 0; e < el_.size(); ++e) {
         tets[e] = el_[e].n;
         svm[e] = el_[e].svm;
         frag[e] = fragId_[e];
         phs[e] = el_[e].phase;
         grn[e] = el_[e].grain;
+        Eigen::SelfAdjointEigenSolver<Eigen::Matrix3d> es(el_[e].sigG);
+        const Eigen::Vector3d& ev = es.eigenvalues();   // triees croissant
+        sg1[e] = ev(2);
+        tmx[e] = 0.5 * (ev(2) - ev(0));
     }
     char name[64];
     std::snprintf(name, sizeof(name), "/fdem3d_%04d.vtu", frame);
     vtk::writeTetMesh(out_ + name, pts, tets,
-                      {{"vonMises", &svm}, {"fragment", &frag},
+                      {{"vonMises", &svm}, {"sigma1", &sg1},
+                       {"tauMax", &tmx}, {"fragment", &frag},
                        {"phase", &phs}, {"grain", &grn}},
                       {{"velocity", &vel}});
 

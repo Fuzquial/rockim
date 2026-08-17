@@ -17,9 +17,13 @@ from matplotlib import colormaps
 from PIL import Image
 
 here = os.path.dirname(os.path.abspath(__file__))
-snap = os.path.join(here, "..", "out_banc_mid")
+# nom du run en argument (hors options) ; defaut : le banc du 14/08
 ENV = "--envelope" in sys.argv
-out_gif = os.path.join(here, "banc_mid_impacted_env.gif" if ENV else "banc_mid_impacted.gif")
+_pos = [a for a in sys.argv[1:] if not a.startswith("--")]
+RUN = _pos[0] if _pos else "out_banc_mid"
+snap = os.path.join(here, "..", RUN)
+_tag = RUN.replace("out_imp3d_", "").replace("out_", "")
+out_gif = os.path.join(here, "%s_impacted%s.gif" % (_tag, "_env" if ENV else ""))
 
 def arr(text, name):
     m = re.search(r'<DataArray[^>]*Name="%s"[^>]*>(.*?)</DataArray>' % name, text, re.S)

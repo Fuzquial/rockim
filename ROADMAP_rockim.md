@@ -30,6 +30,64 @@ Concrètement :
 
 ---
 
+## Fait (2026-08-17)
+
+- [x] **Effet d'echelle statistique de Weibull**, 2D **et** 3D : `ft` et cohesion
+  de chaque joint x (Zeff/V_J)^(1/m), **meme convention que les VUMAT DP-DFH
+  d'Abaqus** (`sig_k = sigw*(Zeff/V_el)**(1/m)`, `VUMATS/dfh/vumat_kstdfh_psivar.f`),
+  V_J = moyenne des volumes des deux elements adjacents. Cles `jointSizeEffect`,
+  `jointZeff`, `jointSizeEffectM`, `jointSizeEffectClamp` — opt-in,
+  bit-identique eteint. Gf non recale. Facteur replie dans `J.stat`, donc
+  `ftScale` des VTU montre le total. **Verifie : deux maillages dans le rapport
+  3,16 donnent des facteurs dans le rapport (3,16)^(1/24) a 0,03 % pres.**
+  Impose par le §13.1 du rapport DP-DFH : sans ce recalage, une etude
+  d'objectivite STRUCTURALE desactive l'effet d'echelle. **2 nouveaux reperes**
+  (Zeff a trois decades d'ecart : c'est l'exposant qui est verifie) -> tier fast
+  13 -> **15 tests**.
+- [x] **`historyFlush`** (defaut true) : `history.csv` vide apres chaque ligne.
+  Sans lui, fichier vide jusqu'a la fin (run non suivable) et **derniere ligne
+  tronquee** si le run est tue (constate sur `out_banc_mid` : 26 colonnes au lieu
+  de 28). Verifie : SIGKILL -> 496 lignes recuperees, 0 incomplete. Bit-neutre.
+- [x] **Mailleur `bench1g`** : banc d'impact 3D **gradue** (champ de taille en
+  rampe, fin sous l'axe d'impact). Correctif : `hIns` etait inerte
+  (`MeshSizeFromPoints = 0` annulait le `setSize` des sommets de la sphere, qui
+  tombait dans la zone fine) -> 62 752 tets dans l'insert au lieu de 1 247.
+  Zone fine a resserrer sur le **rayon de contact de Hertz** (1,5 mm), pas sur
+  l'etendue du champ visible : 127 k tets a 0,46 mm contre 163 k a 0,81 mm.
+- [x] **REGLE DE FAISABILITE etablie** (GUIDE §4.2 bis) : `2*dx < l_cz < a`,
+  `l_cz = E*Gf/ft^2`, `a` = rayon de Hertz. Six runs de percussion perdus a
+  `ft = 10 MPa` / `Gf = 70` (l_cz = 35 mm pour a = 1,45 mm : 4 joints rompus sur
+  158 423, restitution 0,90, fissuration a 0,55 % de l'energie contre 12 % pour
+  l'amortissement numerique). Ni maillage, ni heterogeneite, ni insertion
+  adaptative, ni vitesse n'y changent rien. A `ft = 87` / `Gf = 150`
+  (l_cz = 1,0 mm, maillage 0,46 mm) : **731 joints rompus**, cratere localise a
+  l'echelle du contact, fissuration a parite avec l'amortissement.
+- [x] **Contact valide contre Hertz** : la famille de maillages gradues converge
+  (deux points a un facteur 2 donnent le meme plateau) a **0,78 de l'analytique**
+  sur toute la branche de charge. Les maillages uniformes ne sont PAS converges
+  (rapport balayant 0,45 -> 1,30, ils croisent Hertz par accident vers
+  delta = 0,14 mm). Le pic LOCAL, lui, n'est resolu par aucun : 266 / 812 /
+  1 955 / 2 931 MPa contre p0 = 4 114 MPa — le plus fin en atteint 71 %.
+  22 % d'ecart residuel a l'analytique **non explique**.
+- [x] **Slivers : diagnostic et options**. L'optimisation gmsh est saturee
+  (seuil gamma = 0,4 du papier HXT, puis Netgen et Relocate3D degradent).
+  Les elements qui etranglent le dt font **moins de 0,6 % du volume** : un
+  **mass scaling selectif** triplerait le pas de temps pour < 1 % de masse
+  ajoutee. La decomposition de Kuhn deja presente (`mesh = grid` 3D) a un
+  diametre inscrit / cote de **0,4142 exactement, sans dispersion** — 1,6 a 2,8x
+  mieux que Delaunay gradue, mais uniforme. Solution de principe :
+  *isosurface stuffing* (angles diedres bornes 10,7-164,8 deg, prouve, 3x plus
+  rapide que Delaunay). **Rien d'implemente.**
+
+### Reste a faire, identifie le 2026-08-17
+- [ ] **Mass scaling selectif** (`massScaleMinH`) : absent du code, aucun mass
+  scaling ni global ni selectif. Debloquerait tous les maillages gradues.
+- [ ] `detachedVol` compte le corps de l'insert comme fragment detache
+  (5 440 mm^3 = le volume de la sphere) — artefact de comptage du resume.
+- [ ] Zone fine du banc gradue a approfondir : la fissuration atteint 3,7 mm
+  pour une zone fine de 4 mm.
+- [ ] Expliquer les 22 % d'ecart a Hertz de la famille graduee.
+
 ## Fait (2026-08-11 → 13)
 
 - [x] **Audit complet** du solveur (architecture, physique, robustesse, perf) — `AUDIT_rockim_2026-08-11.md`

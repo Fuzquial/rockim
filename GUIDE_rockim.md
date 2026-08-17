@@ -19,8 +19,29 @@ plus récent fait foi, on le clone pour travailler.
 Cloner un bundle (se placer DANS le dossier du bundle) :
 
 ```bash
-git clone rockim_2026-08-14h.bundle -b article-exact rockim_p1
+git clone rockim_2026-08-17.bundle -b article-exact rockim_p1
 ```
+
+**Repartir de zéro sur une machine neuve — procédure vérifiée de bout en bout
+le 2026-08-17** (clone vierge → compilation → suite à 15/15) :
+
+1. récupérer le bundle dans `phd_geothermie\FDEM\rockim\` et le cloner comme
+   ci-dessus. Le clone ne contient **ni exécutable, ni maillage, ni sortie** :
+   uniquement 12 sources, 17 en-têtes, les configs, les outils et les docs ;
+2. placer **Eigen 3.4.0 À CÔTÉ du clone**, pas dedans : le script de compilation
+   le cherche en `..\eigen-3.4.0`. C'est le seul piège de l'installation, et il
+   s'est manifesté le 2026-08-17 quand le clone a été déplacé sans Eigen ;
+3. `pip install gmsh numpy matplotlib scipy` pour les outils Python ;
+4. compiler — **107 s** mesurées. Sur une machine dont Visual Studio n'est pas
+   au chemin par défaut, `build_chk.cmd` échoue (chemin de `vcvars64.bat` en
+   dur) : passer par **CMake**, qui trouve Eigen seul ;
+5. **régénérer les maillages** : les `.msh` ne sont PAS dans le dépôt (156 Mo,
+   exclus par `.gitignore` car reproductibles). La ligne de commande de
+   génération figure en tête de chaque config concernée ;
+6. valider avant tout calcul :
+   `python tools\verify_suite.py --exe C:\chemin\ABSOLU\vers\rockim.exe` — 15
+   tests. Le chemin **doit être absolu**, le runner changeant de répertoire de
+   travail.
 
 L'arborescence du dépôt :
 
@@ -128,6 +149,56 @@ Trois temps à poser sur une enveloppe avant d'écrire la config :
 Le piège historique (banc P1 v1, 2026-08-14) : gap 0,5 mm et T = 20 µs
 → contact à 62,5 µs, **jamais atteint** — 4 h de calcul d'approche à vide.
 D'où la règle suivante.
+
+### 4.2 bis La règle de FAISABILITÉ : le cas peut-il casser ? (leçon payée 2 h 30)
+
+**Trois nombres à poser avant tout run de fissuration.** Dimensionner T ne suffit
+pas : un cas peut tourner jusqu'au bout, fermer son bilan d'énergie à 1e-5 %, et
+ne rien casser — non par bug, mais parce que le matériau ne *peut pas* casser à
+l'échelle où on le sollicite.
+
+La grandeur qui décide est la **longueur de la zone cohésive** :
+
+```
+ℓ_cz ≈ E · Gf / ft²
+```
+
+C'est la taille du processus de fissuration. Elle doit être encadrée :
+
+```
+2 · dx  <  ℓ_cz  <  a
+```
+
+- **borne haute** — `ℓ_cz < a`, avec `a` la taille de la zone CHARGÉE (pour un
+  contact sphère/plan, le rayon de Hertz `a = √(R·δ)`, **pas** l'étendue du champ
+  de contrainte visible, cinq fois plus grande) : si la zone cohésive ne tient
+  pas dans la zone chargée, aucune fissure ne peut localiser. L'endommagement
+  s'étale et plafonne à quelques pourcents ;
+- **borne basse** — `ℓ_cz > 2·dx` : il faut au moins deux éléments pour résoudre
+  le processus, sinon la rupture se concentre sur un élément et dépend du
+  maillage.
+
+**Le contre-exemple, mesuré le 2026-08-17.** Banc percussion, `ft = 10 MPa`,
+`Gf = 70 J/m²`, `E = 50 GPa` → **ℓ_cz = 35 mm** pour un rayon de contact de
+**1,45 mm** : rapport 24. Résultat sur six runs : **4 joints rompus sur 158 423**,
+restitution 0,90, et la fissuration consommant 0,55 % de l'énergie contre 12 %
+pour l'amortissement numérique. Ni le maillage (facteur 6 balayé), ni
+l'hétérogénéité de Weibull (m = 6 puis 24), ni l'insertion adaptative, ni la
+vitesse d'impact n'y changeaient quoi que ce soit — et frapper plus fort était
+exclu : la roche était **déjà sollicitée à 49 fois sa résistance en traction**.
+
+Avec `ft = 87 MPa`, `Gf = 150 J/m²` → ℓ_cz = 1,00 mm, et un maillage à 0,46 mm
+dans la zone de contact (ℓ_cz/dx = 2,2) : **731 joints rompus**, cratère localisé
+à l'échelle du contact, fissuration à parité avec l'amortissement.
+
+**Corollaire sur (ft, Gf).** Les deux ne se choisissent pas séparément : seul leur
+rapport `Gf/ft²` fixe ℓ_cz. Un matériau plus TENACE a une zone cohésive plus
+GRANDE, donc plus facile à résoudre. À `ft` élevé (échelle de l'indentation), il
+faut donc un `Gf` élevé pour rester calculable — c'est contre-intuitif mais c'est
+l'algèbre. Et l'ouverture critique de rupture d'un joint vaut
+`dnF ≈ 2,59 · Gf/ft` (facteur `1/∫f(D)dD` en adoucissement de Yan) : c'est une
+propriété du **matériau**, indépendante du chargement, ce qui explique pourquoi
+taper plus fort ne rachète jamais un mauvais couple.
 
 ### 4.3 La règle du smoke test — TOUJOURS
 

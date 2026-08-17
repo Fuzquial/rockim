@@ -93,6 +93,48 @@ void FdemSolver::init() {
     if (gravity_ < 0.0)
         throw std::runtime_error("gravity is a magnitude in m/s^2 (it acts along -y): use a positive value");
 
+    // ---- contrainte in situ (etude tunnel EDZ) ---------------------------
+    // insituSh / insituSv : contraintes principales horizontale et verticale
+    // du massif, en PRESSION POSITIVE (5e6 = 5 MPa de compression), meme
+    // convention que confiningPressure. Le coefficient de pression laterale
+    // de l'article est lambda = insituSh / insituSv. Absentes (ou nulles) :
+    // aucun chemin de code n'est touche, trajectoires bit-identiques.
+    {
+        double sh = cfg_.getd("insituSh", 0.0);
+        double sv = cfg_.getd("insituSv", 0.0);
+        double sxy0 = cfg_.getd("insituSxy", 0.0);
+        if (sh < 0.0 || sv < 0.0)
+            throw std::runtime_error("insituSh / insituSv sont des PRESSIONS "
+                                     "positives (compression) : utiliser 5e6 "
+                                     "pour 5 MPa de compression");
+        if (sh > 0.0 || sv > 0.0 || sxy0 != 0.0) {
+            hasInsitu_ = true;
+            insituS_ << -sh, sxy0, sxy0, -sv;
+            std::cout << "[FDEM] in situ : sigma_h = " << sh / 1e6
+                      << " MPa, sigma_v = " << sv / 1e6
+                      << " MPa (compression), lambda = "
+                      << (sv > 0.0 ? sh / sv : 0.0) << "\n";
+            // NB : adaptive_ n'est lu que plus bas dans init(), on relit donc
+            // la cle elle-meme.
+            if (cfg_.gets("insertion", "intrinsic") != "adaptive")
+                std::cout << "[FDEM] WARNING: contrainte in situ avec "
+                             "insertion = intrinsic — les joints intrinseques "
+                             "ne transmettent sigma0 qu'apres s'etre fermes de "
+                             "sigma0/pj, donc l'etat initial n'est PAS un "
+                             "equilibre exact (transitoire parasite, controle "
+                             "a charge nulle inexact). insertion = adaptive "
+                             "rend l'etat initial exact : les aretes non "
+                             "encore inserees sont des noeuds partages.\n";
+            if (cfg_.getd("crushCap", 8.0 * cfg_.getd("cohesion", 0.0)) < 1e11)
+                std::cout << "[FDEM] NOTE: le cap deviatorique (crushCap) ne "
+                             "voit PAS la contrainte in situ (e.svm est "
+                             "calcule avant l'ajout). Sous champ anisotrope il "
+                             "peut mordre pour une raison purement numerique : "
+                             "poser crushCap tres grand si le bulk doit rester "
+                             "elastique.\n";
+        }
+    }
+
     // ---- geometry: box (default) or disc (mandatory for the brazilian) -----
     std::string geo = cfg_.gets("geometry",
                                 scen_ == Scenario::BRAZILIAN ? "disc"
@@ -383,6 +425,7 @@ void FdemSolver::init() {
     setupBoundaries();
     if (scen_ == Scenario::SHPB) setupShpbGauges();
     setupConfinement();
+    setupExcavation();                     // no-op si excavRelease = false
     setupBrazilianLoad();                  // before computeStableDt: it sets
                                            // kpPlaten_, which enters the budget
     setupStrainGauge();                    // after the platens: needs plTop_.y
@@ -2228,6 +2271,7 @@ void FdemSolver::step() {
     brazilianForces();                     // no-op outside the brazilian
     if (scen_ == Scenario::TENSION && tensionPlatens_) platenForces();
     confiningForces();                     // no-op when confiningPressure = 0
+    excavationForces();                    // no-op si excavRelease = false
     // gauge the confinement AFTER the ramp has had time to equilibrate through
     // the specimen: read exactly at the end of the ramp and the interior is
     // still catching up (measured 55 % of the target that way, 3 ramp times
@@ -2437,6 +2481,14 @@ void FdemSolver::elementForces() {
         Eigen::Matrix2d sig;
         sig << s(0), s(2), s(2), s(1);
         Eigen::Matrix2d P = R * sig;                   // rotate back
+        // ---- contrainte in situ ---------------------------------------
+        // sigma_global_total = R sig R^T + sigma0, et la force interne
+        // s'ecrit avec P = sigma_global * R : il suffit donc d'ajouter
+        // sigma0 * R ici. sigG (calcule juste en dessous par P * R^T) porte
+        // alors la contrainte TOTALE, et c'est elle que lisent la sortie
+        // VTU, la jauge achievedConfinement() et — surtout — le critere
+        // d'insertion adaptative de insertionSweep().
+        if (hasInsitu_) P += insituS_ * R;
         // sigma_xx in the GLOBAL frame (output only — the confinement gauge);
         // P * R^T is the Cauchy stress rotated out of the co-rotated frame
         Eigen::Matrix2d sigG = P * R.transpose();
@@ -3820,6 +3872,87 @@ void FdemSolver::confiningForces() {
         f_[be.na] += half;
         f_[be.nb] += half;
         // V2/B4 : travail de la pression sur le solide (compteur en v-)
+        confWork_ += dt_ * (half.dot(v_[be.na]) + half.dot(v_[be.nb]));
+    }
+}
+
+// ---------------------------------------------------------------------------
+// EXCAVATION (etude tunnel EDZ, Wang et al. 2024). Le massif est maille AVEC
+// sa cavite et pre-contraint (insituSh / insituSv). Les faces de la paroi
+// portent donc a t = 0 une traction DESEQUILIBREE : celle que la roche excavee
+// exercait, t = sigma0 . n. On la retablit exactement (rel = 1 : equilibre
+// parfait, rien ne bouge), puis on la fait decroitre jusqu'a zero. C'est la
+// methode convergence-confinement ; elle remplace le "core modulus reduction"
+// de l'article (meme etat initial, meme etat final) sans avoir a faire varier
+// un module en cours de calcul.
+//
+// La traction est evaluee FACE PAR FACE comme sigma0 . n : exact pour un champ
+// anisotrope (lambda != 1), ce qu'une pression scalaire ne saurait pas faire.
+// Convention de normale et de signe identiques a confiningForces() : n sortant
+// du solide, et sigma0 . n avec sigma0 = -p I redonne exactement -p n.
+// ---------------------------------------------------------------------------
+void FdemSolver::setupExcavation() {
+    excRelease_ = cfg_.getb("excavRelease", false);
+    if (!excRelease_) return;
+    if (!hasInsitu_)
+        throw std::runtime_error("excavRelease exige une contrainte in situ "
+                                 "(insituSh / insituSv) : sans elle il n'y a "
+                                 "rien a relacher");
+    excStart_ = cfg_.getd("excavStart", 0.0);
+    excRamp_ = cfg_.getd("excavRamp", 0.0);
+    if (excRamp_ <= 0.0)
+        throw std::runtime_error("excavRamp doit etre > 0 : un relachement "
+                                 "instantane lance une onde de choc dans le "
+                                 "massif (meme piege que confiningRamp = 0). "
+                                 "Compter plusieurs transits d'onde.");
+    double bcx = cfg_.getd("boreCX", 0.5 * W_);
+    double bcy = cfg_.getd("boreCY", 0.5 * H_);
+    double bsr = cfg_.getd("boreSelectR", 0.0);
+    if (bsr <= 0.0)
+        throw std::runtime_error("excavRelease exige boreSelectR > 0 : rayon "
+                                 "de selection des faces de paroi autour de "
+                                 "(boreCX, boreCY)");
+    for (const auto& be : exterior_) {
+        Eigen::Vector2d M = 0.5 * (X0_[be.na] + X0_[be.nb]);
+        double dx = M.x() - bcx, dy = M.y() - bcy;
+        if (dx * dx + dy * dy <= bsr * bsr) excEdges_.push_back(be);
+    }
+    if (excEdges_.empty())
+        throw std::runtime_error("excavRelease : aucune face de cavite "
+                                 "selectionnee — verifier boreCX/boreCY/"
+                                 "boreSelectR contre la geometrie du maillage");
+    double len = 0.0;
+    for (const auto& be : excEdges_)
+        len += (X0_[be.nb] - X0_[be.na]).norm();
+    std::cout << "[FDEM] excavation : " << excEdges_.size()
+              << " faces de paroi, perimetre " << len << " m, relachement de "
+              << excStart_ << " s a " << (excStart_ + excRamp_) << " s\n";
+}
+
+double FdemSolver::excavRelief() const {
+    if (!excRelease_) return 0.0;
+    if (t_ <= excStart_) return 1.0;
+    double x = (t_ - excStart_) / excRamp_;
+    if (x >= 1.0) return 0.0;
+    return 0.5 * (1.0 + std::cos(M_PI * x));
+}
+
+void FdemSolver::excavationForces() {
+    if (!excRelease_) return;
+    double rel = excavRelief();
+    if (rel <= 0.0) return;
+    for (const auto& be : excEdges_) {
+        Eigen::Vector2d P = X0_[be.na] + u_[be.na];
+        Eigen::Vector2d Q = X0_[be.nb] + u_[be.nb];
+        Eigen::Vector2d d = Q - P;
+        double L = d.norm();
+        if (L < 1e-14) continue;
+        Eigen::Vector2d n(d.y() / L, -d.x() / L);      // sortante du solide
+        // traction que la roche excavee exercait sur la paroi : t = sigma0 . n
+        Eigen::Vector2d half = 0.5 * rel * L * thk_ * (insituS_ * n);
+        f_[be.na] += half;
+        f_[be.nb] += half;
+        // B4 : verse dans le canal confinement (deja cable au budget)
         confWork_ += dt_ * (half.dot(v_[be.na]) + half.dot(v_[be.nb]));
     }
 }

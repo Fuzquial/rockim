@@ -245,6 +245,9 @@ private:
     void initPlatens(double xc, double hw);  // geometry + tributary weights
     void setupBoundaries();
     void setupConfinement();
+    void setupExcavation();                // etude tunnel : relachement paroi
+    void excavationForces();
+    double excavRelief() const;            // facteur de relachement rel(t)
     void computeStableDt();
 
     // stepping
@@ -665,6 +668,18 @@ private:
     // confining pressure (0 = off)
     double confP_ = 0.0, confRamp_ = 0.0, confL0_ = 0.0;
     std::vector<BEdge> confEdges_;         // ORIGINAL exterior faces only
+
+    // ---- contrainte in situ (etude tunnel EDZ, Wang et al. 2024) ----------
+    // Tenseur de contrainte initial GLOBAL, en convention rockim TENSION
+    // POSITIVE (les cles, elles, sont des pressions positives : insituSh =
+    // 5e6 signifie 5 MPa de COMPRESSION horizontale). Ajoute a la contrainte
+    // de chaque element dans elementForces() : sigma_total = sigma0 + D:eps.
+    bool hasInsitu_ = false;
+    Eigen::Matrix2d insituS_ = Eigen::Matrix2d::Zero();
+    // ---- excavation : relachement de la traction de paroi -----------------
+    bool excRelease_ = false;
+    double excStart_ = 0.0, excRamp_ = 0.0;
+    std::vector<BEdge> excEdges_;          // faces ORIGINALES de la cavite
     // the confinement is checked at the END OF ITS RAMP, before the axial load
     // builds: later on the core stress is the triaxial state, not the cell
     // pressure, and comparing it to the target would be meaningless

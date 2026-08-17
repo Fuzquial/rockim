@@ -11,6 +11,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib.collections import PolyCollection
+from matplotlib.colors import TwoSlopeNorm
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.normpath(os.path.join(HERE, ".."))
@@ -76,6 +77,28 @@ bonded = darray(jl, "bonded", dtype=int)
 dmg = darray(jl, "damage")
 tbr = darray(jl, "tBreak")
 
+# ft et Gf lus dans la CONFIG du run (plus de valeur en dur : la figure du
+# 2026-08-17 annoncait "ft = 10 MPa" sur un run a 87 MPa)
+FT, GF = 10e6, 70.0
+for cand in (RUN.replace("out_", "") + ".cfg",
+             RUN.replace("out_imp3d_", "impact3d_") + ".cfg"):
+    cp = os.path.join(ROOT, "configs", cand)
+    if os.path.exists(cp):
+        for line in open(cp, encoding="utf-8", errors="ignore"):
+            line = line.split("#")[0].strip()
+            if line.startswith("ft ") or line.startswith("ft="):
+                FT = float(line.split("=")[1])
+            elif line.startswith("Gf ") or line.startswith("Gf="):
+                GF = float(line.split("=")[1])
+        break
+COMPLET = t[-1] >= 0.95 * 120.0
+CLIM = 4.0 * FT * 1e-6        # borne haute des cartes von Mises [MPa]
+# Echelle bleu-rouge DIVERGENTE, centree sur ft : une bleu-rouge suppose un
+# milieu qui a du sens, et von Mises (0 -> max) n'en a pas naturellement. On
+# prend donc la RESISTANCE comme milieu : bleu = sous ft, blanc = au seuil,
+# rouge = au-dela. La carte dit alors ou la roche a depasse sa resistance.
+VMNORM = TwoSlopeNorm(vmin=0.0, vcenter=FT * 1e-6, vmax=CLIM)        # fenetre nominale 1,2e-4 s = 120 us
+
 cen = pts[conn].mean(axis=1)
 rock = phase == 0
 
@@ -135,13 +158,14 @@ band = rock & (np.abs(cen[:, 1] - 0.06) < 0.003)
 kb = np.where(band)[0]
 polys, vals = tri_proj(kb, [0, 2], vm[kb] * 1e-6)
 pc = a.add_collection(PolyCollection(polys, array=vals,
-                                     cmap="inferno", edgecolors="none"))
-pc.set_clim(0, 40.0)   # MPa — 4 x ft, echelle commune (d)/(e)
+                                     cmap="coolwarm", norm=VMNORM,
+                                     edgecolors="none"))
 cb = fig.colorbar(pc, ax=a, shrink=0.85); cb.set_label("von Mises (MPa)")
+cb.ax.axhline(FT * 1e-6, color="k", lw=1.4)
 a.set_xlim(0, 120); a.set_ylim(60, 122); a.set_aspect("equal")
 a.set_xlabel("x (mm)"); a.set_ylabel("z (mm)")
 a.set_title("(d) Coupe y = 60 mm à t = %.0f µs (pic)\n"
-            "roche : $f_t$ = 10 MPa" % ftimes[kbest], fontsize=10)
+            "roche : $f_t$ = %.0f MPa" % (ftimes[kbest], FT*1e-6), fontsize=10)
 
 # --- (e) vue de dessus : von Mises en surface ----------------------------
 a = fig.add_subplot(gs[1, 1])
@@ -149,9 +173,10 @@ surf = rock & (cen[:, 2] > ZTOP - 0.006)
 ks = np.where(surf)[0]
 polys, vals = tri_proj(ks, [0, 1], vm[ks] * 1e-6)
 pc = a.add_collection(PolyCollection(polys, array=vals,
-                                     cmap="inferno", edgecolors="none"))
-pc.set_clim(0, 40.0)   # MPa — 4 x ft, echelle commune (d)/(e)
+                                     cmap="coolwarm", norm=VMNORM,
+                                     edgecolors="none"))
 cb = fig.colorbar(pc, ax=a, shrink=0.85); cb.set_label("von Mises (MPa)")
+cb.ax.axhline(FT * 1e-6, color="k", lw=1.4)
 a.set_xlim(0, 120); a.set_ylim(0, 120); a.set_aspect("equal")
 a.set_xlabel("x (mm)"); a.set_ylabel("y (mm)")
 a.set_title("(e) Vue de dessus, 6 mm sous la surface\n"
@@ -182,9 +207,11 @@ a.legend(fontsize=8, loc="upper right")
 
 TITRE = {"out_imp3d_homog": "homogène",
          "out_imp3d_weib": "hétérogène (Weibull m = 6, facteurs 0,17–1,63)"}
-fig.suptitle("Impact 3D %s, panoplie complète — bloc 120³ mm, insert "
-             "R = 11 mm à 8 m/s, 82k tets, 6 min de calcul"
-             % TITRE.get(RUN, RUN), fontsize=12.5)
+fig.suptitle("Impact 3D %s — bloc 120³ mm, insert R = 11 mm à 8 m/s, "
+             "%d k tets, $f_t$ = %.0f MPa, $G_f$ = %.0f J/m²%s"
+             % (TITRE.get(RUN, RUN.replace("out_imp3d_", "")), len(conn) / 1000,
+                FT * 1e-6, GF, "" if COMPLET else "  —  RUN EN COURS"),
+             fontsize=12.5)
 fig.tight_layout()
 out = os.path.join(HERE, "imp3d_%s.png" % RUN.replace("out_imp3d_", ""))
 fig.savefig(out, dpi=140)
