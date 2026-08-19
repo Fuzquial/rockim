@@ -228,8 +228,9 @@ public:
         // qui est le comportement attendu d'un materiau dont seuls les defauts
         // sont distribues.
         const double ftLoc = mat_.ft * s.ftScale;
+        const double GfLoc = wScaleGf_ ? mat_.Gf * s.ftScale : mat_.Gf;
         double k0 = ftLoc / mat_.E;
-        double kf = mat_.Gf / (lc * ftLoc) - 0.5 * k0;
+        double kf = GfLoc / (lc * ftLoc) - 0.5 * k0;
         if (kf <= 0.05 * k0)
             throw std::runtime_error("MatLaw: element size " + std::to_string(lc)
                 + " m exceeds the crack-band limit E Gf / ft^2 — refine the "
@@ -1206,6 +1207,11 @@ std::unique_ptr<MatLaw> MatLaw::make(const std::string& kind,
     std::unique_ptr<MatLaw> law;
     double erodeD = c.getd("erodeD", 0.98);
     double erodeEpv = c.getd("erodeEpv", 1.5);
+    // portee de l'heterogeneite (voir MatLaw.hpp) — validee ici pour que la
+    // faute de frappe soit signalee, et non ignoree en silence
+    std::string wsc = c.gets("weibullScope", "strength");
+    if (wsc != "strength" && wsc != "strengthGf")
+        throw std::runtime_error("weibullScope must be strength | strengthGf");
     if (kind == "elastic") {
         law = std::make_unique<ElasticLaw>(m);
     } else if (kind == "dpr") {
@@ -1305,6 +1311,7 @@ std::unique_ptr<MatLaw> MatLaw::make(const std::string& kind,
                 + std::to_string(m.E * m.Gf / (m.ft * m.ft))
                 + " m — refine the mesh or raise Gf");
     }
+    if (law) law->wScaleGf_ = (wsc == "strengthGf");
     return law;
 }
 

@@ -175,6 +175,30 @@ protected:
     Material mat_;
     double lam_ = 0.0, G_ = 0.0, K_ = 0.0;
     double adp_ = 0.0, kdp_ = 0.0;                     // DP cone (MC triax)
+
+    // ---- PORTEE de l'heterogeneite de Weibull (cle weibullScope) ----------
+    // Le tirage par element (ftScale) multiplie la RESISTANCE. Reste une
+    // question que le depot tranchait jusqu'ici differemment a trois endroits
+    // sans que ce soit un choix : la TENACITE suit-elle ?
+    //
+    //   strength   (defaut) — seule ft est mise a l'echelle. C'est la
+    //     convention d'une population de DEFAUTS : le materiau a partout la
+    //     meme energie de rupture, seuls les seuils d'amorcage sont
+    //     distribues. Consequence : la longueur cohesive locale
+    //     E Gf / ft^2 varie en 1/s^2 et l'ouverture critique en 1/s — un
+    //     element faible a une zone cohesive PLUS GRANDE. C'est aussi ce que
+    //     fait deja la statistique de JOINT (J.ft et J.coh seuls).
+    //
+    //   strengthGf — ft ET Gf suivent le meme facteur. C'est la convention
+    //     du materiau AUTO-SEMBLABLE : l'ouverture critique dnF ~ Gf/ft est
+    //     invariante, la longueur cohesive varie en 1/s. C'est exactement ce
+    //     que fait deja le DIF de Yang (leurs eq. 2-3 amplifient ft et Gf du
+    //     meme facteur, precisement pour que dnF ne bouge pas et que le
+    //     compteur d'endommagement ne soit pas corrompu).
+    //
+    // Aucune des deux n'est « la bonne » : elles decrivent deux materiaux
+    // differents. Le defaut reproduit le comportement anterieur du depot.
+    bool wScaleGf_ = false;
 };
 
 // Replays the three material-point loading paths of the Fortran reference

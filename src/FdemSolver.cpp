@@ -1656,6 +1656,8 @@ void FdemSolver::assignJointProps() {
 //         controls the field independently of the mesh seed.
 // ---------------------------------------------------------------------------
 void FdemSolver::applyJointStatistics() {
+    const bool wGf =
+        cfg_.gets("weibullScope", "strength") == "strengthGf";
     double m = cfg_.getd("jointWeibullM", 0.0);
     // Effet d'echelle statistique de Weibull — voir le commentaire detaille de
     // Fdem3dSolver::applyJointSizeEffect. Meme convention que les VUMAT DP-DFH
@@ -1700,6 +1702,10 @@ void FdemSolver::applyJointStatistics() {
     for (auto& J : jt_) {
         J.ft *= J.stat;
         J.coh *= J.stat;
+        // ---- weibullScope (2026-08-19) : la TENACITE suit-elle la
+        // resistance ? Voir MatLaw.hpp pour les deux conventions. Defaut
+        // `strength` = comportement historique, bit-identique.
+        if (wGf) { J.Gf *= J.stat; J.GfII *= J.stat; }
         J.dnE = J.ft / J.pj;
         double kI = yanSoft_ ? 1.0 / yanI_ : 2.0;
         J.dnF = J.dnE + kI * J.Gf / J.ft;

@@ -913,6 +913,8 @@ void Fdem3dSolver::assignJointProps() {
 // strengthCorrAngleDeg tilting that plane about the y-axis (foliation).
 // ---------------------------------------------------------------------------
 void Fdem3dSolver::applyJointStatistics() {
+    const bool wGf =
+        cfg_.gets("weibullScope", "strength") == "strengthGf";
     double m = cfg_.getd("jointWeibullM", 0.0);
     // Effet d'echelle statistique de Weibull, MEME CONVENTION que les VUMAT
     // DP-DFH d'Abaqus (VUMATS/dfh/vumat_kstdfh_psivar.f) :
@@ -962,6 +964,8 @@ void Fdem3dSolver::applyJointStatistics() {
     for (auto& J : jt_) {
         J.ft *= J.stat;
         J.coh *= J.stat;
+        // weibullScope — miroir exact du 2D, voir MatLaw.hpp
+        if (wGf) { J.Gf *= J.stat; J.GfII *= J.stat; }
         J.dnE = J.ft / J.pj;
         double kI = yanSoft_ ? 1.0 / yanI_ : 2.0;
         J.dnF = J.dnE + kI * J.Gf / J.ft;
