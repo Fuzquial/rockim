@@ -139,7 +139,32 @@ void Fdem3dSolver::init() {
                 "material model: it cannot be combined with mineral 'phases'.");
         double lcMax = 0.0;
         for (double h : hEl_) lcMax = std::max(lcMax, h);
-        law_ = MatLaw::make(cfg_.gets("law", "elastic"), mat_, cfg_, lcMax);
+        // ---- SURCHARGES DE VOLUME (2026-08-19) ---------------------------
+        // Le bloc materiau sert A LA FOIS a la loi de volume et aux joints,
+        // et les deux ne veulent pas les memes nombres : dans une
+        // architecture « a la Ye », ft et cohesion sont des MICRO-parametres
+        // de joint (25 et 60 MPa sur indent3d_grad) tandis que la roche a ses
+        // valeurs macro (11,4 et 42,8 MPa pour le granite de Kuru). Jusqu'ici
+        // seule la loi mc avait ses surcharges (mcCohesion, mcFrictionDeg) ;
+        // dpr, saksala et saksala2011 heritaient donc en silence des valeurs
+        // de JOINT — ce qui rend impossible de changer de loi a joints
+        // constants, c'est-a-dire l'experience meme qu'on veut faire.
+        // Absentes, ces cles ne changent rien : comportement bit-identique.
+        Material mBulk = mat_;
+        mBulk.ft       = cfg_.getd("bulkFt", mBulk.ft);
+        mBulk.cohesion = cfg_.getd("bulkCohesion", mBulk.cohesion);
+        mBulk.phiDeg   = cfg_.getd("bulkFrictionDeg", mBulk.phiDeg);
+        mBulk.Gf       = cfg_.getd("bulkGf", mBulk.Gf);
+        if (cfg_.has("bulkFt") || cfg_.has("bulkCohesion")
+            || cfg_.has("bulkFrictionDeg") || cfg_.has("bulkGf")) {
+            PhaseSet::validate(mBulk, "loi de volume (cles bulk*)");
+            std::cout << "[MATLAW] loi de volume dissociee des joints : ft = "
+                      << mBulk.ft << " Pa, cohesion = " << mBulk.cohesion
+                      << " Pa, phi = " << mBulk.phiDeg << " deg, Gf = "
+                      << mBulk.Gf << " J/m2 (les joints gardent ft = "
+                      << mat_.ft << ", c = " << mat_.cohesion << ")\n";
+        }
+        law_ = MatLaw::make(cfg_.gets("law", "elastic"), mBulk, cfg_, lcMax);
         // C2 (audit 2026-08-11, corrige 2026-08-15) : le centroide INITIAL de
         // chaque element doit etre renseigne AVANT le premier appel a la loi.
         // dpdfh en tire ses trois seuils de Weibull par hash spatial 64 bits
