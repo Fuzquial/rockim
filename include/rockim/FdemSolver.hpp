@@ -981,6 +981,60 @@ private:
     double confP_ = 0.0, confRamp_ = 0.0, confL0_ = 0.0;
     std::vector<BEdge> confEdges_;         // ORIGINAL exterior faces only
 
+    // ---- COUPLAGE HYDRO-MECANIQUE (spec 004) — hydro = off | on ----------
+    // Modele d'AbuAisha, Eaton, Priest & Wong (JPSE 154, 2017, 100-113), le
+    // module HF du code Y-Geo. Hypothese centrale, qu'ils enoncent en toutes
+    // lettres (leur §2.2) : « the fluid pressure inside the cavities/fractures
+    // is assumed CONSTANT, i.e. no flow due to hydraulic gradients, i.e.
+    // similar to an INVISCID flow ». Pas de loi cubique, pas de gradient, pas
+    // de leak-off, pas de pas de temps hydraulique propre.
+    //
+    // C'est exactement ce qui manque a confineFaces = bore, dont le commentaire
+    // avoue le defaut : « faces born from cracking receive nothing ». Ici, au
+    // contraire, LA PRESSION SUIT LA FISSURE.
+    //
+    // Trois grandeurs, et une seule variable d'etat :
+    //   * la FRONTIERE MOUILLEE — les faces reliees a la source par un chemin
+    //     de joints rompus (recherche de composante connexe, leur module 2) ;
+    //   * le VOLUME de cavite par le theoreme de Green, leur eq. 4 :
+    //         V = 1/2 ∮ x dy - y dx
+    //     Discretisee, c'est la formule du lacet SOMMEE FACE PAR FACE, donc
+    //     INDEPENDANTE DE L'ORDRE DE PARCOURS : aucun contour a assembler ;
+    //   * la PRESSION par compressibilite lineaire, leur eq. 6 :
+    //         p = p0 + Kf log( m / (V rho_f0) )
+    //     ou m, la masse injectee, est LA variable d'etat.
+    // La pression charge ensuite les faces mouillees en force suiveuse.
+    //
+    // ⚠️ Leur eq. 7 s'ecrit F = -(p/2) [y2-y1 ; x2-x1]. Ce vecteur n'est PAS
+    // orthogonal au segment (son produit scalaire avec (dx, dy) vaut
+    // 2 dx dy) : il y a une coquille de rotation ou de signe. On applique donc
+    // la forme PHYSIQUE — la pression pousse le solide a l'oppose de la
+    // normale sortante, moitie par noeud, comme confiningForces() — et le
+    // controle V3 (une fissure sous pression doit S'OUVRIR) leve toute
+    // ambiguite de signe.
+    //
+    // UNE SEULE CAVITE pour l'instant (decision F. Uzquiano du 19/08) : leur
+    // modele suppose une source unique. Les structures sont dimensionnees pour
+    // en accueillir plusieurs (fusion/scission) sans reecriture.
+    bool hydroOn_ = false;
+    double fluidK_ = 2.2e9;                // K_f [Pa]
+    double fluidRho0_ = 1000.0;            // rho_f0 [kg/m3]
+    double hydroP0_ = 0.0;                 // p_0 [Pa]
+    bool hydroRateMode_ = true;            // rate | pressure
+    double hydroRate_ = 0.0;               // [m3/s par m d'epaisseur]
+    double hydroPimp_ = 0.0;               // pression imposee [Pa]
+    double hydroRamp_ = 0.0;               // rampe cosinus de la pompe [s]
+    double hydroMass_ = 0.0;               // LA variable d'etat [kg/m]
+    double hydroP_ = 0.0, hydroVol_ = 0.0, hydroVol0_ = 0.0;
+    double hydroWork_ = 0.0;               // poste SEPARE du bilan B4
+    long hydroNWet_ = 0;                   // faces mouillees (sortie)
+    long wetStamp_ = -1;                   // nBroken_ au dernier mouillage
+    std::vector<BEdge> hydroSrc_;          // faces SOURCE (le forage)
+    std::vector<BEdge> wetEdges_;          // frontiere mouillee courante
+    void setupHydro();
+    void updateWetBoundary();              // connexite + volume de Green
+    void hydroForces();
+
     // ---- contrainte in situ (etude tunnel EDZ, Wang et al. 2024) ----------
     // Tenseur de contrainte initial GLOBAL, en convention rockim TENSION
     // POSITIVE (les cles, elles, sont des pressions positives : insituSh =

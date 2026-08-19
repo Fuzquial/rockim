@@ -572,6 +572,7 @@ void FdemSolver::init() {
     setupBoundaries();
     if (scen_ == Scenario::SHPB) setupShpbGauges();
     setupConfinement();
+    setupHydro();
     setupExcavation();                     // no-op si excavRelease = false
     setupBrazilianLoad();                  // before computeStableDt: it sets
                                            // kpPlaten_, which enters the budget
@@ -2669,6 +2670,7 @@ void FdemSolver::step() {
     if (scen_ == Scenario::TENSION && tensionPlatens_) platenForces();
     confiningForces();                     // no-op when confiningPressure = 0
     excavationForces();                    // no-op si excavRelease = false
+    hydroForces();                         // no-op si hydro = off (spec 004)
     // gauge the confinement AFTER the ramp has had time to equilibrate through
     // the specimen: read exactly at the end of the ramp and the interior is
     // still catching up (measured 55 % of the target that way, 3 ramp times
@@ -4629,6 +4631,167 @@ void FdemSolver::confiningForces() {
         f_[be.nb] += half;
         // V2/B4 : travail de la pression sur le solide (compteur en v-)
         confWork_ += dt_ * (half.dot(v_[be.na]) + half.dot(v_[be.nb]));
+    }
+}
+
+// ===========================================================================
+// COUPLAGE HYDRO-MECANIQUE (spec 004) — modele d'AbuAisha et al. 2017, Y-Geo
+// ===========================================================================
+
+// Selection des faces SOURCE : les memes que confineFaces = bore, mais pour un
+// role oppose. Le confinement presse une membrane sur l'exterieur d'origine ;
+// ici, le forage est la BOUCHE par ou le fluide entre, et tout ce qui s'y
+// connecte par une fissure deviendra mouille.
+void FdemSolver::setupHydro() {
+    hydroOn_ = cfg_.getb("hydro", false);
+    if (!hydroOn_) return;
+    if (scen_ == Scenario::BRAZILIAN || scen_ == Scenario::SHPB)
+        throw std::runtime_error("hydro = on n'a pas de sens en scenario "
+                                 "brazilian ou shpb");
+    fluidK_    = cfg_.getd("fluidBulk", 2.2e9);
+    fluidRho0_ = cfg_.getd("fluidDensity", 1000.0);
+    hydroP0_   = cfg_.getd("hydroP0", 0.0);
+    hydroRamp_ = cfg_.getd("hydroRamp", 0.0);
+    if (!(fluidK_ > 0.0) || !(fluidRho0_ > 0.0))
+        throw std::runtime_error("fluidBulk et fluidDensity doivent etre > 0");
+    std::string inj = cfg_.gets("hydroInjection", "rate");
+    if (inj != "rate" && inj != "pressure")
+        throw std::runtime_error("hydroInjection must be rate | pressure");
+    hydroRateMode_ = (inj == "rate");
+    hydroRate_ = cfg_.getd("hydroRate", 0.0);
+    hydroPimp_ = cfg_.getd("hydroPressure", 0.0);
+
+    // --- faces source. Deux modes : un disque autour de (boreCX, boreCY),
+    // comme le confinement ; ou TOUTES les faces exterieures d'origine, ce qui
+    // sert au controle de Parker ou la « source » est la discontinuite
+    // elle-meme, dedoublee par le greffon Crack de gmsh (ses deux levres sont
+    // des faces exterieures confondues a t = 0).
+    std::string src = cfg_.gets("hydroSource", "bore");
+    if (src != "bore" && src != "all")
+        throw std::runtime_error("hydroSource must be bore | all");
+    double bcx = cfg_.getd("boreCX", 0.5 * W_);
+    double bcy = cfg_.getd("boreCY", 0.5 * H_);
+    double bsr = cfg_.getd("boreSelectR", 0.0);
+    if (src == "bore" && bsr <= 0.0)
+        throw std::runtime_error("hydroSource = bore exige boreSelectR > 0 "
+                                 "(rayon de selection autour de boreCX/boreCY)");
+    for (const auto& be : exterior_) {
+        if (src == "all") { hydroSrc_.push_back(be); continue; }
+        Eigen::Vector2d mid = 0.5 * (X0_[be.na] + X0_[be.nb]);
+        double dx = mid.x() - bcx, dy = mid.y() - bcy;
+        if (dx * dx + dy * dy <= bsr * bsr) hydroSrc_.push_back(be);
+    }
+    if (hydroSrc_.empty())
+        throw std::runtime_error("hydro : aucune face source selectionnee — "
+                                 "verifier boreCX/boreCY/boreSelectR");
+    updateWetBoundary();
+    hydroVol0_ = hydroVol_;
+    if (!(hydroVol0_ > 0.0))
+        throw std::runtime_error("hydro : volume de cavite initial nul ou "
+                                 "negatif (" + std::to_string(hydroVol0_)
+                                 + " m3/m) — orientation des faces source ?");
+    // masse initiale telle que p(t=0) = p0, par inversion de leur eq. 6
+    hydroMass_ = hydroVol0_ * fluidRho0_;
+    hydroP_ = hydroP0_;
+    std::cout << "[HYDRO] couplage hydro-mecanique ACTIF (AbuAisha 2017, "
+                 "fluide NON VISQUEUX : pression uniforme dans la cavite)\n"
+              << "[HYDRO]   source = " << src << " : " << hydroSrc_.size()
+              << " faces, volume initial " << hydroVol0_ << " m3/m\n"
+              << "[HYDRO]   K_f = " << fluidK_ << " Pa, rho_f0 = " << fluidRho0_
+              << " kg/m3, p_0 = " << hydroP0_ << " Pa\n"
+              << "[HYDRO]   pompe = " << inj << " ("
+              << (hydroRateMode_ ? hydroRate_ : hydroPimp_)
+              << (hydroRateMode_ ? " m3/s/m)" : " Pa)")
+              << (hydroRamp_ > 0.0 ? ", rampe " : "")
+              << (hydroRamp_ > 0.0 ? std::to_string(hydroRamp_) + " s" : "")
+              << "\n";
+}
+
+// Frontiere mouillee : les faces reliees a la source par un chemin de joints
+// ROMPUS, plus le volume de cavite qu'elles enferment.
+//
+// C'est leur module 2, « tracks the newly created wet boundaries by checking
+// their connection with the initial source of fluid ». En pratique une
+// recherche de composante connexe sur le graphe des SOMMETS (au sens de
+// l'union-find, pas des noeuds dupliques), dont les aretes sont les joints
+// rompus. La machinerie de sommets existe deja : vOf_ et nVert_.
+void FdemSolver::updateWetBoundary() {
+    // (1) propagation de la mouillabilite, seulement si la topologie a change
+    if (wetStamp_ != nBroken_ || wetEdges_.empty()) {
+        std::vector<char> wetV(std::max(1, nVert_), 0);
+        for (const auto& be : hydroSrc_) {
+            wetV[vOf_[be.na]] = 1;
+            wetV[vOf_[be.nb]] = 1;
+        }
+        // relaxation jusqu'a stabilite : une fissure longue demande autant de
+        // passes que d'aretes en enfilade. Recalcule seulement quand nBroken_
+        // change, donc rarement — mesurer avant d'optimiser.
+        bool changed = true;
+        while (changed) {
+            changed = false;
+            for (const auto& J : jt_) {
+                if (J.bonded || J.D < 1.0) continue;   // joint intact : etanche
+                int v1 = vOf_[J.a1], v2 = vOf_[J.a2];
+                if (wetV[v1] && !wetV[v2]) { wetV[v2] = 1; changed = true; }
+                else if (wetV[v2] && !wetV[v1]) { wetV[v1] = 1; changed = true; }
+            }
+        }
+        wetEdges_ = hydroSrc_;
+        for (const auto& J : jt_) {
+            if (J.bonded || J.D < 1.0) continue;
+            if (!(wetV[vOf_[J.a1]] && wetV[vOf_[J.a2]])) continue;
+            // les deux levres, orientees chacune vers l'exterieur de SON
+            // element — meme convention que le cache deadList_ du contact
+            wetEdges_.push_back({J.eA, J.a1, J.a2});
+            wetEdges_.push_back({J.eB, J.b2, J.b1});
+        }
+        wetStamp_ = nBroken_;
+        hydroNWet_ = (long)wetEdges_.size();
+    }
+    // (2) volume par le theoreme de Green, sur la configuration COURANTE.
+    // Somme du lacet face par face : l'ordre de parcours n'intervient pas.
+    // Signe : la normale sortante du solide vaut (dy, -dx)/L, donc le fluide
+    // est a DROITE de P->Q, donc le lacet compte la cavite en negatif.
+    double A2 = 0.0;
+    for (const auto& be : wetEdges_) {
+        Eigen::Vector2d P = X0_[be.na] + u_[be.na];
+        Eigen::Vector2d Q = X0_[be.nb] + u_[be.nb];
+        A2 += P.x() * Q.y() - Q.x() * P.y();
+    }
+    hydroVol_ = -0.5 * A2 * thk_;
+}
+
+// Pompe, pression, et chargement des levres.
+void FdemSolver::hydroForces() {
+    if (!hydroOn_) return;
+    updateWetBoundary();
+    double ramp = 1.0;
+    if (hydroRamp_ > 0.0 && t_ < hydroRamp_)
+        ramp = 0.5 * (1.0 - std::cos(M_PI * t_ / hydroRamp_));
+    if (hydroRateMode_) {
+        hydroMass_ += ramp * hydroRate_ * fluidRho0_ * dt_;
+        // leur eq. 6 ; le plancher evite un log(<=0) si la cavite se ferme
+        double r = hydroMass_ / std::max(hydroVol_ * fluidRho0_, 1e-300);
+        hydroP_ = (r > 1e-300) ? hydroP0_ + fluidK_ * std::log(r) : hydroP0_;
+    } else {
+        hydroP_ = ramp * hydroPimp_;
+        hydroMass_ = hydroVol_ * fluidRho0_
+                   * std::exp((hydroP_ - hydroP0_) / fluidK_);  // pour la sortie
+    }
+    // chargement : la pression pousse le solide a l'OPPOSE de la normale
+    // sortante, moitie par noeud — meme forme que confiningForces(). Voir
+    // l'en-tete au sujet de la coquille de leur eq. 7.
+    for (const auto& be : wetEdges_) {
+        Eigen::Vector2d P = X0_[be.na] + u_[be.na];
+        Eigen::Vector2d Q = X0_[be.nb] + u_[be.nb];
+        Eigen::Vector2d d = Q - P;
+        double L = d.norm();
+        if (L < 1e-14) continue;
+        Eigen::Vector2d n(d.y() / L, -d.x() / L);      // sortante du solide
+        Eigen::Vector2d half = 0.5 * hydroP_ * L * thk_ * n;
+        f_[be.na] += half;
+        f_[be.nb] += half;
+        hydroWork_ += dt_ * (half.dot(v_[be.na]) + half.dot(v_[be.nb]));
     }
 }
 
