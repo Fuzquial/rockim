@@ -215,6 +215,22 @@ void Fdem3dSolver::init() {
     xiJ_ = cfg_.getd("jointXi", 0.05);
 
     kp_ = phases_.maxE() * hmin_;                      // tool contact [N/m]
+    // ---- A1 : loi de contact de l'outil, miroir du 2D --------------------
+    {
+        std::string tc = cfg_.gets("toolContact", "penalty");
+        if (tc != "penalty" && tc != "signorini")
+            throw std::runtime_error("toolContact must be penalty | signorini");
+        toolSig_ = (tc == "signorini");
+        toolSigRelax_ = cfg_.getd("toolSignoriniRelax", 0.0);
+        if (!(toolSigRelax_ >= 0.0 && toolSigRelax_ <= 1.0))
+            throw std::runtime_error("toolSignoriniRelax must be in [0, 1]");
+        if (toolSig_)
+            std::cout << "[FDEM3D] contact outil : SIGNORINI en vitesse "
+                         "(CD-Lagrange, Delassus diagonal par noeud) — la "
+                         "penalite kp = " << kp_ << " N/m ne s'applique plus "
+                         "et SORT du budget du pas de temps ; rattrapage "
+                         "d'interpenetration = " << toolSigRelax_ << "\n";
+    }
     muC_ = cfg_.getd("contactMu", 0.5);
     xiC_ = cfg_.getd("contactXi", 0.05);
     vReg_ = cfg_.getd("contactVreg", 1e-3);
@@ -1397,7 +1413,11 @@ void Fdem3dSolver::computeStableDt() {
     double nExtra = cfg_.getd("extraContacts", 2.0);
     double dtMin = 1e30;
     for (std::size_t i = 0; i < X0_.size(); ++i)
-        dtMin = std::min(dtMin, 2.0 * std::sqrt(m_[i] / (K[i] + nExtra * kp_)));
+        // A1 : en Signorini l'outil n'a plus de raideur (condition sur la
+        // VITESSE) — kp_ sort du budget. Gain structurel : le pas cesse de
+        // dependre d'une penalite arbitraire.
+        dtMin = std::min(dtMin, 2.0 * std::sqrt(m_[i] / (K[i]
+                    + (toolSig_ ? 0.0 : nExtra * kp_))));
     // CFL from the TRUE minimum inscribed diameter, not the nominal grid
     // pitch. The Kuhn split makes tets thin BY CONSTRUCTION (median 6V/A is
     // ~0.4x the cell edge, jitter takes the worst to ~0.2x), so the nominal
@@ -2679,6 +2699,54 @@ void Fdem3dSolver::toolContact() {
         }
         return true;
     };
+
+    // -----------------------------------------------------------------------
+    // A1 — variante SIGNORINI EN VITESSE, miroir exact du 2D.
+    // Geometrie DUPLIQUEE a dessein : la voie penalite ne doit pas bouger.
+    // Par noeud, avec H = 1/m_i (masse concentree + obstacle rigide) :
+    //   v* = v_i + (dt/m_i) f_i ;  vn = (v* - v_outil).n
+    //   gap predit g+ = -pen + dt vn >= 0  ->  r = 0 (le noeud se separe seul)
+    //   sinon r_n = m_i (relax*pen/dt - vn) > 0, et frottement par cap de
+    //   Coulomb sur l'impulsion tangentielle |r_t| <= mu r_n.
+    // Report en force r/dt pour que integrate() (v += dt/m f) produise le saut
+    // de vitesse voulu et que les compteurs d'energie restent comparables.
+    // -----------------------------------------------------------------------
+    auto nodeSig = [&](int i, Eigen::Vector3d& Fc) {
+        Eigen::Vector3d p = X0_[i] + u_[i];
+        Eigen::Vector3d n;
+        double pen;
+        if (tool_.flat) {
+            double rx = p.x() - tool_.x.x(), ry = p.y() - tool_.x.y();
+            if (rx * rx + ry * ry > tool_.radius * tool_.radius) return false;
+            pen = p.z() - tool_.x.z();
+            if (pen <= 0.0) return false;
+            n = Eigen::Vector3d(0.0, 0.0, -1.0);   // repousse vers le bas
+        } else {
+            Eigen::Vector3d d = p - tool_.x;
+            double dist = d.norm();
+            if (dist >= tool_.radius || dist < 1e-14) return false;
+            n = d / dist;
+            pen = tool_.radius - dist;
+        }
+        Eigen::Vector3d vFree = v_[i] + (dt_ / m_[i]) * f_[i];
+        Eigen::Vector3d vrel = vFree - tool_.v;
+        double vn = vrel.dot(n);
+        if (-pen + dt_ * vn >= 0.0) return false;
+        double rn = m_[i] * (toolSigRelax_ * pen / dt_ - vn);
+        if (rn <= 0.0) return false;
+        // frottement : impulsion de collage, ecretee par le cap de Coulomb
+        Eigen::Vector3d vt = vrel - vn * n;
+        double vtn = vt.norm();
+        Eigen::Vector3d rt = Eigen::Vector3d::Zero();
+        if (vtn > 1e-14) {
+            double rts = m_[i] * vtn;                  // colle exactement
+            double cap = muC_ * rn;
+            if (rts > cap) rts = cap;
+            rt = -rts * vt / vtn;
+        }
+        Fc = (rn / dt_) * n + rt / dt_;
+        return true;
+    };
 #ifdef _OPENMP
     int nT = omp_get_max_threads();
     std::vector<Eigen::Vector3d> FT(nT, Eigen::Vector3d::Zero());
@@ -2690,7 +2758,7 @@ void Fdem3dSolver::toolContact() {
 #pragma omp for schedule(static)
         for (int i = 0; i < (int)X0_.size(); ++i) {
             Eigen::Vector3d Fc;
-            if (!nodeFc(i, Fc)) continue;
+            if (!(toolSig_ ? nodeSig(i, Fc) : nodeFc(i, Fc))) continue;
             f_[i] += Fc;
             tw += Fc.dot(v_[i]) * dt_;
             Floc -= Fc;
@@ -2702,7 +2770,7 @@ void Fdem3dSolver::toolContact() {
 #else
     for (int i = 0; i < (int)X0_.size(); ++i) {
         Eigen::Vector3d Fc;
-        if (!nodeFc(i, Fc)) continue;
+        if (!(toolSig_ ? nodeSig(i, Fc) : nodeFc(i, Fc))) continue;
         f_[i] += Fc;
         toolWork_ += Fc.dot(v_[i]) * dt_;  // V2/B4 : outil -> solide
         tool_.F -= Fc;

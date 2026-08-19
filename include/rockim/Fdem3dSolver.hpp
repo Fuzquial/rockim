@@ -302,6 +302,18 @@ private:
     bool jcAdaptive_ = false;
     double toolVCap_ = 0.0;
 
+    // --- A1 : CONTACT OUTIL EN CONDITION DE VITESSE — miroir exact du 2D ----
+    // toolContact = penalty (defaut, bit-identique) | signorini.
+    // Voir FdemSolver.hpp pour la formulation complete, les sources
+    // (CD-Lagrange de Fekak/Brun/Gravouil ; Dureisseix et al., JTCAM 2024 ;
+    // arXiv:2606.01355) et la raison pour laquelle le schema reste EXPLICITE
+    // ici : masse concentree + obstacle rigide => operateur de Delassus
+    // diagonal et spherique par noeud, H = 1/m_i, impulsion en forme fermee.
+    // La geometrie est DUPLIQUEE dans une lambda distincte plutot que
+    // factorisee : la voie penalite ne doit pas etre touchee.
+    bool toolSig_ = false;
+    double toolSigRelax_ = 0.0;
+
     // --- TRI DES FRAGMENTS (Yang et al. 2025, IJRMMS 191, 106125, sec. 2.3)
     // Porte du 2D le 2026-08-18. Corrige un defaut de computeFragments(), qui
     // declare detache TOUT ce qui n'est pas la plus grosse composante : un bloc
