@@ -1993,9 +1993,33 @@ void FdemSolver::placeTool() {
         tool_.motion = Tool::Motion::FREE;
         double vImp = cfg_.getd("impactSpeed", 8.0);
         double xc = cfg_.getd("toolX", 0.5 * W_);
-        tool_.shape = Tool::Shape::DISC;               // disc insert
-        tool_.x = {xc, H_ + tool_.radius + gap};
+        // ---- E2 (2026-08-19) : toolShape est desormais HONORE en percussion.
+        // Avant ce correctif la valeur lue etait ECRASEE par DISC trois lignes
+        // plus bas : un run « poincon plat » et un run « disque » de meme rayon
+        // etaient bit-identiques, et c'est ainsi que le defaut a ete decouvert
+        // (18/08). Le 3D honorait deja la cle. Audit prealable du 19/08 : les
+        // DIX configs 2D-percussion du depot posent toolShape = disc, donc ce
+        // correctif ne change aucun resultat existant — il rend seulement le
+        // poincon plat 2D atteignable.
+        if (sh == "pdc")
+            throw std::runtime_error(
+                "toolShape = pdc n'a pas de sens en scenario = percussion : "
+                "un cutter PDC est un outil de COUPE (scenario = shear). "
+                "Utiliser disc (bouton) ou flat (poincon plat).");
+        // Placement selon la geometrie : `x` est le CENTRE pour un disque, le
+        // milieu de la FACE INFERIEURE pour un poincon plat (cf. Tool.hpp).
+        double yTop = (tool_.shape == Tool::Shape::FLAT) ? H_ + gap
+                                                         : H_ + tool_.radius + gap;
+        tool_.x = {xc, yTop};
         tool_.v = {0.0, -vImp};
+        std::cout << "[FDEM] outil percussif : "
+                  << (tool_.shape == Tool::Shape::FLAT
+                          ? "poincon plat, largeur " : "disque, rayon ")
+                  << (tool_.shape == Tool::Shape::FLAT ? tool_.width
+                                                       : tool_.radius)
+                  << " m, masse " << tool_.mass << " kg/m, vitesse d'impact "
+                  << vImp << " m/s, jeu initial " << gap << " m (contact a t = "
+                  << gap / vImp << " s)\n";
     } else {                                           // SHEAR: lateral cut
         tool_.motion = Tool::Motion::PRESCRIBED;
         double depth = cfg_.getd("cutDepth", 0.004);
@@ -2013,12 +2037,18 @@ void FdemSolver::placeTool() {
             // qu'avec les autres cles de contact pour rester a cote de la
             // geometrie d'outil qu'il borne.
             toolVCap_ = cfg_.getd("toolImpulseCap", 0.0);
+            // ---- E6 (2026-08-19) : la trace MENTAIT. Elle lisait
+            // tool_.v.norm() alors que tool_.v n'est assigne qu'a la fin de
+            // cette fonction : le journal affichait invariablement « 0 m/s »
+            // pendant que le plafond agissait bel et bien. Une trace qui ment
+            // est exactement le piege rencontre avec toolShape. On lit donc
+            // vCut, qui EST la vitesse imposee de l'outil.
             if (toolVCap_ > 0.0)
                 std::cout << "[FDEM] toolImpulseCap = " << toolVCap_
                           << " : |Fc| <= " << toolVCap_
                           << " * 2 v_outil * m / dt — l'outil ne peut pas "
                              "changer la vitesse d'un noeud de plus de "
-                          << toolVCap_ * 2.0 * tool_.v.norm() << " m/s par pas\n";
+                          << toolVCap_ * 2.0 * std::abs(vCut) << " m/s par pas\n";
             if (!(tool_.rakeDeg > -60.0 && tool_.rakeDeg < 60.0))
                 throw std::runtime_error("backRakeDeg must be in (-60, 60)");
             tool_.x = {cfg_.getd("toolX", -0.002), H_ - depth};
@@ -2683,7 +2713,21 @@ void FdemSolver::step() {
 
     if ((++stepCount_ & 1023) == 0) {                  // cheap stability guard
         checkEnergyAbort();                // opt-in (budgetAbortPct), E2
-        if (!std::isfinite(work_) || !std::isfinite(u_[0].x()))
+        // ---- E5 (2026-08-19) : la garde testait u_[0].x(), or le noeud 0
+        // peut etre FIXED — donc rigoureusement nul, donc toujours fini. Le
+        // detecteur etait AVEUGLE a une divergence qui n'aurait pas touche ce
+        // noeud precis. On echantillonne desormais tout le maillage a pas
+        // constant (~256 noeuds), avec un decalage qui tourne d'un controle a
+        // l'autre pour couvrir l'integralite des noeuds au fil du run. Cout :
+        // 256 tests tous les 1024 pas. Lecture PURE, aucun flottant ne change.
+        bool bad = !std::isfinite(work_);
+        const std::size_t nN = X0_.size();
+        const std::size_t stride = (nN > 256) ? nN / 256 : 1;
+        const std::size_t off = (std::size_t)((stepCount_ >> 10) % (long)stride);
+        for (std::size_t i = off; i < nN && !bad; i += stride)
+            if (!std::isfinite(u_[i].x()) || !std::isfinite(u_[i].y()))
+                bad = true;
+        if (bad)
             throw std::runtime_error("FDEM instability (NaN) — reduce dtFactor");
     }
 }

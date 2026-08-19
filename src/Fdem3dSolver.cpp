@@ -1488,7 +1488,18 @@ void Fdem3dSolver::step() {
     integrate();
     t_ += dt_;
     if ((++stepCount_ & 1023) == 0) {
-        if (!std::isfinite(work_) || !std::isfinite(u_[0].x()))
+        // ---- E5 (2026-08-19), miroir du 2D : u_[0] peut etre un noeud FIXED,
+        // donc toujours fini — le detecteur etait AVEUGLE. Echantillonnage de
+        // tout le maillage a pas constant (~256 noeuds), decalage tournant.
+        bool bad = !std::isfinite(work_);
+        const std::size_t nN = X0_.size();
+        const std::size_t stride = (nN > 256) ? nN / 256 : 1;
+        const std::size_t off = (std::size_t)((stepCount_ >> 10) % (long)stride);
+        for (std::size_t i = off; i < nN && !bad; i += stride)
+            if (!std::isfinite(u_[i].x()) || !std::isfinite(u_[i].y())
+                || !std::isfinite(u_[i].z()))
+                bad = true;
+        if (bad)
             throw std::runtime_error("FDEM3D instability (NaN)");
         checkEnergyAbort();                // opt-in (budgetAbortPct), E2
     }
