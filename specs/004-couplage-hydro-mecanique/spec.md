@@ -162,79 +162,92 @@ hydroWetJoints  = whole | partial  # FR-007 : joint entier ou face par face
 
 ---
 
-## 4. Échelle de validation
+## 4. Échelle de validation, et reproduction des figures
 
-Chaque barreau réfutable, et **chacun doit tomber avant le suivant**.
+### 4.0 Correction : Parker est DÉJÀ validé, et sans hydro
 
-| # | essai | référence | critère |
+> Ma première rédaction plaçait l'ouverture de Parker comme « le barreau
+> décisif » du couplage. **C'est faux**, et `bench_abuaisha/README.md` le disait
+> déjà : *« B1 est sans hydro par construction — pression uniforme imposée, et
+> résistances mises à des valeurs irreal high pour interdire toute
+> propagation »*. Ce cas teste une **charge suiveuse en élasticité pure**, pas
+> le fluide.
+>
+> Il a été couru le 2026-08-18 et **il passe** :
+> `parker_vs_theorie_2maillages.png` donne **−5,65 %** au centre sur le
+> maillage grossier au plateau, **+3,16 %** sur le raffiné à 6 ms — celui-ci
+> n'ayant pas atteint son plateau, il est en dépassement dynamique. La forme
+> colle à l'ellipse sur toute la demi-longueur.
+
+L'échelle repart donc plus bas, et le premier vrai test du fluide est un
+**pont de non-régression**.
+
+### 4.1 Les barreaux du module
+
+| # | essai | critère |
+|---|---|---|
+| **H1** | charge nulle hydro | pompe à zéro : 0 joint cassé, `hydroWork` nul, volume constant |
+| **H2** | volume de Green | **FAIT** — forage circulaire : 5,6e-07 d'écart à l'aire du polygone maillé |
+| **H3** | **pont Parker** | rejouer le cas Parker en `hydro = on, hydroInjection = pressure` et retrouver **les mêmes −5,65 % / +3,16 %** que par `confiningPressure`. Physiquement le même problème : tout écart est un bug de cavité, de connexité ou de signe |
+| **H4** | compressibilité | en `hydroInjection = rate`, la pression doit suivre $p_0 + K_f\log(m/Vho_0)$ pendant que la fissure s'ouvre |
+| **H5** | connexité | une fissure qui se propage doit **mouiller de nouvelles faces** et faire croître le volume. C'est précisément ce que `confineFaces = bore` ne sait pas faire |
+
+H3 à H5 testent le fluide ; H1 et H2 le protègent.
+
+### 4.2 Reproduction des figures de l'article
+
+**Le problème aux limites (leur Fig. 6)** : forage nu de 0,1 m dans un bloc de
+8 × 8 m, déformation plane, épaisseur unité. Maillage Delaunay de **3 mm** dans
+une zone de 0,8 × 0,8 m² autour du puits, grossissant jusqu'à 0,3 m au loin.
+Formation granitique à 1800 m.
+
+**Contraintes (leur §3.2)**, en convention « négatif = compression », et
+**effectives** (leur pression de formation de 28 MPa est déjà retranchée) :
+
+| état | $\sigma'_h$ | $\sigma'_H$ |
+|---|---|---|
+| isotrope | $-4{,}6$ MPa | $-4{,}6$ MPa |
+| anisotrope | $-4{,}6$ MPa | $-6{,}8$ MPa |
+
+**Procédure** : étape géostatique sans le puits jusqu'à équilibre, puis
+excavation, puis injection à **Q = 20 l/s** (choisi sous le seuil de ~100 l/s
+au-delà duquel la pression de rupture augmente).
+
+> **Ce que rockim a déjà pour ça** : `insituSh`/`insituSv` pour la
+> pré-contrainte et `excavRelease` pour l'excavation, tous deux **validés
+> contre Kirsch à 1,7–2,1 %** dans l'étude tunnel. Leur excavation à eux passe
+> par une réduction de module puis un retrait d'éléments ; la nôtre par
+> convergence-confinement — même état initial, même état final.
+
+| # | figure | ce qu'on compare | cible chiffrée |
 |---|---|---|---|
-| **V1** | charge nulle hydro | — | `hydro = on`, pompe à zéro : 0 joint cassé, `hydroWork` nul, volume constant |
-| **V2** | volume d'une cavité connue | géométrie | un forage circulaire non déformé : le théorème de Green doit rendre $\pi R^2$ |
-| **V3** | **ouverture sous pression uniforme** | **Parker (1981), éq. A.1** | **le barreau décisif** — voir ci-dessous |
-| **V4** | Kirsch avec pression interne | solution fermée | leur B3, déjà outillé (`tunnel_edz/tools/kirsch_check.py`) |
-| **V5** | pression de rupture, anisotrope | **12 MPa** (leur éq. 10), ~12,5 chez eux | leur B2 |
-| **V6** | pression de rupture, isotrope | **14,2 MPa** | idem |
-| **V7** | décalage dû à un joint préexistant | **+5,2 %** longitudinal et oblique, ~0 transverse | leur B5 |
-| **V8** | faciès à l'amorçage | étoile radiale (isotrope) / bi-aile (anisotrope) | leur B4 |
+| **F1** | **Fig. 11(a)**, cas de référence sans joint | **pression de rupture**, anisotrope | **12 MPa** analytique (leur éq. 10), **~12,5** chez eux |
+| **F2** | idem, isotrope | pression de rupture | **14,2 MPa** |
+| **F3** | **Fig. 9** | champ de $\sigma_{11}$ effectif juste avant amorçage | qualitatif + Kirsch |
+| **F4** | **Fig. 7** | **faciès** à $t = 1{,}2$ et $1{,}26$ ms | isotrope → étoile radiale complexe ; anisotrope → **bi-aile**, puis branchement et incurvation vers $\sigma_H$ |
+| **F5** | **Fig. 11**, 9 cas à joint | décalage du seuil selon orientation et distance | **+5,2 %** en longitudinal et oblique ; **~0 %** en transverse |
+| **F6** | **Fig. 11**, post-pic | plateau de propagation | **5,5 MPa** (la contrainte lointaine effective), **indépendant de la distance du joint** |
+| **F7** | **Fig. 10, 12, 13** | trajectoires selon la distance du joint (0,3L / 0,6L / L) | l'effet du joint s'estompe avec la distance ; à $L$, quasi identique au cas sans joint |
+| **F8** | **Fig. 15** | formation très fracturée : 320 joints/m², longueur moyenne 3,1 cm | faciès à $t = 1{,}36$ ms |
 
-### V3 — le contrôle décisif, entièrement spécifié
+**F1 et F2 sont les barreaux quantitatifs** — deux nombres, une solution
+analytique. **F6 en est un troisième**, et il est plus discriminant qu'il n'en
+a l'air : le plateau post-pic doit valoir la contrainte lointaine **et ne pas
+dépendre** de la distance du joint. Le reste est qualitatif.
 
-C'est **le seul point de tout leur article confronté à une solution fermée**,
-et leur annexe A le donne complètement.
+**Hors de portée, et il faut le dire** : leur Fig. 19 (essai de terrain
+Montney) demande des données de champ ; leurs Fig. 16-17 (microsismicité) sont
+un post-traitement de la masse et de la vitesse nodales — que rockim sort déjà,
+mais dont le semis suivra le trajet de fracture, donc ne coïncidera pas au-delà
+de l'amorçage.
 
-**Solution de Parker (1981), p. 33**, ouverture d'une discontinuité sous
-pression uniforme en déformation plane :
-
-$$w(x) = \frac{2\sigma'(1-\nu^2)}{E}\sqrt{\ell^2 - x^2} \tag{A.1}$$
-
-avec $\sigma' = p - \sigma_n$ la contrainte effective d'ouverture, $\ell$ la
-demi-longueur, $p$ la pression interne.
-
-**Le cas** : domaine 8 × 8 m, discontinuité de 1,5 m ($\ell = 0{,}75$ m),
-$p = 12$ MPa, $\sigma_H = 15$ MPa, $\sigma_v = 10$ MPa, donc $\sigma' = 2$ MPa.
-Maillage Delaunay de 0,003 à 0,3 m. Résistances portées à des valeurs
-*« irreal high »* pour interdire toute propagation : **c'est de l'élasticité
-pure sous charge suiveuse**, rien d'autre n'est testé.
-
-$$w(0) = \frac{2 \times 2\cdot10^6 \times (1-0{,}2^2)}{45\cdot10^{9}} \times 0{,}75
-       = 6{,}4\times10^{-5}\ \text{m} = \mathbf{0{,}064\ mm}$$
-
-> ⚠️ **Coquille de l'article**, déjà repérée dans `bench_abuaisha/README.md` :
-> l'annexe écrit « E = 45 MPa ». C'est **45 GPa** — sans quoi l'ouverture
-> vaudrait 64 m. Leur figure A.21 lit bien 0,065 mm.
-
-**Le maillage et la config de ce cas sont déjà écrits** dans `bench_abuaisha/`
-(`make_crack_mesh.py`, `parker.cfg`, `parker_check.py`), avec le dédoublement
-des lèvres par le greffon `Crack` de gmsh et l'astuce de la contrainte nette
-(appliquer 2 MPa dans un milieu non précontraint plutôt que 12 contre 10, pour
-éviter des lèvres plaquées à $t = 0$).
-
-### V5/V6 — le seuil analytique
-
-$$p^{HF} = \sigma'_H - 3\sigma'_h + f_t \tag{10}$$
-
-(Fjaer et al. 2008). Pour leur cas : $-6{,}8 - 3\times(-4{,}6) + 5 = 12$ MPa,
-et leur code donne ~12,5.
-
-### Paramètres de leur Table 1
-
-| | valeur |
-|---|---|
-| $E$, $\nu$, $\rho$ | 35 GPa, 0,27, 2500 kg/m³ |
-| $f_t$, $c$, $\varphi_i = \varphi_f$ | 5 MPa, 24 MPa, 38° |
-| $G_{Ic}$, $G_{IIc}$ | 10 N/m, 80 N/m |
-| pénalités $p_n$, $p_t$, $p_f$ | 350, 35, 175 GPa·m |
-| amortissement $\mu$ | $5{,}6\times10^{5}$ kg/m/s |
-
-> **Deux remarques sur ces valeurs.** (i) $G_{Ic} = 10$ J/m² et $f_t = 5$ MPa
-> avec $E = 35$ GPa donnent $\ell_{cz} = EG_f/f_t^2 = 14$ mm, pour une maille de
-> 3 mm et un forage de 100 mm : **la règle maison est respectée des deux
-> côtés**, ce que `bench_abuaisha/README.md` avait déjà relevé. (ii) Leur
-> amortissement est **massif** — c'est une relaxation dynamique assumée, le
-> problème étant quasi-statique. À rapprocher du balayage B1 en cours : le
-> même paramètre, deux régimes opposés, deux réponses opposées.
-
----
+**Réserve de méthode, posée avant les runs.** Leur modèle est non visqueux :
+la pression est uniforme et instantanée dans toute la cavité. Un faciès qui
+diffère du leur ne prouvera donc **ni** que notre mécanique est fausse, **ni**
+que la leur l'est — la FDEM est dépendante du maillage, ils le disent
+eux-mêmes et emploient une discrétisation aléatoire pour limiter le biais
+d'orientation. Les nombres (F1, F2, F6) départageront ; les images
+illustreront.
 
 ## 5. Décisions en attente
 
