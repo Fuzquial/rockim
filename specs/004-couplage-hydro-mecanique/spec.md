@@ -2,289 +2,284 @@
 
 **Feature Branch**: `004-couplage-hydro-mecanique`
 
-**Created**: 2026-08-19
+**Created**: 2026-08-19 — **révisée le même jour** après lecture de l'article
+d'AbuAisha transmis par F. Uzquiano.
 
 **Status**: Draft — spécification à valider, rien n'est implémenté
 
-**Input**: Donner à rockim un solveur hydraulique couplé, sur le modèle du
-solveur d'Y-Geo/Irazu (Lisjak et al. 2017), pour reproduire l'essai de
-fracturation hydraulique près du puits d'AbuAisha et al. (2017) — c'est-à-dire
-faire ce que le dossier `bench_abuaisha/` déclare aujourd'hui **hors de
-portée**.
+**Input**: Donner à rockim un solveur hydraulique couplé permettant de
+reproduire l'essai de fracturation hydraulique près du puits d'AbuAisha,
+Eaton, Priest & Wong (JPSE 154, 2017, 100–113) — c'est-à-dire faire ce que le
+dossier `bench_abuaisha/` déclare aujourd'hui **hors de portée**.
+
+---
+
+## 0. Correction de la première rédaction
+
+> La version initiale de cette spec, écrite avant d'avoir l'article, posait
+> comme cible la formulation de **Lisjak et al. 2017** : réseau de cavités et
+> de canaux, écoulement de Darcy, loi cubique, sous-cyclage hydraulique.
+>
+> **Ce n'est pas ce que fait AbuAisha.** Leur module HF d'Y-Geo repose sur une
+> hypothèse bien plus simple, qu'ils énoncent explicitement (leur §2.2) :
+>
+> > *For each time step the fluid pressure inside the cavities/fractures is
+> > assumed **constant**, i.e. **no flow due to hydraulic gradients** is
+> > considered, i.e. similar to an **inviscid flow**.*
+>
+> Pas de loi cubique, pas de gradient de pression, pas de leak-off — ils
+> l'écrivent aussi en introduction : *« the FDEM–HF in its current form assumes
+> inviscid flow restricted to fractures and it does not account for leakoff
+> into the rock formation »*.
+>
+> Conséquence : **le chantier est environ deux fois plus court que je ne
+> l'avais estimé**, et la formulation de Lisjak devient une extension
+> ultérieure, pas le point de départ.
 
 ---
 
 ## 1. Contexte : ce qui manque, écrit dans le code lui-même
 
-Le dossier `bench_abuaisha/README.md` pose le diagnostic sans détour. Notre
-architecture mécanique **est** celle de leur code Y-Geo : triangles Delaunay
-élastiques, éléments cohésifs, mode I de Hillerborg, mode II en
-slip-weakening. Ce qui manque est le **fluide**. Et la conséquence tient en une
-phrase, présente en toutes lettres dans le source de rockim, au sujet de
-`confineFaces = bore` :
+`bench_abuaisha/README.md` pose le diagnostic. Notre architecture mécanique
+**est** la leur : triangles Delaunay élastiques, éléments cohésifs, mode I de
+Hillerborg, mode II en slip-weakening, couplage mixte elliptique. Ce qui manque
+est le **fluide**. Et la conséquence tient dans un commentaire du source de
+rockim, au sujet de `confineFaces = bore` :
 
 > *faces born from cracking receive nothing*
 
-**La pression ne suit pas la fissure.** Le confinement actuel est une pression
-suiveuse appliquée aux faces extérieures **d'origine seulement** — choix
-délibéré et juste pour une cellule triaxiale, qui a une membrane. Mais une
-fracturation hydraulique est exactement le phénomène inverse : le fluide
-pénètre la fissure qu'il vient d'ouvrir, et c'est cette pression-là qui la
-propage.
-
-D'où le partage acté dans `bench_abuaisha/` : cinq essais reproductibles sans
-hydro (tout ce qui se joue **avant** l'amorçage), et hors de portée le plateau
-post-pic, le branchement, l'incurvation, l'interaction fissure-joint. Cette
-spécification vise précisément ce qui est hors de portée.
+**La pression ne suit pas la fissure.** Le confinement actuel s'applique aux
+faces extérieures **d'origine seulement** — juste pour une cellule triaxiale,
+qui a une membrane ; faux pour une fracturation hydraulique, où le fluide
+pénètre la fissure qu'il vient d'ouvrir et c'est cette pression qui la propage.
 
 ---
 
-## 2. Le modèle retenu, et pourquoi celui-là
+## 2. Le modèle d'AbuAisha, dans le détail
 
-**Référence de formulation** : Lisjak, Kaifosh, He, Tatone, Mahabadi &
-Grasselli, *A 2D, fully-coupled, hydro-mechanical, FDEM formulation for
-modelling fracturing processes in discontinuous, porous rock masses*,
-**Computers and Geotechnics 81 (2017) 1–18**. C'est le solveur d'Y-Geo, devenu
-celui d'Irazu — donc **le même code que celui dont AbuAisha se sert**.
+Trois modules en boucle (leur Fig. 1) : le solveur mécanique FDEM, un
+**calculateur de volume de cavité**, et un **modèle de pompe**.
 
-Ses équations sont reprises et explicitées dans un article d'accès libre que
-j'ai pu lire intégralement : Shandilaya & Roshankhah, *Fluid
-Injection-Induced Fracture Evolution and Breakdown*, **Stanford Geothermal
-Workshop 2026**. Toutes les formules ci-dessous en viennent, et sont
-attribuées à Lisjak et al. par leurs auteurs.
+### 2.1 L'hypothèse centrale : fluide non visqueux
 
-Ce choix n'est pas seulement pratique : c'est le **même modèle que la cible**.
-Une divergence de résultat sera donc imputable à notre implémentation ou à nos
-paramètres, jamais à un désaccord de formulation. C'est ce qui rend la
-validation falsifiable.
+La pression est **uniforme dans toute la cavité connectée** et instantanée. Il
+n'y a donc ni réseau d'écoulement, ni résistance, ni pas de temps hydraulique
+propre. Leur justification : *« appropriate as long as we are investigating
+near wellbore behaviour where convection effects are dominant »*.
 
-### 2.1 Topologie : cavités et canaux
+C'est une limite assumée, et elle borne le domaine de validité — mais c'est
+aussi ce qui rend le chantier abordable.
 
-Le réseau d'écoulement **se superpose au maillage mécanique**, il n'en crée pas
-un second.
+### 2.2 Volume de cavité, par le théorème de Green
 
-- une **cavité virtuelle** par sommet du maillage ;
-- un **canal d'écoulement** par élément cohésif, reliant les cavités de ses
-  deux extrémités ;
-- une **cavité physique** optionnelle et explicite, pour le forage : c'est le
-  volume dans lequel la pompe injecte.
+$$V = \frac{1}{2}\oint x\,\mathrm{d}y - y\,\mathrm{d}x \tag{4}$$
 
-> **Ce que rockim possède déjà, et qui rend le portage direct.** En FDEM les
-> nœuds sont dupliqués : « le sommet » n'est pas un nœud mais un **groupe** de
-> copies. Or ce groupe existe déjà et il est tenu à jour — c'est l'union-find
-> de l'insertion adaptative (`copiesOfVert_`, `grpsOfVert_`, `vOf_`,
-> `rebindVertex()`). Une cavité = un groupe. Et quand un joint s'insère, le
-> sommet se scinde : **le réseau hydraulique se scinde avec lui, gratuitement**.
-> C'est la même remarque que pour le tétraèdre à pression nodale de la fiche
-> D2, et elle vaut ici encore davantage.
+évalué sur **toutes** les frontières mouillées, anciennes et nouvelles.
 
-### 2.2 Ouverture hydraulique
+> **Détail d'implémentation qui simplifie tout** : discrétisée, cette intégrale
+> est une somme sur les segments de frontière,
+> $V = \tfrac12\sum (x_1 y_2 - x_2 y_1)$, et elle est **indépendante de l'ordre
+> de parcours** tant que les orientations sont cohérentes. Il n'y a donc
+> **aucun contour à assembler ni à ordonner** — c'est la formule du lacet
+> sommée face par face. rockim oriente déjà ses faces extérieures.
 
-Pour un canal, l'ouverture aux deux extrémités vaut
+### 2.3 Suivi des frontières mouillées
 
-$$a_0 = a_i + o_0, \qquad a_1 = a_i + o_1$$
+Le module *« tracks the newly created wet boundaries by checking their
+**connection with the initial source of fluid** »*. Une face devient mouillée
+si elle est reliée au forage par un chemin de joints ouverts.
 
-où $a_i$ est l'**ouverture initiale** (celle d'un joint intact — un milieu
-poreux n'a pas une conductivité nulle) et $o$ l'ouverture **mécanique** lue au
-point d'intégration correspondant. rockim les a déjà : la loi de joint calcule
-$d_n$ à ses deux points d'intégration en 2D.
+> **Ce que rockim possède déjà** : c'est une recherche de composante connexe,
+> exactement la machinerie de `computeFragments()` et de l'union-find de
+> l'insertion adaptative — mais parcourue sur les joints **rompus/morts** au
+> lieu des joints vivants. Et `confineFaces = bore` sait déjà désigner les
+> faces du forage, c'est-à-dire la source.
 
-Deux garde-fous de la littérature :
-- **ouverture résiduelle** $a_r$ : plancher sous lequel l'ouverture hydraulique
-  ne descend pas, même joint fermé ou en compression ;
-- **ouverture seuil** $a_t$ : plafond au-delà duquel on cesse d'appliquer la
-  loi cubique (au-delà, l'écoulement n'est plus de Poiseuille).
+### 2.4 Compressibilité et pompe
 
-Valeurs de l'article Stanford, pour mémoire : $a_i = a_r = 10^{-5}$ m,
-$a_t = 4{,}3\times10^{-4}$ m.
+$$K_f = -V\frac{\mathrm{d}p}{\mathrm{d}V} = \rho_f\frac{\mathrm{d}p}{\mathrm{d}\rho_f} \tag{5}$$
 
-### 2.3 Volume et masse de fluide d'une cavité
+$$p = p_0 + K_f \log\!\left(\frac{m}{V\rho_{f0}}\right) \tag{6}$$
 
-Chaque cavité reçoit **la moitié** du volume de chacun de ses canaux :
+où $m$ est la masse injectée, intégrée du débit de pompe. Une seule variable
+d'état scalaire par cavité : $m$. La pression s'en déduit à chaque pas.
 
-$$V_c = \sum_{j \ni c} L_j \frac{a_0 + a_1}{2} \cdot \frac{1}{2}$$
+### 2.5 Chargement du solide
 
-et la masse initiale, avec un modèle de compressibilité linéaire :
+Force nodale sur une frontière mouillée définie par les nœuds 1 et 2 :
 
-$$m^{t_0} = S^{t_0}\, V_c\, \rho_f \left(1 + \frac{P^{t_0}}{K_f}\right)$$
+$$\mathbf{F}_{p12} = -\frac{p}{2}\begin{bmatrix} y_2 - y_1 \\ x_2 - x_1\end{bmatrix} \tag{7}$$
 
-$S$ = saturation, $\rho_f$ = masse volumique, $K_f$ = module de compressibilité.
+C'est une **force suiveuse** sur la configuration courante — la machinerie de
+`confiningForces()` au signe et à l'assiette près.
 
-### 2.4 Écoulement : loi de Darcy, résistance par loi cubique
+### 2.6 Joints préexistants
 
-Débit massique dans un canal entre deux cavités de pressions $u_0$ et $u_1$ :
-
-$$q = \frac{dm}{dt} = -\frac{u_1 - u_0 + \rho_f g (y_1 - y_0)}{R}$$
-
-La résistance $R$ suit la **loi cubique**, intégrée le long d'un canal dont
-l'ouverture varie linéairement — et l'intégrale a une forme fermée :
-
-$$R = 12\nu \int_{x_1}^{x_0}\frac{\mathrm{d}x}{a(x)^3}
-    = \frac{6\nu\,(a_0 + a_1)}{(a_0 a_1)^2}\, L$$
-
-$\nu$ = viscosité cinématique. Noter que $R \to \infty$ quand une ouverture
-tend vers zéro : le plancher $a_r$ n'est pas cosmétique, il évite une division
-par zéro autant qu'il porte une physique.
-
-### 2.5 Intégration en temps et mise à jour de pression
-
-Euler explicite avant, sur la masse :
-
-$$\Delta m_0 = -\Delta m_1 = f(S)\,\frac{u_1-u_0+\rho_f g(y_1-y_0)}{R}\,\Delta t_h,
-\qquad f(S) = S^2(3-2S)$$
-
-Le facteur $f(S)$ éteint progressivement l'écoulement dans une cavité non
-saturée — c'est ce qui permet de simuler un front d'invasion plutôt qu'un
-milieu partout plein.
-
-Puis la pression, par compressibilité :
-
-$$P^{t} = \begin{cases}
-P^{t-1} + K_f\,\dfrac{\Delta m}{\rho_f V_c^{t}} & \text{si } S^t = 1\\[2mm]
-0 & \text{si } 0 \le S^t < 1
-\end{cases}$$
-
-Une cavité non saturée est donc **à pression nulle** : elle se remplit d'abord,
-elle ne pousse qu'ensuite.
-
-### 2.6 Couplage mécanique
-
-Deux sens, et c'est ce qui fait le « fully coupled » :
-
-- **fluide → solide** : la pression de cavité s'applique aux lèvres du joint,
-  en force suiveuse sur la configuration courante — exactement la machinerie de
-  `confiningForces()`, mais sur les faces **internes** et avec une pression
-  **par cavité** au lieu d'une pression globale ;
-- **solide → fluide** : l'ouverture mécanique change $a$, donc $R$ (en $a^{-3}$)
-  et $V_c$. Une fissure qui s'ouvre devient conductrice ; une fissure qui se
-  ferme s'étrangle.
-
-**Schéma décalé, avec sous-cyclage.** Le pas mécanique est fixé par l'onde
-(0,9 ns sur `indent3d_grad`) ; le pas hydraulique est fixé par la diffusion et
-vaut typiquement des ordres de grandeur de plus. On avance donc $N$ pas
-mécaniques par pas hydraulique, avec $N = \Delta t_h/\Delta t$ posé par
-configuration. L'article Stanford trace d'ailleurs ses résultats en « temps
-hydraulique », qui va jusqu'à 10 s.
+*« if at any point the rock joint is intersected by a fluid-driven fracture,
+the fluid pressure percolation is distributed **evenly** over the entire
+discontinuity »* — le joint entier devient mouillé d'un coup, à la même
+pression. Conséquence assumée par les auteurs : concentration de contrainte aux
+**pointes** du joint, d'où l'amorçage préférentiel qu'ils observent.
 
 ---
 
 ## 3. Exigences fonctionnelles
 
-- **FR-001** — Un réseau hydraulique est construit sur le graphe des joints :
-  une cavité par sommet (groupe de l'union-find), un canal par joint.
-- **FR-002** — Le réseau **suit la topologie mécanique** : quand un joint
-  s'insère et qu'un sommet se scinde, les cavités se scindent, et le fluide de
-  la cavité mère se répartit au prorata des volumes.
-- **FR-003** — L'ouverture hydraulique vaut $a = a_i + o$, bornée par $a_r$ et
-  $a_t$.
-- **FR-004** — La résistance suit la loi cubique sous sa forme fermée à
-  ouverture linéaire.
-- **FR-005** — La pression suit la compressibilité linéaire, et une cavité non
-  saturée est à pression nulle.
-- **FR-006** — La pression charge les lèvres en **force suiveuse**, sur la
-  configuration courante.
-- **FR-007** — Le couplage est **décalé avec sous-cyclage** : `hydroSubSteps`
-  pas mécaniques par pas hydraulique.
-- **FR-008** — Une **cavité physique** (le forage) peut être déclarée, alimentée
-  soit à **débit imposé**, soit à **pression imposée**.
-- **FR-009** — Le travail du fluide sur le solide entre au bilan d'énergie B4,
-  dans un poste **séparé** (`hydroWork_`). *Après quatre pompes d'énergie
-  découvertes en août, un canal de force non instrumenté est exclu.*
-- **FR-010** — Tout est **opt-in** : sans `hydro = on`, aucune trajectoire ne
+- **FR-001** — Une **cavité fluide** est définie par l'ensemble des faces
+  mouillées connectées à une source.
+- **FR-002** — L'appartenance à la cavité se propage par **connexité** à
+  travers les joints rompus, réévaluée quand la topologie change.
+- **FR-003** — Le volume suit le théorème de Green, sommé face par face, sur la
+  configuration **courante**.
+- **FR-004** — La pression suit la compressibilité linéaire (éq. 6) à partir de
+  la masse injectée.
+- **FR-005** — La pression charge les faces mouillées par l'éq. 7, en force
+  suiveuse.
+- **FR-006** — La pompe impose soit un **débit**, soit une **pression**.
+- **FR-007** — Un joint préexistant intersecté est mouillé **en entier**.
+- **FR-008** — Le travail du fluide entre au bilan B4 dans un poste **séparé**
+  (`hydroWork_`). *Après quatre pompes d'énergie découvertes en août, un canal
+  de force non instrumenté est exclu.*
+- **FR-009** — Tout est **opt-in** : sans `hydro = on`, aucune trajectoire ne
   change d'un bit.
+- **FR-010** — Le solveur imprime à chaque frame : volume de cavité, pression,
+  masse injectée, nombre de faces mouillées. *Une cavité qui se remplit sans
+  qu'on puisse la regarder est ingouvernable.*
 
-### Clés de configuration proposées
+### Clés proposées
 
 ```
-hydro          = off | on        # defaut off, bit-identique
-fluidDensity   = 1000            # rho_f [kg/m3]
-fluidBulk      = 2.2e9           # K_f [Pa]
-fluidViscosity = 1.0e-6          # nu [m2/s] (cinematique)
-apertureInit   = 1e-5            # a_i [m]
-apertureRes    = 1e-5            # a_r [m], plancher
-apertureMax    = 4.3e-4          # a_t [m], plafond de validite cubique
-hydroSubSteps  = 1000            # pas mecaniques par pas hydraulique
-hydroGravity   = 0               # terme rho g (y1 - y0)
-boreInjection  = rate | pressure
-boreRate       = 1e-5            # [m3/s/m] si rate
-borePressure   = 12e6            # [Pa] si pressure
-boreVolume     = 0               # volume de la cavite physique
+hydro           = off | on       # defaut off, bit-identique
+hydroSource     = bore           # faces sources (reutilise confineFaces)
+fluidBulk       = 2.2e9          # K_f [Pa]
+fluidDensity    = 1000           # rho_f0 [kg/m3]
+hydroP0         = 0              # p_0 [Pa]
+hydroInjection  = rate | pressure
+hydroRate       = 1e-5           # [m3/s/m]
+hydroPressure   = 12e6           # [Pa] si pressure
+hydroWetJoints  = whole | partial  # FR-007 : joint entier ou face par face
 ```
 
 ---
 
-## 4. Échelle de validation — chaque barreau réfutable
+## 4. Échelle de validation
 
-L'ordre est celui de la difficulté croissante, et **chaque barreau doit tomber
-avant de monter au suivant**.
+Chaque barreau réfutable, et **chacun doit tomber avant le suivant**.
 
 | # | essai | référence | critère |
 |---|---|---|---|
-| **V1** | charge nulle hydro | — | `hydro = on`, pression uniforme partout, aucun gradient : **0 joint cassé**, débit nul machine, `hydroWork` nul |
-| **V2** | Kirsch avec pression interne | solution fermée | déjà outillé (`tunnel_edz/tools/kirsch_check.py`), c'est le B3 d'AbuAisha |
-| **V3** | **ouverture d'une discontinuité sous pression uniforme** | **Parker (1981), w(0) = 0,0640 mm** | c'est le **B1** du dossier abuaisha, *le seul point de tout leur article confronté à une solution fermée*. Maillage et config **déjà écrits** |
-| **V4** | diffusion 1D dans un canal unique | solution de diffusion | vérifie $R$, $K_f$ et le sous-cyclage indépendamment de la mécanique |
-| **V5** | pression de rupture, isotrope | **14,2 MPa** (AbuAisha) | leur B2 |
-| **V6** | pression de rupture, anisotrope | **12 MPa** (leur éq. 10) | idem, avec $\lambda \ne 1$ |
-| **V7** | décalage dû à un joint préexistant | **+5,2 %** | leur B5 |
-| **V8** | faciès à l'amorçage | étoile radiale / bi-aile | leur B4 |
+| **V1** | charge nulle hydro | — | `hydro = on`, pompe à zéro : 0 joint cassé, `hydroWork` nul, volume constant |
+| **V2** | volume d'une cavité connue | géométrie | un forage circulaire non déformé : le théorème de Green doit rendre $\pi R^2$ |
+| **V3** | **ouverture sous pression uniforme** | **Parker (1981), éq. A.1** | **le barreau décisif** — voir ci-dessous |
+| **V4** | Kirsch avec pression interne | solution fermée | leur B3, déjà outillé (`tunnel_edz/tools/kirsch_check.py`) |
+| **V5** | pression de rupture, anisotrope | **12 MPa** (leur éq. 10), ~12,5 chez eux | leur B2 |
+| **V6** | pression de rupture, isotrope | **14,2 MPa** | idem |
+| **V7** | décalage dû à un joint préexistant | **+5,2 %** longitudinal et oblique, ~0 transverse | leur B5 |
+| **V8** | faciès à l'amorçage | étoile radiale (isotrope) / bi-aile (anisotrope) | leur B4 |
 
-**V1 et V3 sont les deux barreaux décisifs** : le premier parce qu'un contrôle à
-charge nulle a attrapé trois bugs sur le seul chantier du contact par potentiel ;
-le second parce qu'il confronte à une **solution analytique**, ce qui est rare.
+### V3 — le contrôle décisif, entièrement spécifié
 
-Cerise : l'article Stanford donne un contrôle supplémentaire indépendant —
-pression de rupture de **92 MPa** contre l'analytique de Hubbert & Willis, avec
-$G_{Ic} = 50$ et $G_{IIc} = 500$ J/m² sur un granite à $E = 55$ GPa.
+C'est **le seul point de tout leur article confronté à une solution fermée**,
+et leur annexe A le donne complètement.
+
+**Solution de Parker (1981), p. 33**, ouverture d'une discontinuité sous
+pression uniforme en déformation plane :
+
+$$w(x) = \frac{2\sigma'(1-\nu^2)}{E}\sqrt{\ell^2 - x^2} \tag{A.1}$$
+
+avec $\sigma' = p - \sigma_n$ la contrainte effective d'ouverture, $\ell$ la
+demi-longueur, $p$ la pression interne.
+
+**Le cas** : domaine 8 × 8 m, discontinuité de 1,5 m ($\ell = 0{,}75$ m),
+$p = 12$ MPa, $\sigma_H = 15$ MPa, $\sigma_v = 10$ MPa, donc $\sigma' = 2$ MPa.
+Maillage Delaunay de 0,003 à 0,3 m. Résistances portées à des valeurs
+*« irreal high »* pour interdire toute propagation : **c'est de l'élasticité
+pure sous charge suiveuse**, rien d'autre n'est testé.
+
+$$w(0) = \frac{2 \times 2\cdot10^6 \times (1-0{,}2^2)}{45\cdot10^{9}} \times 0{,}75
+       = 6{,}4\times10^{-5}\ \text{m} = \mathbf{0{,}064\ mm}$$
+
+> ⚠️ **Coquille de l'article**, déjà repérée dans `bench_abuaisha/README.md` :
+> l'annexe écrit « E = 45 MPa ». C'est **45 GPa** — sans quoi l'ouverture
+> vaudrait 64 m. Leur figure A.21 lit bien 0,065 mm.
+
+**Le maillage et la config de ce cas sont déjà écrits** dans `bench_abuaisha/`
+(`make_crack_mesh.py`, `parker.cfg`, `parker_check.py`), avec le dédoublement
+des lèvres par le greffon `Crack` de gmsh et l'astuce de la contrainte nette
+(appliquer 2 MPa dans un milieu non précontraint plutôt que 12 contre 10, pour
+éviter des lèvres plaquées à $t = 0$).
+
+### V5/V6 — le seuil analytique
+
+$$p^{HF} = \sigma'_H - 3\sigma'_h + f_t \tag{10}$$
+
+(Fjaer et al. 2008). Pour leur cas : $-6{,}8 - 3\times(-4{,}6) + 5 = 12$ MPa,
+et leur code donne ~12,5.
+
+### Paramètres de leur Table 1
+
+| | valeur |
+|---|---|
+| $E$, $\nu$, $\rho$ | 35 GPa, 0,27, 2500 kg/m³ |
+| $f_t$, $c$, $\varphi_i = \varphi_f$ | 5 MPa, 24 MPa, 38° |
+| $G_{Ic}$, $G_{IIc}$ | 10 N/m, 80 N/m |
+| pénalités $p_n$, $p_t$, $p_f$ | 350, 35, 175 GPa·m |
+| amortissement $\mu$ | $5{,}6\times10^{5}$ kg/m/s |
+
+> **Deux remarques sur ces valeurs.** (i) $G_{Ic} = 10$ J/m² et $f_t = 5$ MPa
+> avec $E = 35$ GPa donnent $\ell_{cz} = EG_f/f_t^2 = 14$ mm, pour une maille de
+> 3 mm et un forage de 100 mm : **la règle maison est respectée des deux
+> côtés**, ce que `bench_abuaisha/README.md` avait déjà relevé. (ii) Leur
+> amortissement est **massif** — c'est une relaxation dynamique assumée, le
+> problème étant quasi-statique. À rapprocher du balayage B1 en cours : le
+> même paramètre, deux régimes opposés, deux réponses opposées.
 
 ---
 
-## 5. Ce qu'il faut décider avant de coder
+## 5. Décisions en attente
 
-1. **Milieu poreux ou fractures seules ?** Lisjak couple aussi la **porosité de
-   la matrice** (leak-off dans les triangles). AbuAisha en a besoin pour le
-   plateau post-pic. Le faire d'emblée double le chantier ; ne pas le faire
-   interdit un de leurs résultats. *Ma recommandation : fractures seules
-   d'abord, matrice ensuite, avec la clé prévue dès maintenant.*
-2. **2D seulement, ou 2D et 3D ?** La constitution (III) impose les deux de
-   front. Mais la feuille de route dit « hydro 2D d'abord », et AbuAisha est un
-   cas 2D. *Ma recommandation : invoquer l'exception documentée — l'objet
-   n'existe pas encore en 3D — et écrire le 2D seul, en gardant la structure
-   portable.*
-3. **La cavité physique du forage.** Faut-il un volume de puits explicite avec
-   sa compressibilité (donc un stockage, donc une montée en pression réaliste),
-   ou une pression imposée en paroi ? *Le premier est nécessaire pour reproduire
-   une courbe de pression de puits ; le second suffit pour un seuil d'amorçage.*
+1. **2D seulement, ou 2D et 3D ?** La constitution (III) impose les deux de
+   front ; la feuille de route dit « hydro 2D d'abord » ; AbuAisha est 2D.
+   *Recommandation : invoquer l'exception documentée et écrire le 2D seul.*
+2. **Une cavité ou plusieurs ?** Leur modèle suppose une source unique. Un
+   fragment détaché qui emporte du fluide, ou deux fissures qui se rejoignent,
+   demandent une gestion multi-cavités (fusion/scission). *Recommandation :
+   une cavité pour commencer, structure prévue pour plusieurs.*
+3. **Extension Lisjak ensuite ?** Le modèle non visqueux ne peut pas rendre le
+   plateau post-pic ni le leak-off. La formulation de Lisjak (réseau, loi
+   cubique, sous-cyclage) reste spécifiée dans l'historique git de ce fichier
+   et pourra devenir `hydroModel = inviscid | network`.
 
 ---
 
-## 6. Ce qui manque encore
-
-**L'article d'AbuAisha lui-même.** Le dossier `bench_abuaisha/` en cite les
-figures, les équations et les valeurs, donc quelqu'un l'a lu — mais le PDF n'est
-pas dans la bibliographie. Il sera nécessaire pour V5 à V8 : leur éq. 3
-(couplage mixte elliptique), leur éq. 10 (pression de rupture analytique) et
-leurs Tables de paramètres.
-
-> AbuAisha, Eaton, Priest & Wong, *Hydro-mechanically coupled FDEM framework to
-> investigate near-wellbore hydraulic fracturing in homogeneous and fractured
-> rock formations*, **J. Petrol. Sci. Eng. 154 (2017) 100–113**.
-
-**Lisjak et al. 2017** serait un confort, pas une nécessité : l'article Stanford
-en donne les équations utiles. Il trancherait en revanche les deux points ouverts
-du §5 — porosité de matrice, et traitement de la cavité physique.
-
----
-
-## 7. Estimation
+## 6. Estimation révisée
 
 | étape | contenu | effort |
 |---|---|---|
-| A | structures (cavités, canaux) + construction sur l'union-find | 2 j |
-| B | solveur hydraulique seul (V1, V4) | 2 j |
-| C | couplage fluide → solide + bilan d'énergie (V2, V3) | 2 j |
-| D | cavité physique, pompe, sous-cyclage (V5, V6) | 2 j |
-| E | scission dynamique du réseau à l'insertion (V7, V8) | 2-3 j |
+| A | cavité : connexité aux sources, volume de Green, sortie | 1,5 j |
+| B | compressibilité + pompe + chargement éq. 7 + bilan B4 | 1,5 j |
+| C | **V1, V2, V3 (Parker)** | 1 j |
+| D | joints préexistants mouillés en entier (V7) | 1 j |
+| E | seuils de rupture, faciès (V5, V6, V8) | 1,5 j |
 
-Une dizaine de jours pour l'ensemble, mais **V3 (Parker) tombe dès l'étape C** —
-c'est-à-dire qu'on saura si la formulation est juste avant d'avoir tout écrit.
+**Environ 6 jours**, contre la dizaine estimée avec le modèle de Lisjak. Et
+**V3 tombe dès l'étape C** : on saura si la formulation est juste après trois
+jours, pas après dix.
+
+---
+
+## 7. Sources
+
+- **AbuAisha, Eaton, Priest & Wong**, *Hydro-mechanically coupled FDEM
+  framework to investigate near-wellbore hydraulic fracturing in homogeneous
+  and fractured rock formations*, **JPSE 154 (2017) 100–113**. Classé dans la
+  bibliographie.
+- **Parker (1981)**, *The mechanics of fracture and fatigue*, p. 33 — la
+  solution analytique de V3, reprise en annexe A de l'article ci-dessus.
+- **Fjaer et al. (2008)**, *Petroleum related rock mechanics* — le seuil de
+  l'éq. 10.
+- **Lisjak, Kaifosh, He, Tatone, Mahabadi & Grasselli**, Computers and
+  Geotechnics 81 (2017) 1–18 — la formulation **visqueuse** d'Y-Geo/Irazu, pour
+  l'extension ultérieure. Ses équations sont reprises en accès libre par
+  Shandilaya & Roshankhah, Stanford Geothermal Workshop 2026 (classé dans la
+  bibliographie).
