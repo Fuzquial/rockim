@@ -1,0 +1,20 @@
+{
+ "run": "out_tun_smoke_d07",
+ "joints": 23374,
+ "broken": 952,
+ "tensile": 254,
+ "mixed": 128,
+ "shear": 570,
+ "binary_tensile": 331,
+ "binary_shear": 621,
+ "crack_length_m": 233.4938653687936,
+ "crack_area_m2": 233.4938653687936,
+ "edz_radius_p95_m": 7.921528646644616,
+ "edz_radius_max_m": 8.514200837718121,
+ "edz_halfaxis_x_p95_m": 7.504590000000001,
+ "edz_halfaxis_y_p95_m": 4.921077500000003,
+ "u_max_m": 0.017387639287721576,
+ "u_crown_m": 0.017387639287721576,
+ "u_sidewall_m": 0.015768639763783236,
+ "u_invert_m": 0.01612451549659777
+}

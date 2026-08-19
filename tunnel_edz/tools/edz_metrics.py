@@ -67,6 +67,16 @@ def displacement(run):
     return P0, np.linalg.norm(U, axis=1), U
 
 
+def compute(run, cx=50.0, cy=50.0, qmix=0.5, thickness=1.0):
+    """Les memes metriques, utilisables comme fonction (cf. plot_sweep.py)."""
+    class A:
+        pass
+    a = A()
+    a.run, a.cx, a.cy, a.qmix, a.thickness, a.json = (run, cx, cy, qmix,
+                                                      thickness, None)
+    return _run(a, quiet=True)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("run")
@@ -75,16 +85,19 @@ def main():
     ap.add_argument("--qmix", type=float, default=0.5)
     ap.add_argument("--thickness", type=float, default=1.0)
     ap.add_argument("--json", default=None)
-    a = ap.parse_args()
+    _run(ap.parse_args())
 
+
+def _run(a, quiet=False):
     J = read_joints(a.run)
     brk = (J["tBreak"] >= 0.0) | (J["damage"] >= 0.999)
     n = int(brk.sum())
     res = {"run": os.path.basename(a.run), "joints": int(J.size),
            "broken": n}
     if n == 0:
-        print(f"{res['run']} : AUCUN joint casse sur {J.size}")
-        return
+        if not quiet:
+            print(f"{res['run']} : AUCUN joint casse sur {J.size}")
+        return res
 
     x1, y1 = J["x1"][brk], J["y1"][brk]
     x2, y2 = J["x2"][brk], J["y2"][brk]
@@ -124,6 +137,8 @@ def main():
                             ("u_invert_m", bot)):
                 res[nm] = float(umag[sel].max()) if sel.any() else None
 
+    if quiet:
+        return res
     print(f"--- {res['run']} : {n} joints casses / {J.size} ---")
     print(f"  modes (q >= {a.qmix}) : traction {res['tensile']}, "
           f"mixte {res['mixed']}, cisaillement {res['shear']}")
@@ -144,6 +159,7 @@ def main():
         with open(a.json, "w") as f:
             json.dump(res, f, indent=1)
         print("  ->", a.json)
+    return res
 
 
 if __name__ == "__main__":

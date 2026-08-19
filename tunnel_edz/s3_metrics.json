@@ -1,0 +1,20 @@
+{
+ "run": "out_tun_s3",
+ "joints": 159269,
+ "broken": 3356,
+ "tensile": 1444,
+ "mixed": 554,
+ "shear": 1358,
+ "binary_tensile": 1773,
+ "binary_shear": 1583,
+ "crack_length_m": 703.5872954142226,
+ "crack_area_m2": 703.5872954142226,
+ "edz_radius_p95_m": 11.022521476597626,
+ "edz_radius_max_m": 12.767238722997229,
+ "edz_halfaxis_x_p95_m": 10.507212499999998,
+ "edz_halfaxis_y_p95_m": 7.859437500000002,
+ "u_max_m": 0.08359999999999701,
+ "u_crown_m": 0.03868746567042167,
+ "u_sidewall_m": 0.08359999999999701,
+ "u_invert_m": 0.04842984616948607
+}

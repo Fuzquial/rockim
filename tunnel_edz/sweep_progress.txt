@@ -1,0 +1,4 @@
+﻿=== sigma0 = 3 MPa termine en 22 min ===
+=== sigma0 = 4 MPa termine en 33 min ===
+=== sigma0 = 6 MPa termine en 55 min ===
+=== sigma0 = 7 MPa termine en 58 min ===

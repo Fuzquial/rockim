@@ -32,7 +32,17 @@ def main():
     gmsh.option.setNumber("General.Terminal", 0)
     gmsh.model.add("kirsch")
     gmsh.option.setNumber("Mesh.RandomSeed", seed)
-    gmsh.option.setNumber("Mesh.Algorithm", 6)          # frontal-Delaunay
+    # ALGORITHME 5 (Delaunay isotrope) et NON 6 (frontal-Delaunay).
+    # Mesure du 2026-08-18 sur le maillage du forage B2 : l'algorithme 6
+    # produit un RESEAU REGULIER — angle minimal median 60,0 deg, rapport
+    # pic/creux des orientations d'aretes 55,1 (1 = isotrope). Les aretes
+    # ne pointent alors que dans TROIS directions, donc les joints ne
+    # peuvent s'ouvrir que selon ces trois plans : le champ de contrainte
+    # reste juste (Kirsch a 1 %) mais le FACIES DE FISSURATION est
+    # contraint par le maillage. C'est ce qui a empeche l'amorcage dans
+    # le premier essai B2 : 71 elements au-dessus de ft, 2 joints rompus.
+    # Meme defaut que celui corrige le 2026-08-17 sur le maillage tunnel.
+    gmsh.option.setNumber("Mesh.Algorithm", 5)          # Delaunay ISOTROPE
     gmsh.option.setNumber("Mesh.Optimize", 1)
 
     cx, cy = 0.5 * W, 0.5 * H
