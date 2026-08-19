@@ -3029,9 +3029,29 @@ void Fdem3dSolver::computeFragments() {
     for (int k = 0; k < nid; ++k) rank[mass[k].first] = k;
     for (auto& fid : fragId_) fid = rank[fid];
     nFrag_ = nid;
+    // E7 (2026-08-19) : le volume detache ne compte plus les CORPS ETRANGERS.
+    // Un maillage multi-corps (groupes physiques Gmsh) fait de l'insert une
+    // composante connexe distincte de la roche : il etait donc compte comme
+    // « fragment detache » a chaque run — 5 446 mm^3, soit tout son volume,
+    // dans le resume et dans l'energie specifique work_/detachedVol_. On ne
+    // retient desormais que les elements appartenant au MEME groupe physique
+    // que le plus gros fragment, c'est-a-dire a la roche. En mono-corps
+    // (elemGroup_ vide) le comportement est strictement inchange.
+    int rockGroup = -1;
+    if (!elemGroup_.empty())
+        for (int e = 0; e < (int)el_.size(); ++e)
+            if (fragId_[e] == 0) { rockGroup = elemGroup_[e]; break; }
     double vDet = 0;                                   // volume, phase-neutral
-    for (int e = 0; e < (int)el_.size(); ++e)
-        if (fragId_[e] != 0) vDet += el_[e].V0;
+    long nForeign = 0;
+    for (int e = 0; e < (int)el_.size(); ++e) {
+        if (fragId_[e] == 0) continue;                 // le corps principal
+        if (rockGroup >= 0 && elemGroup_[e] != rockGroup) { ++nForeign; continue; }
+        vDet += el_[e].V0;
+    }
+    if (nForeign > 0)
+        std::cout << "[FDEM3D] volume detache : " << nForeign
+                  << " elements ecartes (corps etrangers a la roche : outil "
+                     "maille, platines)\n";
     detachedVol_ = vDet;
 }
 
@@ -3076,7 +3096,7 @@ void Fdem3dSolver::writeFrame(int frame) {
                       {{"velocity", &vel}});
 
     std::vector<std::array<int, 3>> tris;
-    std::vector<double> Dj, tb, Tp, Fs, Bd, Fm, Bm;
+    std::vector<double> Dj, tb, Tp, Fs, Bd, Fm, Bm, Dt, Ed;
     for (const auto& J : jt_) {
         tris.push_back(J.a);
         Dj.push_back(J.D);
@@ -3086,11 +3106,20 @@ void Fdem3dSolver::writeFrame(int frame) {
         Bd.push_back(J.bonded ? 1.0 : 0.0);
         Fm.push_back(J.failMode);
         Bm.push_back(J.bmode);
+        // E8 (2026-08-19) : le DIF gele a l'insertion et le taux de
+        // deformation qui l'a produit sont desormais EXPORTES. Sans eux la
+        // population de joints inseree n'est pas auditable — or c'est
+        // exactement la qu'un attracteur s'etait loge le 18/08 (l'exposant
+        // litteral de Yang empilant les insertions juste sous 1e2 /s, mediane
+        // 99,36). On ne peut pas surveiller ce qu'on n'ecrit pas.
+        Dt.push_back(J.difT);
+        Ed.push_back(J.edotIns);
     }
     std::snprintf(name, sizeof(name), "/fdem3d_joints_%04d.vtu", frame);
     vtk::ScalarField jf{
         {"damage", &Dj}, {"tBreak", &tb}, {"type", &Tp},
         {"ftScale", &Fs}, {"bonded", &Bd}, {"breakMode", &Bm}};
+    if (difOn_) { jf["difT"] = &Dt; jf["edotIns"] = &Ed; }
     if (cfg_.getb("writeJointMode", false)) jf["failMode"] = &Fm;
     vtk::writeTriangles3(out_ + name, pts, tris, jf);
 

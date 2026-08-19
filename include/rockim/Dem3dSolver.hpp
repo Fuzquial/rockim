@@ -96,8 +96,19 @@ private:
     void integrate();
     void computeFragments();
 
+    // E4 (2026-08-19) : la cle est desormais TRIEE. Sans tri, (i,j) et (j,i)
+    // donnent deux cles differentes pour la MEME paire. La boucle en cellules
+    // liees ne garantit l'ordre i<j que dans la cellule d'origine (garde
+    // `home && j <= i`) : des qu'une particule change de cellule, les roles
+    // s'inversent, la cle change, et l'historique du ressort tangentiel est
+    // perdu EN SILENCE — le contact repart d'un glissement nul. Le tri rend la
+    // cle invariante par permutation.
+    // ⚠️ Ce correctif n'est PAS bit-neutre : le repere dem3d_tension de la
+    // suite doit etre re-mesure. Il l'est a raison — l'ancienne valeur etait
+    // celle d'un historique tangentiel amnesique.
     static uint64_t pairKey(int i, int j) {
-        return (uint64_t(uint32_t(i)) << 32) | uint32_t(j);
+        int a = (i < j) ? i : j, b = (i < j) ? j : i;
+        return (uint64_t(uint32_t(a)) << 32) | uint32_t(b);
     }
 
     Config cfg_;

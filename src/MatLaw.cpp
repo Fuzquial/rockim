@@ -215,8 +215,21 @@ public:
         }
 
         // ---- Rankine crack-band tensile damage --------------------------
-        double k0 = mat_.ft / mat_.E;
-        double kf = mat_.Gf / (lc * mat_.ft) - 0.5 * k0;
+        // E1 (2026-08-19) : ftScale est desormais HONORE. Avant ce correctif,
+        // le facteur de Weibull par element etait tire, ECRIT DANS LES VTU,
+        // et sans le moindre effet sous les lois dpr et saksala — seules
+        // dpdfh et saksala2011 le lisaient. On croyait donc avoir une
+        // heterogeneite, on n'en avait pas. Audit du 19/08 : aucune config du
+        // depot ne combine dpr/saksala et matWeibullM, le correctif ne change
+        // donc aucun resultat existant.
+        // Gf N'EST PAS mis a l'echelle : le facteur de Weibull porte sur la
+        // RESISTANCE (mecanisme FIELD des VUMAT), pas sur la tenacite. La
+        // longueur cohesive locale E Gf / ft^2 varie donc en 1/ftScale^2, ce
+        // qui est le comportement attendu d'un materiau dont seuls les defauts
+        // sont distribues.
+        const double ftLoc = mat_.ft * s.ftScale;
+        double k0 = ftLoc / mat_.E;
+        double kf = mat_.Gf / (lc * ftLoc) - 0.5 * k0;
         if (kf <= 0.05 * k0)
             throw std::runtime_error("MatLaw: element size " + std::to_string(lc)
                 + " m exceeds the crack-band limit E Gf / ft^2 — refine the "

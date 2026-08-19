@@ -2032,6 +2032,21 @@ void FdemSolver::placeTool() {
             tool_.faceLen = cfg_.getd("cutterLen", 0.013);
             tool_.chamLen = cfg_.getd("chamferLen", 0.0);
             tool_.chamDeg = cfg_.getd("chamferDeg", 45.0);
+            // ---- E3 (2026-08-19) : le chanfrein est LU, STOCKE, et n'entre
+            // dans AUCUN test de contact du cutter. Dix configs de la campagne
+            // de coupe le posent, en croyant modeler une arete chanfreinee.
+            // Le rendre operant changerait leurs resultats ; la constitution
+            // (I) l'interdit sans decision explicite. En attendant, il ne sera
+            // plus SILENCIEUX : un reglage qui ne fait rien est pire que son
+            // absence, et il doit au moins le dire.
+            if (tool_.chamLen > 0.0)
+                std::cout << "\n[FDEM] *** AVERTISSEMENT *** chamferLen = "
+                          << tool_.chamLen << " m est lu mais **NON "
+                             "IMPLEMENTE** : le chanfrein n'intervient dans "
+                             "aucun test de contact du cutter. La geometrie "
+                             "reellement simulee est un coin SANS chanfrein. "
+                             "Retirer la cle, ou implementer FR-008 (spec "
+                             "003-cutter-pdc-3d).\n\n";
             tool_.thick   = cfg_.getd("cutterThick", 0.0);
             // A : ecretage en impulsion — voir FdemSolver.hpp. Lu ICI plutot
             // qu'avec les autres cles de contact pour rester a cote de la
@@ -4913,7 +4928,7 @@ void FdemSolver::writeFrame(int frame) {
                       {{"velocity", &vel}});
 
     std::vector<std::array<int, 2>> lines;
-    std::vector<double> Dj, tb, Tp, Fs, Bd, Fm, Bm;
+    std::vector<double> Dj, tb, Tp, Fs, Bd, Fm, Bm, Dt, Ed;
     for (const auto& J : jt_) {
         lines.push_back({J.a1, J.a2});
         Dj.push_back(J.D);
@@ -4923,11 +4938,14 @@ void FdemSolver::writeFrame(int frame) {
         Bd.push_back(J.bonded ? 1.0 : 0.0);
         Fm.push_back(J.failMode);
         Bm.push_back(J.bmode);
+        Dt.push_back(J.difT);          // E8 : voir Fdem3dSolver::writeFrame
+        Ed.push_back(J.edotIns);
     }
     std::snprintf(name, sizeof(name), "/fdem_joints_%04d.vtu", frame);
     vtk::ScalarField jf{
         {"damage", &Dj}, {"tBreak", &tb}, {"type", &Tp},
         {"ftScale", &Fs}, {"bonded", &Bd}, {"breakMode", &Bm}};
+    if (difOn_) { jf["difT"] = &Dt; jf["edotIns"] = &Ed; }
     if (cfg_.getb("writeJointMode", false)) jf["failMode"] = &Fm;
     vtk::writeLines(out_ + name, pts, lines, jf);
 
