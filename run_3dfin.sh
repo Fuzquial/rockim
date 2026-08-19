@@ -1,0 +1,5 @@
+#!/bin/bash
+cd "C:/Users/fuzquianoalricabi/simulations/FDEM/rockim/rockim_p1"
+t0=$(date +%s)
+./rockim_yy.exe configs/indent3d_fin.cfg out_indent3d_fin > run_indent3d_fin.log 2>&1
+echo "=== TERMINE en $(( $(date +%s) - t0 )) s ===" >> run_indent3d_fin.log
