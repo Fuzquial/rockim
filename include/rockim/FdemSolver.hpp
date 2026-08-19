@@ -648,6 +648,59 @@ private:
     // rapport injection / travail de corps rigide qui retombe vers 1.
     double toolVCap_ = 0.0;
 
+    // --- A1 : CONTACT OUTIL EN CONDITION DE VITESSE (CD-Lagrange) ----------
+    // toolContact = penalty (defaut, bit-identique) | signorini
+    //
+    // SOURCES. Fekak, Brun, Gravouil et al. (2017), schema CD-Lagrange ;
+    // expose complet dans Dureisseix, Greco, Brun et al., « Explicit dynamics
+    // and non-smooth interface behaviors », JTCAM (2024), leur Algorithme 1 ;
+    // et Ghesquiere-Dierickx, Anciaux, Acary & Molinari, arXiv:2606.01355
+    // (Nonsmooth Newmark), qui applique la meme idee a la fragmentation avec
+    // modele cohesif extrinseque — exactement notre cas.
+    //
+    // CE QUE CA REMPLACE. La voie penalite borne la PENETRATION (0,6 h) et ne
+    // borne pas l'IMPULSION, qui est la grandeur qui lance les noeuds. Mesure
+    // du 2026-08-18 (coupe PDC) : l'outil injecte 77 286 J/m dans le solide
+    // pour 189 J/m de travail de corps rigide — rapport 408 — et lance des
+    // noeuds a 2 544 m/s contre une borne physique de 2 v_outil = 20 m/s,
+    // soit 127 fois trop. L'ecretage toolImpulseCap pose le meme jour plafonne
+    // l'increment PAR PAS, alors que la borne physique porte sur l'impulsion
+    // de TOUTE la collision : un noeud en contact soutenu prend 2 v a chaque
+    // pas et seize pas donnent les 311 m/s mesures.
+    //
+    // LA FORMULATION. Le contact n'est plus une force penalisee mais une
+    // relation IMPULSION / SAUT DE VITESSE (lemme de viabilite de Moreau) :
+    //     si g > 0  alors r = 0 ;  sinon  0 <= v ⊥ r >= 0
+    // avec la dynamique reduite v = v_libre + H r, H = L M^-1 L^T l'operateur
+    // de Delassus.
+    //
+    // POURQUOI C'EST EXPLICITE ICI. L'article le dit : « due to the properties
+    // of the lumped mass matrix M, this leads to a Delassus operator which is
+    // diagonal, definite positive and spherical per node ». La masse de rockim
+    // EST diagonale et l'outil est un obstacle RIGIDE : L est local a chaque
+    // noeud, H vaut 1/m_i, et l'impulsion se calcule en FORME FERMEE noeud par
+    // noeud. Aucun systeme a resoudre, le solveur reste matrix-free.
+    //
+    // CONSEQUENCE SUR LE PAS DE TEMPS. kp_ sort du budget de computeStableDt()
+    // en mode signorini : la borne ressort-masse perd son terme de contact
+    // outil. C'est le gain structurel du schema — le pas cesse de dependre
+    // d'une raideur de penalite arbitraire.
+    //
+    // CE QU'IL FAUT ACCEPTER. Une interpenetration RESIDUELLE subsiste : la
+    // condition porte sur la vitesse, pas sur le deplacement. Les auteurs la
+    // quantifient par eta = -min(g)/max|g|, 0,43 % sur leur cas de reference.
+    // toolSignoriniRelax > 0 en resorbe une fraction par pas (rattrapage facon
+    // Baumgarte) ; 0 = condition de vitesse PURE, le defaut, celui de
+    // l'article.
+    //
+    // LIMITE CONNUE ET ASSUMEE : la vitesse libre est formee avec f_ tel qu'il
+    // est a l'appel de toolContact(). En percussion et en coupe, c'est le
+    // total (l'outil est la derniere famille de forces). Si un confinement est
+    // arme, sa contribution — rampee et lente — n'y figure pas ; l'erreur est
+    // du second ordre mais elle existe.
+    bool toolSig_ = false;
+    double toolSigRelax_ = 0.0;
+
     // --- BALAI NUMERIQUE : retrait des fragments ----------------------------
     // SOURCE : X. Yang, J. Xiang, S. Naderi, Y. Wang, J. Aising, I. Ugarte &
     // J.-P. Latham, « Multi-criteria validation of hi-fidelity numerical model

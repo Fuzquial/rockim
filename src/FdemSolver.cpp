@@ -453,6 +453,23 @@ void FdemSolver::init() {
     xiJ_ = cfg_.getd("jointXi", 0.05);
 
     kp_ = phases_.maxE() * thk_;                       // tool contact penalty
+    // ---- A1 : loi de contact de l'outil (voir FdemSolver.hpp) -------------
+    {
+        std::string tc = cfg_.gets("toolContact", "penalty");
+        if (tc != "penalty" && tc != "signorini")
+            throw std::runtime_error("toolContact must be penalty | signorini");
+        toolSig_ = (tc == "signorini");
+        toolSigRelax_ = cfg_.getd("toolSignoriniRelax", 0.0);
+        if (!(toolSigRelax_ >= 0.0 && toolSigRelax_ <= 1.0))
+            throw std::runtime_error("toolSignoriniRelax must be in [0, 1]");
+        if (toolSig_)
+            std::cout << "[FDEM] contact outil : SIGNORINI en vitesse "
+                         "(CD-Lagrange, Delassus diagonal par noeud) — la "
+                         "penalite kp = " << kp_ << " N/m ne s'applique plus "
+                         "et SORT du budget du pas de temps ; rattrapage "
+                         "d'interpenetration = " << toolSigRelax_
+                      << " (0 = condition de vitesse pure)\n";
+    }
     // General (debris) contact: node-segment penalty on ROTATING faces is a
     // follower force — at full E*t stiffness it pumps energy into the
     // crushed zone. Debris does not need bulk stiffness: soften and damp.
@@ -2531,7 +2548,11 @@ void FdemSolver::computeStableDt() {
     // the platen penalty is a spring on the bearing nodes exactly like the
     // tool's: budget the STIFFER of the two, or a platenPenaltyFactor > 1
     // would silently control stability
-    double kContact = std::max(kp_, kpPlaten_);
+    // A1 : en contact de Signorini l'outil n'a plus de raideur — il impose une
+    // condition sur la VITESSE. kp_ sort donc du budget, et c'est le gain
+    // structurel du schema : le pas de temps cesse de dependre d'une penalite
+    // arbitraire. Les platines, elles, restent en penalite.
+    double kContact = toolSig_ ? kpPlaten_ : std::max(kp_, kpPlaten_);
     // SHPB: the bar/rock interfaces are the ONLY load path, so the general
     // contact penalty is a first-class spring and must enter the budget (it
     // does not for the other scenarios, where general contact only handles
@@ -4303,6 +4324,80 @@ void FdemSolver::toolContact() {
         }
         return true;
     };
+
+    // -----------------------------------------------------------------------
+    // A1 — variante SIGNORINI EN VITESSE (toolContact = signorini).
+    //
+    // La geometrie est DUPLIQUEE a dessein plutot que factorisee avec nodeFc :
+    // la voie penalite doit rester bit-identique, et un refactor la toucherait.
+    //
+    // Algorithme, par noeud (Delassus diagonal, H = 1/m_i) :
+    //   1. vitesse LIBRE : v* = v_i + (dt/m_i) f_i, avec f_i le total des
+    //      autres forces deja assemblees ;
+    //   2. vitesse relative normale a l'outil : vn = (v* - v_outil).n ;
+    //   3. gap predit : g+ = -pen + dt vn. Si g+ >= 0 le noeud se separe tout
+    //      seul, l'impulsion est NULLE (condition de Signorini) ;
+    //   4. sinon impulsion repulsive r_n = m_i (v_cible - vn) >= 0, avec
+    //      v_cible = relax * pen / dt (0 = pas de rattrapage : on annule
+    //      l'approche, on ne resorbe pas la penetration existante) ;
+    //   5. frottement : impulsion de COLLAGE r_t = -m_i vt, ecretee par le
+    //      cap de Coulomb |r_t| <= mu r_n. Pas de regularisation en tanh :
+    //      le cap porte sur l'impulsion, il n'a pas besoin d'etre lisse.
+    //   6. report en FORCE, r/dt, pour que integrate() (v += dt/m f) produise
+    //      exactement le saut de vitesse voulu et que les compteurs d'energie
+    //      restent comparables a la voie penalite.
+    //
+    // La borne physique est ainsi respectee PAR CONSTRUCTION : l'impulsion ne
+    // peut qu'annuler l'approche, donc un noeud ne peut jamais repartir a plus
+    // de 2 v_outil. Aucun reglage, aucune raideur.
+    // -----------------------------------------------------------------------
+    auto nodeSig = [&](int i, Eigen::Vector2d& Fc) {
+        Eigen::Vector2d p = X0_[i] + u_[i];
+        Eigen::Vector2d n, tdir;
+        double pen;
+        if (tool_.shape == Tool::Shape::PDC) {
+            n = tool_.rakeNormal();
+            tdir = tool_.rakeDir();
+            Eigen::Vector2d rel = p - tool_.x;
+            double dn = rel.dot(n), dt2 = rel.dot(tdir);
+            if (dn >= 0.0) return false;
+            if (tool_.thick > 0.0 && dn < -tool_.thick) return false;
+            if (dt2 < 0.0 || dt2 > tool_.faceLen) return false;
+            pen = -dn;
+        } else if (tool_.shape == Tool::Shape::FLAT) {
+            if (std::abs(p.x() - tool_.x.x()) > 0.5 * tool_.width) return false;
+            pen = p.y() - tool_.x.y();
+            if (pen <= 0.0) return false;
+            n = {0.0, -1.0};                   // repousse le noeud vers le bas
+            tdir = {1.0, 0.0};
+        } else {
+            Eigen::Vector2d d = p - tool_.x;
+            double dist = d.norm();
+            if (dist >= tool_.radius || dist < 1e-14) return false;
+            n = d / dist;
+            tdir = {-n.y(), n.x()};
+            pen = tool_.radius - dist;
+        }
+        // (1) vitesse libre — f_[i] porte deja toutes les autres forces
+        Eigen::Vector2d vFree = v_[i] + (dt_ / m_[i]) * f_[i];
+        Eigen::Vector2d vrel = vFree - tool_.v;
+        double vn = vrel.dot(n);
+        // (3) le noeud se separe-t-il de lui-meme au pas suivant ?
+        if (-pen + dt_ * vn >= 0.0) return false;
+        // (4) impulsion normale, positive par construction
+        double vTarget = toolSigRelax_ * pen / dt_;
+        double rn = m_[i] * (vTarget - vn);
+        if (rn <= 0.0) return false;
+        // (5) frottement de Coulomb sur l'IMPULSION
+        double vt = vrel.dot(tdir);
+        double rt = -m_[i] * vt;
+        double cap = muC_ * rn;
+        if (rt > cap) rt = cap;
+        else if (rt < -cap) rt = -cap;
+        // (6) report en force
+        Fc = (rn / dt_) * n + (rt / dt_) * tdir;
+        return true;
+    };
 #ifdef _OPENMP
     int nT = omp_get_max_threads();
     std::vector<Eigen::Vector2d> FT(nT, Eigen::Vector2d::Zero());
@@ -4314,7 +4409,7 @@ void FdemSolver::toolContact() {
 #pragma omp for schedule(static)
         for (int i = 0; i < (int)X0_.size(); ++i) {
             Eigen::Vector2d Fc;
-            if (!nodeFc(i, Fc)) continue;
+            if (!(toolSig_ ? nodeSig(i, Fc) : nodeFc(i, Fc))) continue;
             f_[i] += Fc;
             tw += Fc.dot(v_[i]) * dt_;
             Floc -= Fc;
@@ -4326,7 +4421,7 @@ void FdemSolver::toolContact() {
 #else
     for (int i = 0; i < (int)X0_.size(); ++i) {
         Eigen::Vector2d Fc;
-        if (!nodeFc(i, Fc)) continue;
+        if (!(toolSig_ ? nodeSig(i, Fc) : nodeFc(i, Fc))) continue;
         f_[i] += Fc;
         toolWork_ += Fc.dot(v_[i]) * dt_;  // V2/B4
         tool_.F -= Fc;
