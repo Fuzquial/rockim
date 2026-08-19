@@ -139,6 +139,18 @@ def main():
         W, H, hFine, rFine, hFar = map(float, sys.argv[2:7])
         out = sys.argv[7]
         seed = int(sys.argv[8]) if len(sys.argv) > 8 else 1
+        # ALGORITHME 2D — mesure du 2026-08-17, a ne pas remettre a 6 :
+        # `Mesh.Algorithm = 6` (frontal-Delaunay) pave en triangles QUASI
+        # EQUILATERAUX des que la taille est localement constante. Mesure sur
+        # la zone fine de tunnel_hs.msh : mediane du plus petit angle 60,0 deg,
+        # 95,7 % des triangles au-dessus de 50 deg, histogramme d'orientation
+        # periodique a 60 deg avec un rapport pic/creux de 19 a 30. Les
+        # fissures n'ont alors que trois directions disponibles et suivent des
+        # droites sur plusieurs metres — condition d'invalidite pour un calcul
+        # de facies. L'algorithme 5 (Delaunay) ramene pic/creux a 1,16.
+        # Le lissage n'y est pour rien (sans lissage : 32,2) et bruiter le
+        # champ de taille AGGRAVE le cas de l'algo 6 (R6 0,167 -> 0,552).
+        algo2d = int(sys.argv[9]) if len(sys.argv) > 9 else 5
         h = hFine
     else:
         raise SystemExit("usage: make_unstructured_mesh.py box3d W D H h out.msh [seed]\n"
@@ -258,7 +270,11 @@ def main():
         gmsh.option.setNumber("Mesh.MeshSizeFromCurvature", 0)
         gmsh.option.setNumber("Mesh.MeshSizeMin", hFine)
         gmsh.option.setNumber("Mesh.MeshSizeMax", hFar)
+        gmsh.option.setNumber("Mesh.Algorithm", algo2d)   # cf. commentaire plus haut
         gmsh.model.mesh.generate(2)
+        print(f"[tunnel] Mesh.Algorithm = {algo2d}"
+              f"{' (Delaunay, isotrope)' if algo2d == 5 else ''}"
+              f"{' (frontal-Delaunay : PAVAGE QUASI STRUCTURE, cf. commentaire)' if algo2d == 6 else ''}")
         print(f"[tunnel] portee {2*g['halfSpan']:.2f} m, hauteur {g['height']:.2f} m, "
               f"R voute {g['rCrown']:.2f} m (centre y = {g['ySpring']:.2f}), "
               f"conge R {g['r3']:.2f} m, radier R {g['r4']:.2f} m "

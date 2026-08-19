@@ -71,6 +71,14 @@ private:
         Eigen::Matrix<double, 3, 4> dN;    // reference shape-fn gradients
         double V0;
         double svm = 0.0;
+        // Taux de deformation FILTRE de l element [1/s], pour le DIF de
+        // Yang et al. 2025. Miroir du champ edot du solveur 2D. La mesure
+        // est la principale MAXIMALE en valeur absolue du tenseur taux :
+        // les courbes DIF de la litterature sont mesurees en essai
+        // UNIAXIAL, ou la principale max EST le taux axial, sans facteur
+        // de convention. Vaut 0 tant que ni la viscosite ni le DIF ne sont
+        // armes (la branche n est pas calculee).
+        double edot = 0.0;
         int phase = 0;                     // mineral phase (index in phases_)
         int grain = 0;                     // grain id (voronoi) / 0 (grid)
         MatState st;                       // only used when law_ is set
@@ -102,6 +110,10 @@ private:
         double Gf = 0.0, GfII = 0.0;        // fracture energies [J/m^2]
         double dnE = 0.0, dnF = 0.0;        // mode I elastic / final opening
         double slipF = 0.0;                 // mode II softening slip
+        // ---- DIF de Yang et al. 2025, FIGE a l instant de l insertion --
+        // Sortie seulement : les facteurs ont deja ete appliques a ft, coh,
+        // Gf et GfII lors de activateJoint().
+        double difT = 1.0, difC = 1.0, edotIns = 0.0;
         double tanPhi = 0.0;                // friction
         double stat = 1.0;                  // Weibull strength factor (output)
         // ---- adaptive insertion (Yan et al. 2023, ported from FdemSolver) --
@@ -273,6 +285,72 @@ private:
     // sigma_n >= ft or |tau| >= fs (Mohr-Coulomb). Node splitting falls out
     // of re-running the union-find at the face's three vertices.
     bool adaptive_ = false;
+    // --- PORTAGE 2D -> 3D du 2026-08-18 ------------------------------------
+    // jointContactPenalty = fixed (defaut) | adaptive : k- = k+(D) = (1-D) pj
+    //   Ghesquiere-Dierickx, Molinari & Anciaux, arXiv:2511.14323 sec. 4. La
+    //   penalite de COMPRESSION suit la secante d'endommagement, supprimant le
+    //   saut de raideur a dn = 0 que leur article designe comme la source
+    //   dominante d'instabilite. Mesure 2D du 2026-08-18 : injection outil
+    //   /14, vitesse nodale max /11, plateau de fissuration au lieu d'une
+    //   inflation. Les auteurs le qualifient de DIAGNOSTIC, pas de remede :
+    //   l'interpenetration croit avec D.
+    // toolImpulseCap = kappa : |Fc| <= kappa * 2 * |v_outil| * m_i / dt.
+    //   L'ecretage historique borne la PENETRATION (0,6 h), pas l'IMPULSION.
+    //   DEFAUT CONNU, herite du 2D : kappa borne l'increment PAR PAS alors que
+    //   la borne physique porte sur toute la collision — un noeud en contact
+    //   soutenu accumule. Il faut une condition sur la VITESSE (CD-Lagrange).
+    bool jcAdaptive_ = false;
+    double toolVCap_ = 0.0;
+
+    // --- TRI DES FRAGMENTS (Yang et al. 2025, IJRMMS 191, 106125, sec. 2.3)
+    // Porte du 2D le 2026-08-18. Corrige un defaut de computeFragments(), qui
+    // declare detache TOUT ce qui n'est pas la plus grosse composante : un bloc
+    // topologiquement libre peut etre geometriquement encastre entre des blocs
+    // intacts. Le remede reproduit le geste experimental — on passe un pinceau
+    // sur le cratere pour ramasser les debris et les peser :
+    //
+    //   1. le chargement doit etre TERMINE (leur etape 1) ;
+    //   2. on donne aux candidats une vitesse et une acceleration OPPOSEES a la
+    //      direction d'impact, choisies pour ne creer AUCUNE fissure ;
+    //   3. est un debris ce qui se deplace d'au moins beta fois ce que ferait
+    //      une PARTICULE LIBRE soumise aux memes conditions : d_ref = v0 t +
+    //      a t^2 / 2. Ce ne sont ni un seuil ni un critere qui tranchent, c'est
+    //      le contact et le frottement.
+    //
+    // POURQUOI LE 3D EST LE BON TERRAIN. Leur etape 1 est gratuite pour une
+    // PERCUSSION — l'insert frappe, rebondit, s'en va — et impossible pour une
+    // coupe continue. Mesure du 2026-08-18 : vitesse residuelle des candidats
+    // 2,5 mm/s apres impact 2D, contre 108 m/s en coupe, soit un facteur
+    // 43 000. Le tri a donc pleinement son sens sur le banc percussion 3D.
+    //
+    // RIEN N'EST SUPPRIME : c'est une CLASSIFICATION. Le travail du tri va dans
+    // un poste d'energie SEPARE (brushWork_) et n'entre jamais dans le bilan
+    // B4 — apres la journee du 2026-08-18 passee a traquer des pompes logees
+    // dans des canaux comptabilises, en fabriquer une serait l'erreur a ne pas
+    // commettre.
+    //
+    // Cles : gravity, toolStop, fragBrushStart, fragBrushV0, fragBrushAccel,
+    //        fragBrushBeta, fragBrushDirX/Y/Z, fragBrushZeroV.
+    double gravity_ = 0.0;                 // force volumique, agit selon -z
+    double toolStop_ = 0.0;                // arret de l'outil (0 = jamais)
+    bool toolStopped_ = false;
+    double brushStart_ = 0.0;              // armement du tri (0 = desarme)
+    double brushV0_ = 2.5e-3;
+    double brushA_ = 98.1;                 // 10 g, leur valeur
+    double brushBeta_ = 0.8;               // leur valeur (plateau de leur fig. 4)
+    Eigen::Vector3d brushDir_ = Eigen::Vector3d(0.0, 0.0, 1.0);
+    bool brushZeroV_ = false;
+    bool brushArmed_ = false;
+    double brushT0_ = 0.0;
+    double brushWork_ = 0.0;               // poste SEPARE
+    std::vector<char> brushCand_;
+    std::vector<int> brushFrag_;
+    int brushNFrag_ = 0;
+    std::vector<Eigen::Vector3d> brushU0_;
+    void bodyForces();
+    void armBrush();
+    void brushReport();
+
     long nInserted_ = 0;
     std::vector<std::vector<int>> copiesOfVert_;
     std::vector<std::vector<int>> jointsOfVert_;
@@ -288,6 +366,51 @@ private:
     // earlier result stays reproducible.
     std::unique_ptr<MatLaw> law_;
     std::vector<double> hEl_;              // per-element inscribed size 6V/A
+
+    // ---- viscosite newtonienne de Yan et al. 2023 (leur eq. 6, 2 mu D) --
+    // muEl_ porte mu PAR ELEMENT. En mode global il est rempli d une seule
+    // valeur ; en mode gradue (bulkViscosityGraded) il suit la taille de
+    // maille. La distinction n est pas cosmetique : la borne diffusive de
+    // stabilite se cale sur le PLUS PETIT element, donc un mu global sur un
+    // maillage gradue 17x paie le pas de temps du plus fin tetra partout.
+    // Chiffrage sur p1_ultra (127 147 tetras, h de 0,109 a 2,92 mm) :
+    // xi = 2 global divise le pas par 41,8 (2 h -> 3,8 JOURS) contre 2,35
+    // en gradue. Le mode gradue est le seul finançable en percussion.
+    std::vector<double> muEl_;
+    bool viscOn_ = false;                  // un mu > 0 quelque part
+    // viscousInInsertion : la contrainte visqueuse entre-t-elle dans sigG,
+    // donc dans le critere d insertion ? Defaut 1 = OUI, fidele a Yan (leur
+    // eq. 6 EST la contrainte que lit leur eq. 7) et parite avec le 2D.
+    // Mis a 0, le visqueux ne sert plus qu aux forces : le critere, la
+    // jauge de confinement et le stocke elastique du bilan redeviennent
+    // purement elastiques. A considerer avant toute calibration de ft sur
+    // un run visqueux, et surtout si le DIF est arme en meme temps — sinon
+    // le taux de deformation agit DEUX FOIS, une fois en gonflant la
+    // contrainte d essai et une fois en gonflant le seuil.
+    bool viscIns_ = true;
+    double viscWork_ = 0.0;                // ventilation, DEJA dans elWork_
+
+    // ---- DIF de Yang et al. 2025 (leurs eq. 2-3) ------------------------
+    // Voir include/rockim/YangDif.hpp pour les formules et la coquille de
+    // l exposant. FIGE a l insertion : le schema extrinseque insere le
+    // joint a l instant precis ou le materiau atteint son enveloppe, donc
+    // c est l instant dont le taux gouverne la rupture ; et un DIF
+    // reversible sur un joint deja endommage demanderait un cliquet.
+    // ---- enveloppe de cisaillement : Yan (eq. 8) ou Yang (eq. 1) --------
+    // Voir include/rockim/YangDif.hpp. Defaut yan = comportement historique,
+    // bit-identique. La forme de Yang affaiblit le cisaillement dans les
+    // zones TENDUES (elle y fait decroitre le terme de frottement au lieu de
+    // l annuler), ce qui deplace le partage traction / cisaillement — donc le
+    // facies. Les deux formes sont rigoureusement identiques en compression.
+    bool yangEnv_ = false;
+    // Facteur du cap de traction moyenne (pm <= f * ft). Historiquement 3, en
+    // dur et sans echappatoire en 3D. Ce cap N EST DANS AUCUN des deux
+    // articles : il faut pouvoir le desarmer pour faire tourner le modele de
+    // quelqu un d autre. <= 0 le desarme. Defaut 3 = inchange.
+    double mtCap_ = 3.0;
+    bool difOn_ = false;
+    double difExpT_ = 0.07;                // 0,07 litteral | 0,1707 fig. 2b
+    double srTau_ = 0.0, srRelax_ = 0.0;   // filtre du taux
 
     double kp_ = 0.0, muC_ = 0.5, xiC_ = 0.05, vReg_ = 1e-3;
     double kpGC_ = 0.0, xiGC_ = 0.8, gcRest_ = 0.2, gcWork_ = 0.0, relax_ = 1.0;

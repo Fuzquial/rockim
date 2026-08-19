@@ -45,6 +45,10 @@ RX = {
     "pot3_ke":   r"pot3_ke_rel = ([\d.eE+-]+)",
     "pot3_mom":  r"pot3_mom_rel = ([\d.eE+-]+)",
     "szfac":     r"facteur mean/min/max = ([\d.eE+-]+)",
+    # --- viscosite de Yan (eq. 6) et DIF de Yang (eq. 2-3), ajoutes 2026-08-18
+    "viscwork":  r"dont visqueux \(2 mu D\) : (-?[\d.eE+-]+) J",
+    "edotmed":   r"insertion, mediane ([\d.eE+-]+) /s",
+    "difmed":    r"DIF_traction median ([\d.eE+-]+)",
 }
 
 # ---- définition des tests --------------------------------------------------
@@ -116,7 +120,55 @@ TESTS = [
          over=["jointSizeEffect = 1", "jointSizeEffectM = 24",
                "jointZeff = 1e-6", "T = 1e-9", "verifyFt = false"],
          checks=[("szfac", 0.981577, 1e-5, True)]),
+    # ---- viscosite newtonienne de Yan et al. 2023 (leur eq. 6, terme 2 mu D)
+    # bulkViscosityXi = 2 EST l amortissement critique de Munjiza
+    # mu = 2 h sqrt(E rho) : applique aux chiffres de la Table 1 de Yan
+    # (h = 0,75 mm, E = 15 GPa, rho = 1704) il redonne 7583 Pa.s contre les
+    # 7600 publies. Le test verrouille DEUX choses : la valeur dissipee, et le
+    # SIGNE de la dissipation. La reference est POSITIVE (le solveur imprime -viscWork_) :
+    # un terme dissipatif qui INJECTERAIT ressortirait negatif et ferait
+    # meme patron que dampWork_.
+    dict(name="visc_yan_2d", tier="fast", cfg="verify_fdem_tension.cfg",
+         over=["verifyFt = false", "bulkViscosityXi = 2.0",
+               "pullV = 0.5", "T = 3e-5"],
+         checks=[("viscwork", 0.793632, 1e-4, True), ("broken", 0, 0, True)]),
+    # ---- DIF de Yang et al. 2025 (leurs eq. 2-3) --------------------------
+    # LE TRIPLET CI-DESSOUS TESTE LA DISCONTINUITE, PAS SEULEMENT UNE VALEUR.
+    # Leur eq. 3 imprimee (exposant 0,07) ne se raccorde a aucune de ses deux
+    # bornes : elle saute de 1,516 a 1,85 en edot = 1e2 /s. Dans un schema
+    # d insertion EXTRINSEQUE ce saut est un attracteur — un joint qui
+    # franchit 1e2 voit son seuil bondir de 22 % et cesse de s inserer, si
+    # bien que la population inseree s empile JUSTE SOUS 1e2. Mesure du
+    # 2026-08-18, meme config a l exposant pres : mediane 99,36 /s (max
+    # 99,9988) avec l exposant litteral, contre 40,22 /s avec l exposant
+    # 0,1707 deduit de LEUR figure 2b, qui rend la loi continue.
+    # Si un jour la premiere mediane s eloigne de 99,4 le collage a disparu :
+    # ce test est la pour que ce ne soit pas silencieux.
+    dict(name="dif_yang_litteral_2d", tier="fast", cfg="verify_fdem_tension.cfg",
+         over=["verifyFt = false", "insertion = adaptive",
+               "strainRateDIF = yang", "pullV = 0.5", "T = 3e-5"],
+         checks=[("edotmed", 99.3556, 1e-3, True),
+                 ("difmed", 1.5157, 1e-4, True)]),
+    dict(name="dif_yang_fig2_2d", tier="fast", cfg="verify_fdem_tension.cfg",
+         over=["verifyFt = false", "insertion = adaptive",
+               "strainRateDIF = yang-fig2", "pullV = 0.5", "T = 3e-5"],
+         checks=[("edotmed", 40.2157, 1e-3, True),
+                 ("difmed", 1.72029, 1e-4, True)]),
+    # Meme loi, chargement x3 : le taux mesure passe de 40 a 316 /s (facteur
+    # 7,9) et le DIF sature a son plateau 1,85. C est le taux QUI SUIT LE
+    # CHARGEMENT qui est teste ici, pas un niveau isole.
+    dict(name="dif_yang_fig2_plateau_2d", tier="fast", cfg="verify_fdem_tension.cfg",
+         over=["verifyFt = false", "insertion = adaptive",
+               "strainRateDIF = yang-fig2", "pullV = 1.5", "T = 1.2e-5"],
+         checks=[("edotmed", 315.75, 1e-2, True),
+                 ("difmed", 1.85, 1e-9, True)]),
     # --- tier full : bit-repères 2D longs, adaptatif, 3D grille -------------
+    # charge nulle AVEC viscosite : le terme dissipatif ne doit rien casser ni
+    # rien injecter quand il n y a pas de chargement (patron zeroload).
+    dict(name="visc_zeroload_2d", tier="full", cfg="verify_fdem_tension.cfg",
+         over=["pullV = 1e-12", "verifyFt = false", "bulkViscosityXi = 2.0"],
+         checks=[("broken", 0, 0, True), ("dampwork", 0.0, 1e-12, True),
+                 ]),
     dict(name="fdem_tension", tier="full", cfg="verify_fdem_tension.cfg",
          checks=[("err_pct", -1.38789, 0.01, True), ("pass_tag", None, 0, True),
                  ("dampwork", 0.0, 1e-12, True)]),
@@ -126,6 +178,33 @@ TESTS = [
     dict(name="zeroload_2d_grid", tier="full", cfg="verify_fdem_tension.cfg",
          over=["pullV = 1e-12"],
          checks=[("broken", 0, 0, True), ("dampwork", 0.0, 1e-12, True)]),
+    # ---- portage 3D des deux capacites (2026-08-19) -----------------------
+    # Tier full : 316 s et 121 s en mono-thread, trop lourds pour le fast.
+    # visc_yan_3d verrouille la valeur ET le signe : la reference est POSITIVE
+    # (le solveur imprime -viscWork_), un terme dissipatif qui injecterait
+    # ressortirait negatif et ferait echouer le test.
+    dict(name="visc_yan_3d", tier="full", cfg="verify_fdem3d_tension.cfg",
+         over=["bulkViscosityXi = 2.0"],
+         checks=[("viscwork", 0.00316169, 1e-8, True),
+                 ("broken", 200, 0, True)]),
+    # INVARIANT : sur un maillage UNIFORME, mu gradue par element et mu global
+    # (mediane) doivent donner le meme resultat, puisque tous les hEl_ sont
+    # egaux. Si ce test diverge de visc_yan_3d, le mu par element est faux —
+    # c est le seul controle qui distingue les deux chemins sans avoir besoin
+    # d un maillage gradue de reference.
+    dict(name="visc_yan_graded_3d", tier="full", cfg="verify_fdem3d_tension.cfg",
+         over=["bulkViscosityXi = 2.0", "bulkViscosityGraded = 1"],
+         checks=[("viscwork", 0.00316169, 1e-8, True),
+                 ("broken", 200, 0, True)]),
+    # DIF 3D : la mesure du taux passe par maxAbsEigSym3 (forme fermee de
+    # Smith 1961) la ou le 2D ecrit un cercle de Mohr a la main. Ce test est
+    # le seul qui exerce ce chemin ; sans lui une erreur de spectre 3x3 serait
+    # muette (elle ne deplacerait que le seuil d insertion).
+    dict(name="dif_yang_fig2_3d", tier="full", cfg="verify_fdem3d_tension.cfg",
+         over=["insertion = adaptive", "strainRateDIF = yang-fig2"],
+         checks=[("edotmed", 1.57523, 1e-4, True),
+                 ("difmed", 1.39307, 1e-5, True),
+                 ("broken", 198, 0, True)]),
     dict(name="fdem3d_tension", tier="full", cfg="verify_fdem3d_tension.cfg",
          over=["jointXi = 0"],                          # doctrine 2026-08-05 :
          # une vérification de la LOI ne mesure pas la dissipation visqueuse

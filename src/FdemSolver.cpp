@@ -16,6 +16,7 @@
 #include <stdexcept>
 
 #include "rockim/PotentialContact.hpp"
+#include "rockim/YangDif.hpp"
 #include "rockim/RandomField.hpp"
 #include "rockim/Tessellation.hpp"
 #include "rockim/VtkWriter.hpp"
@@ -46,7 +47,26 @@ double fnow() {
     return std::chrono::duration<double>(
                std::chrono::steady_clock::now().time_since_epoch()).count();
 }
+
+// ---------------------------------------------------------------------------
+// Facteurs d amplification dynamique de Yang, Xiang, Naderi, Wang, Aising,
+// Ugarte & Latham (IJRMMS 191, 2025, 106125), leurs eq. 2 et 3, transcrites
+// LITTERALEMENT. edot est un taux de deformation en 1/s.
+//
+// ATTENTION : la forme publiee de DIF_traction est DISCONTINUE a ses deux
+// bornes (elle vaut 1,124 juste au-dessus de 5e-6 contre 1 en dessous, et
+// 1,516 juste en dessous de 1e2 contre 1,85 au-dessus). On la transcrit telle
+// quelle — c est le modele des auteurs — et le solveur imprime ces sauts au
+// demarrage pour qu ils ne soient jamais decouverts en aval.
+// Les deux facteurs DIF de Yang et al. et la mesure du taux principal 3x3
+// vivent desormais dans include/rockim/YangDif.hpp : le solveur 3D les
+// utilise aussi, et il ne doit exister qu UNE transcription de l article
+// dans le depot. Les expressions y sont inchangees ; le commentaire sur la
+// coquille de l exposant 0,07 et sur l attracteur en 1e2 /s y a suivi.
 } // namespace
+
+using rockim::difTensionYang;
+using rockim::difCompressionYang;
 
 FdemSolver::FdemSolver(const Config& cfg, std::string outDir)
     : cfg_(cfg), out_(std::move(outDir)) {}
@@ -87,11 +107,70 @@ void FdemSolver::init() {
         throw std::runtime_error("bulkViscosity must be >= 0 [Pa.s] (eq. 6 "
                                  "de Yan et al. : terme 2*mu*D dans la "
                                  "contrainte)");
+    // strainRateDIF = off (defaut) | yang — voir FdemSolver.hpp.
+    {
+        std::string sd = cfg_.gets("strainRateDIF", "off");
+        if (sd != "off" && sd != "yang" && sd != "yang-fig2")
+            throw std::runtime_error("strainRateDIF must be off | yang | "
+                                     "yang-fig2 (Yang et al., IJRMMS 191, "
+                                     "2025 : yang = leur eq. 3 litterale, "
+                                     "exposant 0,07 et loi discontinue ; "
+                                     "yang-fig2 = exposant 0,1707 deduit de "
+                                     "leur figure 2b, loi continue)");
+        difOn_ = sd != "off";
+        difExpT_ = sd == "yang-fig2" ? 0.1707 : 0.07;
+    }
+    if (difOn_ && cfg_.gets("insertion", "intrinsic") != "adaptive")
+        throw std::runtime_error("strainRateDIF = yang exige insertion = "
+                                 "adaptive : le DIF est fige a l instant "
+                                 "d insertion du joint, et le schema "
+                                 "intrinseque n en a pas");
+    // jointShearEnvelope / meanTensionCapFactor : voir le header.
+    {
+        std::string se = cfg_.gets("jointShearEnvelope", "yan");
+        if (se != "yan" && se != "yang")
+            throw std::runtime_error("jointShearEnvelope must be yan | yang "
+                                     "(yan = son eq. 8, le frottement tombe a "
+                                     "zero des la traction ; yang = son eq. 1, "
+                                     "il decroit jusqu au cut-off en ft)");
+        yangEnv_ = se == "yang";
+    }
+    mtCap_ = cfg_.getd("meanTensionCapFactor", 3.0);
+    srTau_ = cfg_.getd("strainRateTau", 1.0e-6);
+    if (difOn_ && !(srTau_ > 0.0))
+        throw std::runtime_error("strainRateTau must be > 0 [s] (filtre du "
+                                 "taux de deformation : le taux brut par "
+                                 "element est trop bruite pour figer un DIF "
+                                 "dessus)");
     // Body force. Absent (or 0) leaves every existing model bit-identical:
     // bodyForces() returns immediately and no other code path is touched.
     gravity_ = cfg_.getd("gravity", 0.0);
     if (gravity_ < 0.0)
         throw std::runtime_error("gravity is a magnitude in m/s^2 (it acts along -y): use a positive value");
+
+    // ---- balai numerique (Yang et al. 2025) : voir FdemSolver.hpp ---------
+    // etape 1 : arret de l'outil, DISTINCT de l'armement du balai
+    toolStop_ = cfg_.getd("toolStop", 0.0);
+    brushStart_ = cfg_.getd("fragBrushStart", 0.0);
+    if (toolStop_ > 0.0 && brushStart_ > 0.0 && brushStart_ <= toolStop_)
+        throw std::runtime_error("fragBrushStart doit etre APRES toolStop : "
+                                 "c'est l'intervalle de repos qui rend le "
+                                 "balai interpretable (Yang et al. 2025, "
+                                 "etape 1 — « after completing the impact »)");
+    if (brushStart_ > 0.0) {
+        brushV0_   = cfg_.getd("fragBrushV0", 2.5e-3);
+        brushA_    = cfg_.getd("fragBrushAccel", 98.1);
+        brushBeta_ = cfg_.getd("fragBrushBeta", 0.8);
+        brushZeroV_ = cfg_.gets("fragBrushZeroV", "false") == "true";
+        brushDir_  = Eigen::Vector2d(cfg_.getd("fragBrushDirX", 0.0),
+                                     cfg_.getd("fragBrushDirY", 1.0));
+        if (brushDir_.norm() < 1e-12)
+            throw std::runtime_error("fragBrushDir is null: give a direction");
+        brushDir_.normalize();
+        if (brushBeta_ <= 0.0)
+            throw std::runtime_error("fragBrushBeta must be > 0 (0,8 chez Yan"
+                                     "g et al. 2025, justifie par un plateau)");
+    }
 
     // ---- contrainte in situ (etude tunnel EDZ) ---------------------------
     // insituSh / insituSv : contraintes principales horizontale et verticale
@@ -380,6 +459,21 @@ void FdemSolver::init() {
     kpGC_ = cfg_.getd("gcPenaltyFactor", 0.01) * phases_.maxE() * thk_;
     xiGC_ = cfg_.getd("gcXi", 0.8);
     gcRest_ = cfg_.getd("gcRestitution", 0.2);
+    // A' : voir FdemSolver.hpp pour la justification. Opt-in, defaut legacy =
+    // bit-identique.
+    gcEager_ = cfg_.gets("gcSurfaceRefresh", "legacy") == "eager";
+    // EPFL (arXiv:2511.14323) sec. 4 : k- = k+(d). Voir FdemSolver.hpp.
+    jcAdaptive_ = cfg_.gets("jointContactPenalty", "fixed") == "adaptive";
+    if (jcAdaptive_)
+        std::cout << "[FDEM] jointContactPenalty = adaptive : k- = k+(D) = "
+                     "(1-D) pj — continuite en dn = 0 (EPFL arXiv:2511.14323, "
+                     "sec. 4). DIAGNOSTIC : leurs auteurs previennent que "
+                     "l'interpenetration croit avec D et que les statistiques "
+                     "de fragments cessent d'etre physiques.\n";
+    if (gcEager_)
+        std::cout << "[FDEM] gcSurfaceRefresh = eager : les faces liberees "
+                     "entrent au pas ou leur joint se separe (estampille "
+                     "nDead_, pas de grille % 8)\n";
     // contact = penalty (defaut, inchange) | potential — A3 : le contact
     // general par POTENTIEL de Munjiza (eq. 2-5 de l'article), paires
     // d'elements, conservatif, voir PotentialContact.hpp et l'en-tete.
@@ -393,6 +487,17 @@ void FdemSolver::init() {
     if (contactPot_) {
         potP_ = cfg_.getd("potPenaltyFactor", 1.0) * phases_.maxE() * thk_;
         potKt_ = cfg_.getd("potTangentFactor", 1.0) * phases_.maxE() * thk_;
+        potXi_ = cfg_.getd("potXi", 0.0);
+        if (potXi_ < 0.0)
+            throw std::runtime_error("potXi is a critical-damping fraction "
+                                     ">= 0 (0 = none = the conservative "
+                                     "Munjiza potential as published)");
+        if (potXi_ > 0.0)
+            std::cout << "[FDEM] contact potentiel : amortissement normal "
+                         "potXi = " << potXi_ << " (masse reduite des deux "
+                         "elements). Le potentiel nu est CONSERVATIF : sans "
+                         "ce terme un nuage de debris ne se pose jamais. "
+                         "Strictement dissipatif, compte dans gcWork_.\n";
         std::cout << "[FDEM] contact: Munjiza potential (eq. 2-5), p = "
                   << potP_ << " N/m, kt = " << potKt_ << " N/m\n";
     }
@@ -429,9 +534,109 @@ void FdemSolver::init() {
     setupBrazilianLoad();                  // before computeStableDt: it sets
                                            // kpPlaten_, which enters the budget
     setupStrainGauge();                    // after the platens: needs plTop_.y
+    // ---- bulkViscosityXi : donner la viscosite en TAUX D AMORTISSEMENT ---
+    // Yan et al. publient mu = 7,6e3 Pa.s pour E = 15 GPa, rho = 1704 et un
+    // maillage h = 0,75 mm. Transporter ce chiffre tel quel vers un autre
+    // materiau ou un autre maillage n a pas de sens : ce qui est invariant,
+    // c est le taux d amortissement VU PAR UN ELEMENT.
+    //
+    // Pour sigma = E eps + 2 mu epsdot, le facteur de perte a la pulsation
+    // propre de l element omega = c/h vaut 2 mu omega / E, soit
+    //     xi = mu / (h sqrt(E rho))   et donc   mu = xi h sqrt(E rho).
+    //
+    // CE QUE VAUT xi = 2. L amortissement CRITIQUE de Munjiza / Y-Geo est
+    // mu_crit = 2 h sqrt(E rho), soit exactement xi = 2. Et ce n est pas une
+    // analogie : applique aux chiffres de la Table 1 de Yan (h = 0,75 mm,
+    // E = 15 GPa, rho = 1704), mu_crit = 7583 Pa.s contre les 7600 publies —
+    // 0,2 % d ecart. Leur viscosite EST l amortissement critique de Munjiza,
+    // ce que leur article ne dit pas (il renvoie a Tatone & Grasselli sans
+    // aucune formule ni etude de sensibilite). bulkViscosityXi = 2 reproduit
+    // donc leur choix sur n importe quel maillage et n importe quelle roche.
+    //
+    // POURQUOI PAS LE TEMPS DE RELAXATION. Conserver tau = 2 mu / E donnerait,
+    // pour un granite E = 48,26 GPa maille a 0,238 mm, mu = 24 450 Pa.s soit
+    // xi = 9,2 : quatre fois et demie l amortissement critique, et la borne
+    // diffusive du pas de temps deviendrait franchement contraignante. La
+    // grandeur transportable est le taux d amortissement A L ECHELLE DE LA
+    // MAILLE, pas un temps de relaxation materiau — parce que ce terme est un
+    // filtre de bruit de maillage, pas une viscosite mesuree sur la roche.
+    {
+        double xiV = cfg_.getd("bulkViscosityXi", 0.0);
+        if (xiV < 0.0)
+            throw std::runtime_error("bulkViscosityXi must be >= 0 "
+                                     "(taux d amortissement a l echelle de "
+                                     "l element ; Yan et al. valent 2,00)");
+        if (xiV > 0.0 && bulkVisc_ > 0.0)
+            throw std::runtime_error("bulkViscosity et bulkViscosityXi sont "
+                                     "exclusives : la seconde CALCULE la "
+                                     "premiere a partir du maillage");
+        if (xiV > 0.0) {
+            std::vector<double> mus(el_.size());
+            for (std::size_t eI = 0; eI < el_.size(); ++eI)
+                mus[eI] = xiV * hEl_[eI]
+                        * std::sqrt(phases_.mat[el_[eI].phase].E
+                                    * rhoP_[el_[eI].phase]);
+            std::vector<double> srt = mus;
+            std::sort(srt.begin(), srt.end());
+            bulkVisc_ = srt.empty() ? 0.0 : srt[srt.size() / 2];
+            double xLo = 1e30, xHi = 0.0;
+            for (std::size_t eI = 0; eI < el_.size(); ++eI) {
+                double x = mus[eI] > 0.0 ? xiV * bulkVisc_ / mus[eI] : 0.0;
+                xLo = std::min(xLo, x); xHi = std::max(xHi, x);
+            }
+            std::cout << "[FDEM] bulkViscosityXi = " << xiV << " (soit "
+                      << 0.5 * xiV << " x l amortissement CRITIQUE de "
+                         "Munjiza mu = 2 h sqrt(E rho) ; Yan et al. Table 1 "
+                         "= 2,00 = critique) -> mu = "
+                      << bulkVisc_ << " Pa.s, pose sur la maille MEDIANE. "
+                         "Sur ce maillage le xi effectif va de " << xLo
+                      << " (grosses mailles) a " << xHi << " (fines)"
+                      << (xHi > 1.05 * xLo
+                          ? " : le maillage est gradue, l amortissement"
+                            " effectif l est donc aussi." : " (uniforme).")
+                      << "\n";
+        }
+    }
     computeStableDt();
 
     relax_ = std::exp(-dt_ / cfg_.getd("gcBirthTau", 1e-6));
+    srRelax_ = srTau_ > 0.0 ? std::exp(-dt_ / srTau_) : 0.0;
+    if (difOn_) {
+        std::cout << "[FDEM] strainRateDIF = yang (Yang et al., IJRMMS 191, "
+                     "2025, eq. 2-3) : ft et Gf recoivent DIF_traction, "
+                     "cohesion et GfII recoivent DIF_compression, l angle de "
+                     "frottement est inchange. Facteurs FIGES a l insertion "
+                     "du joint.\n"
+                  << "[FDEM]   taux de deformation = principale max de "
+                     "sym(Fdot F^-1), filtre a strainRateTau = " << srTau_
+                  << " s (" << (srTau_ / dt_) << " pas)\n"
+                  << "[FDEM]   exposant de DIF_traction = " << difExpT_
+                  << (difExpT_ > 0.1 ? " (deduit de LEUR figure 2b : la loi "
+                                       "se raccorde alors a ses deux bornes)"
+                                     : " (transcription LITTERALE de leur "
+                                       "eq. 3)")
+                  << " : la loi va de "
+                  << difTensionYang(6.0e-6, difExpT_) << " (juste au-dessus "
+                     "de 5e-6 /s, contre 1 en dessous) a "
+                  << difTensionYang(99.0, difExpT_) << " (juste sous 1e2 /s, "
+                     "contre 1,85 au-dessus)\n";
+        if (difExpT_ < 0.1)
+            std::cout << "[FDEM]   AVERTISSEMENT : avec l exposant litteral "
+                         "0,07 ces deux paires ne se raccordent PAS (sauts de "
+                         "12 % et 22 %). Un joint dont le taux traverse 1e2 /s "
+                         "voit sa resistance sauter de 22 % sans physique. "
+                         "strainRateDIF = yang-fig2 evite cela.\n";
+        if (bulkVisc_ > 0.0)
+            std::cout << "[FDEM]   AVERTISSEMENT : bulkViscosity est arme EN "
+                         "MEME TEMPS. La contrainte visqueuse 2 mu D entre "
+                         "dans sigG, donc dans le critere d insertion : le "
+                         "taux de deformation agit alors DEUX FOIS, une fois "
+                         "en gonflant la contrainte d essai et une fois en "
+                         "gonflant le seuil. C est fidele a Yan (leur eq. 6 "
+                         "EST la contrainte que lit leur eq. 7) mais ce n est "
+                         "pas le modele de Yang. A separer avant toute "
+                         "calibration.\n";
+    }
     if (scen_ == Scenario::TENSION || scen_ == Scenario::BRAZILIAN)
         pullV_ = cfg_.getd("pullV", 0.05);
     gripFree_ = cfg_.getb("gripLateralFree", false);
@@ -1660,8 +1865,21 @@ void FdemSolver::insertionSweep() {
                        + n.y() * (sxy * n.x() + syy * n.y());
             double tau = e.x() * (sxx * n.x() + sxy * n.y())
                        + e.y() * (sxy * n.x() + syy * n.y());
-            double fs = J.coh + (sig < 0.0 ? -sig * J.tanPhi : 0.0);
-            if (sig >= J.ft || std::abs(tau) >= fs)
+            // DIF de Yang et al. : le critere doit voir la resistance
+            // DYNAMIQUE, sinon le joint s insere au seuil statique et le
+            // facteur applique ensuite serait sans effet sur l instant
+            // d insertion. Le terme de frottement -sig tan(phi) n est PAS
+            // amplifie (leur choix, source Zhao).
+            double dT = 1.0, dC = 1.0;
+            if (difOn_) {
+                double er = 0.5 * (A.edot + B.edot);
+                dT = difTensionYang(er, difExpT_);
+                dC = difCompressionYang(er);
+            }
+            double fs = dC * J.coh
+                      + J.tanPhi * rockim::mcFrictionTerm(sig, J.ft, yangEnv_);
+            if (fs < 0.0) fs = 0.0;
+            if (sig >= dT * J.ft || std::abs(tau) >= fs)
                 mine.push_back({jI, sig, tau});
         }
         #pragma omp critical
@@ -1687,8 +1905,16 @@ void FdemSolver::insertionSweep() {
                    + n.y() * (sxy * n.x() + syy * n.y());
         double tau = e.x() * (sxx * n.x() + sxy * n.y())
                    + e.y() * (sxy * n.x() + syy * n.y());
-        double fs = J.coh + (sig < 0.0 ? -sig * J.tanPhi : 0.0);
-        if (sig >= J.ft || std::abs(tau) >= fs)
+        double dT = 1.0, dC = 1.0;             // DIF de Yang (voir plus haut)
+        if (difOn_) {
+            double er = 0.5 * (A.edot + B.edot);
+            dT = difTensionYang(er, difExpT_);
+            dC = difCompressionYang(er);
+        }
+        double fs = dC * J.coh
+                  + J.tanPhi * rockim::mcFrictionTerm(sig, J.ft, yangEnv_);
+        if (fs < 0.0) fs = 0.0;
+        if (sig >= dT * J.ft || std::abs(tau) >= fs)
             hits.push_back({jI, sig, tau});
     }
 #endif
@@ -1717,8 +1943,32 @@ void FdemSolver::activateJoint(int jI, double sig, double tau) {
     Joint& J = jt_[jI];
     if (!J.bonded) return;
     J.bonded = false;
+    // ---- DIF de Yang et al. 2025, FIGE ICI ------------------------------
+    // Applique AVANT les decalages de continuite de contrainte ci-dessous,
+    // qui lisent J.ft, J.coh et J.pj. Se COMPOSE avec le facteur de Weibull
+    // J.stat deja porte par ft et coh (multiplicatif, il ne le remplace pas).
+    // L angle de frottement est inchange. Les ouvertures critiques sont
+    // recalculees : dnE = ft/pj suit le DIF, tandis que kI Gf/ft ne bouge pas
+    // puisque ft et Gf recoivent le meme facteur — dnF est donc quasi
+    // invariante et le compteur d endommagement reste coherent.
+    if (difOn_) {
+        double er = 0.5 * (el_[J.eA].edot + el_[J.eB].edot);
+        double dT = difTensionYang(er, difExpT_);
+        double dC = difCompressionYang(er);
+        J.ft   *= dT;
+        J.Gf   *= dT;
+        J.coh  *= dC;
+        J.GfII *= dC;
+        J.difT = dT; J.difC = dC; J.edotIns = er;
+        double kI = yanSoft_ ? 1.0 / yanI_ : 2.0;
+        J.dnE   = J.ft / J.pj;
+        J.dnF   = J.dnE + kI * J.Gf / J.ft;
+        J.slipF = kI * J.GfII / J.coh;
+    }
     J.dn0 = std::min(sig, J.ft) / J.pj;
-    double fsNow = J.coh + (sig < 0.0 ? -sig * J.tanPhi : 0.0);
+    double fsNow = J.coh
+                 + J.tanPhi * rockim::mcFrictionTerm(sig, J.ft, yangEnv_);
+    if (fsNow < 0.0) fsNow = 0.0;
     double tau0 = std::clamp(tau, -fsNow, fsNow);
     J.slip[0] = J.slip[1] = -tau0 / J.pj;
     ++nInserted_;
@@ -1758,10 +2008,24 @@ void FdemSolver::placeTool() {
             tool_.faceLen = cfg_.getd("cutterLen", 0.013);
             tool_.chamLen = cfg_.getd("chamferLen", 0.0);
             tool_.chamDeg = cfg_.getd("chamferDeg", 45.0);
+            tool_.thick   = cfg_.getd("cutterThick", 0.0);
+            // A : ecretage en impulsion — voir FdemSolver.hpp. Lu ICI plutot
+            // qu'avec les autres cles de contact pour rester a cote de la
+            // geometrie d'outil qu'il borne.
+            toolVCap_ = cfg_.getd("toolImpulseCap", 0.0);
+            if (toolVCap_ > 0.0)
+                std::cout << "[FDEM] toolImpulseCap = " << toolVCap_
+                          << " : |Fc| <= " << toolVCap_
+                          << " * 2 v_outil * m / dt — l'outil ne peut pas "
+                             "changer la vitesse d'un noeud de plus de "
+                          << toolVCap_ * 2.0 * tool_.v.norm() << " m/s par pas\n";
             if (!(tool_.rakeDeg > -60.0 && tool_.rakeDeg < 60.0))
                 throw std::runtime_error("backRakeDeg must be in (-60, 60)");
             tool_.x = {cfg_.getd("toolX", -0.002), H_ - depth};
-            std::cout << "[FDEM] PDC cutter: back rake " << tool_.rakeDeg
+            std::cout << "[FDEM] PDC cutter: thickness "
+                      << (tool_.thick > 0.0 ? tool_.thick : -1.0)
+                      << " m (negative = unbounded wedge), back rake "
+                      << tool_.rakeDeg
                       << " deg, face " << tool_.faceLen << " m, depth of cut "
                       << depth << " m, speed " << vCut << " m/s\n";
         } else {
@@ -2222,6 +2486,13 @@ void FdemSolver::computeStableDt() {
     // does not for the other scenarios, where general contact only handles
     // debris at gcPenaltyFactor = 0.01 E t and never controls stability).
     if (scen_ == Scenario::SHPB) kContact = std::max(kContact, kpGC_);
+    // Contact de debris REELLEMENT employe. En mode potentiel c'est potP_ /
+    // potKt_ ; kpGC_ n'y est jamais evalue (generalContact() derive vers
+    // potentialContact() avant de le lire), donc le budget ci-dessus ne
+    // parlait pas de la bonne raideur. A potPenaltyFactor = 1 la valeur vaut
+    // exactement kp_ et ce max ne change rien — mais il SUIT desormais la
+    // cle dans les deux sens.
+    if (contactPot_) kContact = std::max(kContact, std::max(potP_, potKt_));
     double dtMin = 1e30;
     for (std::size_t i = 0; i < X0_.size(); ++i)
         dtMin = std::min(dtMin,
@@ -2235,7 +2506,34 @@ void FdemSolver::computeStableDt() {
     double hCfl = hmin_;
     for (double h : hEl_) hCfl = std::min(hCfl, h);
     double cfl = hCfl / phases_.maxCp();
-    dt_ = cfg_.getd("dtFactor", 0.2) * std::min(dtMin, cfl);
+    // ---- borne DIFFUSIVE du terme visqueux 2 mu D (eq. 6 de Yan) --------
+    // Un terme de Kelvin-Voigt ajoute sa PROPRE contrainte de stabilite au
+    // schema explicite, que le budget elastique ci-dessus ignore. Pour une
+    // barre 1D de longueur h, la force visqueuse equivaut a un amortisseur
+    // c = 2 mu A / h sur une masse nodale m = rho A h / 2, et le critere de
+    // la difference centree tend vers dt <= 2 m / c = rho h^2 / (2 mu) quand
+    // l amortissement domine. Sans cette borne, monter bulkViscosity finit
+    // par faire diverger le calcul SANS que le pas de temps ne bouge — le
+    // piege exact que la cle est censee eviter.
+    // Forme SERREE : la viscosite longitudinale effective est 2 mu, donc la
+    // diffusivite de quantite de mouvement vaut nu = 2 mu / rho et le critere
+    // explicite classique dt <= h^2/(2 nu) donne dt <= rho h^2 / (4 mu).
+    // (Le raisonnement par amortisseur equivalent 2m/c donne rho h^2/(2 mu),
+    // deux fois plus permissif : on retient le plus severe des deux.)
+    double dtVis = 1e30;
+    if (bulkVisc_ > 0.0)
+        for (int eI = 0; eI < (int)el_.size(); ++eI)
+            dtVis = std::min(dtVis, rhoP_[el_[eI].phase] * hEl_[eI] * hEl_[eI]
+                                    / (4.0 * bulkVisc_));
+    dt_ = cfg_.getd("dtFactor", 0.2) * std::min(std::min(dtMin, cfl), dtVis);
+    if (bulkVisc_ > 0.0)
+        std::cout << "[FDEM] viscosite newtonienne (Yan eq. 6) : mu = "
+                  << bulkVisc_ << " Pa.s ; borne diffusive rho h^2/(4 mu) = "
+                  << dtVis << " s contre " << std::min(dtMin, cfl)
+                  << " s pour les ressorts"
+                  << (dtVis < std::min(dtMin, cfl)
+                      ? "  <-- C EST ELLE QUI COMMANDE LE PAS" : "")
+                  << "\n";
 }
 
 // ===========================================================================
@@ -2245,6 +2543,8 @@ void FdemSolver::computeStableDt() {
 void FdemSolver::step() {
     for (auto& fi : f_) fi.setZero();
     tool_.resetForce();
+    // balai numerique : armement a l'instant demande (voir FdemSolver.hpp)
+    if (brushStart_ > 0.0 && !brushArmed_ && t_ >= brushStart_) armBrush();
     // SHPB: the pulse velocity of THIS step, read by integrate() (DRIVEX)
     if (scen_ == Scenario::SHPB) vDrive_ = shpbVel(t_);
 
@@ -2401,8 +2701,9 @@ void FdemSolver::elementForces() {
     // node duplication makes this loop embarrassingly parallel: every
     // element writes only its OWN three nodes
     double wEl = 0.0;                      // V2/B4 : travail de ce pas
+    double wVi = 0.0;                      // dont part VISQUEUSE (ventilation)
 #ifdef _OPENMP
-#pragma omp parallel for schedule(static) reduction(+:wEl)
+#pragma omp parallel for schedule(static) reduction(+:wEl,wVi)
 #endif
     for (int eI = 0; eI < (int)el_.size(); ++eI) {
         Elem& e = el_[eI];
@@ -2457,26 +2758,60 @@ void FdemSolver::elementForces() {
             szz = pm + (szz - pm) * fscale;
             e.svm = cap;
         }
-        if (!law_ && pm > 3.0 * ftP_[e.phase]) {        // mean-tension cap
-            double shift = pm - 3.0 * ftP_[e.phase];
+        if (!law_ && mtCap_ > 0.0 && pm > mtCap_ * ftP_[e.phase]) {
+            double shift = pm - mtCap_ * ftP_[e.phase];
             s(0) -= shift; s(1) -= shift;
         }
-        // ---- viscosite de volume (eq. 6 de Yan et al. : + 2 mu D) ----------
+        // ---- viscosite NEWTONIENNE ISOTROPE (eq. 6 de Yan : + 2 mu D) -----
+        // NB de vocabulaire : ce n est PAS une  viscosite de volume  au sens
+        // zeta tr(D) I (le bulk viscosity d Abaqus). Le terme agit sur le
+        // tenseur COMPLET, trace comprise, donc il amortit aussi bien le
+        // volumique que le deviatorique. Confondre les deux fausserait toute
+        // calibration.
         // D = sym(L), L = Fdot F^-1 (taux de deformation en configuration
         // courante), tourne dans le repere co-rote et ajoute a la contrainte
         // AVANT la rotation retour — l'equivalent exact du 2*mu*D de leur
         // forme, dissipatif par construction (puissance 2 mu D:D >= 0).
         // bulkViscosity = 0 (defaut) : branche non executee, bit-identique.
-        if (bulkVisc_ > 0.0) {
+        if (bulkVisc_ > 0.0 || difOn_) {
             Eigen::Matrix2d Fd = Eigen::Matrix2d::Zero();
             for (int a = 0; a < 3; ++a)
                 Fd += v_[e.n[a]] * e.dN.col(a).transpose();
+            // Garde : F est inverse ici, ce que ne fait aucun autre chemin
+            // du solveur 2D. Un element retourne ou ecrase (det F <= 0) rend
+            // l inverse infinie et propagerait des NaN dans TOUTE la
+            // contrainte. On saute l element pour ce pas — il garde son
+            // taux filtre precedent, ce qui est le comportement sur.
+            double detF = F.determinant();
+            if (!(detF > 1e-12)) continue;
             Eigen::Matrix2d L = Fd * F.inverse();
             Eigen::Matrix2d Dr = 0.5 * (L + L.transpose());
             Eigen::Matrix2d Dc = R.transpose() * Dr * R;   // co-rote
-            s(0) += 2.0 * bulkVisc_ * Dc(0, 0);
-            s(1) += 2.0 * bulkVisc_ * Dc(1, 1);
-            s(2) += 2.0 * bulkVisc_ * Dc(0, 1);
+            if (bulkVisc_ > 0.0) {
+                s(0) += 2.0 * bulkVisc_ * Dc(0, 0);
+                s(1) += 2.0 * bulkVisc_ * Dc(1, 1);
+                s(2) += 2.0 * bulkVisc_ * Dc(0, 1);
+                // VENTILATION de la dissipation visqueuse : la puissance
+                // 2 mu D:D par unite de volume est >= 0 par construction, donc
+                // comptee NEGATIVEMENT comme tout ce qui quitte l energie
+                // cinetique. Elle est DEJA dans wEl (la contrainte visqueuse
+                // produit les memes forces nodales) : c est une ventilation,
+                // pas un poste supplementaire du bilan. En deformation plane
+                // D_zz = 0, donc la norme de Frobenius 2D EST D:D.
+                wVi -= 2.0 * bulkVisc_ * Dc.squaredNorm() * e.A0 * thk_;
+            }
+            if (difOn_) {
+                // principale MAXIMALE en valeur absolue du tenseur taux, puis
+                // filtre exponentiel de constante srTau_ (voir le header : le
+                // taux brut par element est trop bruite pour figer un DIF).
+                double trD = Dc(0, 0) + Dc(1, 1);
+                double haD = 0.5 * (Dc(0, 0) - Dc(1, 1));
+                double rad = std::sqrt(haD * haD + Dc(0, 1) * Dc(0, 1));
+                double lm1 = 0.5 * trD + rad;
+                double lm2 = 0.5 * trD - rad;
+                double er  = std::max(std::abs(lm1), std::abs(lm2));
+                e.edot = srRelax_ * e.edot + (1.0 - srRelax_) * er;
+            }
         }
         Eigen::Matrix2d sig;
         sig << s(0), s(2), s(2), s(1);
@@ -2503,6 +2838,7 @@ void FdemSolver::elementForces() {
         }
     }
     elWork_ += wEl * dt_;
+    viscWork_ += wVi * dt_;                // ventilation, incluse dans elWork_
 }
 
 // ---------------------------------------------------------------------------
@@ -2521,15 +2857,157 @@ void FdemSolver::elementForces() {
 // gravity = 0 (the default) short-circuits: no existing model changes.
 // ---------------------------------------------------------------------------
 void FdemSolver::bodyForces() {
-    if (gravity_ <= 0.0) return;
+    if (gravity_ > 0.0) {
 #ifdef _OPENMP
 #pragma omp parallel for schedule(static)
 #endif
-    for (int eI = 0; eI < (int)el_.size(); ++eI) {
-        const Elem& e = el_[eI];
-        double w = rhoP_[e.phase] * e.A0 * thk_ * gravity_ / 3.0;
-        for (int a = 0; a < 3; ++a) f_[e.n[a]].y() -= w;
+        for (int eI = 0; eI < (int)el_.size(); ++eI) {
+            const Elem& e = el_[eI];
+            double w = rhoP_[e.phase] * e.A0 * thk_ * gravity_ / 3.0;
+            for (int a = 0; a < 3; ++a) f_[e.n[a]].y() -= w;
+        }
     }
+    // ---- balai numerique : anti-gravite sur les SEULS candidats -----------
+    // Serie et non parallele : le travail s'accumule dans un scalaire, et la
+    // phase de balayage represente quelques pour cent du run. Voir
+    // FdemSolver.hpp pour la justification de la comptabilite separee.
+    if (!brushArmed_) return;
+    double bw = 0.0;
+    for (int eI = 0; eI < (int)el_.size(); ++eI) {
+        if (!brushCand_[eI]) continue;
+        const Elem& e = el_[eI];
+        double w = rhoP_[e.phase] * e.A0 * thk_ * brushA_ / 3.0;
+        for (int a = 0; a < 3; ++a) {
+            Eigen::Vector2d F = w * brushDir_;
+            f_[e.n[a]] += F;
+            bw += F.dot(v_[e.n[a]]) * dt_;
+        }
+    }
+    brushWork_ += bw;                      // POSTE SEPARE, jamais dans sumW
+}
+
+// ---------------------------------------------------------------------------
+// Armement du balai : fige les candidats et l'etat de reference.
+// ---------------------------------------------------------------------------
+void FdemSolver::armBrush() {
+    computeFragments();                    // composantes connexes a cet instant
+    brushFrag_ = fragId_;                  // fige : le classement se fera sur
+    brushNFrag_ = nFrag_;                  // CES composantes, pas sur d'autres
+    brushCand_.assign(el_.size(), 0);
+    long nc = 0;
+    for (std::size_t e = 0; e < el_.size(); ++e)
+        if (fragId_[e] != 0) { brushCand_[e] = 1; ++nc; }
+    brushU0_ = u_;                         // deplacement nodal de reference
+    // vitesse initiale communiquee aux seuls noeuds des candidats
+    std::vector<char> touched(X0_.size(), 0);
+    for (std::size_t e = 0; e < el_.size(); ++e)
+        if (brushCand_[e])
+            for (int a = 0; a < 3; ++a) touched[el_[e].n[a]] = 1;
+    // fragBrushZeroV : REMPLACER la vitesse au lieu de l'ajouter.
+    //
+    // L'article AJOUTE v0 a l'etat existant, ce qui suppose un etat au repos
+    // (leur etape 1, « after completing the impact simulation »). Sur une
+    // COUPE CONTINUE cet etat n'existe pas : mesure du 2026-08-18, apres
+    // 244 us de repos outil arrete, la vitesse mediane des fragments est
+    // encore de 5,4 m/s et la maximale ne decroit pas du tout — un fragment
+    // libre qui vole n'a rien pour le freiner, et l'amortissement de Cundall
+    // agit sur la deformation, pas sur un mouvement de corps rigide.
+    //
+    // Or l'echelle propre du balai est bornee par le critere « pas de
+    // nouvelle fissure » : a 20 000 m/s2 sur un bloc de 20 mm, rho a h = 1,0
+    // MPa contre ft = 10,6 MPa, et a t = 6 m/s. Les deux sont du MEME ORDRE
+    // que le residuel : aucun choix de parametres ne les separe.
+    //
+    // Remettre les vitesses a zero rend la mesure exactement ce qu'elle doit
+    // etre — la reponse a l'anti-gravite SEULE. C'est licite parce que la
+    // phase de balayage est une CLASSIFICATION : rien de ce qui la suit n'est
+    // de la physique, et le bilan B4 de l'impact est deja clos.
+    long nn = 0;
+    for (std::size_t i = 0; i < X0_.size(); ++i)
+        if (touched[i]) {
+            if (brushZeroV_) v_[i]  = brushV0_ * brushDir_;
+            else             v_[i] += brushV0_ * brushDir_;
+            ++nn;
+        }
+    // ---- CONTROLE DE REPOS (etape 1) -------------------------------------
+    // L'echelle de vitesse du balai vaut v0 + a t_balayage : c'est la vitesse
+    // qu'il communique lui-meme. Toute vitesse residuelle du meme ordre noie
+    // le signal, et le classement mesure alors le mouvement d'AVANT, pas la
+    // reponse a l'anti-gravite. On l'imprime pour que le journal tranche.
+    double vres = 0.0, vresAll = 0.0;
+    for (std::size_t i = 0; i < X0_.size(); ++i) {
+        double vi = v_[i].norm();
+        vresAll = std::max(vresAll, vi);
+        if (touched[i]) vres = std::max(vres, vi);
+    }
+    brushArmed_ = true;
+    brushT0_ = t_;
+    std::cout << "[FDEM] BALAI arme a t = " << t_ << " s : " << nc << " / "
+              << el_.size() << " elements candidats (" << brushNFrag_ - 1
+              << " fragments hors corps principal), " << nn << " noeuds\n"
+              << "[FDEM]   v0 = " << brushV0_ << " m/s, a = " << brushA_
+              << " m/s2, direction (" << brushDir_.x() << ", " << brushDir_.y()
+              << "), beta = " << brushBeta_ << "\n"
+              << "[FDEM]   ATTENTION : phase de CLASSIFICATION, pas de "
+                 "physique. Son travail est compte a part (brushWork_) et "
+                 "n'entre pas dans le bilan B4.\n"
+              << "[FDEM]   REPOS (etape 1) : vitesse residuelle max des "
+                 "candidats " << vres << " m/s, du bloc entier " << vresAll
+              << " m/s\n";
+    // l'echelle propre du balai n'est connue qu'avec la duree de balayage ;
+    // on la borne ici par la vitesse acquise en un temps caracteristique egal
+    // a v0/a majore : on se contente de comparer a v0 + a * (duree deja
+    // ecoulee est nulle), donc on signale par rapport a v0 seul, plus la
+    // consigne d'usage : vres doit rester tres petit devant a * t_balayage.
+    if (vres > 100.0 * brushV0_)
+        std::cout << "[FDEM]   >>> ETAPE 1 VIOLEE : les candidats bougent "
+                     "encore a " << vres << " m/s, soit " << vres / brushV0_
+                  << " fois la vitesse initiale du balai. Le classement "
+                     "mesurera le mouvement RESIDUEL, pas la reponse a "
+                     "l'anti-gravite. Allonger le repos entre toolStop et "
+                     "fragBrushStart.\n";
+}
+
+// ---------------------------------------------------------------------------
+// Verdict : deplacement de chaque fragment contre celui d'une particule LIBRE.
+// ---------------------------------------------------------------------------
+void FdemSolver::brushReport() {
+    if (!brushArmed_) return;
+    double tb = t_ - brushT0_;
+    double dref = brushV0_ * tb + 0.5 * brushA_ * tb * tb;
+    double seuil = brushBeta_ * dref;
+    // deplacement moyen par fragment, mesure DEPUIS l'armement
+    std::vector<double> sum(brushNFrag_, 0.0), vol(brushNFrag_, 0.0);
+    std::vector<long> cnt(brushNFrag_, 0);
+    for (std::size_t e = 0; e < el_.size(); ++e) {
+        int f = brushFrag_[e];
+        double d = 0.0;
+        for (int a = 0; a < 3; ++a)
+            d += (u_[el_[e].n[a]] - brushU0_[el_[e].n[a]]).norm() / 3.0;
+        sum[f] += d; ++cnt[f];
+        vol[f] += el_[e].A0 * thk_;
+    }
+    double vLibre = 0.0, vCoince = 0.0;
+    long nLibre = 0, nCoince = 0;
+    for (int f = 1; f < brushNFrag_; ++f) {          // 0 = corps principal
+        if (cnt[f] == 0) continue;
+        if (sum[f] / cnt[f] > seuil) { vLibre += vol[f]; ++nLibre; }
+        else                         { vCoince += vol[f]; ++nCoince; }
+    }
+    double vTot = vLibre + vCoince;
+    std::cout << "[FDEM] BALAI, verdict apres " << tb << " s :\n"
+              << "[FDEM]   particule libre de reference : d_ref = " << dref
+              << " m, seuil = beta d_ref = " << seuil << " m\n"
+              << "[FDEM]   fragments LIBRES  : " << nLibre << " (" << vLibre
+              << " m^3/m)\n"
+              << "[FDEM]   fragments COINCES : " << nCoince << " (" << vCoince
+              << " m^3/m)\n"
+              << "[FDEM]   volume detache CORRIGE " << vLibre << " contre "
+              << vTot << " par le critere naif : "
+              << (vTot > 0 ? 100.0 * (vTot - vLibre) / vTot : 0.0)
+              << " % de SUREVALUATION\n"
+              << "[FDEM]   travail du balai : " << brushWork_
+              << " J/m (hors bilan B4)\n";
 }
 
 // ---------------------------------------------------------------------------
@@ -2561,8 +3039,8 @@ void FdemSolver::jointForces() {
     // accumulates into its own buffer (touched-list + per-thread seen flags)
     // and the buffers are reduced SERIALLY IN THREAD ORDER: deterministic
     // for a fixed thread count.
-    auto processJoint = [&](Joint& J, auto&& addF, long& nb, double& dampW,
-                            double& jw) {
+    auto processJoint = [&](Joint& J, auto&& addF, long& nb, long& nd,
+                            double& dampW, double& jw) {
         if (J.dead || J.bonded) return;    // bonded: node binding carries it
 
         Eigen::Vector2d pA1 = X0_[J.a1] + u_[J.a1], pA2 = X0_[J.a2] + u_[J.a2];
@@ -2622,8 +3100,10 @@ void FdemSolver::jointForces() {
                 double sm = std::abs(sEff);
                 if (sm > J.smax[k]) J.smax[k] = sm;
                 smx = J.smax[k];
-                double sE = (J.coh + J.tanPhi * std::max(0.0, -J.pj * dn))
-                          / J.pj;
+                double sE = (J.coh + J.tanPhi
+                             * rockim::mcFrictionTerm(J.pj * dn, J.ft,
+                                                      yangEnv_)) / J.pj;
+                if (sE < 0.0) sE = 0.0;
                 rsO = (J.slipF > 0.0 && smx > sE) ? (smx - sE) / J.slipF : 0.0;
                 rsMaxO = std::max(rsMaxO, rsO);
             }
@@ -2691,7 +3171,10 @@ void FdemSolver::jointForces() {
                     // loading and unloading agree on the envelope.
                     sigEl = (om > 1e-30) ? sMax * dn / om : 0.0;
                 } else {
-                    sigEl = J.pj * dn;                 // closed: penalty
+                    // k- = k+(D) en mode adaptatif : la MEME secante des deux
+                    // cotes de dn = 0, donc plus de saut de raideur.
+                    // (EPFL arXiv:2511.14323 sec. 4 ; voir FdemSolver.hpp)
+                    sigEl = (jcAdaptive_ ? (1.0 - J.D) * J.pj : J.pj) * dn;
                 }
             } else if (dn >= 0.0) {
                 double env = (dn <= J.dnE) ? J.pj * dn
@@ -2706,7 +3189,8 @@ void FdemSolver::jointForces() {
                     }
                 } else sigEl = tr;
             } else {
-                sigEl = J.pj * dn;                     // closed: penalty
+                // idem : k- = k+(D) = (1-D) pj (EPFL arXiv:2511.14323 sec. 4)
+                sigEl = (jcAdaptive_ ? (1.0 - J.D) * J.pj : J.pj) * dn;
             }
 
             double sig = sigEl;
@@ -2744,7 +3228,9 @@ void FdemSolver::jointForces() {
             double fdS = yanSoft_ ? yan::fD(J.D, yanP_) : 0.0;
             double coh = yanSoft_ ? fdS * J.coh : (1.0 - J.D) * J.coh;
             double muS = (yanSoft_ && yanFricScaled_) ? fdS : 1.0;
-            double tauLim = coh + muS * J.tanPhi * std::max(0.0, -sig);
+            double tauLim = coh + muS * J.tanPhi
+                          * rockim::mcFrictionTerm(sig, J.ft, yangEnv_);
+            if (tauLim < 0.0) tauLim = 0.0;
             double tau;
             if (shearOrigin_) {
                 // ---- eq. 18 : sécante à l'origine ------------------------
@@ -2823,18 +3309,22 @@ void FdemSolver::jointForces() {
             // interpenetrated faces to the general contact, whose penalty
             // then releases 1/2 k pen^2 of energy created from nothing (the
             // pump isolated by the net-work meter).
-            if (dnMax > 3.0 * J.dnF) J.dead = true;
+            // ++nd tire EXACTEMENT une fois par joint : au pas suivant le
+            // garde `if (J.dead || J.bonded) return;` en tete de lambda coupe
+            // court. C'est ce compteur qui estampille le rebuild en mode eager.
+            if (dnMax > 3.0 * J.dnF) { J.dead = true; ++nd; }
         }
     };
 
 #ifdef _OPENMP
     int nT = omp_get_max_threads();
     if (nT == 1) {                       // bit-identical to the serial build
-        long nb1 = 0;
+        long nb1 = 0, nd1 = 0;
         double dw1 = 0.0, jw1 = 0.0;
         auto addF1 = [&](int i, const Eigen::Vector2d& v) { f_[i] += v; };
-        for (auto& J : jt_) processJoint(J, addF1, nb1, dw1, jw1);
+        for (auto& J : jt_) processJoint(J, addF1, nb1, nd1, dw1, jw1);
         nBroken_ += nb1;
+        nDead_ += nd1;
         dampWork_ += dw1;
         jointWork_ += jw1;
         return;
@@ -2845,7 +3335,7 @@ void FdemSolver::jointForces() {
         seenTL_.assign(nT, std::vector<char>(X0_.size(), 0));
         touchedTL_.assign(nT, {});
     }
-    std::vector<long> nbT(nT, 0);
+    std::vector<long> nbT(nT, 0), ndT(nT, 0);
     std::vector<double> dwT(nT, 0.0), jwT(nT, 0.0);
 #pragma omp parallel
     {
@@ -2854,7 +3344,7 @@ void FdemSolver::jointForces() {
         auto& seen = seenTL_[t];
         auto& tl = touchedTL_[t];
         tl.clear();
-        long nb = 0;
+        long nb = 0, nd = 0;
         double dw = 0.0, jw = 0.0;
         auto addF = [&](int i, const Eigen::Vector2d& v) {
             if (!seen[i]) { seen[i] = 1; tl.push_back(i); }
@@ -2862,8 +3352,9 @@ void FdemSolver::jointForces() {
         };
 #pragma omp for schedule(static)
         for (int jI = 0; jI < (int)jt_.size(); ++jI)
-            processJoint(jt_[jI], addF, nb, dw, jw);
+            processJoint(jt_[jI], addF, nb, nd, dw, jw);
         nbT[t] = nb;
+        ndT[t] = nd;
         dwT[t] = dw;
         jwT[t] = jw;
     }
@@ -2874,15 +3365,17 @@ void FdemSolver::jointForces() {
             seenTL_[t][i] = 0;
         }
         nBroken_ += nbT[t];
+        nDead_ += ndT[t];
         dampWork_ += dwT[t];
         jointWork_ += jwT[t];
     }
 #else
-    long nb = 0;
+    long nb = 0, nd = 0;
     double dw = 0.0, jw = 0.0;
     auto addF = [&](int i, const Eigen::Vector2d& v) { f_[i] += v; };
-    for (auto& J : jt_) processJoint(J, addF, nb, dw, jw);
+    for (auto& J : jt_) processJoint(J, addF, nb, nd, dw, jw);
     nBroken_ += nb;
+    nDead_ += nd;
     dampWork_ += dw;
     jointWork_ += jw;
 #endif
@@ -3272,6 +3765,38 @@ void FdemSolver::potentialContact() {
                             if (la[k] > 0.1) lastTouch_[EA.n[k]] = stepCount_;
                             if (lb[k] > 0.1) lastTouch_[EB.n[k]] = stepCount_;
                         }
+                    // ---- amortissement normal OPT-IN (potXi) -------------
+                    // Amortisseur visqueux sur la vitesse relative NORMALE au
+                    // centroide du recouvrement, calibre sur la masse reduite
+                    // des deux elements : c = 2 xi sqrt(potP_ mR). Ecrete du
+                    // cote SEPARATION pour que la resultante normale ne
+                    // devienne jamais tractive (deux fragments ne doivent pas
+                    // pouvoir se coller). Voir FdemSolver.hpp pour le pourquoi.
+                    if (potXi_ > 0.0) {
+                        double FnD = R.F.norm();
+                        if (FnD > 1e-300) {
+                            Eigen::Vector2d nhD = R.F / FnD;
+                            Eigen::Vector2d vAD =
+                                la[0] * v_[EA.n[0]] + la[1] * v_[EA.n[1]]
+                                + la[2] * v_[EA.n[2]];
+                            Eigen::Vector2d vBD =
+                                lb[0] * v_[EB.n[0]] + lb[1] * v_[EB.n[1]]
+                                + lb[2] * v_[EB.n[2]];
+                            Eigen::Vector2d vrelD = vAD - vBD;
+                            double mAD = rhoP_[EA.phase] * EA.A0 * thk_;
+                            double mBD = rhoP_[EB.phase] * EB.A0 * thk_;
+                            double mRD = mAD * mBD / (mAD + mBD);
+                            double cD = 2.0 * potXi_ * std::sqrt(potP_ * mRD);
+                            double fdD = -cD * vrelD.dot(nhD);
+                            if (fdD < -FnD) fdD = -FnD;   // jamais tractif
+                            Eigen::Vector2d FdD = fdD * nhD;
+                            for (int k = 0; k < 3; ++k) {
+                                f_[EA.n[k]] += la[k] * FdD;
+                                f_[EB.n[k]] -= lb[k] * FdD;
+                            }
+                            gcWork_ += FdD.dot(vrelD) * dt_;   // V2/B4
+                        }
+                    }
                     // ---- frottement incremental (eq. 4-5) ----------------
                     // ressort tangentiel a HISTOIRE : Ft += -kt (vrel.t) dt,
                     // plafonne au cap de Coulomb mu |Fn| (glissement). La
@@ -3328,7 +3853,12 @@ void FdemSolver::generalContact() {
             sweepBroken_ = nBroken_;       // inchange : timing = mode full)
         }
     }
-    if (actStamp_ != nBroken_ && (actStamp_ < 0 || stepCount_ % 8 == 0)) {
+    // A' : en eager l'estampille suit les SEPARATIONS (nDead_) et non les
+    // casses, et la grille % 8 saute — les faces entrent au pas ou leur joint
+    // meurt. En legacy, comportement historique inchange au bit pres.
+    const long gcStamp = gcEager_ ? nDead_ : nBroken_;
+    if (actStamp_ != gcStamp
+        && (actStamp_ < 0 || gcEager_ || stepCount_ % 8 == 0)) {
         deadList_.clear();                 // LE declencheur historique : seul
         for (const auto& J : jt_)          // endroit ou le cache se rafraichit
             if (J.dead) {
@@ -3336,7 +3866,7 @@ void FdemSolver::generalContact() {
                 deadList_.push_back({J.eB, J.b2, J.b1});  // CCW oppose dans B
             }
         rebuildContactEdges();
-        actStamp_ = nBroken_;
+        actStamp_ = gcStamp;
     }
     if (act_.empty()) return;
     if (contactPot_) {                     // A3 : contact par potentiel —
@@ -3601,6 +4131,24 @@ void FdemSolver::generalContact() {
 // per-thread partial sums added in thread order (deterministic for a fixed
 // thread count).
 void FdemSolver::toolContact() {
+    // BALAI : l'outil est RETIRE pendant la phase de classification. Sans
+    // cela il continuerait a couper et fabriquerait de nouveaux fragments
+    // pendant qu'on essaie de classer les anciens. C'est aussi ce que fait
+    // l'experience : on balaie apres l'impact, outil ecarte.
+    if (brushArmed_) return;
+    // ETAPE 1 : arret de l'outil AVANT l'armement, pour menager un intervalle
+    // de repos. Voir FdemSolver.hpp — sans lui, des fragments encore lances a
+    // 100 m/s traversent le bloc pendant le balayage.
+    if (toolStop_ > 0.0 && t_ >= toolStop_) {
+        if (!toolStopped_) {
+            toolStopped_ = true;
+            std::cout << "[FDEM] OUTIL ARRETE a t = " << t_ << " s. Repos "
+                         "jusqu'a l'armement du balai (t = " << brushStart_
+                      << " s), soit " << (brushStart_ - t_) << " s pour que "
+                         "l'amortissement eteigne les vitesses residuelles.\n";
+        }
+        return;
+    }
     // BRAZILIAN must be excluded here as well as TENSION. placeTool() returns
     // early for both, so tool_ keeps its STRUCT DEFAULTS — a disc of radius
     // 10 mm sitting at the origin — and this routine would press that phantom
@@ -3626,6 +4174,12 @@ void FdemSolver::toolContact() {
             double dn = rel.dot(n);                     // >0 = in front, free
             double dt2 = rel.dot(tdir);                 // along the face
             if (dn >= 0.0) return false;
+            // BACK FACE (cutterThick > 0): the cutter has a finite thickness,
+            // so a node more than `thick` behind the rake face is OUTSIDE the
+            // tool -- it is in the void the cutter left behind. Without this
+            // bound the wedge is a half-space and traps its own cut floor and
+            // chip, which the capped penalty then pumps to km/s.
+            if (tool_.thick > 0.0 && dn < -tool_.thick) return false;
             if (dt2 < 0.0 || dt2 > tool_.faceLen) return false;
             // DEEP-PENETRATION CAP on the local element size, exactly as the
             // general contact does. Capping on the face length instead (6.5 mm
@@ -3664,6 +4218,23 @@ void FdemSolver::toolContact() {
             if (fn < 0) fn = 0;
             double ftg = -muC_ * fn * std::tanh(vrel.dot(tdir) / vReg_);
             Fc = fn * n + ftg * tdir;
+        }
+        // --- A : ECRETAGE EN IMPULSION (voir FdemSolver.hpp) ----------------
+        // L'ecretage historique borne la PENETRATION (0,6 h) ; il ne borne pas
+        // l'IMPULSION. Mesure du 2026-08-18 (coupe PDC) : la force ainsi
+        // plafonnee, 7,24 MN/m, communique encore 377 m/s en UN pas a un noeud
+        // de 2,46e-5 kg/m. On borne donc la grandeur qui lance les noeuds.
+        // La borne est PHYSIQUE, pas un reglage : un corps rigide de masse
+        // infinie anime de v ne peut, en choc parfaitement elastique,
+        // communiquer plus de 2v. On ecrete le VECTEUR complet, frottement
+        // compris, car c'est l'impulsion totale qui accelere le noeud.
+        if (toolVCap_ > 0.0) {
+            double vt = tool_.v.norm();
+            if (vt > 1e-12) {                  // outil a l'arret : pas de borne
+                double fmax = toolVCap_ * 2.0 * vt * m_[i] / dt_;
+                double f = Fc.norm();
+                if (f > fmax) Fc *= fmax / f;
+            }
         }
         return true;
     };
@@ -4523,8 +5094,19 @@ void FdemSolver::finalize() {
         std::cout << "[FDEM] energy budget (V2/B4): KE " << keInit_ << " -> "
                   << keBlock << " J/m\n"
                   << "[FDEM]   elements     : " << -elWork_
-                  << " J/m preleve (stocke elastique " << uEl << " J/m)\n"
-                  << "[FDEM]   joints       : " << -(jointWork_ - dampWork_)
+                  << " J/m preleve (stocke elastique " << uEl << " J/m)\n";
+        if (bulkVisc_ > 0.0)
+            std::cout << "[FDEM]      dont visqueux (2 mu D) : "
+                      << -viscWork_ << " J/m dissipes, soit "
+                      << (std::abs(elWork_) > 1e-300
+                          ? 100.0 * viscWork_ / elWork_ : 0.0)
+                      << " % du poste elements  "
+                      << (viscWork_ <= 0.0
+                          ? "[OK, dissipatif]"
+                          : "[FAIL - le terme visqueux a INJECTE de l energie]")
+                      << ". VENTILATION : deja comptee dans la ligne "
+                         "ci-dessus, pas un poste de plus.\n";
+        std::cout << "[FDEM]   joints       : " << -(jointWork_ - dampWork_)
                   << " J/m cohesif (fissuration + stocke), dashpot "
                   << -dampWork_ << " J/m\n"
                   << "[FDEM]   contact      : " << -gcWork_
@@ -4550,6 +5132,35 @@ void FdemSolver::finalize() {
                   << jt_.size() << " joints inserted ("
                   << (jt_.empty() ? 0.0 : 100.0 * nInserted_ / jt_.size())
                   << " %), " << nBroken_ << " fully broken\n";
+    if (difOn_) {
+        // Sur les joints REELLEMENT inseres : c est la seule population sur
+        // laquelle le DIF a ete evalue.
+        std::vector<double> er, dt_v;
+        for (const auto& J : jt_)
+            if (!J.bonded) { er.push_back(J.edotIns); dt_v.push_back(J.difT); }
+        if (er.empty()) {
+            std::cout << "[FDEM] strainRateDIF : aucun joint insere — le DIF "
+                         "n a jamais ete evalue.\n";
+        } else {
+            std::sort(er.begin(), er.end());
+            std::sort(dt_v.begin(), dt_v.end());
+            std::size_t n = er.size();
+            std::cout << "[FDEM] strainRateDIF (sur " << n
+                      << " joints inseres) : taux de deformation a "
+                         "l insertion, mediane " << er[n / 2]
+                      << " /s, min " << er.front() << ", max " << er.back()
+                      << " ; DIF_traction median " << dt_v[n / 2]
+                      << " (min " << dt_v.front() << ", max " << dt_v.back()
+                      << ")\n";
+            std::size_t sat = 0;
+            for (double x : er) if (x > 1.0e2) ++sat;
+            std::cout << "[FDEM]   " << (100.0 * sat / n)
+                      << " % des insertions sont AU PLATEAU de DIF_traction "
+                         "(edot > 1e2 /s) : sur cette part le facteur ne "
+                         "discrimine plus rien, il agit comme une simple "
+                         "multiplication de ft par 1,85.\n";
+        }
+    }
     if (gcAdaptive_)
         std::cout << "[FDEM] adaptive contact activation: " << nActivated_
                   << " / " << pool_.size() << " exterior faces activated ("
@@ -4821,6 +5432,7 @@ void FdemSolver::finalize() {
               << "\n[FDEM] fragments         : " << nFrag_
               << " (detached vol " << detachedVol_ << " m^3/m)"
               << "\n[FDEM] specific energy   : " << Es << " J/m^3\n";
+    brushReport();          // no-op si le balai n'a pas ete arme
 }
 
 // ---------------------------------------------------------------------------

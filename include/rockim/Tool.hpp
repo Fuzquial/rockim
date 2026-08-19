@@ -46,6 +46,14 @@ struct Tool {
     double faceLen = 0.013; // rake face extent from the edge [m]
     double chamLen = 0.0;   // chamfer length at the edge (0 = none) [m]
     double chamDeg = 45.0;  // chamfer angle from the rake face [deg]
+    // PDC: cutter THICKNESS behind the rake face [m]. 0 = unbounded, the
+    // historical behaviour. Without it the cutter is a half-space: every node
+    // behind the rake face, however far, sits inside the tool. In a cut that
+    // traps the freshly cut floor AND the detached chip, and the capped
+    // penalty force then accelerates them without escape -- measured
+    // 2026-08-18: +394 m/s per step, 24 km/s after 61 steps, while the tool
+    // had delivered only 253 J/m of work.
+    double thick = 0.0;
 
     // Outward normal of the rake face (points INTO the rock, i.e. forward and
     // slightly up for a positive back rake) and the along-face direction.

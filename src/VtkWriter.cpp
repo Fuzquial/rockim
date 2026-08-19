@@ -1,6 +1,32 @@
 #include "rockim/VtkWriter.hpp"
 #include <fstream>
+#include <iomanip>
 #include <stdexcept>
+
+// ---------------------------------------------------------------------------
+// PRECISION D'ECRITURE DES COORDONNEES. std::ofstream applique par defaut 6
+// chiffres significatifs. Sur un domaine metrique c'est un PAS DE LECTURE de
+// 10 micrometres, et tout deplacement plus petit est ecrase a zero.
+//
+// Mesure du 2026-08-18, benchmark Parker (AbuAisha et al. 2017, annexe A) :
+// bloc de 8 m, fissure sous pression dont l'ouverture theorique vaut 0,128 mm,
+// soit TREIZE pas de quantification. Les deplacements du VTU ne prenaient plus
+// que les valeurs 1e-5 et 1,414e-5 m, les levres lisaient exactement zero, et
+// l'ecart de -6,25 % annonce sur le maillage grossier tenait entierement dans
+// un cran de graduation — indecidable entre 0 et -14 %.
+//
+// C'est un defaut de SORTIE, pas de calcul : le solveur travaille en double.
+// Il mord des que le rapport taille du domaine / effet mesure depasse ~1e5 —
+// donc sur toute etude de petits deplacements sur grand domaine. L'etude
+// tunnel y echappait (on y mesurait des metres d'EDZ), la coupe PDC aussi
+// (bloc de 40 mm). Meme famille que le defaut toolY, qui rendait la courbe
+// force-penetration en escalier.
+//
+// 12 chiffres portent la resolution a ~1e-9 m sur un domaine metrique, soit
+// cinq ordres de grandeur sous l'effet cherche. Le fichier grossit d'environ
+// un tiers. AUCUN effet sur la physique.
+// ---------------------------------------------------------------------------
+static constexpr int kCoordDigits = 12;
 
 namespace rockim::vtk {
 
@@ -16,6 +42,7 @@ static void openVtu(std::ofstream& out, const std::string& path,
 
 static void writePoints(std::ofstream& out, const std::vector<Eigen::Vector2d>& pts) {
     out << "<Points>\n<DataArray type=\"Float64\" NumberOfComponents=\"3\" format=\"ascii\">\n";
+    out << std::setprecision(kCoordDigits);
     for (const auto& p : pts) out << p.x() << " " << p.y() << " 0\n";
     out << "</DataArray>\n</Points>\n";
 }
@@ -114,6 +141,7 @@ void writeLines(const std::string& path,
 // ---------------------------------------------------------------------------
 static void writePoints3(std::ofstream& out, const std::vector<Eigen::Vector3d>& pts) {
     out << "<Points>\n<DataArray type=\"Float64\" NumberOfComponents=\"3\" format=\"ascii\">\n";
+    out << std::setprecision(kCoordDigits);
     for (const auto& p : pts) out << p.x() << " " << p.y() << " " << p.z() << "\n";
     out << "</DataArray>\n</Points>\n";
 }

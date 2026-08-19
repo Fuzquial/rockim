@@ -104,6 +104,15 @@ private:
         double sxx = 0.0, syy = 0.0;       // global stress (gauges: confinement,
         double sxy = 0.0;                  // brazilian centre; full in-plane
                                            // tensor for the insertion criterion
+        // Taux de deformation EQUIVALENT lisse [1/s] : max des |valeurs
+        // propres| du tenseur taux de deformation D = sym(Fdot F^-1), passe
+        // dans un filtre exponentiel de constante strainRateTau. Sert au DIF
+        // de Yang et al. 2025. La mesure est la principale MAXIMALE et non un
+        // equivalent de von Mises parce que les courbes DIF de la litterature
+        // sont mesurees en essai UNIAXIAL : en uniaxial la principale max EST
+        // le taux axial, sans facteur de convention. Vaut 0 tant que ni
+        // bulkViscosity ni strainRateDIF ne sont armes (branche non calculee).
+        double edot = 0.0;
         int phase = 0;                     // mineral phase (index in phases_)
         int grain = 0;                     // grain id (voronoi) / 0 (grid)
         MatState st;                       // only used when law_ is set
@@ -144,6 +153,11 @@ private:
         double slipF = 0.0;                // mode II softening slip
         double tanPhi = 0.0;               // friction
         double stat = 1.0;                 // Weibull strength factor (output)
+        // ---- DIF de Yang et al. 2025, GELE a l instant de l insertion ----
+        // Sortie seulement : les facteurs ont deja ete appliques a ft, coh,
+        // Gf et GfII lors de activateJoint(). edotIns est le taux de
+        // deformation moyen des deux elements a cet instant.
+        double difT = 1.0, difC = 1.0, edotIns = 0.0;
         // ---- mode de rupture (Yan et al. fig. 18 / 20) --------------------
         // Renseigne UNE FOIS, a l'instant ou D atteint 1, en comparant les
         // deux moteurs de l'eq. 16 : rn = (dn - dnE)/(dnF - dnE) (ouverture)
@@ -365,6 +379,41 @@ private:
 
     double damping_ = 0.02, pullV_ = 0.05;
     double bulkVisc_ = 0.0;                // 2*mu*D de l'eq. 6 (Yan) [Pa.s]
+    // ---- DIF dependant du taux de deformation (Yang et al. 2025) --------
+    // Leurs eq. 2-3 : un facteur d amplification dynamique applique a la
+    // resistance en traction et a l energie de rupture mode I (DIF_traction),
+    // a la cohesion et a l energie mode II (DIF_compression). L angle de
+    // frottement N EST PAS touche (ils citent Zhao : influence negligeable).
+    //
+    // GELE A L INSERTION. Le schema extrinseque de Yan insere le joint a
+    // l instant precis ou le materiau atteint son enveloppe : c est donc
+    // l instant dont le taux de deformation gouverne la rupture, et figer le
+    // DIF la evite de faire varier une resistance dont depend deja
+    // l historique d endommagement. Note : puisque ft ET Gf recoivent le MEME
+    // facteur, l ouverture critique dnF = dnE + kI Gf/ft est quasi invariante
+    // (seule sa part elastique dnE = ft/pj suit le DIF), donc le compteur
+    // d endommagement D = f(ouverture) n est pas corrompu.
+    //
+    // Exige insertion = adaptive : sans instant d insertion, pas de DIF.
+    // ---- enveloppe de cisaillement : Yan (eq. 8) ou Yang (eq. 1) --------
+    // Voir include/rockim/YangDif.hpp. Defaut yan = comportement historique,
+    // bit-identique. La forme de Yang affaiblit le cisaillement dans les
+    // zones TENDUES (elle y fait decroitre le terme de frottement au lieu de
+    // l annuler), ce qui deplace le partage traction / cisaillement — donc le
+    // facies. Les deux formes sont rigoureusement identiques en compression.
+    bool yangEnv_ = false;
+    // Facteur du cap de traction moyenne (pm <= f * ft). Historiquement 3, en
+    // dur et sans echappatoire en 3D. Ce cap N EST DANS AUCUN des deux
+    // articles : il faut pouvoir le desarmer pour faire tourner le modele de
+    // quelqu un d autre. <= 0 le desarme. Defaut 3 = inchange.
+    double mtCap_ = 3.0;
+    bool difOn_ = false;
+    double srTau_ = 0.0;                   // constante du filtre de taux [s]
+    double srRelax_ = 0.0;                 // exp(-dt/srTau_), pose apres dt
+    // Exposant de DIF_traction. 0,07 = transcription LITTERALE de leur eq. 3.
+    // 0,1707 = valeur deduite de LEUR PROPRE figure 2(b), qui rend la loi
+    // continue a ses deux bornes (voir la note dans FdemSolver.cpp).
+    double difExpT_ = 0.07;
     double gravity_ = 0.0;                 // body-force acceleration, -y [m/s^2]
     double pullRamp_ = 0.0;                // grip velocity rise time [s]
     bool gripFree_ = false;                // frictionless tension grips
@@ -453,6 +502,20 @@ private:
     bool contactPot_ = false;
     double potP_ = 0.0;                    // penalite normale [Pa.m = N/m.phi]
     double potKt_ = 0.0;                   // raideur tangentielle (eq. 4-5)
+    // Amortissement NORMAL du contact potentiel. OPT-IN, defaut 0 = aucun
+    // terme calcule, trajectoires bit-identiques (le selftest-potential2d
+    // teste la CONSERVATION, il doit rester exact).
+    //
+    // Pourquoi il manquait. La branche PENALITE se donne deja xiGC (0,8)
+    // et une restitution gcRest (0,2), avec la justification ecrite en
+    // toutes lettres a l'initialisation : a la raideur pleine E*t le
+    // contact de debris  pompe de l'energie dans la zone broyee . Le mode
+    // POTENTIEL ignorait les deux : il est conservatif par construction
+    // (voir PotentialContact.hpp), donc un nuage de fragments n'y perd
+    // jamais rien et ne se pose jamais. Mesure du 2026-08-18 (coupe PDC
+    // out_cut_v3) : 202 fragments apparaissent en 10 us et 37 kJ/m sont
+    // dissipes pendant que l'outil n'a fourni que 60 J/m.
+    double potXi_ = 0.0;                   // fraction critique, masse reduite
     struct PotHist {                       // historique par paire d'elements
         Eigen::Vector2d Ft{0.0, 0.0};      // force tangentielle sur l'el. MIN
         long step = -1000;                 // dernier pas vu (peremption du Ft)
@@ -490,7 +553,196 @@ private:
     std::vector<std::vector<Eigen::Vector2d>> fTL_;
     std::vector<std::vector<char>> seenTL_;
     std::vector<std::vector<int>> touchedTL_;
-    long actStamp_ = -1;                   // nBroken at last rebuild
+    long actStamp_ = -1;                   // estampille du dernier rebuild :
+                                           // nBroken_ en mode legacy, nDead_
+                                           // en mode eager (voir gcEager_)
+    // --- A' : rafraichissement des surfaces liberees ------------------------
+    // gcSurfaceRefresh = legacy (defaut, bit-identique) | eager
+    //
+    // En legacy le cache deadList_ n'est rafraichi que si nBroken_ CHANGE et a
+    // un pas multiple de 8. Or nBroken_ compte les CASSES (D -> 1) tandis que
+    // J.dead marque les SEPARATIONS (dnMax > 3 dnF) : deux evenements
+    // decouples dans le temps. Un joint qui se separe alors que plus rien ne
+    // casse ne voit donc JAMAIS ses faces declarees — latence non bornee,
+    // interpenetration libre, puis impulsion maximale a la declaration.
+    // Mesure du 2026-08-18 (coupe PDC, bissection RKM_NOGC) : ce canal porte
+    // un facteur 6 a 8 sur toutes les observables (vitesse nodale 2544 -> 314
+    // m/s, fragments 368 -> 45, injection outil 77 -> 12 kJ/m).
+    // En eager l'estampille suit nDead_ et la grille % 8 saute : les faces
+    // entrent au pas ou leur joint meurt.
+    // ATTENTION : eager rompt volontairement l'identite au bit pres entre
+    // modes full et adaptive que le cache legacy preserve.
+    bool gcEager_ = false;
+    long nDead_ = 0;                       // joints separes (J.dead), cumul
+
+    // --- PENALITE DE CONTACT ADAPTATIVE (EPFL) ------------------------------
+    // jointContactPenalty = fixed (defaut, bit-identique) | adaptive
+    //
+    // SOURCE : T. Ghesquiere-Dierickx, J.-F. Molinari & G. Anciaux, « Stability
+    // of Extrinsic Cohesive-Zone Model with Penalty-Based Contact in Explicit
+    // Dynamic Fragmentation Simulations », arXiv:2511.14323v1 [physics.comp-ph],
+    // 18 novembre 2025, EPFL. Leur section 4, « Adaptive Contact Penalty » :
+    //
+    //     « we replace the fixed contact penalty k- with a damage-dependent
+    //       variant following the cohesive stiffness, i.e. k- = k+(d),
+    //       thereby restoring continuity at delta = 0 and suppressing any
+    //       energy errors. »
+    //
+    // LE MECANISME VISE. En compression le joint applique la penalite PLEINE
+    // J.pj, alors qu'en traction il applique la secante endommagee (1-D) pj.
+    // Le saut de raideur a dn = 0 est la discontinuite que leur article
+    // designe comme « the most critical source of instability » : chaque
+    // traversee de dn = 0 injecte ou dissipe un increment, et les traversees
+    // repetees derivent. Mesure du 2026-08-18 sur la coupe PDC : couper le
+    // contact general divise la vitesse nodale par 8, mais rafraichir les
+    // surfaces PLUS TOT l'aggrave d'un facteur 2 a 3 — l'injection suit le
+    // NOMBRE de basculements, pas leur retard. C'est leur diagnostic.
+    //
+    // TRANSCRIPTION EXACTE. Leur k+(d) est la secante du modele d'endommagement.
+    // Dans rockim la traction d'essai vaut tr = (1 - D) pj dn, donc la secante
+    // est (1 - D) pj — et a D = 0 elle vaut pj, si bien qu'a l'etat neuf il n'y
+    // a AUCUNE discontinuite, ce qui est la propriete recherchee.
+    //
+    // CE QUE LES AUTEURS EN DISENT EUX-MEMES, et qu'il faut lire avant d'y voir
+    // un remede : « non-physical interpenetration becomes more pronounced at
+    // higher cohesive damage levels, since the contact stiffness decays with
+    // increasing damage. Consequently, fragment statistics, although
+    // numerically stable, cannot be regarded as physically accurate. [...] it
+    // cannot be viewed as a viable long-term remedy. » C'est un INSTRUMENT DE
+    // DIAGNOSTIC, pas une correction de production.
+    //
+    // LE PAS DE TEMPS RESTE CELUI DE LA PENALITE PLEINE : computeStableDt()
+    // budgete J.pj, non la secante. C'est deliberement leur protocole
+    // (« with dt_c,G still computed using the originally fixed k- »).
+    bool jcAdaptive_ = false;
+
+    // --- A : ECRETAGE EN IMPULSION DU CONTACT OUTIL --------------------------
+    // toolImpulseCap = kappa >= 0 ; 0 (defaut) desarme, comportement historique.
+    // La force outil sur un noeud est bornee par
+    //
+    //     |Fc| <= kappa * 2 * |v_outil| * m_i / dt
+    //
+    // c'est-a-dire que l'outil ne peut pas changer la vitesse d'un noeud de
+    // plus de kappa * 2 v_outil en un pas.
+    //
+    // POURQUOI CETTE BORNE. Un corps rigide de masse INFINIE anime de v
+    // communique au plus 2v a une masse ponctuelle, en choc parfaitement
+    // elastique. Un outil a vitesse IMPOSEE est exactement ce corps : il ne
+    // decelere jamais, donc c'est un reservoir d'energie infini. Tout ce qui
+    // depasse 2v est numerique par construction. kappa = 1 est la borne
+    // stricte ; kappa > 1 la relache si un cas l'exige.
+    //
+    // CE QU'IL CORRIGE, MESURE LE 2026-08-18 SUR LA COUPE PDC. Le solveur
+    // imprime deja les deux nombres qui exposent la pompe :
+    //   outil->solide  77 286 J/m   (ce que l'outil injecte dans le solide)
+    //   tool work out     189 J/m   (ce qu'il depense en corps rigide)
+    // soit un rapport de 408. L'ecretage geometrique existant plafonne la
+    // force a kp_ * 0,6 h = 7,24 MN/m, ce qui donne encore 377 m/s par pas sur
+    // une masse nodale de 2,46e-5 kg/m — 992 m/s sur la plus legere.
+    //
+    // CE QU'IL NE CORRIGE PAS : ni le contact general, ni les joints, ni
+    // l'interpenetration. L'audit du 2026-08-18 montre d'ailleurs que celle-ci
+    // est bornee a 0,6 h partout, donc sous controle.
+    //
+    // TEST D'ACCEPTATION, binaire : aucun noeud au-dessus de 2 v_outil, et le
+    // rapport injection / travail de corps rigide qui retombe vers 1.
+    double toolVCap_ = 0.0;
+
+    // --- BALAI NUMERIQUE : retrait des fragments ----------------------------
+    // SOURCE : X. Yang, J. Xiang, S. Naderi, Y. Wang, J. Aising, I. Ugarte &
+    // J.-P. Latham, « Multi-criteria validation of hi-fidelity numerical model
+    // of impact breakage: towards next generation percussion drill
+    // simulation », Int. J. Rock Mech. Min. Sci. 191 (2025) 106125, sec. 2.
+    // Donnees experimentales de Mines Paris-PSL (Aising, Gerbaud, Sellami).
+    //
+    // LE DEFAUT CORRIGE. Un fragment identifie par la seule CONNECTIVITE peut
+    // etre topologiquement detache et physiquement prisonnier : « some
+    // simulated fragments may be completely surrounded by failed joint
+    // elements but still mechanically constrained by adjacent intact rock
+    // blocks ». computeFragments() declare detache TOUT ce qui n'est pas la
+    // plus grosse composante — c'est exactement ce critere naif, et il
+    // SUREVALUE le volume detache d'une quantite jamais mesuree.
+    //
+    // LE PRINCIPE. On reproduit le geste experimental : apres l'impact, un
+    // petit pinceau balaie les debris. On donne donc a tous les candidats une
+    // vitesse initiale et une acceleration « anti-gravite », on integre un
+    // court instant, et CE QUI BOUGE est du debris, CE QUI RESTE COINCE n'en
+    // est pas. Ce ne sont ni un seuil ni un critere qui tranchent, c'est le
+    // contact et le frottement.
+    //
+    // L'OBJET DE REFERENCE, l'idee centrale. On ne compare pas a un
+    // deplacement absolu mais a celui d'une PARTICULE LIBRE fictive soumise
+    // aux memes vitesse initiale et acceleration, donc purement balistique :
+    //     d_ref = v0 t + 1/2 a t^2
+    // Un fragment est retire si son deplacement depasse beta * d_ref. La
+    // question posee n'est pas « a-t-il bouge ? » mais « a-t-il bouge aussi
+    // librement que ce que rien ne retient ? ».
+    //
+    // LEURS VALEURS, reprises en defaut : v0 = 2,5 mm/s, a = 10 g = 98,1 m/s2,
+    // duree 0,5 ms, beta = 0,8. Soit d_ref = 13,5 um et un seuil de 10,8 um.
+    // beta = 0,8 est justifie par un PLATEAU : leur figure 4 balaie 0,2 a 1,0
+    // et le classement cesse de changer au-dela de 0,8.
+    //
+    // POURQUOI CE SEUIL ETAIT INATTEIGNABLE HIER. 10,8 um, contre un pas de
+    // lecture des VTU de 10 um avant le correctif de precision du 2026-08-18.
+    // Le critere tombait pile sur la quantification.
+    //
+    // CONTRAINTE SUR L'ACCELERATION : « the anti-gravity force should not
+    // cause any new cracks ». Verification pour le granite de l'article :
+    // rho a h = 2626 x 98,1 x 0,15 = 38,6 kPa contre ft = 10,98 MPa, marge
+    // d'un facteur 284. La condition est tres largement satisfaite — ce qui
+    // laisse de la place pour accelerer le balayage si son cout derange.
+    //
+    // COMPTABILITE. Le balai INJECTE de l'energie deliberement. Son travail va
+    // dans un poste SEPARE (brushWork_), affiche a part et signale comme tel :
+    // apres la journee du 2026-08-18 passee a traquer des pompes logees dans
+    // des canaux comptabilises, un balai numerique qui alimenterait sumW en
+    // silence serait exactement l'erreur a ne pas commettre.
+    //
+    // RIEN N'EST SUPPRIME : « the rock fragments are not physically deleted ».
+    // C'est une CLASSIFICATION. Le run reste physique, seule la masse de
+    // fragments rapportee change.
+    //
+    // Cles : fragBrushStart (0 = desarme), fragBrushV0, fragBrushAccel,
+    //        fragBrushBeta, fragBrushDirX, fragBrushDirY.
+    // --- ETAPE 1 DE L'ALGORITHME : « After completing the impact simulation »
+    // Yang et al. 2025, sec. 2.3, etape 1. Le balai suppose que le chargement
+    // est TERMINE : il mesure un deplacement et l'attribue a l'anti-gravite,
+    // ce qui n'est valide que si rien d'autre ne bouge les fragments.
+    //
+    // Leur geometrie satisfait cette condition gratuitement : le taillant
+    // frappe, rebondit, s'en va. Une coupe continue n'a pas d'« apres » — il
+    // faut le FABRIQUER. D'ou cette cle, distincte de fragBrushStart : on
+    // arrete l'outil a toolStop, on laisse l'amortissement eteindre les
+    // vitesses, puis on arme le balai plus tard.
+    //
+    // MESURE DU 2026-08-18 QUI L'IMPOSE : en confondant les deux instants,
+    // trois fragments volaient encore a plus de 50 m/s a l'armement, dont un
+    // a 108,5 m/s VERS LE BAS. En 140 us de balayage il a traverse 18 mm d'un
+    // bloc qui en fait 20 — soit 15,2 mm de balistique pure, le compte y est.
+    // Il a ete classe « libre » sans que le balai y soit pour rien.
+    //
+    // L'ECHELLE DE VITESSE DU BALAI vaut v0 + a t_balayage. Toute vitesse
+    // residuelle du meme ordre noie le signal : c'est ce que armBrush()
+    // imprime desormais, pour que le journal dise lui-meme si l'etape 1 est
+    // respectee.
+    double toolStop_ = 0.0;                // 0 = l'outil ne s'arrete jamais
+    bool toolStopped_ = false;
+    double brushStart_ = 0.0;              // instant d'armement (0 = desarme)
+    double brushV0_ = 2.5e-3;              // m/s
+    double brushA_ = 98.1;                 // m/s2 (10 g)
+    double brushBeta_ = 0.8;
+    Eigen::Vector2d brushDir_ = Eigen::Vector2d(0.0, 1.0);
+    bool brushZeroV_ = false;              // remplacer v au lieu d'ajouter
+    bool brushArmed_ = false;
+    double brushT0_ = 0.0;                 // instant reel de l'armement
+    double brushWork_ = 0.0;               // poste d'energie SEPARE
+    std::vector<char> brushCand_;          // par ELEMENT : candidat au retrait
+    std::vector<int> brushFrag_;           // fragId_ fige a l'armement
+    int brushNFrag_ = 0;
+    std::vector<Eigen::Vector2d> brushU0_; // deplacement nodal de reference
+    void armBrush();
+    void brushReport();
     double cell_ = 0.0;
     Eigen::Vector2d gmin_;
     int gx_ = 1, gy_ = 1;
@@ -540,6 +792,13 @@ private:
     // Instrumentation PURE : KE(t) - KE(0) = elWork_ + jointWork_ + gcWork_
     // + cundWork_ + lysWork_ + toolWork_ + bcWork_ + residu O(dt).
     double elWork_ = 0.0;      // forces internes des elements
+    // Part VISQUEUSE (2 mu D) du travail des elements, comptee a part. Ce
+    // n est PAS un poste supplementaire du bilan : elle est deja DANS
+    // elWork_ (la contrainte visqueuse produit les memes forces nodales).
+    // On l isole parce que sans elle le poste  elements  melange l energie
+    // elastique STOCKEE et la dissipation visqueuse, et le budget devient
+    // illisible des que bulkViscosity est arme.
+    double viscWork_ = 0.0;
     double jointWork_ = 0.0;   // tractions des joints (visqueux INCLUS)
     double cundWork_ = 0.0;    // damping local de Cundall (<= 0)
     double lysWork_ = 0.0;     // frontieres absorbantes (ressort+amortisseur)

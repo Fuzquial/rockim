@@ -19,6 +19,7 @@
 #include "rockim/PotentialContact.hpp"
 #include "rockim/RandomField.hpp"
 #include "rockim/Tessellation3.hpp"
+#include "rockim/YangDif.hpp"
 #include "rockim/VtkWriter.hpp"
 
 #include <chrono>
@@ -54,6 +55,41 @@ Fdem3dSolver::Fdem3dSolver(const Config& cfg, std::string outDir)
     : cfg_(cfg), out_(std::move(outDir)) {}
 
 void Fdem3dSolver::init() {
+    // ---- viscosite de Yan (eq. 6) et DIF de Yang (eq. 2-3) --------------
+    // Portes du 2D le 2026-08-19. La garde de parite qui les refusait ici
+    // est levee. Opt-in strict : cles absentes = branches non calculees.
+    viscIns_ = cfg_.geti("viscousInInsertion", 1) != 0;
+    {
+        std::string sd = cfg_.gets("strainRateDIF", "off");
+        if (sd != "off" && sd != "yang" && sd != "yang-fig2")
+            throw std::runtime_error("strainRateDIF must be off | yang | "
+                                     "yang-fig2 (Yang et al., IJRMMS 191, "
+                                     "2025 : yang = leur eq. 3 litterale, "
+                                     "exposant 0,07 et loi discontinue ; "
+                                     "yang-fig2 = exposant 0,1707 deduit de "
+                                     "leur figure 2b, loi continue)");
+        difOn_ = sd != "off";
+        difExpT_ = sd == "yang-fig2" ? 0.1707 : 0.07;
+    }
+    if (difOn_ && cfg_.gets("insertion", "intrinsic") != "adaptive")
+        throw std::runtime_error("strainRateDIF = yang exige insertion = "
+                                 "adaptive : le DIF est fige a l instant "
+                                 "d insertion du joint, et le schema "
+                                 "intrinseque n en a pas");
+    // jointShearEnvelope / meanTensionCapFactor : voir le header.
+    {
+        std::string se = cfg_.gets("jointShearEnvelope", "yan");
+        if (se != "yan" && se != "yang")
+            throw std::runtime_error("jointShearEnvelope must be yan | yang "
+                                     "(yan = son eq. 8, le frottement tombe a "
+                                     "zero des la traction ; yang = son eq. 1, "
+                                     "il decroit jusqu au cut-off en ft)");
+        yangEnv_ = se == "yang";
+    }
+    mtCap_ = cfg_.getd("meanTensionCapFactor", 3.0);
+    srTau_ = cfg_.getd("strainRateTau", 1.0e-6);
+    if (difOn_ && !(srTau_ > 0.0))
+        throw std::runtime_error("strainRateTau must be > 0 [s]");
     mat_ = Material::from(cfg_);
     phases_ = PhaseSet::from(cfg_);
 
@@ -196,6 +232,10 @@ void Fdem3dSolver::init() {
     }
     if (contactPot_) {
         potP_ = cfg_.getd("potPenaltyFactor", 1.0) * phases_.maxE();
+        jcAdaptive_ = cfg_.gets("jointContactPenalty", "fixed") == "adaptive";
+        if (jcAdaptive_)
+            std::cout << "[FDEM3D] jointContactPenalty = adaptive : k- = "
+                         "k+(D) = (1-D) pj (EPFL arXiv:2511.14323 sec. 4)\n";
         potKt_ = cfg_.getd("potTangentFactor", 1.0) * phases_.maxE() * hmin_;
         std::cout << "[FDEM3D] contact: Munjiza potential (eq. 2-5, tet-tet)"
                      ", p = " << potP_ << " Pa, kt = " << potKt_ << " N/m\n";
@@ -224,8 +264,95 @@ void Fdem3dSolver::init() {
     placeTool();
     setupBoundaries();
     setupConfinement();
+    // ---- viscosite de Yan : mu par element ------------------------------
+    // mu = xi h sqrt(E rho) : xi est le taux d amortissement a l echelle de
+    // la MAILLE. xi = 2 est exactement l amortissement critique de Munjiza
+    // mu = 2 h sqrt(E rho) — applique aux chiffres de la Table 1 de Yan
+    // (h = 0,75 mm, E = 15 GPa, rho = 1704) il redonne 7583 Pa.s contre les
+    // 7600 publies, a 0,2 %. Leur viscosite EST le critique de Munjiza, ce
+    // que leur article ne dit pas (il renvoie a Tatone & Grasselli sans
+    // formule ni etude de sensibilite).
+    {
+        double muLit = cfg_.getd("bulkViscosity", 0.0);
+        double xiV   = cfg_.getd("bulkViscosityXi", 0.0);
+        bool graded  = cfg_.geti("bulkViscosityGraded", 0) != 0;
+        if (muLit < 0.0 || xiV < 0.0)
+            throw std::runtime_error("bulkViscosity / bulkViscosityXi must "
+                                     "be >= 0");
+        if (muLit > 0.0 && xiV > 0.0)
+            throw std::runtime_error("bulkViscosity et bulkViscosityXi sont "
+                                     "exclusives : la seconde CALCULE la "
+                                     "premiere a partir du maillage");
+        viscOn_ = muLit > 0.0 || xiV > 0.0;
+        if (viscOn_) {
+            muEl_.assign(el_.size(), muLit);
+            if (xiV > 0.0) {
+                std::vector<double> srt(el_.size());
+                for (std::size_t eI = 0; eI < el_.size(); ++eI) {
+                    double E = phases_.mat[el_[eI].phase].E;
+                    double rho = rhoP_[el_[eI].phase];
+                    srt[eI] = xiV * hEl_[eI] * std::sqrt(E * rho);
+                }
+                if (graded) muEl_ = srt;
+                else {
+                    std::vector<double> s2 = srt;
+                    std::sort(s2.begin(), s2.end());
+                    double med = s2.empty() ? 0.0 : s2[s2.size() / 2];
+                    muEl_.assign(el_.size(), med);
+                }
+            }
+            double lo = 1e300, hi = 0.0;
+            for (double m : muEl_) { lo = std::min(lo, m); hi = std::max(hi, m); }
+            std::cout << "[FDEM3D] viscosite newtonienne (Yan eq. 6) : mu "
+                      << (graded ? "GRADUE par element, " : "GLOBAL, ")
+                      << lo << " a " << hi << " Pa.s";
+            if (xiV > 0.0)
+                std::cout << " (bulkViscosityXi = " << xiV << ", soit "
+                          << 0.5 * xiV << " x le critique de Munjiza ; Yan "
+                             "et al. Table 1 = 2,00 = critique)";
+            std::cout << "\n";
+            if (!graded && xiV > 0.0)
+                std::cout << "[FDEM3D]   NOTE : mu GLOBAL sur un maillage "
+                             "gradue paie le pas de temps du plus FIN tetra "
+                             "partout. bulkViscosityGraded = 1 cale mu sur "
+                             "chaque element et rend la borne diffusive "
+                             "independante de la gradation.\n";
+            if (!viscIns_)
+                std::cout << "[FDEM3D]   viscousInInsertion = 0 : la "
+                             "contrainte visqueuse n entre PAS dans sigG, "
+                             "donc ni dans le critere d insertion ni dans la "
+                             "jauge de confinement. Ecart assume avec Yan, "
+                             "dont l eq. 6 EST la contrainte lue par son "
+                             "eq. 7.\n";
+        }
+    }
     computeStableDt();
     relax_ = std::exp(-dt_ / cfg_.getd("gcBirthTau", 1e-6));
+    srRelax_ = srTau_ > 0.0 ? std::exp(-dt_ / srTau_) : 0.0;
+    if (difOn_) {
+        std::cout << "[FDEM3D] strainRateDIF = "
+                  << (difExpT_ > 0.1 ? "yang-fig2" : "yang")
+                  << " (Yang et al., IJRMMS 191, 2025, eq. 2-3) : ft et Gf "
+                     "recoivent DIF_traction, cohesion et GfII recoivent "
+                     "DIF_compression, l angle de frottement est inchange. "
+                     "Facteurs FIGES a l insertion.\n"
+                  << "[FDEM3D]   taux = principale max de sym(Fdot F^-1), "
+                     "filtre a strainRateTau = " << srTau_ << " s ("
+                  << (srTau_ / dt_) << " pas)\n";
+        if (difExpT_ < 0.1)
+            std::cout << "[FDEM3D]   AVERTISSEMENT : exposant litteral 0,07 "
+                         "— la loi saute de 12 % en 5e-6 /s et de 22 % en "
+                         "1e2 /s. En insertion extrinseque ce saut est un "
+                         "ATTRACTEUR : la population inseree s empile juste "
+                         "sous 1e2 (mesure 2D du 2026-08-18). "
+                         "strainRateDIF = yang-fig2 l evite.\n";
+        if (viscOn_ && viscIns_)
+            std::cout << "[FDEM3D]   AVERTISSEMENT : la viscosite est armee "
+                         "et entre dans sigG. Le taux de deformation agit "
+                         "alors DEUX FOIS : il gonfle la contrainte d essai "
+                         "ET le seuil. Fidele a Yan, mais ce n est le modele "
+                         "de personne. viscousInInsertion = 0 les separe.\n";
+    }
 
     if (scen_ == Scenario::TENSION) pullV_ = cfg_.getd("pullV", 0.05);
     pullDelay_ = cfg_.getd("pullDelay", 0.0);
@@ -989,8 +1116,23 @@ void Fdem3dSolver::insertionSweep() {
         Eigen::Vector3d tvec = S * n;
         double sig = n.dot(tvec);
         Eigen::Vector3d tauV = tvec - sig * n;
-        double fs = J.coh + (sig < 0.0 ? -sig * J.tanPhi : 0.0);
-        if (sig >= J.ft || tauV.norm() >= fs) out.push_back({jI, sig, fs, tauV});
+        // DIF de Yang : le critere doit voir la resistance DYNAMIQUE, sinon
+        // le joint s insere au seuil statique et le facteur applique ensuite
+        // serait sans effet sur l INSTANT d insertion. Le terme de frottement
+        // -sig tan(phi) n est PAS amplifie (leur choix, source Zhao). Le taux
+        // est la moyenne non ponderee des deux tetras, par coherence avec la
+        // moyenne des contraintes 0,5 (sigG_A + sigG_B) deja en place.
+        double dT = 1.0, dC = 1.0;
+        if (difOn_) {
+            double er = 0.5 * (el_[J.eA].edot + el_[J.eB].edot);
+            dT = rockim::difTensionYang(er, difExpT_);
+            dC = rockim::difCompressionYang(er);
+        }
+        double fs = dC * J.coh
+                  + J.tanPhi * rockim::mcFrictionTerm(sig, J.ft, yangEnv_);
+        if (fs < 0.0) fs = 0.0;
+        if (sig >= dT * J.ft || tauV.norm() >= fs)
+            out.push_back({jI, sig, fs, tauV});
     };
 #ifdef _OPENMP
     #pragma omp parallel
@@ -1019,6 +1161,29 @@ void Fdem3dSolver::activateJoint(int jI, double sig,
     Joint& J = jt_[jI];
     if (!J.bonded) return;
     J.bonded = false;
+    // ---- DIF de Yang et al. 2025, FIGE ICI ------------------------------
+    // Applique AVANT les decalages de continuite de contrainte ci-dessous,
+    // qui lisent J.ft, J.coh et J.pj. Se COMPOSE avec le facteur statistique
+    // deja porte par ft et coh (multiplicatif). fsNow arrive deja calcule
+    // avec dC par insertionSweep, donc il reste coherent avec le J.coh neuf.
+    // Les ouvertures critiques sont recalculees : dnE = ft/pj suit le DIF,
+    // tandis que kI Gf/ft ne bouge pas puisque ft et Gf recoivent le MEME
+    // facteur — dnF est donc quasi invariante et le compteur
+    // d endommagement reste coherent.
+    if (difOn_) {
+        double er = 0.5 * (el_[J.eA].edot + el_[J.eB].edot);
+        double dT = rockim::difTensionYang(er, difExpT_);
+        double dC = rockim::difCompressionYang(er);
+        J.ft   *= dT;
+        J.Gf   *= dT;
+        J.coh  *= dC;
+        J.GfII *= dC;
+        J.difT = dT; J.difC = dC; J.edotIns = er;
+        double kI = yanSoft_ ? 1.0 / yanI_ : 2.0;
+        J.dnE   = J.ft / J.pj;
+        J.dnF   = J.dnE + kI * J.Gf / J.ft;
+        J.slipF = kI * J.GfII / J.coh;
+    }
     J.dn0 = std::min(sig, J.ft) / J.pj;
     Eigen::Vector3d tau0 = tauV;
     double tn = tau0.norm();
@@ -1034,6 +1199,34 @@ void Fdem3dSolver::placeTool() {
     if (scen_ == Scenario::TENSION) return;
     tool_.mass   = cfg_.getd("toolMass", 0.5);
     tool_.radius = cfg_.getd("toolRadius", 0.015);
+    // ---- force volumique et tri des fragments : voir Fdem3dSolver.hpp -----
+    gravity_ = cfg_.getd("gravity", 0.0);
+    toolStop_ = cfg_.getd("toolStop", 0.0);
+    brushStart_ = cfg_.getd("fragBrushStart", 0.0);
+    if (toolStop_ > 0.0 && brushStart_ > 0.0 && brushStart_ <= toolStop_)
+        throw std::runtime_error("fragBrushStart doit etre APRES toolStop : "
+                                 "c'est l'intervalle de repos qui rend le tri "
+                                 "interpretable (Yang et al. 2025, etape 1)");
+    if (brushStart_ > 0.0) {
+        brushV0_   = cfg_.getd("fragBrushV0", 2.5e-3);
+        brushA_    = cfg_.getd("fragBrushAccel", 98.1);
+        brushBeta_ = cfg_.getd("fragBrushBeta", 0.8);
+        brushZeroV_ = cfg_.gets("fragBrushZeroV", "false") == "true";
+        brushDir_  = Eigen::Vector3d(cfg_.getd("fragBrushDirX", 0.0),
+                                     cfg_.getd("fragBrushDirY", 0.0),
+                                     cfg_.getd("fragBrushDirZ", 1.0));
+        if (brushDir_.norm() < 1e-12)
+            throw std::runtime_error("fragBrushDir est nul : donner une "
+                                     "direction (opposee a l'impact)");
+        brushDir_.normalize();
+        if (brushBeta_ <= 0.0)
+            throw std::runtime_error("fragBrushBeta doit etre > 0");
+    }
+    toolVCap_ = cfg_.getd("toolImpulseCap", 0.0);
+    if (toolVCap_ > 0.0)
+        std::cout << "[FDEM3D] toolImpulseCap = " << toolVCap_
+                  << " : |Fc| <= kappa * 2 v_outil * m / dt (borne du choc "
+                     "elastique contre une masse infinie)\n";
     double gap = cfg_.getd("toolGap", 1e-4);
     // toolShape = sphere | flat ('disc' accepted as the 2D synonym) | none.
     // none (V1) : PAS d'outil analytique — l'outil est un corps MAILLE
@@ -1212,7 +1405,29 @@ void Fdem3dSolver::computeStableDt() {
     double hCfl = hmin_;
     for (double h : hEl_) hCfl = std::min(hCfl, h);
     double cfl = hCfl / phases_.maxCp();
-    dt_ = cfg_.getd("dtFactor", 0.15) * std::min(dtMin, cfl);
+    // ---- borne DIFFUSIVE du terme visqueux 2 mu D (eq. 6 de Yan) --------
+    // La viscosite longitudinale effective vaut 2 mu, donc la diffusivite de
+    // quantite de mouvement est nu = 2 mu / rho et le critere explicite
+    // dt <= h^2/(2 nu) donne dt <= rho h^2 / (4 mu). ELEMENT PAR ELEMENT :
+    // ecrire cette borne avec hmin_ serait faux — en mesh = grid, hmin_ reste
+    // le pas NOMINAL et Kuhn donne hEl = 0,414 a, donc la borne sortirait
+    // 5,8 fois trop permissive, instable en silence. C est exactement le bug
+    // CFL du 2026-08-07 (2,4 MJ d energie de bloc pour 16 J incidents).
+    double dtVis = 1e30;
+    if (viscOn_)
+        for (std::size_t eI = 0; eI < el_.size(); ++eI)
+            if (muEl_[eI] > 0.0)
+                dtVis = std::min(dtVis, rhoP_[el_[eI].phase] * hEl_[eI]
+                                        * hEl_[eI] / (4.0 * muEl_[eI]));
+    double dtSpr = std::min(dtMin, cfl);
+    dt_ = cfg_.getd("dtFactor", 0.15) * std::min(dtSpr, dtVis);
+    if (viscOn_)
+        std::cout << "[FDEM3D] borne diffusive rho h^2/(4 mu) = " << dtVis
+                  << " s contre " << dtSpr << " s pour les ressorts"
+                  << (dtVis < dtSpr
+                      ? "  <-- C EST ELLE QUI COMMANDE LE PAS" : "")
+                  << " (facteur " << (dtSpr / std::min(dtSpr, dtVis))
+                  << " sur le cout du run)\n";
 }
 
 // ===========================================================================
@@ -1220,9 +1435,11 @@ void Fdem3dSolver::computeStableDt() {
 void Fdem3dSolver::step() {
     for (auto& fi : f_) fi.setZero();
     tool_.F.setZero();
+    // tri des fragments : armement a l'instant demande (voir Fdem3dSolver.hpp)
+    if (brushStart_ > 0.0 && !brushArmed_ && t_ >= brushStart_) armBrush();
 
     if (f3Prof.on) {
-        double t0 = f3now(); elementForces();
+        double t0 = f3now(); elementForces(); bodyForces();
         double t1 = f3now(); if (adaptive_) insertionSweep();
         double t2 = f3now(); jointForces();
         double t3 = f3now(); generalContact();
@@ -1233,6 +1450,7 @@ void Fdem3dSolver::step() {
         ++f3Prof.n;
     } else {
         elementForces();
+        bodyForces();                      // gravite + anti-gravite du tri
         if (adaptive_) insertionSweep();   // before jointForces: a joint born
                                            // this step carries traction now
         jointForces();
@@ -1332,8 +1550,9 @@ bool Fdem3dSolver::finished() const { return eAbort_ || peakStop_; }
 void Fdem3dSolver::elementForces() {
     double wEl = 0.0;                      // V2/B4 : travail des forces
                                            // internes ce pas (compteur pur)
+    double wVi = 0.0;                      // dont part VISQUEUSE
 #ifdef _OPENMP
-#pragma omp parallel for schedule(static) reduction(+:wEl)
+#pragma omp parallel for schedule(static) reduction(+:wEl,wVi)
 #endif
     for (int eI = 0; eI < (int)el_.size(); ++eI) {
         Elem& e = el_[eI];
@@ -1362,10 +1581,41 @@ void Fdem3dSolver::elementForces() {
             dev *= crushCapP_[e.phase] / e.svm;
             e.svm = crushCapP_[e.phase];
         }
-        if (pm > 3.0 * ftP_[e.phase]) pm = 3.0 * ftP_[e.phase];  // mean-tension
+        if (mtCap_ > 0.0 && pm > mtCap_ * ftP_[e.phase])
+            pm = mtCap_ * ftP_[e.phase];              // mean-tension cap
         sig = dev + pm * Eigen::Matrix3d::Identity();
         Eigen::Matrix3d P = R * sig;
         e.sigG = P * R.transpose();        // global Cauchy (insertion sweep)
+        // ---- viscosite newtonienne 2 mu D (Yan eq. 6) et taux pour le DIF
+        // Ce n est PAS une  viscosite de volume  au sens zeta tr(D) I : le
+        // terme agit sur le tenseur COMPLET, trace comprise. En 3D sig est
+        // deja une Matrix3d : un seul geste, sinon sigma_zz, sigma_xz et
+        // sigma_yz resteraient sans terme visqueux — contrainte ajoutee non
+        // objective, et dissipation reelle differente de la ventilation.
+        if ((viscOn_ || difOn_) && det > 1e-9) {
+            Eigen::Matrix3d Fd = Eigen::Matrix3d::Zero();
+            for (int a = 0; a < 4; ++a)
+                Fd += v_[e.n[a]] * e.dN.col(a).transpose();
+            Eigen::Matrix3d Lv = Fd * F.inverse();
+            Eigen::Matrix3d Dr = 0.5 * (Lv + Lv.transpose());
+            Eigen::Matrix3d Dc = R.transpose() * Dr * R;   // co-rote
+            if (difOn_)
+                e.edot = srRelax_ * e.edot
+                       + (1.0 - srRelax_) * rockim::maxAbsEigSym3(Dc);
+            if (viscOn_) {
+                double mue = muEl_[eI];
+                sig += 2.0 * mue * Dc;
+                // Puissance 2 mu D:D, >= 0 par construction, comptee
+                // NEGATIVEMENT comme tout ce qui quitte l energie cinetique.
+                // Deja incluse dans wEl : VENTILATION, pas un poste de plus.
+                // Nuance : 2 mu D:D est une densite par volume COURANT et V0
+                // est le volume de REFERENCE — sous un insert ou det F tombe
+                // a 0,5-0,7, cette ligne SOUS-ESTIME la dissipation reelle.
+                wVi -= 2.0 * mue * Dc.squaredNorm() * e.V0;
+                P = R * sig;                   // forces AVEC le visqueux
+                if (viscIns_) e.sigG = P * R.transpose();
+            }
+        }
         for (int a = 0; a < 4; ++a) {
             Eigen::Vector3d fe = e.V0 * (P * e.dN.col(a));
             f_[e.n[a]] -= fe;
@@ -1373,6 +1623,7 @@ void Fdem3dSolver::elementForces() {
         }
     }
     elWork_ += wEl * dt_;
+    viscWork_ += wVi * dt_;                // ventilation, incluse dans elWork_
 }
 
 // Triangular cohesive joints, 3 node-pair integration points (A0/3 each).
@@ -1425,8 +1676,10 @@ void Fdem3dSolver::jointForces() {
                 double sm = sEff.norm();
                 if (sm > J.smax[k]) J.smax[k] = sm;
                 smx = J.smax[k];
-                double sE = (J.coh + J.tanPhi * std::max(0.0, -J.pj * dn))
-                          / J.pj;
+                double sE = (J.coh + J.tanPhi
+                             * rockim::mcFrictionTerm(J.pj * dn, J.ft,
+                                                      yangEnv_)) / J.pj;
+                if (sE < 0.0) sE = 0.0;
                 rsO = (J.slipF > 0.0 && smx > sE) ? (smx - sE) / J.slipF : 0.0;
                 rsMaxO = std::max(rsMaxO, rsO);
             }
@@ -1462,7 +1715,7 @@ void Fdem3dSolver::jointForces() {
                     double sMax = std::min(J.pj * om, fdY * J.ft);
                     sigEl = (om > 1e-30) ? sMax * dn / om : 0.0;
                 } else {
-                    sigEl = J.pj * dn;                 // closed: penalty
+                    sigEl = (jcAdaptive_ ? (1.0 - J.D) * J.pj : J.pj) * dn;
                 }
             } else if (dn >= 0.0) {
                 double env = (dn <= J.dnE) ? J.pj * dn
@@ -1477,7 +1730,7 @@ void Fdem3dSolver::jointForces() {
                     }
                 } else sigEl = tr2;
             } else {
-                sigEl = J.pj * dn;                     // closed: penalty
+                sigEl = (jcAdaptive_ ? (1.0 - J.D) * J.pj : J.pj) * dn;
             }
 
             double sig = sigEl;
@@ -1507,7 +1760,9 @@ void Fdem3dSolver::jointForces() {
             double fdS = yanSoft_ ? yan::fD(J.D, yanP_) : 0.0;
             double coh = yanSoft_ ? fdS * J.coh : (1.0 - J.D) * J.coh;
             double muS = (yanSoft_ && yanFricScaled_) ? fdS : 1.0;
-            double tauLim = coh + muS * J.tanPhi * std::max(0.0, -sig);
+            double tauLim = coh + muS * J.tanPhi
+                          * rockim::mcFrictionTerm(sig, J.ft, yangEnv_);
+            if (tauLim < 0.0) tauLim = 0.0;
             Eigen::Vector3d tau;
             if (shearOrigin_) {
                 // ---- eq. 18 : secante a l'origine, version vectorielle ----
@@ -2346,6 +2601,20 @@ void Fdem3dSolver::generalContact() {
 // partial sums added in thread order (deterministic per thread count).
 void Fdem3dSolver::toolContact() {
     if (scen_ == Scenario::TENSION || toolNone_) return;
+    // TRI : l'outil est RETIRE pendant la classification, sinon il continue de
+    // fracturer pendant qu'on classe. C'est aussi le geste experimental.
+    if (brushArmed_) return;
+    // ETAPE 1 de Yang : arret de l'outil AVANT l'armement, pour menager un
+    // intervalle de repos (voir Fdem3dSolver.hpp).
+    if (toolStop_ > 0.0 && t_ >= toolStop_) {
+        if (!toolStopped_) {
+            toolStopped_ = true;
+            std::cout << "[FDEM3D] OUTIL ARRETE a t = " << t_ << " s. Repos "
+                         "jusqu'a l'armement du tri (t = " << brushStart_
+                      << " s), soit " << (brushStart_ - t_) << " s.\n";
+        }
+        return;
+    }
     auto nodeFc = [&](int i, Eigen::Vector3d& Fc) {
         Eigen::Vector3d p = X0_[i] + u_[i];
         if (tool_.flat) {
@@ -2379,6 +2648,19 @@ void Fdem3dSolver::toolContact() {
             Eigen::Vector3d ftv = Eigen::Vector3d::Zero();
             if (vtn > 0) ftv = -muC_ * fn * std::tanh(vtn / vReg_) * vt / vtn;
             Fc = fn * n + ftv;
+        }
+        // --- ECRETAGE EN IMPULSION (porte du 2D) : voir Fdem3dSolver.hpp ----
+        // Borne PHYSIQUE du choc elastique contre une masse infinie : un outil
+        // a vitesse imposee ne decelere jamais, c'est un reservoir d'energie
+        // infini. On ecrete le VECTEUR complet, frottement compris, car c'est
+        // l'impulsion TOTALE qui accelere le noeud.
+        if (toolVCap_ > 0.0) {
+            double vtool = tool_.v.norm();
+            if (vtool > 1e-12) {
+                double fmax = toolVCap_ * 2.0 * vtool * m_[i] / dt_;
+                double f = Fc.norm();
+                if (f > fmax) Fc *= fmax / f;
+            }
         }
         return true;
     };
@@ -2579,6 +2861,130 @@ void Fdem3dSolver::integrate() {
     bcWork_ += bw;
     biasW_ += bias;
     if (scen_ != Scenario::TENSION && !toolNone_) tool_.integrate(dt_);
+}
+
+// ---------------------------------------------------------------------------
+// Force volumique 3D : gravite + anti-gravite du tri des fragments.
+// Absente (ou nulle) laisse tout modele existant bit-identique.
+// ---------------------------------------------------------------------------
+void Fdem3dSolver::bodyForces() {
+    if (gravity_ > 0.0) {
+#ifdef _OPENMP
+#pragma omp parallel for schedule(static)
+#endif
+        for (int eI = 0; eI < (int)el_.size(); ++eI) {
+            const Elem& e = el_[eI];
+            double w = phases_.mat[e.phase].rho * e.V0 * gravity_ / 4.0;
+            for (int a = 0; a < 4; ++a) f_[e.n[a]].z() -= w;
+        }
+    }
+    // anti-gravite sur les SEULS candidats. Serie : le travail s'accumule dans
+    // un scalaire, et la phase de tri est courte devant le run.
+    if (!brushArmed_) return;
+    double bw = 0.0;
+    for (int eI = 0; eI < (int)el_.size(); ++eI) {
+        if (!brushCand_[eI]) continue;
+        const Elem& e = el_[eI];
+        double w = phases_.mat[e.phase].rho * e.V0 * brushA_ / 4.0;
+        for (int a = 0; a < 4; ++a) {
+            Eigen::Vector3d F = w * brushDir_;
+            f_[e.n[a]] += F;
+            bw += F.dot(v_[e.n[a]]) * dt_;
+        }
+    }
+    brushWork_ += bw;                      // POSTE SEPARE, jamais dans sumW
+}
+
+// ---------------------------------------------------------------------------
+// Armement du tri : fige les candidats et l'etat de reference.
+// ---------------------------------------------------------------------------
+void Fdem3dSolver::armBrush() {
+    computeFragments();
+    brushFrag_ = fragId_;
+    brushNFrag_ = nFrag_;
+    brushCand_.assign(el_.size(), 0);
+    long nc = 0;
+    for (std::size_t e = 0; e < el_.size(); ++e)
+        if (fragId_[e] != 0) { brushCand_[e] = 1; ++nc; }
+    brushU0_ = u_;
+    std::vector<char> touched(X0_.size(), 0);
+    for (std::size_t e = 0; e < el_.size(); ++e)
+        if (brushCand_[e])
+            for (int a = 0; a < 4; ++a) touched[el_[e].n[a]] = 1;
+    double vres = 0.0, vresAll = 0.0;
+    for (std::size_t i = 0; i < X0_.size(); ++i) {
+        double vi = v_[i].norm();
+        vresAll = std::max(vresAll, vi);
+        if (touched[i]) vres = std::max(vres, vi);
+    }
+    long nn = 0;
+    for (std::size_t i = 0; i < X0_.size(); ++i)
+        if (touched[i]) {
+            if (brushZeroV_) v_[i]  = brushV0_ * brushDir_;
+            else             v_[i] += brushV0_ * brushDir_;
+            ++nn;
+        }
+    brushArmed_ = true;
+    brushT0_ = t_;
+    std::cout << "[FDEM3D] TRI DES FRAGMENTS arme a t = " << t_ << " s : "
+              << nc << " / " << el_.size() << " tetraedres candidats ("
+              << brushNFrag_ - 1 << " fragments hors corps principal), " << nn
+              << " noeuds\n"
+              << "[FDEM3D]   v0 = " << brushV0_ << " m/s, a = " << brushA_
+              << " m/s2, direction (" << brushDir_.x() << ", " << brushDir_.y()
+              << ", " << brushDir_.z() << "), beta = " << brushBeta_ << "\n"
+              << "[FDEM3D]   CLASSIFICATION, pas de physique : travail compte "
+                 "a part, hors bilan B4\n"
+              << "[FDEM3D]   REPOS (etape 1) : vitesse residuelle max des "
+                 "candidats " << vres << " m/s, du bloc entier " << vresAll
+              << " m/s\n";
+    if (vres > 100.0 * brushV0_)
+        std::cout << "[FDEM3D]   >>> ETAPE 1 VIOLEE : les candidats bougent "
+                     "encore a " << vres << " m/s. Le classement mesurera le "
+                     "mouvement RESIDUEL, pas la reponse a l'anti-gravite. "
+                     "Allonger le repos entre toolStop et fragBrushStart, ou "
+                     "poser fragBrushZeroV = true.\n";
+}
+
+// ---------------------------------------------------------------------------
+// Verdict : deplacement de chaque fragment contre celui d'une particule LIBRE.
+// ---------------------------------------------------------------------------
+void Fdem3dSolver::brushReport() {
+    if (!brushArmed_) return;
+    double tb = t_ - brushT0_;
+    double dref = brushV0_ * tb + 0.5 * brushA_ * tb * tb;
+    double seuil = brushBeta_ * dref;
+    std::vector<double> sum(brushNFrag_, 0.0), vol(brushNFrag_, 0.0);
+    std::vector<long> cnt(brushNFrag_, 0);
+    for (std::size_t e = 0; e < el_.size(); ++e) {
+        int f = brushFrag_[e];
+        double d = 0.0;
+        for (int a = 0; a < 4; ++a)
+            d += (u_[el_[e].n[a]] - brushU0_[el_[e].n[a]]).norm() / 4.0;
+        sum[f] += d; ++cnt[f];
+        vol[f] += el_[e].V0;
+    }
+    double vLibre = 0.0, vCoince = 0.0;
+    long nLibre = 0, nCoince = 0;
+    for (int f = 1; f < brushNFrag_; ++f) {
+        if (cnt[f] == 0) continue;
+        if (sum[f] / cnt[f] > seuil) { vLibre += vol[f]; ++nLibre; }
+        else                         { vCoince += vol[f]; ++nCoince; }
+    }
+    double vTot = vLibre + vCoince;
+    std::cout << "[FDEM3D] TRI, verdict apres " << tb << " s :\n"
+              << "[FDEM3D]   particule libre de reference : d_ref = " << dref
+              << " m, seuil = beta d_ref = " << seuil << " m\n"
+              << "[FDEM3D]   fragments LIBRES  : " << nLibre << " (" << vLibre
+              << " m^3)\n"
+              << "[FDEM3D]   fragments COINCES : " << nCoince << " (" << vCoince
+              << " m^3)\n"
+              << "[FDEM3D]   volume detache CORRIGE " << vLibre << " contre "
+              << vTot << " par le critere naif : "
+              << (vTot > 0 ? 100.0 * (vTot - vLibre) / vTot : 0.0)
+              << " % de SUREVALUATION\n"
+              << "[FDEM3D]   travail du tri : " << brushWork_
+              << " J (hors bilan B4)\n";
 }
 
 void Fdem3dSolver::computeFragments() {
@@ -2811,8 +3217,20 @@ void Fdem3dSolver::finalize() {
         std::cout << "[FDEM3D] energy budget (V2/B4): KE " << keInit_
                   << " -> " << keBlock << " J\n"
                   << "[FDEM3D]   elements     : " << -elWork_
-                  << " J preleve (stocke elastique " << uEl << " J)\n"
-                  << "[FDEM3D]   joints       : " << -(jointWork_ - dampWork_)
+                  << " J preleve (stocke elastique " << uEl << " J)\n";
+        if (viscOn_)
+            std::cout << "[FDEM3D]      dont visqueux (2 mu D) : "
+                      << -viscWork_ << " J dissipes, soit "
+                      << (std::abs(elWork_) > 1e-300
+                          ? 100.0 * viscWork_ / elWork_ : 0.0)
+                      << " % du poste elements  "
+                      << (viscWork_ <= 0.0
+                          ? "[OK, dissipatif]"
+                          : "[FAIL - le terme visqueux a INJECTE de l energie]")
+                      << ". VENTILATION : deja comptee ci-dessus, pas un "
+                         "poste de plus. Sous-estimee la ou det F < 1 (2 mu "
+                         "D:D est par volume COURANT, V0 est de reference).\n";
+        std::cout << "[FDEM3D]   joints       : " << -(jointWork_ - dampWork_)
                   << " J cohesif (fissuration + stocke), dashpot "
                   << -dampWork_ << " J\n"
                   << "[FDEM3D]   contact      : " << -gcWork_
@@ -2849,6 +3267,32 @@ void Fdem3dSolver::finalize() {
                   << jt_.size() << " joints inserted ("
                   << (jt_.empty() ? 0.0 : 100.0 * nInserted_ / jt_.size())
                   << " %), " << nBroken_ << " fully broken\n";
+    if (difOn_) {
+        std::vector<double> er, dtv;
+        for (const auto& J : jt_)
+            if (!J.bonded) { er.push_back(J.edotIns); dtv.push_back(J.difT); }
+        if (er.empty()) {
+            std::cout << "[FDEM3D] strainRateDIF : aucun joint insere — le "
+                         "DIF n a jamais ete evalue.\n";
+        } else {
+            std::sort(er.begin(), er.end());
+            std::sort(dtv.begin(), dtv.end());
+            std::size_t n = er.size();
+            std::cout << "[FDEM3D] strainRateDIF (sur " << n
+                      << " joints inseres) : taux de deformation a "
+                         "l insertion, mediane " << er[n / 2] << " /s, min "
+                      << er.front() << ", max " << er.back()
+                      << " ; DIF_traction median " << dtv[n / 2]
+                      << " (min " << dtv.front() << ", max " << dtv.back()
+                      << ")\n";
+            std::size_t sat = 0;
+            for (double x : er) if (x > 1.0e2) ++sat;
+            std::cout << "[FDEM3D]   " << (100.0 * sat / n)
+                      << " % des insertions sont AU PLATEAU de DIF_traction "
+                         "(edot > 1e2 /s) : sur cette part le facteur ne "
+                         "discrimine plus rien.\n";
+        }
+    }
     if (nGroups_ > 1) {                    // V1 : bilan par corps
         for (int g = 0; g < nGroups_; ++g) {
             double ke = 0.0, mvz = 0.0, mm = 0.0;
@@ -2946,6 +3390,7 @@ void Fdem3dSolver::finalize() {
               << "\n[FDEM3D] fragments         : " << nFrag_
               << " (detached vol " << detachedVol_ << " m^3)"
               << "\n[FDEM3D] specific energy   : " << Es << " J/m^3\n";
+    brushReport();          // no-op si le tri n'a pas ete arme
 }
 
 // ---------------------------------------------------------------------------

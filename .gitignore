@@ -33,3 +33,27 @@ rockim_*.csv
 # --- livraison par bundle : l'archive fait foi, jamais le depot ---
 *.bundle
 old/
+
+# --- sauvegardes manuelles de source : git EST la sauvegarde ---
+#     (elles restent sur le disque, elles ne sont simplement pas versionnees)
+*.bak_*
+versions/v*/
+
+# --- caches Python et trames intermediaires des GIF ---
+__pycache__/
+_gif_frames/
+_gif3d_frames/
+tunnel_edz/meshtest/
+
+# --- FIGURES DES ETUDES : decision du 2026-08-19 (F. Uzquiano) -------------
+#     Les planches, GIF et PDF des etudes pesent 87 Mo pour 644 ko de texte :
+#     les versionner ferait passer le bundle de 18 a ~105 Mo. Ils restent
+#     LOCAUX, et la selection utile est archivee dans
+#     phd_geothermie\FDEM\rockim\{tunnel_edz,indentation_ye,coupe_pdc}\figures\
+#     ATTENTION : ne JAMAIS lancer `git clean -x` dans ce depot.
+tunnel_edz/*.png
+tunnel_edz/*.gif
+tunnel_edz/*.pdf
+bench_abuaisha/*.png
+bench_abuaisha/*.gif
+*.gif
