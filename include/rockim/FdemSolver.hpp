@@ -1029,6 +1029,14 @@ private:
     double hydroWork_ = 0.0;               // poste SEPARE du bilan B4
     long hydroNWet_ = 0;                   // faces mouillees (sortie)
     long wetStamp_ = -1;                   // nBroken_ au dernier mouillage
+    double hydroClose_ = 0.0;              // defaut de FERMETURE du contour,
+                                           // rapporte au perimetre. Un lacet
+                                           // ne mesure une aire que si le
+                                           // contour est ferme : au-dela de
+                                           // 1e-6 le volume n'a pas de sens.
+    bool hydroCloseWarned_ = false;
+    double hydroVolCrack_ = 0.0;           // part FISSURES du volume
+    std::vector<char> wetJoint_;           // joint mouille (par joint)
     std::vector<BEdge> hydroSrc_;          // faces SOURCE (le forage)
     std::vector<BEdge> wetEdges_;          // frontiere mouillee courante
     void setupHydro();

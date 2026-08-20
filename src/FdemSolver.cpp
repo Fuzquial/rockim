@@ -280,7 +280,7 @@ void FdemSolver::init() {
         // of 8 bar elements put every interface face in one bucket and made
         // the detection O(n_faces^2) — measured 64 ms/step of the 80 ms.
         gcCell_ = cfg_.getd("gcCell", 2.0 * hDisc_);
-        gcBoxMesh_ = cfg_.getb("gcBoxMesh", true);
+        gcBoxMesh_ = cfg_.getb("gcBoxMesh", true);   // defaut PROPRE au SHPB
         double win = cfg_.getd("gcXwindow", 0.10);
         if (win > 0.0) {
             gcXmin_ = discC_.x() - discR_ - win;
@@ -477,6 +477,18 @@ void FdemSolver::init() {
     }
     xiJ_ = cfg_.getd("jointXi", 0.05);
 
+    // ---- E9 (2026-08-20) : gcCell et gcBoxMesh etaient INERTES hors SHPB.
+    // Ils n'etaient lus que dans la branche du montage barre-disque-barre, si
+    // bien que tout autre cas subissait la grille par defaut : cellule 2 hmin
+    // sur le domaine AGRANDI DE MOITIE. Mesure du 20/08 sur le forage
+    // d'AbuAisha (8 x 8 m, hmin 3,86 mm) : 6,5 Go de grille et un run qui
+    // stagne. Ces cles sont maintenant lues pour TOUS les scenarios ; les
+    // defauts hors SHPB reproduisent exactement le comportement anterieur,
+    // donc rien ne bouge tant qu'on ne les pose pas.
+    if (scen_ != Scenario::SHPB) {
+        gcCell_ = cfg_.getd("gcCell", 0.0);        // 0 = 2 hmin, inchange
+        gcBoxMesh_ = cfg_.getb("gcBoxMesh", false);// false = boite large, idem
+    }
     kp_ = phases_.maxE() * thk_;                       // tool contact penalty
     // ---- A1 : loi de contact de l'outil (voir FdemSolver.hpp) -------------
     {
@@ -4552,11 +4564,12 @@ void FdemSolver::checkEnergyAbort() {
     for (std::size_t i = 0; i < X0_.size(); ++i)
         ke += 0.5 * m_[i] * v_[i].squaredNorm();
     double sumW = elWork_ + jointWork_ + gcWork_ + cundWork_ + lysWork_
-                + toolWork_ + bcWork_ + confWork_ + biasW_;
+                + toolWork_ + bcWork_ + confWork_ + hydroWork_ + biasW_;
     double gross = std::abs(elWork_) + std::abs(jointWork_)
                  + std::abs(gcWork_) + std::abs(cundWork_)
                  + std::abs(lysWork_) + std::abs(toolWork_)
-                 + std::abs(bcWork_) + std::abs(confWork_);
+                 + std::abs(bcWork_) + std::abs(confWork_)
+                 + std::abs(hydroWork_);
     double scale = std::max({keInit_, ke, gross, 1e-30});
     if (scale < 1e-12) return;             // charge nulle : pas de verdict
     double resid = (ke - keInit_) - sumW;
@@ -4686,10 +4699,31 @@ void FdemSolver::setupHydro() {
                                  "verifier boreCX/boreCY/boreSelectR");
     updateWetBoundary();
     hydroVol0_ = hydroVol_;
-    if (!(hydroVol0_ > 0.0))
-        throw std::runtime_error("hydro : volume de cavite initial nul ou "
-                                 "negatif (" + std::to_string(hydroVol0_)
-                                 + " m3/m) — orientation des faces source ?");
+    // ---- VOLUME INITIAL NUL : ce n'est pas toujours une erreur ------------
+    // Une discontinuite d'epaisseur nulle — la fissure de Parker, dont les
+    // deux levres sont CONFONDUES a t = 0 — enferme rigoureusement zero aire.
+    // Le lacet somme donc a zero, et c'est geometriquement juste.
+    //   * en pression imposee, cela n'a aucune consequence : la pression ne
+    //     depend pas du volume, qui n'est plus qu'une sortie ;
+    //   * en debit impose, la pression passe par log(m / V rho_0) : un volume
+    //     nul rend le modele de compressibilite INDEFINI. Il faut alors une
+    //     cavite physique de volume fini — un forage — ou une ouverture
+    //     initiale non nulle a la Lisjak.
+    // C'est d'ailleurs pour cela que l'annexe A d'AbuAisha impose une pression
+    // UNIFORME et ne fait pas tourner sa pompe sur ce cas.
+    if (!(hydroVol0_ > 0.0)) {
+        if (hydroRateMode_)
+            throw std::runtime_error(
+                "hydro : volume de cavite initial nul ou negatif ("
+                + std::to_string(hydroVol0_) + " m3/m) en injection a DEBIT "
+                "impose — la pression p0 + Kf log(m / V rho0) y est indefinie. "
+                "Il faut une cavite de volume fini (forage) ou une ouverture "
+                "initiale. En pression imposee, ce cas est licite.");
+        std::cout << "[HYDRO] NOTE : volume de cavite initial nul ("
+                  << hydroVol0_ << " m3/m). Normal pour une discontinuite "
+                     "d'epaisseur nulle dont les levres sont confondues ; sans "
+                     "consequence en pression imposee.\n";
+    }
     // masse initiale telle que p(t=0) = p0, par inversion de leur eq. 6
     hydroMass_ = hydroVol0_ * fluidRho0_;
     hydroP_ = hydroP0_;
@@ -4737,9 +4771,12 @@ void FdemSolver::updateWetBoundary() {
             }
         }
         wetEdges_ = hydroSrc_;
-        for (const auto& J : jt_) {
+        wetJoint_.assign(jt_.size(), 0);
+        for (std::size_t jI = 0; jI < jt_.size(); ++jI) {
+            const Joint& J = jt_[jI];
             if (J.bonded || J.D < 1.0) continue;
             if (!(wetV[vOf_[J.a1]] && wetV[vOf_[J.a2]])) continue;
+            wetJoint_[jI] = 1;
             // les deux levres, orientees chacune vers l'exterieur de SON
             // element — meme convention que le cache deadList_ du contact
             wetEdges_.push_back({J.eA, J.a1, J.a2});
@@ -4747,18 +4784,135 @@ void FdemSolver::updateWetBoundary() {
         }
         wetStamp_ = nBroken_;
         hydroNWet_ = (long)wetEdges_.size();
+        // --- diagnostic H5, temporaire : pourquoi la cavite ne grandit pas ---
+        static int dbg = 0;
+        if (std::getenv("RKM_HYDRODBG") && dbg < 6) {
+            ++dbg;
+            long nD1 = 0, nOne = 0, nBoth = 0;
+            for (const auto& J : jt_) {
+                if (J.bonded || J.D < 1.0) continue;
+                ++nD1;
+                bool w1 = wetV[vOf_[J.a1]], w2 = wetV[vOf_[J.a2]];
+                if (w1 || w2) ++nOne;
+                if (w1 && w2) ++nBoth;
+            }
+            std::cout << "[H5] t=" << t_ << " nBroken=" << nBroken_
+                      << " joints D>=1 : " << nD1
+                      << " | au moins un sommet mouille : " << nOne
+                      << " | les deux : " << nBoth
+                      << " | faces mouillees : " << wetEdges_.size()
+                      << " (nVert=" << nVert_ << ")\n";
+            // ou sont les sommets ENSEMENCES, et ou sont les joints rompus ?
+            double rs0 = 1e30, rs1 = 0.0;
+            for (const auto& be : hydroSrc_) {
+                Eigen::Vector2d m = 0.5 * (X0_[be.na] + X0_[be.nb]);
+                double r = (m - Eigen::Vector2d(4.0, 4.0)).norm();
+                rs0 = std::min(rs0, r); rs1 = std::max(rs1, r);
+            }
+            std::cout << "[H5]   faces source : r dans [" << rs0 << ", "
+                      << rs1 << "] m, premiers sommets ensemences : ";
+            int shown = 0;
+            for (const auto& be : hydroSrc_) {
+                if (shown++ >= 3) break;
+                std::cout << vOf_[be.na] << "/" << vOf_[be.nb] << " ";
+            }
+            std::cout << "| sommets des joints rompus : ";
+            shown = 0;
+            for (std::size_t q = 0; q < jt_.size() && shown < 4; ++q) {
+                if (jt_[q].bonded || jt_[q].D < 1.0) continue;
+                ++shown;
+                Eigen::Vector2d m = 0.5 * (X0_[jt_[q].a1] + X0_[jt_[q].a2]);
+                std::cout << vOf_[jt_[q].a1] << "/" << vOf_[jt_[q].a2]
+                          << "(r=" << (m - Eigen::Vector2d(4.0, 4.0)).norm()
+                          << ") ";
+            }
+            std::cout << "\n";
+        }
     }
     // (2) volume par le theoreme de Green, sur la configuration COURANTE.
-    // Somme du lacet face par face : l'ordre de parcours n'intervient pas.
-    // Signe : la normale sortante du solide vaut (dy, -dx)/L, donc le fluide
-    // est a DROITE de P->Q, donc le lacet compte la cavite en negatif.
-    double A2 = 0.0;
-    for (const auto& be : wetEdges_) {
-        Eigen::Vector2d P = X0_[be.na] + u_[be.na];
-        Eigen::Vector2d Q = X0_[be.nb] + u_[be.nb];
+    //
+    // ⚠️ LECON DU 2026-08-20, payee par un run divergent. « La somme du lacet
+    // face par face est independante de l'ordre » n'est vraie que pour un
+    // contour FERME. Chaque terme x_P y_Q - x_Q y_P depend de l'ORIGINE du
+    // repere ; seule la somme sur un contour ferme est intrinseque. Le forage
+    // d'AbuAisha etant centre en (4, 4), chaque terme vaut ~|r|^2 = 32 m^2
+    // contre une aire reelle de 7,8e-3 m^2 : le moindre defaut de fermeture
+    // produisait une erreur ENORME. Tant que seul le forage etait mouille le
+    // contour fermait, d'ou le succes de H2 a 5,6e-07 ; des que les levres de
+    // fissure s'ajoutaient, le volume DECROISSAIT au lieu de croitre, et comme
+    // K_f / V vaut 2,8e11 Pa/m^2, 1,9 % d'erreur de volume faisaient 42 MPa
+    // d'erreur de pression. La pression montait a la rupture au lieu de
+    // chuter.
+    //
+    // Deux protections, dans cet ordre :
+    //   (a) referencer le lacet au CENTROIDE de la frontiere mouillee. Pour un
+    //       contour ferme cela ne change rien ; pour un contour imparfait cela
+    //       ramene l'erreur de l'ordre de |r|^2 a l'ordre de la cavite ;
+    //   (b) CONTROLER la fermeture : la somme vectorielle des segments
+    //       orientes doit etre nulle. Si elle ne l'est pas, le contour n'est
+    //       pas la frontiere d'un domaine et son aire n'a AUCUN sens — il faut
+    //       le dire, pas rendre un nombre.
+    // DECOMPOSITION LOCALE (2026-08-20). Le lacet global est abandonne pour le
+    // volume : il n'est intrinseque que sur un contour ferme, et un contour de
+    // fissure ouverte est trop fragile pour porter une grandeur amplifiee par
+    // K_f / V = 2,8e11 Pa/m^2. On somme donc DEUX contributions independantes :
+    //
+    //   (a) la CAVITE SOURCE, par le lacet sur ses seules faces d'origine —
+    //       contour ferme par construction, et verifie a 5,6e-07 pres contre
+    //       l'aire exacte du polygone (controle H2) ;
+    //   (b) chaque FISSURE mouillee, par son aire propre L * (ouverture
+    //       moyenne), calculee LOCALEMENT sur le joint.
+    //
+    // C'est exactement la forme qu'emploie Lisjak et al. 2017 pour le volume
+    // de cavite, V = somme_j L_j (a_0 + a_1)/2. Elle est insensible a
+    // l'origine du repere, insensible a la fermeture, et chaque terme est
+    // positif par construction — donc une fissure qui s'ouvre ne peut PAS
+    // faire decroitre le volume, ce que l'ancienne formule autorisait.
+    Eigen::Vector2d cen = Eigen::Vector2d::Zero();
+    for (const auto& be : hydroSrc_)
+        cen += 0.5 * (X0_[be.na] + u_[be.na] + X0_[be.nb] + u_[be.nb]);
+    if (!hydroSrc_.empty()) cen /= (double)hydroSrc_.size();
+    double A2 = 0.0, perim = 0.0;
+    Eigen::Vector2d closure = Eigen::Vector2d::Zero();
+    for (const auto& be : hydroSrc_) {                 // (a) la source seule
+        Eigen::Vector2d P = X0_[be.na] + u_[be.na] - cen;
+        Eigen::Vector2d Q = X0_[be.nb] + u_[be.nb] - cen;
         A2 += P.x() * Q.y() - Q.x() * P.y();
+        closure += (Q - P);
+        perim += (Q - P).norm();
     }
-    hydroVol_ = -0.5 * A2 * thk_;
+    double vol = -0.5 * A2 * thk_;
+    // (b) les fissures mouillees, aire propre de chaque levre ecartee
+    double vCrack = 0.0;
+    for (const auto& J : jt_) {
+        if (J.bonded || J.D < 1.0 || !wetJoint_[&J - &jt_[0]]) continue;
+        Eigen::Vector2d P = 0.5 * (X0_[J.a1] + u_[J.a1] + X0_[J.b1] + u_[J.b1]);
+        Eigen::Vector2d Q = 0.5 * (X0_[J.a2] + u_[J.a2] + X0_[J.b2] + u_[J.b2]);
+        Eigen::Vector2d e = Q - P;
+        double L = e.norm();
+        if (L < 1e-14) continue;
+        Eigen::Vector2d n(e.y() / L, -e.x() / L);
+        double a0 = (X0_[J.b1] + u_[J.b1] - X0_[J.a1] - u_[J.a1]).dot(n);
+        double a1 = (X0_[J.b2] + u_[J.b2] - X0_[J.a2] - u_[J.a2]).dot(n);
+        // une levre refermee ne rend pas de volume : on ne compte que l'ouvert
+        vCrack += L * 0.5 * (std::max(0.0, a0) + std::max(0.0, a1)) * thk_;
+    }
+    hydroVol_ = vol + vCrack;
+    hydroVolCrack_ = vCrack;
+    // Le defaut de fermeture, rapporte au perimetre. Un contour ferme donne
+    // zero machine ; au-dela de 1e-6 le volume n'est plus une aire.
+    hydroClose_ = (perim > 0.0) ? closure.norm() / perim : 0.0;
+    if (hydroClose_ > 1e-6 && !hydroCloseWarned_) {
+        hydroCloseWarned_ = true;
+        std::cout << "\n[HYDRO] *** CONTOUR NON FERME *** defaut de fermeture "
+                  << hydroClose_ << " (rapporte au perimetre), a t = " << t_
+                  << " s, " << wetEdges_.size() << " faces mouillees.\n"
+                     "[HYDRO] Le lacet ne mesure alors PAS une aire : le volume "
+                     "de cavite, donc la pression, sont sans valeur. Cause "
+                     "probable : les levres d'une fissure ont ete ajoutees sans "
+                     "que le contour se referme (bouche de fissure, pointe non "
+                     "dedoublee, ou orientation inversee).\n\n";
+    }
 }
 
 // Pompe, pression, et chargement des levres.
@@ -5270,9 +5424,11 @@ void FdemSolver::historyHeader(std::ostream& os) const {
         if (tensionPlatens_)
             os << "t,gripFy,sigma,sigmaPeak,nBroken,epsPlaten,epsSpec,"
                   "epsGauge,nBrokTen,nBrokShear,nFrag,confAchieved,"
-                  "peakLocked\n";
+                  "peakLocked";
         else
-            os << "t,gripFy,sigma,sigmaPeak,nBroken\n";
+            os << "t,gripFy,sigma,sigmaPeak,nBroken";
+        if (hydroOn_) os << ",hydroP,hydroVol,hydroMass,hydroNWet,eHydro";
+        os << "\n";
         return;
     }
     if (scen_ == Scenario::BRAZILIAN) {
@@ -5293,7 +5449,11 @@ void FdemSolver::historyHeader(std::ostream& os) const {
     }
     os << "t,toolFx,toolFy,toolX,toolY,toolVx,toolVy,work,toolKE,"
           "nBroken,nFrag,detachedVol,specificEnergy"
-          ",eEl,eJnt,eGc,eFric,eCund,eLys\n";   // V2/B4 (travaux cumules)
+          ",eEl,eJnt,eGc,eFric,eCund,eLys";      // V2/B4
+    // FR-010 : une cavite qui se remplit sans qu on puisse la regarder
+    // est ingouvernable. hydroP est LA courbe de leur fig. 11.
+    if (hydroOn_) os << ",hydroP,hydroVol,hydroMass,hydroNWet,eHydro";
+    os << "\n";
 }
 
 void FdemSolver::historyRow(std::ostream& os) const {
@@ -5321,6 +5481,9 @@ void FdemSolver::historyRow(std::ostream& os) const {
                << nS << "," << nFrag_ << "," << confAchieved_ << ","
                << (peakLockedU_ ? 1 : 0);
         }
+        if (hydroOn_)
+            os << "," << hydroP_ << "," << hydroVol_ << "," << hydroMass_
+               << "," << hydroNWet_ << "," << hydroWork_;
         os << "\n";
         return;
     }
@@ -5343,7 +5506,11 @@ void FdemSolver::historyRow(std::ostream& os) const {
        << work_ << "," << tool_.ke() << "," << nBroken_ << "," << nFrag_ << ","
        << detachedVol_ << "," << Es
        << "," << elWork_ << "," << jointWork_ << "," << gcWork_ << ","
-       << gcFricWork_ << "," << cundWork_ << "," << lysWork_ << "\n";  // B4
+       << gcFricWork_ << "," << cundWork_ << "," << lysWork_;   // B4
+    if (hydroOn_)
+        os << "," << hydroP_ << "," << hydroVol_ << "," << hydroMass_
+           << "," << hydroNWet_ << "," << hydroWork_;
+    os << "\n";
 }
 
 void FdemSolver::finalize() {
@@ -5429,7 +5596,7 @@ void FdemSolver::finalize() {
             if (kAbsY_[i] > 0) uSpr += 0.5 * kAbsY_[i] * u_[i].y() * u_[i].y();
         }
         double sumW = elWork_ + jointWork_ + gcWork_ + cundWork_ + lysWork_
-                    + toolWork_ + bcWork_ + confWork_ + biasW_;
+                    + toolWork_ + bcWork_ + confWork_ + hydroWork_ + biasW_;
         double dKE = keBlock - keInit_;
         double resid = dKE - sumW;
         // echelle du verdict : le flux BRUT echange (la somme signee est ~0
@@ -5439,7 +5606,8 @@ void FdemSolver::finalize() {
         double gross = std::abs(elWork_) + std::abs(jointWork_)
                      + std::abs(gcWork_) + std::abs(cundWork_)
                      + std::abs(lysWork_) + std::abs(toolWork_)
-                     + std::abs(bcWork_) + std::abs(confWork_);
+                     + std::abs(bcWork_) + std::abs(confWork_)
+                     + std::abs(hydroWork_);
         double scale = std::max({keInit_, keBlock, gross, 1e-30});
         bool zeroCase = scale < 1e-12;     // charge nulle : verdict en absolu
         std::cout << "[FDEM] energy budget (V2/B4): KE " << keInit_ << " -> "
