@@ -560,6 +560,12 @@ private:
     // groupBond.<A>.<B> = joints. Vide ou 0 partout = aucun joint
     // inter-corps, comportement historique.
     std::vector<char> gbond_;
+    // WP3 : cinematique par corps (trackGroups) et jauges en tranche
+    // (gauge.<nom> = z0 z1). Vides = aucune colonne ajoutee.
+    struct Gauge3 { int grp = -1; double z0 = 0, z1 = 0;
+                    std::vector<int> elems; };
+    std::vector<int> trkGrps_;
+    std::vector<Gauge3> gauges_;
     int nGroups_ = 1;
     bool toolNone_ = false;                // toolShape = none : outil maille
     int trackGroup_ = -1;                  // groupe suivi dans history.csv

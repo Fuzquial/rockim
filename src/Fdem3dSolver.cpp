@@ -770,6 +770,55 @@ void Fdem3dSolver::buildMeshFile() {
                                          + "' inconnu");
         }
     }
+    // ---- WP3 : cinematique par corps + jauges en tranche ---------------
+    // trackGroups = "nom1 nom2 ..." : z et vz massiques de CHAQUE corps
+    // liste (le bit ET le piston de la spec 005). gauge.<nom> = "z0 z1" :
+    // sigma_zz moyen en volume dans la tranche [z0, z1] du corps <nom> —
+    // la jauge de leur fig. 8. La tranche est figee en configuration de
+    // REFERENCE (les deplacements d un impact sont de l ordre du mm pour
+    // des tranches de cm : biais negligeable, et la liste d elements se
+    // fige a l init, cout nul en course).
+    {
+        std::string tl = cfg_.gets("trackGroups", "");
+        std::istringstream iss(tl);
+        std::string nm;
+        while (iss >> nm) {
+            int gg = -1;
+            for (int g = 0; g < nGroups_; ++g)
+                if (groupName_[g] == nm) gg = g;
+            if (gg < 0)
+                throw std::runtime_error("trackGroups: groupe '" + nm
+                                         + "' inconnu");
+            trkGrps_.push_back(gg);
+        }
+    }
+    for (int g = 0; g < nGroups_; ++g) {
+        std::string gs = cfg_.gets("gauge." + groupName_[g], "");
+        if (gs.empty()) continue;
+        std::istringstream iss(gs);
+        double z0 = 0, z1 = 0;
+        if (!(iss >> z0 >> z1) || !(z1 > z0))
+            throw std::runtime_error("gauge." + groupName_[g]
+                                     + " : attendu \"z0 z1\" avec z1 > z0");
+        Gauge3 gg;
+        gg.grp = g;
+        gg.z0 = z0;
+        gg.z1 = z1;
+        for (std::size_t e = 0; e < el_.size(); ++e) {
+            if (elemGroup_[e] != g) continue;
+            Eigen::Vector3d c = Eigen::Vector3d::Zero();
+            for (int a = 0; a < 4; ++a) c += X0_[el_[e].n[a]];
+            c /= 4.0;
+            if (c.z() >= z0 && c.z() <= z1) gg.elems.push_back((int)e);
+        }
+        if (gg.elems.empty())
+            throw std::runtime_error("gauge." + groupName_[g]
+                                     + " : aucune element dans la tranche");
+        std::cout << "[FDEM3D] gauge " << groupName_[g] << " : "
+                  << gg.elems.size() << " tets dans z = [" << z0 << ", "
+                  << z1 << "] m\n";
+        gauges_.push_back(std::move(gg));
+    }
     hmin_ = 1e30;
     for (double h : hEl_) hmin_ = std::min(hmin_, h);
 }
@@ -3344,11 +3393,23 @@ void Fdem3dSolver::writeFrame(int frame) {
 }
 
 void Fdem3dSolver::historyHeader(std::ostream& os) const {
-    if (scen_ == Scenario::TENSION) { os << "t,gripFz,sigma,sigmaPeak,nBroken\n"; return; }
+    if (scen_ == Scenario::TENSION) {
+        os << "t,gripFz,sigma,sigmaPeak,nBroken";
+        for (int g : trkGrps_)                         // WP3 : par corps
+            os << ",z_" << groupName_[g] << ",vz_" << groupName_[g];
+        for (const auto& gg : gauges_)                 // WP3 : jauges
+            os << ",szz_" << groupName_[gg.grp];
+        os << "\n";
+        return;
+    }
     os << "t,toolFx,toolFy,toolFz,toolX,toolY,toolZ,toolVx,toolVy,toolVz,"
           "work,toolKE,nBroken,nFrag,detachedVol,specificEnergy";
     if (trackGroup_ >= 0)                              // corps suivi (V1+V2)
         os << ",grpZ,grpVz,grpFx,grpFy,grpFz,grpSzz";
+    for (int g : trkGrps_)                             // WP3 : par corps
+        os << ",z_" << groupName_[g] << ",vz_" << groupName_[g];
+    for (const auto& gg : gauges_)                     // WP3 : jauges
+        os << ",szz_" << groupName_[gg.grp];
     // V2/B4 : travaux cumules par famille (signes : negatif = preleve)
     os << ",eEl,eJnt,eGc,eFric,eCund,eLys";
     if (bdOn_) os << ",nPulv,bdWork";
@@ -3359,7 +3420,30 @@ void Fdem3dSolver::historyRow(std::ostream& os) const {
     if (scen_ == Scenario::TENSION) {
         os << t_ << "," << gripF_.z() << ","
            << std::abs(gripF_.z()) / (W_ * D_) << ","
-           << sigmaPeak_ << "," << nBroken_ << "\n";
+           << sigmaPeak_ << "," << nBroken_;
+        for (int g : trkGrps_) {                       // WP3 : par corps
+            double mz = 0.0, mvz = 0.0, mm = 0.0;
+            for (std::size_t e = 0; e < el_.size(); ++e) {
+                if (elemGroup_[e] != g) continue;
+                for (int a = 0; a < 4; ++a) {
+                    int i = el_[e].n[a];
+                    mm += m_[i];
+                    mz += m_[i] * (X0_[i].z() + u_[i].z());
+                    mvz += m_[i] * v_[i].z();
+                }
+            }
+            os << "," << (mm > 0 ? mz / mm : 0.0)
+               << "," << (mm > 0 ? mvz / mm : 0.0);
+        }
+        for (const auto& gg : gauges_) {               // WP3 : jauges
+            double vs = 0.0, sz = 0.0;
+            for (int e : gg.elems) {
+                vs += el_[e].V0;
+                sz += el_[e].V0 * el_[e].sigG(2, 2);
+            }
+            os << "," << (vs > 0 ? sz / vs : 0.0);
+        }
+        os << "\n";
         return;
     }
     double Es = detachedVol_ > 0 ? work_ / detachedVol_ : 0.0;
@@ -3392,6 +3476,28 @@ void Fdem3dSolver::historyRow(std::ostream& os) const {
         }
         os << "," << grpF_.x() << "," << grpF_.y() << "," << grpF_.z()
            << "," << (vsum > 0 ? szz / vsum : 0.0);
+    }
+    for (int g : trkGrps_) {                           // WP3 : par corps
+        double mz = 0.0, mvz = 0.0, mm = 0.0;
+        for (std::size_t e = 0; e < el_.size(); ++e) {
+            if (elemGroup_[e] != g) continue;
+            for (int a = 0; a < 4; ++a) {
+                int i = el_[e].n[a];
+                mm += m_[i];
+                mz += m_[i] * (X0_[i].z() + u_[i].z());
+                mvz += m_[i] * v_[i].z();
+            }
+        }
+        os << "," << (mm > 0 ? mz / mm : 0.0)
+           << "," << (mm > 0 ? mvz / mm : 0.0);
+    }
+    for (const auto& gg : gauges_) {                   // WP3 : jauges
+        double vs = 0.0, sz = 0.0;
+        for (int e : gg.elems) {
+            vs += el_[e].V0;
+            sz += el_[e].V0 * el_[e].sigG(2, 2);
+        }
+        os << "," << (vs > 0 ? sz / vs : 0.0);
     }
     os << "," << elWork_ << "," << jointWork_ << "," << gcWork_ << ","
        << gcFricWork_ << "," << cundWork_ << "," << lysWork_;   // V2/B4
