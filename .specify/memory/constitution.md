@@ -62,6 +62,18 @@ commit** que le code. Les leçons chèrement acquises (pièges, règles maison)
 sont consignées avec leur date et leur mesure. Les messages de commit
 racontent le POURQUOI et les chiffres, pas seulement le quoi.
 
+### VIII. Croissance par addition (règle posée par Fernando, 2026-08-21)
+rockim s'enrichit, il ne se remplace pas. Une capacité existante qui est
+juste et qui marche n'est **ni retirée ni remplacée** : la capacité nouvelle
+s'AJOUTE à côté, derrière sa propre clé (principe I), et les deux coexistent —
+l'existante reste le défaut tant qu'une décision explicite de Fernando ne
+promeut pas la nouvelle. Remplacer exige la démonstration **mesurée** d'un
+défaut de l'existant (principe IV), jamais une préférence d'implémentation.
+Corollaire : un correctif de bug n'est pas un remplacement — le faux se
+corrige (ex. signe hydro du 2026-08-20), le juste s'additionne. Cas
+fondateur : le modèle de pulvérisation (Yang et al. 2026) s'ajoute AU CÔTÉ
+du crushCap existant ; le choix entre eux appartient au deck.
+
 ## Contraintes techniques
 
 - **C++17, Eigen headers-only, OpenMP optionnel** : le code compile et
@@ -98,4 +110,4 @@ justification. Les plans et tâches spec-kit citent la constitution dans
 leurs « constitution checks » ; une violation détectée à la revue arrête
 l'implémentation.
 
-**Version**: 1.0.0 | **Ratified**: 2026-08-14 | **Last Amended**: 2026-08-14
+**Version**: 1.1.0 | **Ratified**: 2026-08-14 | **Last Amended**: 2026-08-21 (ajout du principe VIII — croissance par addition)
