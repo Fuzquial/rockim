@@ -86,6 +86,40 @@ void Fdem3dSolver::init() {
                                      "il decroit jusqu au cut-off en ft)");
         yangEnv_ = se == "yang";
     }
+    // ---- WP1 : pulverisation (Yang et al. 2026, IJRMMS 206, eq. 3-4) ----
+    // Degradation de raideur des tetraedres : sigma = Cd (1 - D) sigma_b
+    // au-dela du seuil, D lineaire en deplacement effectif delta_m = h_e *
+    // eps_vm (Camanho), irreversible, plafonne a Dmax. delta_m0 / delta_mf
+    // en METRES : la calibration de l article (0,014 / 0,4, elements de
+    // 1 mm) se lit 1.4e-5 / 4.0e-4. ADDITION (principe VIII) : le crushCap
+    // reste tel quel — le deck granite le neutralise (crushCap = 1e12).
+    {
+        std::string bd = cfg_.gets("bulkDamage", "off");
+        if (bd != "off" && bd != "yang")
+            throw std::runtime_error("bulkDamage must be off | yang "
+                                     "(Yang et al. 2026, eq. 3-4 : "
+                                     "pulverisation par degradation de "
+                                     "raideur des elements volumiques)");
+        bdOn_ = bd == "yang";
+    }
+    if (bdOn_) {
+        bdD0_   = cfg_.getd("bulkDamageDelta0", 1.4e-5);
+        bdDf_   = cfg_.getd("bulkDamageDeltaF", 4.0e-4);
+        bdDmax_ = cfg_.getd("bulkDamageDmax", 0.9);
+        bdCd_   = cfg_.getd("bulkDamageCd", 1.0);
+        if (!(bdD0_ > 0.0) || !(bdDf_ > bdD0_))
+            throw std::runtime_error("bulkDamage : il faut 0 < "
+                                     "bulkDamageDelta0 < bulkDamageDeltaF "
+                                     "[m] (deplacements effectifs h_e*eps)");
+        if (!(bdDmax_ > 0.0) || bdDmax_ > 1.0 || !(bdCd_ > 0.0))
+            throw std::runtime_error("bulkDamage : bulkDamageDmax dans "
+                                     "]0, 1] et bulkDamageCd > 0");
+        if (cfg_.gets("law", "elastic") != "elastic")
+            throw std::runtime_error("bulkDamage = yang exige law = elastic "
+                                     "(la degradation s applique a la "
+                                     "branche co-rotationnelle elastique, "
+                                     "pas a une loi MatLaw)");
+    }
     mtCap_ = cfg_.getd("meanTensionCapFactor", 3.0);
     srTau_ = cfg_.getd("strainRateTau", 1.0e-6);
     if (difOn_ && !(srTau_ > 0.0))
@@ -1611,8 +1645,10 @@ void Fdem3dSolver::elementForces() {
     double wEl = 0.0;                      // V2/B4 : travail des forces
                                            // internes ce pas (compteur pur)
     double wVi = 0.0;                      // dont part VISQUEUSE
+    double wBd = 0.0;                      // dont part PULVERISATION (WP1)
+    long nPv = 0;
 #ifdef _OPENMP
-#pragma omp parallel for schedule(static) reduction(+:wEl,wVi)
+#pragma omp parallel for schedule(static) reduction(+:wEl,wVi,wBd,nPv)
 #endif
     for (int eI = 0; eI < (int)el_.size(); ++eI) {
         Elem& e = el_[eI];
@@ -1644,6 +1680,37 @@ void Fdem3dSolver::elementForces() {
         if (mtCap_ > 0.0 && pm > mtCap_ * ftP_[e.phase])
             pm = mtCap_ * ftP_[e.phase];              // mean-tension cap
         sig = dev + pm * Eigen::Matrix3d::Identity();
+        // ---- WP1 : pulverisation (Yang et al. 2026, eq. 3-4) ------------
+        // delta_m = h_e * eps_vm (deformation equivalente deviatorique) ;
+        // D = delta_f (dm_max - delta_0) / (dm_max (delta_f - delta_0)),
+        // irreversible via le max historique, plafonne a Dmax ; puis
+        // sigma <- Cd (1 - D) sigma. Applique APRES les caps : le deck
+        // choisit (principe VIII) — le granite de l article neutralise le
+        // crushCap (1e12) et laisse ce modele seul degrader.
+        if (bdOn_ && !law_) {
+            Eigen::Matrix3d ed = eps
+                - (eps.trace() / 3.0) * Eigen::Matrix3d::Identity();
+            double dm = hEl_[eI] * std::sqrt(2.0 / 3.0) * ed.norm();
+            if (dm > e.bdDm) e.bdDm = dm;
+            if (e.bdDm > bdD0_) {
+                double D = bdDf_ * (e.bdDm - bdD0_)
+                         / (e.bdDm * (bdDf_ - bdD0_));
+                if (D > bdDmax_) D = bdDmax_;
+                // Dissipation d endommagement : Phi = Y dD, avec le taux de
+                // restitution Y = 1/2 Cd eps : C : eps = 1/2 Cd sig_b : eps
+                // (psi = 1/2 Cd (1-D) eps:C:eps, Y = -dpsi/dD). NULLE quand
+                // D n evolue pas — un endommagement fige est elastique.
+                if (D > e.bdD)
+                    wBd -= 0.5 * bdCd_
+                         * (sig.array() * eps.array()).sum()
+                         * e.V0 * (D - e.bdD);
+                e.bdD = D;
+                double k = bdCd_ * (1.0 - D);
+                sig *= k;
+                e.svm *= k;
+                if (D >= bdDmax_) ++nPv;
+            }
+        }
         Eigen::Matrix3d P = R * sig;
         e.sigG = P * R.transpose();        // global Cauchy (insertion sweep)
         // ---- viscosite newtonienne 2 mu D (Yan eq. 6) et taux pour le DIF
@@ -1684,6 +1751,8 @@ void Fdem3dSolver::elementForces() {
     }
     elWork_ += wEl * dt_;
     viscWork_ += wVi * dt_;                // ventilation, incluse dans elWork_
+    bdWork_ += wBd;                        // WP1 : deja une ENERGIE (Y dD)
+    nPulv_ = nPv;
 }
 
 // Triangular cohesive joints, 3 node-pair integration points (A0/3 each).
@@ -3186,6 +3255,16 @@ void Fdem3dSolver::writeFrame(int frame) {
     }
     char name[64];
     std::snprintf(name, sizeof(name), "/fdem3d_%04d.vtu", frame);
+    if (bdOn_) {
+        std::vector<double> bdv(el_.size());
+        for (std::size_t e = 0; e < el_.size(); ++e) bdv[e] = el_[e].bdD;
+        vtk::writeTetMesh(out_ + name, pts, tets,
+                          {{"vonMises", &svm}, {"sigma1", &sg1},
+                           {"tauMax", &tmx}, {"fragment", &frag},
+                           {"phase", &phs}, {"grain", &grn},
+                           {"bulkD", &bdv}},
+                          {{"velocity", &vel}});
+    } else
     vtk::writeTetMesh(out_ + name, pts, tets,
                       {{"vonMises", &svm}, {"sigma1", &sg1},
                        {"tauMax", &tmx}, {"fragment", &frag},
@@ -3235,6 +3314,7 @@ void Fdem3dSolver::historyHeader(std::ostream& os) const {
         os << ",grpZ,grpVz,grpFx,grpFy,grpFz,grpSzz";
     // V2/B4 : travaux cumules par famille (signes : negatif = preleve)
     os << ",eEl,eJnt,eGc,eFric,eCund,eLys";
+    if (bdOn_) os << ",nPulv,bdWork";
     os << "\n";
 }
 
@@ -3278,6 +3358,7 @@ void Fdem3dSolver::historyRow(std::ostream& os) const {
     }
     os << "," << elWork_ << "," << jointWork_ << "," << gcWork_ << ","
        << gcFricWork_ << "," << cundWork_ << "," << lysWork_;   // V2/B4
+    if (bdOn_) os << "," << nPulv_ << "," << bdWork_;
     os << "\n";
 }
 
@@ -3367,6 +3448,11 @@ void Fdem3dSolver::finalize() {
                       << ". VENTILATION : deja comptee ci-dessus, pas un "
                          "poste de plus. Sous-estimee la ou det F < 1 (2 mu "
                          "D:D est par volume COURANT, V0 est de reference).\n";
+        if (bdOn_)
+            std::cout << "[FDEM3D]      dont pulverisation (bulkDamage) : "
+                      << -bdWork_ << " J dissipes, " << nPulv_
+                      << " elements a D = Dmax. VENTILATION : deja comptee "
+                         "dans le poste elements.\n";
         std::cout << "[FDEM3D]   joints       : " << -(jointWork_ - dampWork_)
                   << " J cohesif (fissuration + stocke), dashpot "
                   << -dampWork_ << " J\n"

@@ -1,0 +1,21 @@
+﻿[suite] 19 tests, exe = C:\Users\fuzquianoalricabi\simulations\FDEM\rockim\rockim_p1\rockim_i1.exe, OMP_NUM_THREADS = 1, sorties C:\Users\FUZQUI~1\AppData\Local\Temp\rockim_suite_fa1towh_
+  PASS  selftest_saksala2011             0.1s  
+  PASS  selftest_dpdfh                   0.1s  
+  PASS  selftest_mc                      0.2s  
+  PASS  selftest_potential2d             0.1s  pot_ke = 5.11562e-07 ok (ref 0); pot_mom = 4.88498e-15 ok (ref 0)
+  PASS  selftest_potential3d             1.8s  pot3_ke = 2.04788e-08 ok (ref 0); pot3_mom = 4.66335e-15 ok (ref 0)
+  PASS  yan_integral                     3.0s  yan_int = 0.386307 ok (ref 0.386307)
+  PASS  fem_bar                          3.4s  err_pct = 0.889143 ok (ref 0.889143)
+  PASS  dem_tension                      1.3s  err_pct = -0.109232 ok (ref -0.109232)
+  PASS  fdem_voronoi_tension            16.7s  err_pct = 11.5614 ok (ref 11.5981); dampWork = 0 <= 0 ok
+  PASS  zeroload_2d_fan                 15.5s  broken = 0 ok (ref 0); dampWork = 0 <= 0 ok
+  PASS  zeroload_2d_origin              16.0s  broken = 0 ok (ref 0); dampWork = 0 <= 0 ok
+  PASS  zeroload_2d_gcadaptive          15.2s  broken = 0 ok (ref 0); dampWork = 0 <= 0 ok
+  PASS  zeroload_2d_potential           16.6s  broken = 0 ok (ref 0); dampWork = 0 <= 0 ok
+  PASS  sizeeffect_2d_zeff1mm3           0.6s  szfac = 0.736079 ok (ref 0.736079)
+  PASS  sizeeffect_2d_zeff1cm3           0.5s  szfac = 0.981577 ok (ref 0.981577)
+  PASS  visc_yan_2d                     15.7s  viscwork = 0.793632 ok (ref 0.793632); broken = 0 ok (ref 0)
+  PASS  dif_yang_litteral_2d             5.3s  edotmed = 99.3556 ok (ref 99.3556); difmed = 1.5157 ok (ref 1.5157)
+  PASS  dif_yang_fig2_2d                 5.1s  edotmed = 40.2157 ok (ref 40.2157); difmed = 1.72029 ok (ref 1.72029)
+  PASS  dif_yang_fig2_plateau_2d         3.8s  edotmed = 315.75 ok (ref 315.75); difmed = 1.85 ok (ref 1.85)
+[suite] TOUT PASSE (19/19)

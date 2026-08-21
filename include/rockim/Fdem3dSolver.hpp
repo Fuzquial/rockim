@@ -85,6 +85,11 @@ private:
         // global Cauchy stress R sig R^T, stored for the adaptive-insertion
         // face criterion (and cheap to keep: written once per step)
         Eigen::Matrix3d sigG = Eigen::Matrix3d::Zero();
+        // WP1 pulverisation (bulkDamage = yang) : endommagement D de
+        // l element et max historique du deplacement effectif h_e*eps_vm.
+        // Restent a 0 (et ne sont pas ecrits) quand la cle est absente.
+        double bdD = 0.0;
+        double bdDm = 0.0;
     };
 
     // Triangular cohesive joint. Properties live per joint (GBM): type 0 =
@@ -401,6 +406,12 @@ private:
     // contrainte d essai et une fois en gonflant le seuil.
     bool viscIns_ = true;
     double viscWork_ = 0.0;                // ventilation, DEJA dans elWork_
+    // WP1 pulverisation (Yang et al. 2026). bdWork_ = ventilation de la
+    // dissipation d endommagement volumique, DEJA comptee dans elWork_.
+    bool bdOn_ = false;
+    double bdD0_ = 1.4e-5, bdDf_ = 4.0e-4, bdDmax_ = 0.9, bdCd_ = 1.0;
+    double bdWork_ = 0.0;
+    long nPulv_ = 0;                       // elements a D = Dmax (lecture)
 
     // ---- DIF de Yang et al. 2025 (leurs eq. 2-3) ------------------------
     // Voir include/rockim/YangDif.hpp pour les formules et la coquille de
