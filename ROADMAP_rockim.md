@@ -130,16 +130,48 @@ Concrètement :
 | B6 | DIF (effet de vitesse) sur les joints | court | le taux de déformation est déjà calculé depuis `bulkViscosity` |
 | **B7** | **Récupérer les données expérimentales d'Aising** | — | pas du code, mais bloquant pour toute validation |
 
-## D. Hydro (OUVERT le 2026-08-14, à lancer APRÈS la clôture de la partie
-## technique — décision Fernando)
+## D. Hydro — **PREMIÈRE ÉTAPE FAITE** (spec 004, 2026-08-19/20)
 
-Couplage hydro-mécanique 2D d'abord : réseau d'écoulement sur le graphe des
-joints (loi cubique, conductivité ∝ ouverture³ — l'ouverture est déjà
-mesurable), pression appliquée aux lèvres, couplage explicite décalé.
-Cible de validation : initiation de fracture depuis un forage pressurisé
-(`confineFaces = bore` = le cas limite à fluide infiniment mobile).
-Prérequis ABSOLUS : fiabilité 3D close (E0-E3), B4 avec travail du
-confinement, checkpoint/restart. Référence marché : module hydro d'Irazu.
+*Ouvert le 2026-08-14. Le modèle retenu n'est PAS celui qui était esquissé
+ici : le réseau d'écoulement à loi cubique a été remplacé par le modèle
+**inviscide** d'AbuAisha et al. 2017 (pression uniforme dans la cavité et les
+fissures), six fois moins cher à écrire et suffisant pour le voisinage du
+puits. La formulation de Lisjak (réseau, loi cubique, sous-cyclage) reste
+spécifiée dans l'historique git de `specs/004-couplage-hydro-mecanique/` et
+pourra devenir `hydroModel = inviscid | network`.*
+
+**Fait** : frontière mouillée par connexité sur les joints rompus, volume de
+cavité par décomposition locale (lacet de Green sur la source + aire propre de
+chaque fissure), pression par compressibilité, chargement en force suiveuse,
+poste `eHydro` au bilan B4, cinq colonnes d'historique. Clés en §5.10 de
+DOCUMENTATION.
+
+**Validé le 2026-08-20** sur le benchmark AbuAisha (`bench_abuaisha/`) :
+
+- **pont entre les deux chemins de chargement** — même pression par
+  `confiningPressure` et par le module hydro : déplacement de paroi identique
+  à **0,000 %**, à −2,0 % de Lamé ;
+- **B2 anisotrope** : rupture à **14,99 MPa** contre 12,0 analytiques et ~12,5
+  chez eux ; bi-aile sur σ′_H conforme à leur fig. 7 ; front mouillé 105 → 747
+  faces, compte exact ;
+- **ouverture des fissures** à 89,0 µm contre 92,7 pour Sneddon (**4 %**), et
+  recoupement de volume à **6 %** entre deux calculs sans code commun.
+
+**⚠️ Un bug de signe a vécu 24 h** dans `hydroForces()` (le fluide serrait la
+cavité). Détail et leçon en §5.10 de DOCUMENTATION. Le contrôle qui devait
+l'attraper existait et mesurait une valeur absolue.
+
+**Reste ouvert, par ordre :**
+
+| # | chantier |
+|---|---|
+| D1 | **expliquer les +25 % sur la pression de rupture.** Suspect nº 1 : `insertion = adaptive` (14 joints existaient au pic sur 284 124) contre l'insertion intrinsèque de Y-Geo. **L'essai qui tranche est une seule clé : `insertion = intrinsic`** |
+| D2 | balayage `dampingLocal`. Deux indices convergent : le pic trop haut, et un champ de vitesse à 1,72 m/s contre leur échelle à 0,12. Leur μ = 5,6·10⁵ vaut 10× le critique de Munjiza pour leurs éléments de 3 mm |
+| D3 | **domaine raffiné plus large.** Les ailes s'arrêtent à 456 mm pour une zone fine à 460 : leur plateau de propagation (F6, 5,5 MPa) n'est pas mesurable en l'état |
+| D4 | écrire dans `history.csv` le nombre de joints INSÉRÉS et le D max — sans quoi l'amorçage réel reste invisible (seul `nBroken`, qui exige D ≥ 1, y figure) |
+| D5 | cas isotrope (cible 14,2 MPa), puis B5 : décalage de seuil dû aux joints préexistants (+5,2 %) |
+| D6 | `hydroModel = network` (Lisjak) si le plateau post-pic et le leak-off deviennent nécessaires |
+| D7 | **checkpoint/restart** — absent, et il a manqué : allonger un run post-pic oblige à tout recalculer depuis t = 0 |
 
 ## C. Robustesse et dette technique (issues de l'audit)
 

@@ -334,6 +334,60 @@ T au-delà de la rupture (rebroyage sans fin — chantier ouvert).
 ⚠️ les propriétés macro d'un réseau régulier NE SONT PAS les propriétés de liaison :
 calibration obligatoire avant tout usage quantitatif.
 
+### 5.10 Couplage hydro-mécanique (spec 004, 2D `fdem`, ajouté le 2026-08-19)
+
+Modèle d'AbuAisha, Eaton, Priest & Wong (JPSE 154, 2017), le module HF du code
+Y-Geo. Hypothèse centrale, qu'ils énoncent en toutes lettres : **la pression du
+fluide est UNIFORME dans la cavité et les fissures** — pas de loi cubique, pas
+de gradient, pas de leak-off, pas de pas de temps hydraulique propre. C'est un
+fluide non visqueux, valable tant qu'on regarde le voisinage du puits.
+
+Ce que ça apporte, et que `confineFaces = bore` ne savait pas faire — son
+commentaire l'avouait, *« faces born from cracking receive nothing »* :
+**la pression SUIT la fissure**.
+
+| clé (défaut) | rôle |
+|---|---|
+| `hydro` (false) | active le couplage. Refusé hors des scénarios qui ont une cavité |
+| `hydroSource` (bore) | `bore` = les faces extérieures dans `boreSelectR` autour de (`boreCX`, `boreCY`) ; `all` = toute la frontière extérieure |
+| `hydroInjection` (rate) | `rate` = pompe à débit, la pression est une SORTIE ; `pressure` = pression imposée, pour les contrôles |
+| `hydroRate` (0) | débit [m³/s par mètre d'épaisseur]. 20 l/s de l'article = `0.02` |
+| `hydroPressure` (0) | pression imposée [Pa], mode `pressure` seulement |
+| `hydroP0` (0) | pression de référence [Pa]. À 0 on travaille en pressions EFFECTIVES |
+| `hydroRamp` (0) | rampe cosinus de la pompe [s]. Même forme que `confiningRamp` |
+| `fluidBulk` (2.2e9) | K_f [Pa]. ⚠️ **l'article ne le donne pas** — 2,2 GPa est l'eau, c'est une hypothèse, et elle fixe toute la chronologie (§8) |
+| `fluidDensity` (1000) | ρ_f0 [kg/m³] |
+
+**Trois grandeurs, une seule variable d'état.** La *frontière mouillée* : les
+faces reliées à la source par un chemin de joints rompus (recherche de
+composante connexe sur les sommets, leur module 2). Le *volume* de cavité, par
+décomposition locale — lacet de Green sur les seules faces source (contour fermé
+par construction) plus, pour chaque fissure mouillée, son aire propre
+L·(ouverture moyenne), forme employée par Lisjak et al. 2017. La *pression*, par
+compressibilité linéaire `p = p0 + K_f·log(m / (V·ρ_f0))`, où la masse injectée
+`m` — remplissage initial COMPRIS — est la variable d'état.
+
+**Le chargement.** La pression pousse le solide à l'opposé de la normale
+sortante, `−p·L·n/2` par nœud, en force suiveuse : exactement la forme de
+`confiningForces()`.
+
+> ⚠️ **Correctif du 2026-08-20 — le signe était inversé.** `hydroForces()`
+> appliquait `+p n` : le fluide serrait la cavité au lieu de l'ouvrir, le forage
+> produisait un breakout aligné sur σ′_h et rompait à 6,6 MPa au lieu de 12.
+> La cause est une mauvaise lecture de leur éq. 7, `F = −(p/2)[y₂−y₁ ; x₂−x₁]`,
+> dont le vecteur n'est pas orthogonal au segment : **la coquille est dans la
+> seconde composante seule, pas dans le signe de tête**, et c'est ce signe de
+> tête, le bon, qui avait été supprimé. Tranché par leur §3.1 (« negative sign
+> to compressive stresses ») et par le maillage CCW de Y-Geo.
+>
+> **Le contrôle censé l'attraper existait et n'a rien vu** : H3
+> (`parker_compare.py`) mesurait `max(y) − min(y)`, une valeur ABSOLUE, et a
+> validé une interpénétration comme une ouverture. *Un contrôle de signe qui
+> passe par une norme ne contrôle pas le signe.* Contrôle de remplacement :
+> `bench_abuaisha/tools/hydro_sign_check.py` — même pression par les deux
+> chemins de chargement, même déplacement de paroi POSITIF (mesuré : écart
+> 0,000 % entre chemins, −2,0 % de Lamé).
+
 ## 6. Sorties
 
 Tous les fichiers vont dans le dossier de sortie. Fréquences : VTU toutes les
@@ -348,6 +402,16 @@ Tous les fichiers vont dans le dossier de sortie. Fréquences : VTU toutes les
 | tension (platens) | + `epsPlaten, epsSpec, epsGauge, nBrokTen, nBrokShear, nFrag, confAchieved, peakLocked` |
 | brazilian | `t, P, Pbot, drive, sigmaT, sigmaTpeak, nBroken, nFrag, sxxC, syyC, peakLocked` |
 | shpb | `t, vDrive, epsM1, epsM2, sxxC, syyC, nBroken, nFrag, nInserted` |
+
+Avec `hydro = on`, cinq colonnes s'AJOUTENT à celles du scénario :
+`hydroP` (pression de puits [Pa] — c'est la courbe de leur fig. 11), `hydroVol`
+(volume de cavité [m³/m]), `hydroMass` (la variable d'état [kg/m]), `hydroNWet`
+(faces mouillées — elle décolle de sa valeur initiale dès qu'un joint rompt, et
+le compte est exact : chaque joint livre ses deux lèvres) et `eHydro` (travail
+du fluide sur le solide, poste séparé du bilan B4). ⚠️ **`nBroken` ne compte que
+les joints ENTIÈREMENT rompus (D ≥ 1)** : l'amorçage réel est plus précoce, et
+seul le champ `damage` des VTU joints le montre. Ni le nombre de joints insérés
+ni l'endommagement maximal ne sont écrits dans `history.csv` — lacune connue.
 
 fdem3d : `t, gripFz, sigma, sigmaPeak, nBroken` (tension) ; percussion/shear comme en
 2D avec les trois composantes (+ `grpZ, grpVz` si `trackGroup`, + les six colonnes
@@ -486,6 +550,25 @@ collectée du banc étant ρ × volume ; `--plot` vue de dessus, `--csv` export)
 `tools/make_unstructured_mesh.py` (maillages simplexes non structurés uniformes via
 Gmsh — `box3d W D H h out.msh [seed]` / `box2d W H h out.msh [seed]` — pour
 `mesh = file` ; `pip install gmsh`).
+
+**Post-traitement du couplage hydro** (`bench_abuaisha/tools/`, 2026-08-20) :
+`hydro_sign_check.py <run_conf> <run_hydro>` (LE contrôle de signe, cf. §5.10),
+`fig_controle_run.py <run>` (planche de diagnostic utilisable sur un run EN
+COURS : pompe, volume, champ, marge à la rupture), `fig_b2.py` et `gif_b2.py`
+(planche livrable et animation trois panneaux), `fig_postpic.py` (phase
+post-pic, avec la limite de zone raffinée tracée — une aile qui touche ce cercle
+est bornée par le MAILLAGE, plus par la physique), `fig_vitesse.py`
+(trajectoires dans le champ de vitesse, format de leurs fig. 12-13),
+`fig_ouverture.py` (**l'ouverture des fissures**).
+
+⚠️ `fig_ouverture.py` reconstruit une donnée que **rockim n'écrit pas** : le
+writer ne pousse qu'UNE lèvre par joint (`lines.push_back({J.a1, J.a2})`). La
+seconde se retrouve sans toucher au solveur — les nœuds sont dédoublés par
+élément selon `n = 3e + k`, les copies d'un même sommet sont confondues à
+l'instant initial, et chaque arête géométrique est alors portée par exactement
+deux éléments (284 124 arêtes internes pour 284 124 joints sur le maillage B2).
+L'ouverture vaut ensuite (b − a)·n, la formule même dont le solveur se sert pour
+son volume de cavité.
 
 **Règle maison maillage (2026-08-11)** : le maillage de BASE de toute étude est
 DÉSORDONNÉ (`mesh = file` non structuré, ou `mesh = voronoi` si le sujet est le

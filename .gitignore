@@ -57,3 +57,11 @@ tunnel_edz/*.pdf
 bench_abuaisha/*.png
 bench_abuaisha/*.gif
 *.gif
+
+# --- extension 2026-08-21 (publication GitHub) -----------------------------
+# meme decision que ci-dessus, etendue aux PDF du banc et aux sauvegardes
+# manuelles pre-correctif (git EST la sauvegarde ; REVERT.md reste local) :
+bench_abuaisha/*.pdf
+*.png
+_backup_*/
+uploads/
