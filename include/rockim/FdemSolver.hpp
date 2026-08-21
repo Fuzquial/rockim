@@ -116,6 +116,10 @@ private:
         // le taux axial, sans facteur de convention. Vaut 0 tant que ni
         // bulkViscosity ni strainRateDIF ne sont armes (branche non calculee).
         double edot = 0.0;
+        // WP1 pulverisation (bulkDamage = yang) : endommagement D et max
+        // historique de delta_m = h_e * eps_vm. 0 si la cle est absente.
+        double bdD = 0.0;
+        double bdDm = 0.0;
         int phase = 0;                     // mineral phase (index in phases_)
         int grain = 0;                     // grain id (voronoi) / 0 (grid)
         MatState st;                       // only used when law_ is set
@@ -855,6 +859,12 @@ private:
     // elastique STOCKEE et la dissipation visqueuse, et le budget devient
     // illisible des que bulkViscosity est arme.
     double viscWork_ = 0.0;
+    // WP1 pulverisation — miroir 2D des membres du 3D. bdWork_ est une
+    // ENERGIE (somme des Y dD), ventilee dans elWork_.
+    bool bdOn_ = false;
+    double bdD0_ = 1.4e-5, bdDf_ = 4.0e-4, bdDmax_ = 0.9, bdCd_ = 1.0;
+    double bdWork_ = 0.0;
+    long nPulv_ = 0;
     double jointWork_ = 0.0;   // tractions des joints (visqueux INCLUS)
     double cundWork_ = 0.0;    // damping local de Cundall (<= 0)
     double lysWork_ = 0.0;     // frontieres absorbantes (ressort+amortisseur)

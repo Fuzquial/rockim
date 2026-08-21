@@ -135,6 +135,31 @@ void FdemSolver::init() {
                                      "il decroit jusqu au cut-off en ft)");
         yangEnv_ = se == "yang";
     }
+    // ---- WP1 : pulverisation (Yang et al. 2026) — portage 2D ------------
+    // Miroir exact du 3D (principe III) : memes cles, meme loi. Voir
+    // Fdem3dSolver pour la doc detaillee. delta_m = h_e * eps_vm avec
+    // eps_zz = 0 (deformation plane) dans le deviateur.
+    {
+        std::string bd = cfg_.gets("bulkDamage", "off");
+        if (bd != "off" && bd != "yang")
+            throw std::runtime_error("bulkDamage must be off | yang "
+                                     "(Yang et al. 2026, eq. 3-4)");
+        bdOn_ = bd == "yang";
+    }
+    if (bdOn_) {
+        bdD0_   = cfg_.getd("bulkDamageDelta0", 1.4e-5);
+        bdDf_   = cfg_.getd("bulkDamageDeltaF", 4.0e-4);
+        bdDmax_ = cfg_.getd("bulkDamageDmax", 0.9);
+        bdCd_   = cfg_.getd("bulkDamageCd", 1.0);
+        if (!(bdD0_ > 0.0) || !(bdDf_ > bdD0_))
+            throw std::runtime_error("bulkDamage : il faut 0 < "
+                                     "bulkDamageDelta0 < bulkDamageDeltaF [m]");
+        if (!(bdDmax_ > 0.0) || bdDmax_ > 1.0 || !(bdCd_ > 0.0))
+            throw std::runtime_error("bulkDamage : bulkDamageDmax dans "
+                                     "]0, 1] et bulkDamageCd > 0");
+        if (cfg_.gets("law", "elastic") != "elastic")
+            throw std::runtime_error("bulkDamage = yang exige law = elastic");
+    }
     mtCap_ = cfg_.getd("meanTensionCapFactor", 3.0);
     srTau_ = cfg_.getd("strainRateTau", 1.0e-6);
     if (difOn_ && !(srTau_ > 0.0))
@@ -2827,8 +2852,10 @@ void FdemSolver::elementForces() {
     // element writes only its OWN three nodes
     double wEl = 0.0;                      // V2/B4 : travail de ce pas
     double wVi = 0.0;                      // dont part VISQUEUSE (ventilation)
+    double wBd = 0.0;                      // dont PULVERISATION (WP1, energie)
+    long nPv = 0;
 #ifdef _OPENMP
-#pragma omp parallel for schedule(static) reduction(+:wEl,wVi)
+#pragma omp parallel for schedule(static) reduction(+:wEl,wVi,wBd,nPv)
 #endif
     for (int eI = 0; eI < (int)el_.size(); ++eI) {
         Elem& e = el_[eI];
@@ -2886,6 +2913,35 @@ void FdemSolver::elementForces() {
         if (!law_ && mtCap_ > 0.0 && pm > mtCap_ * ftP_[e.phase]) {
             double shift = pm - mtCap_ * ftP_[e.phase];
             s(0) -= shift; s(1) -= shift;
+        }
+        // ---- WP1 : pulverisation (Yang et al. 2026, eq. 3-4), miroir 2D --
+        // delta_m = h_e * eps_vm en DEFORMATION PLANE : le deviateur inclut
+        // eps_zz = 0 ; eps(2) est le cisaillement d INGENIEUR (gamma), la
+        // composante tensorielle vaut gamma/2. Dissipation Y dD avec
+        // Y = 1/2 Cd s:eps = 1/2 Cd (s0 e0 + s1 e1 + s2 g) — le produit de
+        // Voigt rend la double contraction exacte. Applique APRES les caps,
+        // AVANT la viscosite, comme en 3D.
+        if (bdOn_ && !law_) {
+            double m3 = (eps(0) + eps(1)) / 3.0;       // tr/3, eps_zz = 0
+            double d2 = (eps(0) - m3) * (eps(0) - m3)
+                      + (eps(1) - m3) * (eps(1) - m3) + m3 * m3
+                      + 0.5 * eps(2) * eps(2);         // 2 (gamma/2)^2
+            double dm = hEl_[eI] * std::sqrt(2.0 / 3.0 * d2);
+            if (dm > e.bdDm) e.bdDm = dm;
+            if (e.bdDm > bdD0_) {
+                double D = bdDf_ * (e.bdDm - bdD0_)
+                         / (e.bdDm * (bdDf_ - bdD0_));
+                if (D > bdDmax_) D = bdDmax_;
+                if (D > e.bdD)
+                    wBd -= 0.5 * bdCd_
+                         * (s(0) * eps(0) + s(1) * eps(1) + s(2) * eps(2))
+                         * e.A0 * thk_ * (D - e.bdD);
+                e.bdD = D;
+                double k = bdCd_ * (1.0 - D);
+                s *= k;
+                e.svm *= k;
+                if (D >= bdDmax_) ++nPv;
+            }
         }
         // ---- viscosite NEWTONIENNE ISOTROPE (eq. 6 de Yan : + 2 mu D) -----
         // NB de vocabulaire : ce n est PAS une  viscosite de volume  au sens
@@ -2964,6 +3020,8 @@ void FdemSolver::elementForces() {
     }
     elWork_ += wEl * dt_;
     viscWork_ += wVi * dt_;                // ventilation, incluse dans elWork_
+    bdWork_ += wBd;                        // WP1 : deja une ENERGIE (Y dD)
+    nPulv_ = nPv;
 }
 
 // ---------------------------------------------------------------------------
@@ -5454,6 +5512,17 @@ void FdemSolver::writeFrame(int frame) {
     }
     char name[64];
     std::snprintf(name, sizeof(name), "/fdem_%04d.vtu", frame);
+    if (bdOn_) {
+        std::vector<double> bdv(el_.size());
+        for (std::size_t e = 0; e < el_.size(); ++e) bdv[e] = el_[e].bdD;
+        vtk::writeTriMesh(out_ + name, pts, tris,
+                          {{"vonMises", &svm}, {"fragment", &frag},
+                           {"phase", &phs}, {"grain", &grn},
+                           {"sigmaXX", &sxx}, {"sigmaYY", &syy},
+                           {"sigmaXY", &sxy}, {"epsXX", &exx},
+                           {"bulkD", &bdv}},
+                          {{"velocity", &vel}});
+    } else
     vtk::writeTriMesh(out_ + name, pts, tris,
                       {{"vonMises", &svm}, {"fragment", &frag},
                        {"phase", &phs}, {"grain", &grn},
@@ -5528,6 +5597,7 @@ void FdemSolver::historyHeader(std::ostream& os) const {
         // compte que D >= 1, soit un evenement TARDIF : sur le bench
         // AbuAisha l insertion precede la premiere rupture de ~300 us.
         if (adaptive_) os << ",nInserted,nDamaging";
+        if (bdOn_) os << ",nPulv,bdWork";
         os << "\n";
         return;
     }
@@ -5554,6 +5624,7 @@ void FdemSolver::historyHeader(std::ostream& os) const {
     // est ingouvernable. hydroP est LA courbe de leur fig. 11.
     if (hydroOn_) os << ",hydroP,hydroVol,hydroMass,hydroNWet,eHydro";
     if (adaptive_) os << ",nInserted,nDamaging";
+    if (bdOn_) os << ",nPulv,bdWork";
     os << "\n";
 }
 
@@ -5604,6 +5675,7 @@ void FdemSolver::historyRow(std::ostream& os) const {
                << "," << hydroNWet_ << "," << hydroWork_;
         if (adaptive_) { long ni, nd; countInserted(ni, nd);
                          os << "," << ni << "," << nd; }
+        if (bdOn_) os << "," << nPulv_ << "," << bdWork_;
         os << "\n";
         return;
     }
@@ -5632,6 +5704,7 @@ void FdemSolver::historyRow(std::ostream& os) const {
            << "," << hydroNWet_ << "," << hydroWork_;
     if (adaptive_) { long ni, nd; countInserted(ni, nd);
                      os << "," << ni << "," << nd; }
+    if (bdOn_) os << "," << nPulv_ << "," << bdWork_;
     os << "\n";
 }
 
@@ -5747,6 +5820,11 @@ void FdemSolver::finalize() {
                           : "[FAIL - le terme visqueux a INJECTE de l energie]")
                       << ". VENTILATION : deja comptee dans la ligne "
                          "ci-dessus, pas un poste de plus.\n";
+        if (bdOn_)
+            std::cout << "[FDEM]      dont pulverisation (bulkDamage) : "
+                      << -bdWork_ << " J/m dissipes, " << nPulv_
+                      << " elements a D = Dmax. VENTILATION : deja "
+                         "comptee dans le poste elements." << std::endl;
         std::cout << "[FDEM]   joints       : " << -(jointWork_ - dampWork_)
                   << " J/m cohesif (fissuration + stocke), dashpot "
                   << -dampWork_ << " J/m\n"
