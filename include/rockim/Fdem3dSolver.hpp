@@ -556,6 +556,10 @@ private:
     std::vector<int> elemGroup_;           // groupe par element (vide = mono)
     std::vector<int> tetGroupTmp_;         // par tet, pour buildFromTets
     std::vector<std::string> groupName_;
+    // WP2 : matrice (nGroups x nGroups) des paires de corps LIES par
+    // groupBond.<A>.<B> = joints. Vide ou 0 partout = aucun joint
+    // inter-corps, comportement historique.
+    std::vector<char> gbond_;
     int nGroups_ = 1;
     bool toolNone_ = false;                // toolShape = none : outil maille
     int trackGroup_ = -1;                  // groupe suivi dans history.csv

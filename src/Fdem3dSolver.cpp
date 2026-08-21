@@ -663,6 +663,28 @@ void Fdem3dSolver::buildMeshFile() {
         throw std::runtime_error("'phases' avec mesh = file exige des groupes "
             "physiques nommes ($PhysicalNames, dim 3) : sans groupes le "
             "maillage est un seul corps et une seule phase s'applique");
+    // ---- WP2 : paires de corps LIES (groupBond.<A>.<B> = joints) --------
+    // L interface conforme entre deux volumes physiques nommes recoit des
+    // joints cohesifs (brasage insert/bit) au lieu d etre remise au contact.
+    // La cle accepte les deux ordres de noms. Absente : rien ne change.
+    gbond_.assign((std::size_t)nGroups_ * nGroups_, 0);
+    for (int g1 = 0; g1 < nGroups_; ++g1)
+        for (int g2 = g1 + 1; g2 < nGroups_; ++g2) {
+            std::string k1 = "groupBond." + groupName_[g1] + "."
+                           + groupName_[g2];
+            std::string k2 = "groupBond." + groupName_[g2] + "."
+                           + groupName_[g1];
+            std::string bv = cfg_.gets(k1, cfg_.gets(k2, ""));
+            if (bv.empty()) continue;
+            if (bv != "joints")
+                throw std::runtime_error(k1 + " : seule la valeur 'joints' "
+                    "est supportee (interface cohesive conforme)");
+            gbond_[(std::size_t)g1 * nGroups_ + g2] = 1;
+            gbond_[(std::size_t)g2 * nGroups_ + g1] = 1;
+            std::cout << "[FDEM3D] groupBond: " << groupName_[g1] << " <-> "
+                      << groupName_[g2] << " — interface JOINTE (joints de "
+                      "frontiere, proprietes GBM moyennes x gb*)\n";
+        }
     tetGroupTmp_.assign(tets.size(), 0);
     if (!physVol.empty())
         for (std::size_t k = 0; k < tets.size(); ++k) {
@@ -709,6 +731,14 @@ void Fdem3dSolver::buildMeshFile() {
     elemGroup_.assign(el_.size(), 0);
     for (std::size_t e = 0; e < el_.size(); ++e)
         elemGroup_[e] = tetGroupTmp_[e];
+    {   // WP2 : bilan des joints d interface entre corps lies
+        long nb = 0;
+        for (const auto& J : jt_)
+            if (elemGroup_[J.eA] != elemGroup_[J.eB]) ++nb;
+        if (nb > 0)
+            std::cout << "[FDEM3D] groupBond: " << nb
+                      << " joints d interface crees entre corps lies\n";
+    }
     // vitesse initiale par groupe : groupVel.<nom> = "vx vy vz"
     for (int g = 0; g < nGroups_; ++g) {
         std::string vs = cfg_.gets("groupVel." + groupName_[g], "");
@@ -865,9 +895,16 @@ void Fdem3dSolver::buildFromTets(const std::vector<Eigen::Vector3d>& vpos,
         if (lst.size() == 2) {
             // V1 — physical groups : AUCUN joint entre deux groupes ; les
             // deux faces deviennent exterieures et l'interface est portee
-            // par le contact general (penalite ou potentiel)
+            // par le contact general (penalite ou potentiel).
+            // WP2 : SAUF si la paire est declaree liee (groupBond.<A>.<B> =
+            // joints) — l interface conforme recoit alors des joints
+            // cohesifs ordinaires, et rebindVertex liera ses noeuds comme
+            // partout ailleurs (insertion adaptative comprise).
             if (!tetGroupTmp_.empty()
-                && tetGroupTmp_[lst[0].elem] != tetGroupTmp_[lst[1].elem]) {
+                && tetGroupTmp_[lst[0].elem] != tetGroupTmp_[lst[1].elem]
+                && !(!gbond_.empty()
+                     && gbond_[(std::size_t)tetGroupTmp_[lst[0].elem]
+                               * nGroups_ + tetGroupTmp_[lst[1].elem]])) {
                 exterior_.push_back({lst[0].elem, lst[0].nn});
                 exterior_.push_back({lst[1].elem, lst[1].nn});
                 continue;
