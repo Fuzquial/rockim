@@ -4663,8 +4663,30 @@ void FdemSolver::setupHydro() {
                                  "brazilian ou shpb");
     fluidK_    = cfg_.getd("fluidBulk", 2.2e9);
     fluidRho0_ = cfg_.getd("fluidDensity", 1000.0);
+    // ESSAI 2 (2026-08-20). Seuil d endommagement a partir duquel une
+    // interface conduit le fluide. Defaut 1.0 = comportement historique,
+    // seules les interfaces ROMPUES sont mouillees ; le chemin est alors
+    // bit-identique. Poser 0.0 mouille toute interface inseree des que
+    // son endommagement demarre, ce qui supprime l incubation a sec.
+    wetDmin_ = cfg_.getd("hydroWetDamage", 1.0);
+    if (wetDmin_ < 0.0 || wetDmin_ > 1.0)
+        throw std::runtime_error("hydroWetDamage doit etre dans [0, 1] : "
+                                 "1 = seules les interfaces rompues "
+                                 "conduisent (defaut), 0 = toute "
+                                 "interface inseree conduit");
     hydroP0_   = cfg_.getd("hydroP0", 0.0);
     hydroRamp_ = cfg_.getd("hydroRamp", 0.0);
+    // ESSAI 3 (2026-08-21). Protocole d AbuAisha 2017, section 3.2 : le pas
+    // geostatique et l excavation sont ENTIEREMENT anterieurs a l injection.
+    // Avant hydroStart la pompe est a l arret, p = p0, et la masse de fluide
+    // est re-basee en continu sur le volume COURANT de la cavite, si bien que
+    // l injection demarre de l etat excave et converge — pas du volume de
+    // maillage a t = 0. Defaut 0 = comportement historique, bit-identique.
+    hydroStart_ = cfg_.getd("hydroStart", 0.0);
+    if (hydroStart_ < 0.0)
+        throw std::runtime_error("hydroStart doit etre >= 0 [s] : retard du\n"
+                                 "  demarrage de la pompe (l excavation doit\n"
+                                 "  etre bouclee avant cet instant)");
     if (!(fluidK_ > 0.0) || !(fluidRho0_ > 0.0))
         throw std::runtime_error("fluidBulk et fluidDensity doivent etre > 0");
     std::string inj = cfg_.gets("hydroInjection", "rate");
@@ -4738,6 +4760,8 @@ void FdemSolver::setupHydro() {
               << (hydroRateMode_ ? " m3/s/m)" : " Pa)")
               << (hydroRamp_ > 0.0 ? ", rampe " : "")
               << (hydroRamp_ > 0.0 ? std::to_string(hydroRamp_) + " s" : "")
+              << (hydroStart_ > 0.0 ? ", demarrage a " : "")
+              << (hydroStart_ > 0.0 ? std::to_string(hydroStart_) + " s" : "")
               << "\n";
 }
 
@@ -4750,8 +4774,24 @@ void FdemSolver::setupHydro() {
 // l'union-find, pas des noeuds dupliques), dont les aretes sont les joints
 // rompus. La machinerie de sommets existe deja : vOf_ et nVert_.
 void FdemSolver::updateWetBoundary() {
-    // (1) propagation de la mouillabilite, seulement si la topologie a change
-    if (wetStamp_ != nBroken_ || wetEdges_.empty()) {
+    // (1) propagation de la mouillabilite, seulement si la topologie a change.
+    //
+    // ESSAI 2 (2026-08-20). Le timbre historique est nBroken_ : il suffit tant
+    // que seule une interface ROMPUE conduit, puisque la topologie mouillee ne
+    // peut alors changer qu a une rupture. Des que wetDmin_ < 1 cette equivalence
+    // tombe — une interface se met a conduire quand son endommagement franchit
+    // le seuil, sans rupture — et un timbre sur nBroken_ laisserait le front
+    // mouille fige entre deux ruptures, ce qui viderait l essai de son objet.
+    // On timbre alors sur le nombre d interfaces conductrices. La passe est
+    // O(nJoints) mais n a lieu que dans ce mode.
+    long wetKey = nBroken_;
+    if (wetDmin_ < 1.0) {
+        long nc = 0;
+        for (const auto& J : jt_)
+            if (!J.bonded && J.D >= wetDmin_) ++nc;
+        wetKey = nc;
+    }
+    if (wetStamp_ != wetKey || wetEdges_.empty()) {
         std::vector<char> wetV(std::max(1, nVert_), 0);
         for (const auto& be : hydroSrc_) {
             wetV[vOf_[be.na]] = 1;
@@ -4764,7 +4804,10 @@ void FdemSolver::updateWetBoundary() {
         while (changed) {
             changed = false;
             for (const auto& J : jt_) {
-                if (J.bonded || J.D < 1.0) continue;   // joint intact : etanche
+                // ESSAI 2 : seuil reglable. Avec wetDmin_ = 1 (defaut)
+                // seule une interface ROMPUE conduit ; abaisser le seuil
+                // fait conduire les interfaces en adoucissement.
+                if (J.bonded || J.D < wetDmin_) continue;  // etanche
                 int v1 = vOf_[J.a1], v2 = vOf_[J.a2];
                 if (wetV[v1] && !wetV[v2]) { wetV[v2] = 1; changed = true; }
                 else if (wetV[v2] && !wetV[v1]) { wetV[v1] = 1; changed = true; }
@@ -4772,17 +4815,19 @@ void FdemSolver::updateWetBoundary() {
         }
         wetEdges_ = hydroSrc_;
         wetJoint_.assign(jt_.size(), 0);
+        wetJointIdx_.clear();
         for (std::size_t jI = 0; jI < jt_.size(); ++jI) {
             const Joint& J = jt_[jI];
-            if (J.bonded || J.D < 1.0) continue;
+            if (J.bonded || J.D < wetDmin_) continue;      // ESSAI 2
             if (!(wetV[vOf_[J.a1]] && wetV[vOf_[J.a2]])) continue;
             wetJoint_[jI] = 1;
+            wetJointIdx_.push_back((int)jI);
             // les deux levres, orientees chacune vers l'exterieur de SON
             // element — meme convention que le cache deadList_ du contact
             wetEdges_.push_back({J.eA, J.a1, J.a2});
             wetEdges_.push_back({J.eB, J.b2, J.b1});
         }
-        wetStamp_ = nBroken_;
+        wetStamp_ = wetKey;
         hydroNWet_ = (long)wetEdges_.size();
         // --- diagnostic H5, temporaire : pourquoi la cavite ne grandit pas ---
         static int dbg = 0;
@@ -4884,8 +4929,8 @@ void FdemSolver::updateWetBoundary() {
     double vol = -0.5 * A2 * thk_;
     // (b) les fissures mouillees, aire propre de chaque levre ecartee
     double vCrack = 0.0;
-    for (const auto& J : jt_) {
-        if (J.bonded || J.D < 1.0 || !wetJoint_[&J - &jt_[0]]) continue;
+    for (int jI : wetJointIdx_) {                      // liste, pas balayage
+        const Joint& J = jt_[jI];
         Eigen::Vector2d P = 0.5 * (X0_[J.a1] + u_[J.a1] + X0_[J.b1] + u_[J.b1]);
         Eigen::Vector2d Q = 0.5 * (X0_[J.a2] + u_[J.a2] + X0_[J.b2] + u_[J.b2]);
         Eigen::Vector2d e = Q - P;
@@ -4899,19 +4944,40 @@ void FdemSolver::updateWetBoundary() {
     }
     hydroVol_ = vol + vCrack;
     hydroVolCrack_ = vCrack;
-    // Le defaut de fermeture, rapporte au perimetre. Un contour ferme donne
-    // zero machine ; au-dela de 1e-6 le volume n'est plus une aire.
-    hydroClose_ = (perim > 0.0) ? closure.norm() / perim : 0.0;
-    if (hydroClose_ > 1e-6 && !hydroCloseWarned_) {
+    // Le defaut de fermeture du lacet de la SOURCE (partie (a) ci-dessus).
+    //
+    // (!) CORRECTIF DU 2026-08-20 — L'ECHELLE DE REFERENCE ETAIT FAUSSE, et
+    // l'alarme criait au loup sur des runs sains : run_hf_diag2 et
+    // run_hfp_aniso la declenchaient avec les SEULES faces du forage, un
+    // anneau ferme par construction, sans une seule levre de fissure.
+    //
+    // La raison : en FDEM les noeuds sont INTEGRALEMENT DEDOUBLES — 3 par
+    // triangle, le log le dit (41 511 noeuds pour 13 837 triangles). Deux
+    // faces consecutives de la paroi appartiennent a deux elements differents
+    // et ne partagent AUCUN indice de noeud : la somme des segments orientes
+    // ne mesure pas un defaut de fermeture topologique, elle mesure la somme
+    // des OUVERTURES ELASTIQUES des joints de l'anneau. Elle ne peut donc pas
+    // descendre au zero machine, et le seuil de 1e-6 rapporte au perimetre
+    // etait SOUS le bruit physique (~1e-8 m par joint sous quelques MPa).
+    //
+    // La bonne echelle est la longueur MOYENNE D'UNE FACE : un contour
+    // reellement ouvert laisse un trou de l'ordre d'une face (rapport ~ 1),
+    // la respiration elastique des joints donne ~ 3e-5. Seuil a 0,05 : plus
+    // d'un ordre de grandeur de marge des deux cotes.
+    double lFace = (!hydroSrc_.empty()) ? perim / (double)hydroSrc_.size() : 0.0;
+    hydroClose_ = (lFace > 0.0) ? closure.norm() / lFace : 0.0;
+    if (hydroClose_ > 0.05 && !hydroCloseWarned_) {
         hydroCloseWarned_ = true;
-        std::cout << "\n[HYDRO] *** CONTOUR NON FERME *** defaut de fermeture "
-                  << hydroClose_ << " (rapporte au perimetre), a t = " << t_
-                  << " s, " << wetEdges_.size() << " faces mouillees.\n"
+        std::cout << "\n[HYDRO] *** CONTOUR SOURCE NON FERME *** defaut de "
+                     "fermeture " << hydroClose_ << " fois la longueur d'une "
+                     "face, a t = " << t_ << " s, " << hydroSrc_.size()
+                  << " faces source.\n"
                      "[HYDRO] Le lacet ne mesure alors PAS une aire : le volume "
-                     "de cavite, donc la pression, sont sans valeur. Cause "
-                     "probable : les levres d'une fissure ont ete ajoutees sans "
-                     "que le contour se referme (bouche de fissure, pointe non "
-                     "dedoublee, ou orientation inversee).\n\n";
+                     "de la cavite SOURCE, donc la pression, sont sans valeur. "
+                     "Cause probable : la selection boreSelectR ne prend pas "
+                     "tout le pourtour, ou l'anneau est coupe par une face "
+                     "manquante. (Les levres de fissure ne passent PAS par ce "
+                     "lacet : elles sont comptees localement, terme (b).)\n\n";
     }
 }
 
@@ -4919,9 +4985,18 @@ void FdemSolver::updateWetBoundary() {
 void FdemSolver::hydroForces() {
     if (!hydroOn_) return;
     updateWetBoundary();
+    const double tInj = t_ - hydroStart_;   // horloge de l injection (essai 3)
+    if (tInj < 0.0) {
+        // Pompe a l arret : phase geostatique + excavation du protocole de
+        // l article. La masse SUIT le volume courant pour que p reste a p0
+        // exactement — sans ce re-basage, la convergence de paroi pendant
+        // l excavation comprimerait un fluide que personne n injecte encore.
+        hydroP_ = hydroP0_;
+        hydroMass_ = hydroVol_ * fluidRho0_;
+    } else {
     double ramp = 1.0;
-    if (hydroRamp_ > 0.0 && t_ < hydroRamp_)
-        ramp = 0.5 * (1.0 - std::cos(M_PI * t_ / hydroRamp_));
+    if (hydroRamp_ > 0.0 && tInj < hydroRamp_)
+        ramp = 0.5 * (1.0 - std::cos(M_PI * tInj / hydroRamp_));
     if (hydroRateMode_) {
         hydroMass_ += ramp * hydroRate_ * fluidRho0_ * dt_;
         // leur eq. 6 ; le plancher evite un log(<=0) si la cavite se ferme
@@ -4932,9 +5007,29 @@ void FdemSolver::hydroForces() {
         hydroMass_ = hydroVol_ * fluidRho0_
                    * std::exp((hydroP_ - hydroP0_) / fluidK_);  // pour la sortie
     }
+    }
     // chargement : la pression pousse le solide a l'OPPOSE de la normale
     // sortante, moitie par noeud — meme forme que confiningForces(). Voir
     // l'en-tete au sujet de la coquille de leur eq. 7.
+    //
+    // (!) CORRECTIF DU 2026-08-20 — LE SIGNE ETAIT INVERSE. Cette boucle
+    // appliquait +p n au lieu de -p n : le fluide SERRAIT la cavite au lieu
+    // de l'ouvrir. Le forage produisait un breakout aligne sur sigma'_h et
+    // rompait a 6,6 MPa au lieu des 12 MPa de leur eq. 10.
+    //
+    // La cause est une mauvaise lecture de leur eq. 7. Elle s'ecrit
+    //     F_p12 = -(p/2) [y2-y1 ; x2-x1]
+    // dont le vecteur n'est PAS orthogonal au segment (produit scalaire avec
+    // (dx, dy) = 2 dx dy). La coquille est dans la SECONDE COMPOSANTE seule,
+    // pas dans le signe de tete : la forme juste est
+    //     F_p12 = -(p/2) [y2-y1 ; -(x2-x1)] = -(p/2) L n,   n = (dy,-dx)/L
+    // Deux elements de l'article le tranchent : (a) leur section 3.1 pose
+    // « negative sign to compressive stresses », donc une pression p > 0
+    // impose sigma = -p I et la traction t = sigma.n = -p n ; (b) Y-Geo
+    // triangule en CCW (Munjiza 2004 ; Mahabadi 2012 ; Lisjak 2014a), donc
+    // leur (1 -> 2) est le parcours CCW et (dy, -dx) est bien sortant, comme
+    // ici. Le moins de tete de leur eq. 7 etait donc PHYSIQUE ; c'est lui
+    // qu'on avait supprime en croyant corriger la coquille.
     for (const auto& be : wetEdges_) {
         Eigen::Vector2d P = X0_[be.na] + u_[be.na];
         Eigen::Vector2d Q = X0_[be.nb] + u_[be.nb];
@@ -4942,7 +5037,7 @@ void FdemSolver::hydroForces() {
         double L = d.norm();
         if (L < 1e-14) continue;
         Eigen::Vector2d n(d.y() / L, -d.x() / L);      // sortante du solide
-        Eigen::Vector2d half = 0.5 * hydroP_ * L * thk_ * n;
+        Eigen::Vector2d half = -0.5 * hydroP_ * L * thk_ * n;  // vers l'INTERIEUR du solide
         f_[be.na] += half;
         f_[be.nb] += half;
         hydroWork_ += dt_ * (half.dot(v_[be.na]) + half.dot(v_[be.nb]));
@@ -5428,6 +5523,11 @@ void FdemSolver::historyHeader(std::ostream& os) const {
         else
             os << "t,gripFy,sigma,sigmaPeak,nBroken";
         if (hydroOn_) os << ",hydroP,hydroVol,hydroMass,hydroNWet,eHydro";
+        // Essai 0 : sans ces deux compteurs, la pression d insertion
+        // n est connue qu a l espacement des trames pres. nBroken ne
+        // compte que D >= 1, soit un evenement TARDIF : sur le bench
+        // AbuAisha l insertion precede la premiere rupture de ~300 us.
+        if (adaptive_) os << ",nInserted,nDamaging";
         os << "\n";
         return;
     }
@@ -5453,7 +5553,25 @@ void FdemSolver::historyHeader(std::ostream& os) const {
     // FR-010 : une cavite qui se remplit sans qu on puisse la regarder
     // est ingouvernable. hydroP est LA courbe de leur fig. 11.
     if (hydroOn_) os << ",hydroP,hydroVol,hydroMass,hydroNWet,eHydro";
+    if (adaptive_) os << ",nInserted,nDamaging";
     os << "\n";
+}
+
+// Essai 0 (2026-08-20). Deux compteurs d etat des interfaces, pour
+// l historique. nInserted = interfaces effectivement creees par le
+// critere extrinseque (bonded = false) ; nDamaging = interfaces en
+// cours d adoucissement, 0 < D < 1, celles qui travaillent SANS
+// recevoir la pression de fluide (updateWetBoundary les exclut).
+// Balayage O(nJoints) appele une fois par ligne d historique, soit
+// ~2000 fois par run : negligeable devant le meme balayage effectue
+// a chaque pas par jointForces().
+void FdemSolver::countInserted(long& nIns, long& nDam) const {
+    nIns = 0; nDam = 0;
+    for (const auto& J : jt_) {
+        if (J.bonded) continue;
+        ++nIns;
+        if (J.D > 0.0 && J.D < 1.0) ++nDam;
+    }
 }
 
 void FdemSolver::historyRow(std::ostream& os) const {
@@ -5484,6 +5602,8 @@ void FdemSolver::historyRow(std::ostream& os) const {
         if (hydroOn_)
             os << "," << hydroP_ << "," << hydroVol_ << "," << hydroMass_
                << "," << hydroNWet_ << "," << hydroWork_;
+        if (adaptive_) { long ni, nd; countInserted(ni, nd);
+                         os << "," << ni << "," << nd; }
         os << "\n";
         return;
     }
@@ -5510,6 +5630,8 @@ void FdemSolver::historyRow(std::ostream& os) const {
     if (hydroOn_)
         os << "," << hydroP_ << "," << hydroVol_ << "," << hydroMass_
            << "," << hydroNWet_ << "," << hydroWork_;
+    if (adaptive_) { long ni, nd; countInserted(ni, nd);
+                     os << "," << ni << "," << nd; }
     os << "\n";
 }
 

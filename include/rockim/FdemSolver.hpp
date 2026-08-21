@@ -77,6 +77,9 @@ public:
     void writeFrame(int frame) override;
     void historyHeader(std::ostream&) const override;
     void historyRow(std::ostream&) const override;
+    // Essai 0 : compteurs d etat des interfaces pour
+    // l historique (nInserted, nDamaging). Voir .cpp.
+    void countInserted(long& nIns, long& nDam) const;
     // Early stop of the brazilian test once the post-peak load drop has been
     // seen (brazilianStopAfterPeak). Off by default: the run length stays T.
     bool finished() const override;
@@ -1005,13 +1008,32 @@ private:
     //     ou m, la masse injectee, est LA variable d'etat.
     // La pression charge ensuite les faces mouillees en force suiveuse.
     //
-    // ⚠️ Leur eq. 7 s'ecrit F = -(p/2) [y2-y1 ; x2-x1]. Ce vecteur n'est PAS
-    // orthogonal au segment (son produit scalaire avec (dx, dy) vaut
-    // 2 dx dy) : il y a une coquille de rotation ou de signe. On applique donc
-    // la forme PHYSIQUE — la pression pousse le solide a l'oppose de la
-    // normale sortante, moitie par noeud, comme confiningForces() — et le
-    // controle V3 (une fissure sous pression doit S'OUVRIR) leve toute
-    // ambiguite de signe.
+    // (!) LA COQUILLE DE LEUR EQ. 7, ET CE QU'ELLE A COUTE. Elle s'ecrit
+    //     F_p12 = -(p/2) [y2-y1 ; x2-x1]
+    // et ce vecteur n'est PAS orthogonal au segment (produit scalaire avec
+    // (dx, dy) = 2 dx dy). Le premier lecteur en a conclu « coquille de
+    // rotation OU de signe », a voulu appliquer « la forme physique », et a
+    // supprime le moins de tete. C'etait l'inverse : LE MOINS ETAIT JUSTE, la
+    // coquille est dans la SECONDE COMPOSANTE seule. La forme correcte est
+    //     F_p12 = -(p/2) [y2-y1 ; -(x2-x1)] = -(p/2) L n,   n = (dy,-dx)/L
+    // soit exactement ce que fait confiningForces(). Deux elements de
+    // l'article le tranchent : (a) leur section 3.1 pose « negative sign to
+    // compressive stresses », donc p > 0 impose sigma = -p I et la traction
+    // t = sigma.n = -p n ; (b) Y-Geo triangule en CCW (Munjiza 2004 ;
+    // Mahabadi 2012 ; Lisjak 2014a), donc leur (1 -> 2) est le parcours CCW
+    // et (dy, -dx) est bien sortant, comme ici.
+    //
+    // Le signe inverse a vecu du 19 au 20/08 : le fluide SERRAIT la cavite,
+    // le forage faisait un breakout aligne sur sigma'_h et rompait a 6,6 MPa
+    // au lieu de 12. Corrige le 2026-08-20 dans hydroForces().
+    //
+    // LA LECON DE CONTROLE. Le garde-fou annonce ici — H3, le pont Parker —
+    // EXISTAIT et a ete passe : il n'a rien vu, parce que parker_compare.py
+    // mesurait max(y) - min(y), une valeur ABSOLUE, aveugle au signe. Un
+    // controle de signe qui passe par une norme ne controle pas le signe.
+    // (Au passage : le label « V3 » qui figurait ici est mort. La spec 004 ne
+    // definit plus que H1-H5 pour le fluide et F1-F8 pour les figures ; V1-V8
+    // ne survit que dans son tableau d'effort.)
     //
     // UNE SEULE CAVITE pour l'instant (decision F. Uzquiano du 19/08) : leur
     // modele suppose une source unique. Les structures sont dimensionnees pour
@@ -1020,23 +1042,41 @@ private:
     double fluidK_ = 2.2e9;                // K_f [Pa]
     double fluidRho0_ = 1000.0;            // rho_f0 [kg/m3]
     double hydroP0_ = 0.0;                 // p_0 [Pa]
+    // ESSAI 2 : seuil d endommagement de conduction du fluide.
+    // 1.0 (defaut) = seules les interfaces rompues conduisent.
+    double wetDmin_ = 1.0;                 // cle hydroWetDamage
     bool hydroRateMode_ = true;            // rate | pressure
     double hydroRate_ = 0.0;               // [m3/s par m d'epaisseur]
     double hydroPimp_ = 0.0;               // pression imposee [Pa]
     double hydroRamp_ = 0.0;               // rampe cosinus de la pompe [s]
+    // ESSAI 3 : instant de demarrage de la pompe [s]. 0 (defaut) =
+    // demarrage a t = 0, bit-identique. > 0 = protocole de l article
+    // (injection apres le pas geostatique et l excavation).
+    double hydroStart_ = 0.0;              // cle hydroStart
     double hydroMass_ = 0.0;               // LA variable d'etat [kg/m]
     double hydroP_ = 0.0, hydroVol_ = 0.0, hydroVol0_ = 0.0;
     double hydroWork_ = 0.0;               // poste SEPARE du bilan B4
     long hydroNWet_ = 0;                   // faces mouillees (sortie)
     long wetStamp_ = -1;                   // nBroken_ au dernier mouillage
-    double hydroClose_ = 0.0;              // defaut de FERMETURE du contour,
-                                           // rapporte au perimetre. Un lacet
-                                           // ne mesure une aire que si le
-                                           // contour est ferme : au-dela de
-                                           // 1e-6 le volume n'a pas de sens.
+    double hydroClose_ = 0.0;              // defaut de FERMETURE du lacet de
+                                           // la SOURCE, rapporte a la longueur
+                                           // MOYENNE D'UNE FACE (et non au
+                                           // perimetre : les noeuds FDEM sont
+                                           // dedoubles, l'anneau ne peut pas
+                                           // fermer au zero machine). Un lacet
+                                           // ne mesure une aire que ferme :
+                                           // au-dela de 0,05 le volume de la
+                                           // cavite source n'a pas de sens.
     bool hydroCloseWarned_ = false;
     double hydroVolCrack_ = 0.0;           // part FISSURES du volume
     std::vector<char> wetJoint_;           // joint mouille (par joint)
+    std::vector<int> wetJointIdx_;         // ... et leur LISTE. Le volume
+                                           // est recalcule a CHAQUE pas :
+                                           // parcourir les 284 124 joints
+                                           // pour n'en trouver aucun coutait
+                                           // 50x le temps du run (mesure du
+                                           // 2026-08-20). On n'itere que sur
+                                           // la liste, vide avant fissuration.
     std::vector<BEdge> hydroSrc_;          // faces SOURCE (le forage)
     std::vector<BEdge> wetEdges_;          // frontiere mouillee courante
     void setupHydro();
