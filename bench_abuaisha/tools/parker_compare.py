@@ -15,6 +15,10 @@
 #
 # Si la cavite, la connexite et le SIGNE du chargement sont justes, les deux
 # courbes doivent se superposer. Tout ecart est un bug, pas une physique.
+
+# MESURE SIGNEE depuis le 2026-08-20 : une ouverture NEGATIVE est une
+# interpenetration, donc un signe de chargement inverse. Avant cette date la
+# mesure etait une valeur absolue et ce test ne pouvait pas voir ce bug-la.
 #
 # La solution analytique (Parker 1981, p. 33), en deformation plane :
 #     w(x) = 2 sigma' (1 - nu^2) / E * sqrt(l^2 - x^2)
@@ -44,24 +48,49 @@ plt.rcParams.update({"font.size": 11, "figure.dpi": 110})
 
 
 def aperture(run, half):
-    """Ouverture levre a levre, mesuree comme dans parker_check.py."""
+    """Ouverture SIGNEE levre a levre. Positive = la fissure S'OUVRE.
+
+    (!) CORRECTIF DU 2026-08-20. Cette fonction rendait `g.max() - g.min()`,
+    une valeur ABSOLUE : elle etait aveugle au signe et a valide une
+    INTERPENETRATION comme une ouverture. C'est ce qui a fait passer H3 sur un
+    module hydro dont le chargement etait de signe inverse (cf. le correctif
+    de hydroForces(), src/FdemSolver.cpp).
+
+    Les deux levres etant CONFONDUES a t = 0, leur position initiale ne peut
+    pas les distinguer. Le discriminant est donc la GEOMETRIE DE L'ELEMENT
+    PORTEUR : en FDEM chaque triangle possede ses propres noeuds (3 par
+    element), et le centroide du triangle est d'un cote ou de l'autre de la
+    ligne de discontinuite. On mesure alors
+
+        w = <y des noeuds de la levre HAUTE> - <y des noeuds de la levre BASSE>
+
+    qui change de signe si les levres s'interpenetrent.
+    """
     el = [f for f in sorted(glob.glob(os.path.join(run, "fdem_[0-9]*.vtu")))
           if complete(f)]
     if not el:
         raise SystemExit(f"aucune trame complete dans {run}")
-    P0, _, _ = read_vtu(el[0], [])
+    P0, C, _ = read_vtu(el[0], [])
     P, _, _ = read_vtu(el[-1], [])
     cy = 0.5 * (P0[:, 1].max() + P0[:, 1].min())
     cx = 0.5 * (P0[:, 0].max() + P0[:, 0].min())
+
+    # cote de chaque noeud = signe de (y du centroide de SON triangle - cy).
+    # Les noeuds etant dedoubles par element, chacun est ecrit exactement une
+    # fois par cette affectation.
+    side = np.zeros(len(P0))
+    side[C.ravel()] = np.repeat(P0[C, 1].mean(axis=1), C.shape[1]) - cy
+
     on = (np.abs(P0[:, 1] - cy) < 1e-9) & (np.abs(P0[:, 0] - cx) <= half + 1e-9)
-    xs, ys = P0[on, 0], P[on, 1]
+    xs, ys, sd = np.round(P0[on, 0], 9), P[on, 1], side[on]
     xa, wa = [], []
-    for xv in np.unique(np.round(xs, 9)):
-        g = ys[np.abs(np.round(xs, 9) - xv) < 1e-12]
-        if len(g) < 2:
-            continue
+    for xv in np.unique(xs):
+        g = np.abs(xs - xv) < 1e-12
+        up, lo = g & (sd > 0), g & (sd < 0)
+        if not up.any() or not lo.any():
+            continue          # pointe de fissure : une seule levre presente
         xa.append(xv - cx)
-        wa.append(g.max() - g.min())
+        wa.append(ys[up].mean() - ys[lo].mean())
     o = np.argsort(xa)
     return np.array(xa)[o], np.array(wa)[o], len(el) - 1
 
