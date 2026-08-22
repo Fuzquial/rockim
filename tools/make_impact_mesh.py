@@ -1,0 +1,117 @@
+#!/usr/bin/env python3
+# ---------------------------------------------------------------------------
+# make_impact_mesh.py — maillage de l'essai d'impact a insert unique
+# (Yang et al. 2025-2026, donnees Mines Paris ; spec 005, WP4).
+#
+#   python tools/make_impact_mesh.py meshes/impact_s15.msh 1.5
+#
+# Quatre corps, volumes physiques nommes : rock, insert (carbure), bit,
+# piston (acier). L'insert et le bit sont mailles CONFORMEMENT (fragment
+# OCC) — leur interface recoit des joints par groupBond.bit.insert = joints.
+# Le piston vole a 0,2 mm au-dessus du bit, l'insert a 0,2 mm de la roche :
+# le contact general fait le reste.
+#
+# Geometrie (leur fig. 5, en m) : roche cylindre R 0,125 x 0,150 ; insert
+# hemisphere R 8,51 mm + fut Phi 15,88 (23,2 mm au total) ; bit Phi 30,
+# 265 mm insert compris ; piston Phi 26,5 x 260. SIMPLIFICATION V1 : la
+# plaque de charge et le circlip sont OMIS — l'article precise que le poids
+# sur l'outil n'est pas applique dans leurs simulations ; leur role de
+# distribution de masse est secondaire pour le facies de fissuration.
+#
+# Tailles de maille (leur fig. 6) x le facteur d'echelle s :
+#   roche : 1 mm dans la boule R 12,5 mm sous l'impact, 2 mm jusqu'a
+#   R 25 mm, 10 mm au bord ; insert 0,7 mm ; bit 3 mm ; piston 5 mm.
+#   s = 1 reproduit l'article (~230 k tets) ; s = 1,5 est la variante
+#   econome pour les runs de nuit.
+# ---------------------------------------------------------------------------
+import sys
+
+import gmsh
+
+out = sys.argv[1] if len(sys.argv) > 1 else "impact.msh"
+s = float(sys.argv[2]) if len(sys.argv) > 2 else 1.0
+
+GAP = 2.0e-4                 # jeu insert/roche et piston/bit [m]
+R_ROCK, H_ROCK = 0.125, 0.150
+R_INS, R_SHANK, H_INS = 0.00851, 0.00794, 0.0232
+R_BIT = 0.015
+L_BIT = 0.265 - H_INS        # le bit fait 265 mm INSERT COMPRIS
+R_PIS, L_PIS = 0.01325, 0.260
+
+gmsh.initialize()
+gmsh.option.setNumber("General.Terminal", 0)
+gmsh.model.add("impact")
+occ = gmsh.model.occ
+
+rock = occ.addCylinder(0, 0, -H_ROCK, 0, 0, H_ROCK, R_ROCK)
+zc = GAP + R_INS                       # centre de l'hemisphere (pointe a GAP)
+sph = occ.addSphere(0, 0, zc, R_INS)
+shank = occ.addCylinder(0, 0, zc, 0, 0, GAP + H_INS - zc, R_SHANK)
+ins = occ.fuse([(3, sph)], [(3, shank)])[0]
+zb0 = GAP + H_INS                      # bas du bit = haut de l'insert
+bit = occ.addCylinder(0, 0, zb0, 0, 0, L_BIT, R_BIT)
+zp0 = zb0 + L_BIT + GAP
+pis = occ.addCylinder(0, 0, zp0, 0, 0, L_PIS, R_PIS)
+
+# conformite insert/bit (face partagee) ; les autres paires restent au contact
+all3 = occ.fragment(ins, [(3, bit)])[0]
+occ.synchronize()
+
+vols = gmsh.model.getEntities(3)
+names = {}
+for dim, tag in vols:
+    x, y, z = occ.getCenterOfMass(dim, tag)
+    if z < 0:              nm = "rock"
+    elif z < zb0:          nm = "insert"
+    elif z < zp0 - 1e-6:   nm = "bit"
+    else:                  nm = "piston"
+    names.setdefault(nm, []).append(tag)
+for nm, tags in names.items():
+    p = gmsh.model.addPhysicalGroup(3, tags)
+    gmsh.model.setPhysicalName(3, p, nm)
+assert set(names) == {"rock", "insert", "bit", "piston"}, names
+
+# ---- tailles --------------------------------------------------------------
+# raffinement de la roche : boules concentriques sous le point d'impact
+f1 = gmsh.model.mesh.field.add("Ball")
+gmsh.model.mesh.field.setNumber(f1, "VIn", 0.001 * s)
+gmsh.model.mesh.field.setNumber(f1, "VOut", 1.0)
+gmsh.model.mesh.field.setNumber(f1, "Radius", 0.0125)
+f2 = gmsh.model.mesh.field.add("Ball")
+gmsh.model.mesh.field.setNumber(f2, "VIn", 0.002 * s)
+gmsh.model.mesh.field.setNumber(f2, "VOut", 1.0)
+gmsh.model.mesh.field.setNumber(f2, "Radius", 0.025)
+# taille de fond : graduation 2 mm -> 10 mm entre R 25 et R 100 mm
+fd = gmsh.model.mesh.field.add("Distance")
+pt0 = occ.addPoint(0, 0, 0)
+occ.synchronize()
+gmsh.model.mesh.field.setNumbers(fd, "PointsList", [pt0])
+f3 = gmsh.model.mesh.field.add("Threshold")
+gmsh.model.mesh.field.setNumber(f3, "InField", fd)
+gmsh.model.mesh.field.setNumber(f3, "SizeMin", 0.002 * s)
+gmsh.model.mesh.field.setNumber(f3, "SizeMax", 0.010 * s)
+gmsh.model.mesh.field.setNumber(f3, "DistMin", 0.025)
+gmsh.model.mesh.field.setNumber(f3, "DistMax", 0.100)
+fmin = gmsh.model.mesh.field.add("Min")
+gmsh.model.mesh.field.setNumbers(fmin, "FieldsList", [f1, f2, f3])
+gmsh.model.mesh.field.setAsBackgroundMesh(fmin)
+gmsh.option.setNumber("Mesh.MeshSizeExtendFromBoundary", 0)
+gmsh.option.setNumber("Mesh.MeshSizeFromPoints", 1)
+
+# tailles par corps (points OCC) : insert fin, bit et piston grossiers
+def set_pts(tags, size):
+    pts = gmsh.model.getBoundary([(3, t) for t in tags], recursive=True)
+    gmsh.model.mesh.setSize([p for p in pts if p[0] == 0], size)
+
+set_pts(names["rock"], 0.010 * s)
+set_pts(names["bit"], 0.003 * s)
+set_pts(names["piston"], 0.005 * s)
+set_pts(names["insert"], 0.0007 * s)
+
+gmsh.option.setNumber("Mesh.RandomSeed", 1)
+gmsh.model.mesh.generate(3)
+gmsh.option.setNumber("Mesh.MshFileVersion", 2.2)
+gmsh.write(out)
+ntet = len(gmsh.model.mesh.getElementsByType(4)[0])
+gmsh.finalize()
+print("ecrit : %s  (%d tets, echelle %.2f)" % (out, ntet, s))
