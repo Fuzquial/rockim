@@ -37,13 +37,17 @@ class MainWindow(QMainWindow):
         # centre : scène 3D + courbes
         from PySide6.QtWidgets import QTabWidget
 
+        from .views.geometry import GeometryPanel
         from .views.scene import SceneView
+        self.geometry = GeometryPanel(self.ctrl)
         self.scene = SceneView()
         self.plot = LivePlot()
         self.center = QTabWidget()
+        self.center.addTab(self.geometry, "Géométrie")
         self.center.addTab(self.scene, "Résultats 3D")
         self.center.addTab(self.plot, "Courbes")
         self.setCentralWidget(self.center)
+        self.geometry.mesh_ready.connect(self._mesh_ready)
 
         # docks
         self.tree = ModelTree(self.ctrl)
@@ -298,6 +302,10 @@ class MainWindow(QMainWindow):
         self.center.setCurrentWidget(self.scene)
         self.console.append_log(f"résultats chargés : {path}")
 
+    def _mesh_ready(self, result: dict):
+        self.scene.show_mesh(result["vtu"])
+        self.center.setCurrentWidget(self.scene)
+
     def _compare_run(self):
         start = self.settings.value("lastOut", str(Path.cwd()))
         path = QFileDialog.getExistingDirectory(
@@ -332,6 +340,8 @@ class MainWindow(QMainWindow):
         if n_err:
             self.statusBar().showMessage(
                 f"{n_err} erreur(s) de validation — voir la console")
+        elif "erreur" in self.statusBar().currentMessage():
+            self.statusBar().showMessage("validation OK")
 
     def _restore_state(self):
         geo = self.settings.value("geometry")

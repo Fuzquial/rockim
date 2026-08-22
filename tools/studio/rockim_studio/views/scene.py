@@ -97,6 +97,24 @@ class SceneView(QWidget):
         self.index = value
         self.refresh()
 
+    def show_mesh(self, path: str):
+        """Aperçu d'un maillage seul (sortie du mailleur M2) : filaire."""
+        if not _HAVE_3D or self.plotter is None:
+            return
+        import pyvista as pv
+        mesh = pv.read(path)
+        self.series = None
+        self.time_label.setText(f"maillage : {mesh.n_cells} cellules")
+        self.plotter.clear()
+        self.plotter.add_mesh(mesh, style="wireframe", color="#5a7d9a",
+                              line_width=1)
+        zmin, zmax = mesh.bounds[4], mesh.bounds[5]
+        if zmax - zmin < 1e-12:
+            self.plotter.view_xy()
+        self.plotter.reset_camera()
+        self._camera_set = False
+        self.plotter.render()
+
     # --- rendu ------------------------------------------------------------
     def refresh(self):
         if self.series is None or not len(self.series):
