@@ -30,8 +30,13 @@ import gmsh
 
 out = sys.argv[1] if len(sys.argv) > 1 else "impact.msh"
 s = float(sys.argv[2]) if len(sys.argv) > 2 else 1.0
+# jeu insert/roche optionnel (3e argument, m). Defaut 0,2 mm = insert en vol ;
+# ~0,02 mm = insert POSE sur la roche, la configuration de l'essai reel (le
+# poids sur l'outil assied le bit) — c'est elle qui donne la courbe F-p en
+# rampe de leur fig. 7b, l'onde de frappe enfoncant l'insert directement.
+GAPR = float(sys.argv[3]) if len(sys.argv) > 3 else 2.0e-4
 
-GAP = 2.0e-4                 # jeu insert/roche et piston/bit [m]
+GAP = 2.0e-4                 # jeu piston/bit [m]
 R_ROCK, H_ROCK = 0.125, 0.150
 R_INS, R_SHANK, H_INS = 0.00851, 0.00794, 0.0232
 R_BIT = 0.015
@@ -44,11 +49,11 @@ gmsh.model.add("impact")
 occ = gmsh.model.occ
 
 rock = occ.addCylinder(0, 0, -H_ROCK, 0, 0, H_ROCK, R_ROCK)
-zc = GAP + R_INS                       # centre de l'hemisphere (pointe a GAP)
+zc = GAPR + R_INS                      # centre de l'hemisphere (pointe a GAPR)
 sph = occ.addSphere(0, 0, zc, R_INS)
-shank = occ.addCylinder(0, 0, zc, 0, 0, GAP + H_INS - zc, R_SHANK)
+shank = occ.addCylinder(0, 0, zc, 0, 0, GAPR + H_INS - zc, R_SHANK)
 ins = occ.fuse([(3, sph)], [(3, shank)])[0]
-zb0 = GAP + H_INS                      # bas du bit = haut de l'insert
+zb0 = GAPR + H_INS                     # bas du bit = haut de l'insert
 bit = occ.addCylinder(0, 0, zb0, 0, 0, L_BIT, R_BIT)
 zp0 = zb0 + L_BIT + GAP
 pis = occ.addCylinder(0, 0, zp0, 0, 0, L_PIS, R_PIS)

@@ -69,31 +69,33 @@ def main():
     p = (h["z_bit"][0] - h["z_bit"] - GAP) * 1e3
     m = masse_bit_insert()
 
-    # (a) force bit-roche par quantite de mouvement, lissee sur ~8 us
+    # (a) force de contact INSERT-ROCHE, exacte par Newton sur LES DEUX
+    # corps : le piston ne touche que le bit, donc
+    #   m_p dv_p/dt = F(bit->piston) - m_p g
+    #   m_bi dv_bi/dt = F(roche->bit) + F(piston->bit) - m_bi g
+    # et la somme elimine le contact interne (3e loi), ONDES COMPRISES —
+    # les moyennes de corps rendent Newton exact pour les forces EXTERNES :
+    #   F_roche = m_bi (dv_bi/dt + g) + m_p (dv_p/dt + g).
+    # Controle integre : avant le contact insert-roche, la somme doit valoir
+    # zero — c'est le segment p < 0 de la courbe.
     dt = float(np.median(np.diff(t)))
-    w = max(3, int(8e-6 / dt) | 1)
-    vz = lisse(h["vz_bit"], w)
-    # Newton sur le corps bit+insert (piston separe) : m dv/dt = F_roche - mg
-    # -> F_roche = m dv/dt + mg, POSITIVE quand la roche freine la descente.
-    F = (m * np.gradient(vz, t) + m * 9.81) / 1e3       # kN, compression > 0
+    w = max(3, int(10e-6 / dt) | 1)
+    m_p = np.pi * 0.01325 ** 2 * 0.260 * RHO_S
+    vb = lisse(h["vz_bit"], w)
+    vp = lisse(h["vz_piston"], w)
+    F = (m * (np.gradient(vb, t) + 9.81)
+         + m_p * (np.gradient(vp, t) + 9.81)) / 1e3     # kN, compression > 0
     F = lisse(F, w)
     w2 = max(3, int(30e-6 / dt) | 1)
-    Fm = lisse(F, w2)                                   # moyenne (~30 us)
-    cut = len(t) - 2 * max(w, w2)                       # bords du lissage
-
-    # Phase roche seule : a partir du MINIMUM de vz_bit. Avant lui, le bit
-    # accelere encore vers le bas, donc le piston pousse toujours (la vitesse
-    # moyenne du piston repasse positive AVANT que son extremite comprimee ne
-    # decolle : la detection par corps entier serait trop precoce).
-    sep = int(np.argmin(vz))
+    Fm = lisse(F, w2)
+    cut = len(t) - 2 * max(w, w2)
+    sep = int(np.argmax(t > 3.5e-5))    # bord de convolution du depart
 
     # (b) jauge
     Fg = -h["szz_bit"] * np.pi * R_BIT ** 2 / 1e3
 
     fig, ax = plt.subplots(1, 2, figsize=(12.6, 5.4))
     A = ax[0]
-    A.plot(p[:sep + 1], F[:sep + 1], ":", color="#999", lw=1.0,
-           label="phase piston (m·a mele les deux contacts)")
     seg = np.array([p[sep:cut], F[sep:cut]]).T.reshape(-1, 1, 2)
     seg = np.concatenate([seg[:-1], seg[1:]], axis=1)
     lc = LineCollection(seg, cmap="viridis", array=t[sep:cut - 1] * 1e6,
@@ -127,7 +129,7 @@ def main():
     fig.tight_layout()
     for ext in ("pdf", "png"):
         fig.savefig(a.stem + "." + ext, dpi=170)
-    print("écrit : %s | m(bit+insert) = %.3f kg | pic bit-roche %.0f kN à "
+    print("écrit : %s | m(bit+insert) = %.3f kg | pic contact %.0f kN à "
           "p = %.2f mm | p_max %.2f mm"
           % (a.stem, m, Fm[k], p[k], p.max()))
 

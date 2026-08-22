@@ -65,3 +65,5 @@ bench_abuaisha/*.pdf
 *.png
 _backup_*/
 uploads/
+bench_impact/*.pdf
+bench_impact/*.txt
