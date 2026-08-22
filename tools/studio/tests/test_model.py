@@ -26,6 +26,20 @@ def test_model_open_edit_save(tmp_path=None):
     assert m2.cfg.pairs == m.cfg.pairs
 
 
+def test_new_case_is_fdem_and_templates_are_copies():
+    m = RockimModel()
+    m.new()
+    assert m.mode == "fdem" and not m.dirty
+    m.open_template(ROOT / "configs/cal_ucs_bohus.cfg")
+    assert m.path is None and m.dirty          # jamais d'écrasement de la réf
+    assert m.mode in ("fdem", "fdem3d")
+    try:
+        m.save()
+        raise RuntimeError("save() sans chemin aurait dû échouer")
+    except ValueError:
+        pass
+
+
 def test_groups_follow_mode():
     m = RockimModel()
     m.set_value("mode", "fdem3d")

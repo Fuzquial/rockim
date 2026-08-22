@@ -79,8 +79,10 @@ class DynamicFamily:
 # --- Métadonnées d'ergonomie (extrait de démarrage ; complété par WP0.4). ---
 # Format : nom -> dict de champs Key à surcharger.
 CURATED = {
-    "mode": dict(group="Général", choices=("fem", "fem3d", "dem", "dem3d",
-                 "fdem", "fdem3d"), doc="solveur"),
+    "mode": dict(group="Général", choices=("fdem", "fdem3d", "fem", "fem3d",
+                 "dem", "dem3d"),
+                 doc="solveur — fdem/fdem3d = le cœur du studio ; "
+                     "fem/dem = modes gelés (vérification seulement)"),
     "scenario": dict(group="Général", choices=("percussion", "shear",
                  "tension", "bar_wave", "brazilian", "shpb"),
                  doc="cas de charge"),

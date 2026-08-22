@@ -31,9 +31,17 @@ tout le lourd — CAO, maillage, rendu — délégué à des bibliothèques éta
 3. **Ne rien réécrire qui existe.** Géométrie et maillage = API Python de Gmsh
    (noyau OCC) ; rendu 3D et picking = PyVista/VTK ; courbes = matplotlib ;
    dépouillement = les scripts `tools/` existants appelés tels quels.
-4. **Périmètre fermé sur les objets de rockim.** On ne construit PAS un
+4. **Périmètre fermé sur les objets de rockim — et centré FDEM** (décision
+   Fernando 2026-08-22, alignée sur « rockim = FDEM » du 2026-08-14) : le
+   studio est l'interface des modes **`fdem` / `fdem3d`** — joints cohésifs,
+   GBM/Voronoï, Weibull, contact potentiel, essais QS (UCS/BD/triaxial),
+   hydro, percussion/coupe. Les modes gelés (fem/fem3d/dem/dem3d) restent
+   OUVRABLES (round-trip, lancement, courbes — c'est gratuit via le
+   registre) mais ne reçoivent AUCUN développement d'interface dédié : pas
+   de presets dem3d (glyphes sphères), pas de formulaire spécifique aux
+   lois continues — Abaqus/VUMAT est leur maison. On ne construit PAS un
    pré-processeur généraliste : les seuls objets sont ceux que le solveur
-   comprend (bloc/disque/cylindre/maillage importé, corps par groupes
+   FDEM comprend (bloc/disque/maillage importé, corps par groupes
    physiques, outil analytique ou maillé, phases GBM, joints, CL des
    scénarios existants). Toute demande hors de cette liste passe par une
    révision de la présente spec.
@@ -256,9 +264,11 @@ existantes immédiatement.
 > pybind11 (même chaîne oneAPI que le solveur), PAS une réécriture.
 
 - **WP1.1** `scene.py` : QtInteractor PyVista, thèmes, axes, échelle.
-- **WP1.2** `vtu_series.py` : slider temporel, presets d'affichage par mode
-  (fdem : joints seuillés `state` + bulk ; fem : `damage` + érodés masqués ;
-  dem : glyphes sphères par `radius`, couleur `fragment`).
+- **WP1.2** `vtu_series.py` : slider temporel, presets d'affichage **FDEM**
+  (joints rompus en surbrillance sur bulk translucide, champs bulk au
+  choix, `bulkD` quand la pulvérisation est armée, fragments). Les autres
+  modes s'affichent avec le rendu générique, sans preset dédié (principe
+  n°4).
 - **WP1.3** `plots.py` : historiques multi-colonnes, F-δ (reprend
   `plot_force_penetration.py`), énergies ; superposition de deux runs.
 - **WP1.4** Aperçu du maillage d'un `.msh` (régime file) et silhouette

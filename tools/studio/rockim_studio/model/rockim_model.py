@@ -27,8 +27,18 @@ class RockimModel:
 
     def new(self) -> None:
         self.cfg = CfgFile()
+        # le studio est l'interface du FDEM : un cas neuf démarre en fdem
+        self.cfg.pairs["mode"] = "fdem"
         self.path = None
         self.dirty = False
+
+    def open_template(self, path: str | Path) -> None:
+        """Ouvre une config de référence comme GABARIT : contenu chargé,
+        mais aucun chemin — l'enregistrement passera par « sous… » pour ne
+        jamais écraser la référence."""
+        self.cfg = CfgFile.parse(path)
+        self.path = None
+        self.dirty = True
 
     def save(self, path: str | Path | None = None) -> Path:
         target = Path(path) if path else self.path

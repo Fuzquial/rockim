@@ -88,7 +88,8 @@ class MainWindow(QMainWindow):
                 bar.addAction(a)
             return a
 
-        act("&Nouveau", self._new, "Ctrl+N", (menu_f,))
+        act("&Nouveau (fdem)", self._new, "Ctrl+N", (menu_f,))
+        self._build_templates_menu(menu_f)
         act("&Ouvrir un cfg…", self._open, "Ctrl+O", (menu_f,), True)
         act("&Enregistrer", self._save, "Ctrl+S", (menu_f,), True)
         act("Enregistrer &sous…", self._save_as, "Ctrl+Shift+S", (menu_f,))
@@ -114,6 +115,37 @@ class MainWindow(QMainWindow):
 
         self.statusBar().showMessage("prêt")
         self.ctrl.validation_changed.connect(self._status_validation)
+
+    # Gabarits FDEM : les configs de référence du dépôt, par essai. Chemins
+    # relatifs à la racine du repo (détectée depuis ce fichier).
+    _TEMPLATES = [
+        ("Percussion 2D (insert disque)", "configs/fdem_percussion.cfg"),
+        ("Percussion 3D (insert sphère)", "configs/fdem3d_percussion.cfg"),
+        ("Percussion 3D GBM Voronoï",
+         "configs/fdem3d_voronoi_percussion.cfg"),
+        ("UCS Bohus (platines)", "configs/cal_ucs_bohus.cfg"),
+        ("Brésilien Bohus (disque)", "configs/cal_bts_bohus.cfg"),
+        ("Triaxial Bohus GBM", "configs/triax_bohus_gbm.cfg"),
+        ("Tunnel / EDZ", "configs/tunnel_bore.cfg"),
+        ("Coupe 2D (couteau PDC)", "configs/fdem_shear.cfg"),
+        ("Vérification traction FDEM", "configs/verify_fdem_tension.cfg"),
+    ]
+
+    def _build_templates_menu(self, menu_parent):
+        root = Path(__file__).resolve().parents[3]
+        sub = menu_parent.addMenu("Nouveau depuis un &modèle FDEM")
+        for label, rel in self._TEMPLATES:
+            path = root / rel
+            a = QAction(label, self)
+            a.setEnabled(path.exists())
+            a.triggered.connect(
+                lambda _c=False, p=path, lbl=label: self._from_template(
+                    p, lbl))
+            sub.addAction(a)
+
+    def _from_template(self, path, label):
+        if self._confirm_discard():
+            self.ctrl.open_template(path, label)
 
     # --- fichier ----------------------------------------------------------
     def _confirm_discard(self) -> bool:

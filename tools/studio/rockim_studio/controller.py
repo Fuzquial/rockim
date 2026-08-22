@@ -71,7 +71,16 @@ class Controller(QObject):
         self.model.new()
         self._undo.clear()
         self._redo.clear()
-        self.log.emit("nouveau cas")
+        self.log.emit("nouveau cas (fdem)")
+        self.model_reset.emit()
+        self._revalidate()
+
+    def open_template(self, path: str | Path, label: str = ""):
+        self.model.open_template(path)
+        self._undo.clear()
+        self._redo.clear()
+        self.log.emit(f"modèle FDEM chargé : {label or path} — "
+                      "enregistrer SOUS un nouveau nom")
         self.model_reset.emit()
         self._revalidate()
 
