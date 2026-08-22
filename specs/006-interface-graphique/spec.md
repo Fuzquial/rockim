@@ -438,9 +438,10 @@ le chantier s'arrête là.
   * tunnel EDZ (`tunnel_bore_fast`) : 78 s, fissures radiales, [PASS] ;
   * impact 3D (`smoke_impact`, deux corps rock/insert) : 167 s, résumé
     par corps au journal ;
-  * hydro-frac Abu-Aisha (`hf_iso_hydro_c`, hydro=on, pompe à débit) :
-    validée le même jour (maillage `make_circle_mesh` régénéré, 26
-    éléments au pourtour).
+  * hydro-frac Abu-Aisha (`hf_iso_hydro_c`, hydro=on, pompe à débit,
+    maillage `make_circle_mesh` régénéré à 26 éléments au pourtour) :
+    375 s, fissure amorcée à la paroi du forage (97 joints rompus,
+    insertion adaptative 223/20 688), 42 frames chargées en scène.
 - Registre en service actif : la clé morte `fragBrushV` du deck St Anne
   fidèle (solveur lit `fragBrushV0` ; valeur = défaut, bit-neutre) a été
   repérée par le contrôle de couverture et corrigée.
