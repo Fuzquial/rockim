@@ -15,6 +15,8 @@ import re
 import numpy as np
 
 Z_SURF = 0.15                # sommet de la roche (maillage translate a lo=0)
+CX = CY = 0.125              # axe de l impact : le solveur translate le
+                             # maillage a lo = 0, l axe passe au centre
 
 
 def read_vtu(path):
@@ -70,25 +72,22 @@ def history(run):
 
 
 def broken(pts, con, f):
-    """Centroides, normales et mode des joints ROMPUS (D = 1, plus bondes)."""
+    """Faces ROMPUES (D = 1, plus bondees) : sommets (n,3,3), centroides,
+    normales unitaires et mode de rupture (1 = traction, 2 = cisaillement)."""
     sel = (f["damage"] >= 0.999) & (f["bonded"] < 0.5)
-    c = pts[con[sel]].mean(axis=1)
     P = pts[con[sel]]
+    c = P.mean(axis=1)
     n = np.cross(P[:, 1] - P[:, 0], P[:, 2] - P[:, 0])
-    nn = np.linalg.norm(n, axis=1)
-    n = n / np.maximum(nn, 1e-30)[:, None]
-    mode = f.get("breakMode", np.zeros(sel.sum()))[..., ] if isinstance(
-        f.get("breakMode"), np.ndarray) else np.zeros(int(sel.sum()))
-    if isinstance(f.get("breakMode"), np.ndarray):
-        mode = f["breakMode"][sel]
-    return c, n, mode, nn[:, None] * 0 + nn.reshape(-1, 1)
+    n = n / np.maximum(np.linalg.norm(n, axis=1), 1e-30)[:, None]
+    mode = f["breakMode"][sel] if "breakMode" in f else np.zeros(len(c))
+    return c, n, mode, P
 
 
 def metrics(c):
     """Les metriques morphologiques de leur fig. 8, sur les centroides c."""
     if len(c) == 0:
         return dict(radial=0.0, crater=0.0, depth=0.0, n=0)
-    r = np.hypot(c[:, 0], c[:, 1])
+    r = np.hypot(c[:, 0] - CX, c[:, 1] - CY)
     zrel = Z_SURF - c[:, 2]                       # profondeur sous la surface
     surf = zrel < 0.003                           # les 3 mm sous la surface
     return dict(

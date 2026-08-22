@@ -14,9 +14,10 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation, PillowWriter
+from matplotlib.collections import PolyCollection
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from imp_lib import (Z_SURF, broken, frame_times, frames_of, history,
+from imp_lib import (CX, CY, Z_SURF, broken, frame_times, frames_of, history,
                      joints_frame, read_vtu)
 
 plt.rcParams.update({
@@ -41,15 +42,15 @@ def main():
     data = []
     for k in ks:
         pts, con, f = read_vtu(joints_frame(a.run, k))
-        c, n, mode, _ = broken(pts, con, f)
-        data.append((k, tf.get(k, 0.0) * 1e6, c, mode))
+        c, n, mode, P = broken(pts, con, f)
+        data.append((k, tf.get(k, 0.0) * 1e6, c, n, mode, P))
         print("  trame %d/%d : %d joints rompus" % (k, ks[-1], len(c)))
 
     fig, ax = plt.subplots(1, 3, figsize=(13.2, 4.6))
     fig.suptitle("Impact à insert unique — St Anne, 10,66 m/s", fontsize=12)
 
     def draw(i):
-        k, tk, c, mode = data[i]
+        k, tk, c, n, mode, P = data[i]
         for A in ax:
             A.clear()
         A, B, C = ax
@@ -59,24 +60,30 @@ def main():
         A.set_xlabel(r"temps [$\mu$s]")
         A.set_ylabel(r"$v_z$ bit [m/s]")
         A.set_title("vitesse du bit", fontsize=10)
+
+        def faces(AX, Q, md, nn, ax0, ax1, c0, c1):
+            vert = np.abs(nn[:, 2]) <= 0.6
+            for mm, col, al, z in ((~vert, "#e8b7b7", 0.30, 1),
+                                   (vert & (md < 1.5), ROUGE, 0.85, 3),
+                                   (vert & (md >= 1.5), JAUNE, 0.9, 4)):
+                if mm.any():
+                    po = (Q[mm][:, :, (ax0, ax1)]
+                          - np.array([c0, c1])) * 1e3
+                    AX.add_collection(PolyCollection(
+                        po, facecolors=col, edgecolors=col,
+                        linewidths=0.2, alpha=al, zorder=z))
+
         if len(c):
-            s = mode >= 1.5
-            B.scatter(c[~s][:, 0] * 1e3, c[~s][:, 1] * 1e3, s=1.5, c=ROUGE, lw=0)
-            B.scatter(c[s][:, 0] * 1e3, c[s][:, 1] * 1e3, s=1.5, c=JAUNE, lw=0)
-            s5 = np.abs(c[:, 1]) < 0.005
-            cc, m5 = c[s5], mode[s5]
-            ss = m5 >= 1.5
-            C.scatter(cc[~ss][:, 0] * 1e3, (cc[~ss][:, 2] - Z_SURF) * 1e3,
-                      s=2.0, c=ROUGE, lw=0)
-            C.scatter(cc[ss][:, 0] * 1e3, (cc[ss][:, 2] - Z_SURF) * 1e3,
-                      s=2.0, c=JAUNE, lw=0)
-        for AX, L in ((B, 45), (C, 45)):
-            AX.set_xlim(-L, L)
+            faces(B, P, mode, n, 0, 1, CX, CY)
+            s5 = np.abs(c[:, 1] - CY) < 0.005
+            faces(C, P[s5], mode[s5], n[s5], 0, 2, CX, Z_SURF)
+        for AX in (B, C):
+            AX.set_xlim(-45, 45)
             AX.set_aspect("equal")
         B.set_ylim(-45, 45)
-        C.set_ylim(-45, 8)
+        C.set_ylim(-30, 8)
         C.axhline(0, color="#333", lw=0.7)
-        B.set_title("vue de dessus  ($t$ = %.0f $\\mu$s)" % tk, fontsize=10)
+        B.set_title("vue de dessus  ($t$ = %.0f $\mu$s)" % tk, fontsize=10)
         C.set_title("coupe $|y|<5$ mm", fontsize=10)
         B.set_xlabel("x [mm]"); B.set_ylabel("y [mm]")
         C.set_xlabel("x [mm]"); C.set_ylabel("z [mm]")
