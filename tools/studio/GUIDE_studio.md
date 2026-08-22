@@ -80,6 +80,18 @@ courbe live (`historyFlush`). **Shift+F5** : arrêt propre (terminate).
 En fin de run OK, la scène 3D charge automatiquement les frames ; sinon
 **Ctrl+R** ouvre n'importe quel dossier `out_*` existant.
 
+## 5 bis. La sonde nodale (« XY data from ODB »)
+
+Sur n'importe quel run terminé (Ctrl+R pour l'ouvrir) : onglet **Courbes**,
+panneau **Sonde nodale**. Saisir x/y (ou cocher « sonde au clic » dans
+Résultats 3D et cliquer un nœud), cocher les variables, **Tracer au nœud** —
+un sous-graphe par variable, axe temps partagé. Variables servies :
+déplacements u_x/u_y/(u_z)/u_mag reconstruits de x(t) − x(0), les champs
+aux points (velocity_*) et les champs de la maille adjacente (damage,
+sigmaXX, vonMises…). ⚠️ Résolution temporelle = les FRAMES du run (clé
+`frames`) — pour un historique dense type capteur, il faudra la sonde côté
+solveur (spec 006 §7 S4).
+
 ## 6. Tests
 
 ```bash

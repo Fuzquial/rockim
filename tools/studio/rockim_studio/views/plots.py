@@ -1,15 +1,20 @@
-"""plots.py — courbe live de history.csv (M0 ; les vraies planches sont M1).
+"""plots.py — courbes : history.csv (live + post-run) et SONDE NODALE.
 
-matplotlib est acceptable ici : des COURBES, jamais des champs maillés (la
-leçon de l'ancien rockim_gui). Redessin throttlé par les arrivées du
-monitor (déjà cadencées à 500 ms).
+La sonde, c'est le « XY data from ODB » d'Abaqus : sur un run terminé,
+choisir un nœud (au clic dans la scène ou par coordonnées), cocher des
+variables, tracer leur évolution au fil des frames. matplotlib est
+acceptable ici : des COURBES, jamais des champs maillés (la leçon de
+l'ancien rockim_gui).
 """
 from __future__ import annotations
 
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 from matplotlib.figure import Figure
-from PySide6.QtWidgets import QComboBox, QHBoxLayout, QLabel, QVBoxLayout, \
-    QWidget
+from PySide6.QtWidgets import (QComboBox, QDoubleSpinBox, QGroupBox,
+                               QHBoxLayout, QLabel, QListWidget,
+                               QListWidgetItem, QPushButton, QVBoxLayout,
+                               QWidget)
+from PySide6.QtCore import Qt
 
 
 class LivePlot(QWidget):
@@ -27,7 +32,11 @@ class LivePlot(QWidget):
 
         self.canvas = FigureCanvasQTAgg(Figure(tight_layout=True))
         self.ax = self.canvas.figure.add_subplot(111)
-        lay.addWidget(self.canvas, 1)
+
+        body = QHBoxLayout()
+        body.addWidget(self.canvas, 1)
+        body.addWidget(self._build_probe_box())
+        lay.addLayout(body, 1)
 
         self.header: list[str] = []
         self.data: list[list] = []
@@ -82,7 +91,9 @@ class LivePlot(QWidget):
         j = self.header.index(name)
         t = [r[0] for r in self.data if len(r) > j]
         y = [r[j] for r in self.data if len(r) > j]
-        self.ax.clear()
+        # la sonde a pu passer la figure en sous-graphes : repartir d'un axe
+        self.canvas.figure.clear()
+        self.ax = self.canvas.figure.add_subplot(111)
         self.ax.plot(t, y, lw=1.0, label="courant")
         if self.ref is not None:
             ref_name, ref_header, ref_data = self.ref
@@ -95,6 +106,99 @@ class LivePlot(QWidget):
         self.ax.set_xlabel(self.header[0])
         self.ax.set_ylabel(name)
         self.ax.grid(True, alpha=0.3)
+        self.canvas.draw_idle()
+
+    # --- sonde nodale (« XY data from ODB ») -------------------------------
+    def _build_probe_box(self) -> QGroupBox:
+        box = QGroupBox("Sonde nodale")
+        v = QVBoxLayout(box)
+        row = QHBoxLayout()
+        self.px = QDoubleSpinBox()
+        self.py = QDoubleSpinBox()
+        self.pz = QDoubleSpinBox()
+        for w, lbl in ((self.px, "x"), (self.py, "y"), (self.pz, "z")):
+            w.setRange(-1e9, 1e9)
+            w.setDecimals(4)
+            row.addWidget(QLabel(lbl))
+            row.addWidget(w)
+        v.addLayout(row)
+        self.node_label = QLabel("aucun nœud")
+        self.node_label.setWordWrap(True)
+        v.addWidget(self.node_label)
+        self.var_list = QListWidget()
+        self.var_list.setSelectionMode(QListWidget.NoSelection)
+        v.addWidget(self.var_list, 1)
+        self.trace_btn = QPushButton("Tracer au nœud")
+        self.trace_btn.clicked.connect(self.trace_probe)
+        v.addWidget(self.trace_btn)
+        box.setMaximumWidth(240)
+        self._probe = None
+        self._probe_node = None
+        return box
+
+    def attach_series(self, series):
+        """Branche la sonde sur un run chargé (FrameSeries)."""
+        from ..results.probe import NodeProbe
+        try:
+            self._probe = NodeProbe(series)
+        except Exception:
+            self._probe = None
+            return
+        self.var_list.clear()
+        for name in self._probe.variables():
+            item = QListWidgetItem(name)
+            item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
+            item.setCheckState(
+                Qt.Checked if name in ("u_y", "u_mag") else Qt.Unchecked)
+            self.var_list.addItem(item)
+        self.node_label.setText("entrer x/y (ou piquer dans la scène) "
+                                "puis Tracer")
+
+    def set_probe_point(self, x: float, y: float, z: float = 0.0):
+        """Reçoit un point piqué dans la scène 3D."""
+        self.px.setValue(x)
+        self.py.setValue(y)
+        self.pz.setValue(z)
+        self._locate()
+
+    def _locate(self):
+        if self._probe is None:
+            return None
+        idx, (x, y, z) = self._probe.nearest_node(
+            self.px.value(), self.py.value(), self.pz.value())
+        self._probe_node = idx
+        self.node_label.setText(f"nœud {idx} à ({x:.4g}, {y:.4g}"
+                                + (f", {z:.4g})" if abs(z) > 1e-12 else ")"))
+        return idx
+
+    def trace_probe(self):
+        if self._probe is None:
+            self.node_label.setText("charger d'abord un run (Ctrl+R)")
+            return
+        idx = self._locate()
+        names = [self.var_list.item(i).text()
+                 for i in range(self.var_list.count())
+                 if self.var_list.item(i).checkState() == Qt.Checked]
+        if not names:
+            self.node_label.setText("cocher au moins une variable")
+            return
+        data = self._probe.extract(idx, names)
+        t = data["t"]
+        fig = self.canvas.figure
+        fig.clear()
+        # une variable par sous-graphe, axe temps partagé (les unités
+        # different : un axe commun écraserait les petites grandeurs)
+        axes = fig.subplots(len(names), 1, sharex=True)
+        if len(names) == 1:
+            axes = [axes]
+        for ax, nm in zip(axes, names):
+            ax.plot(t, data[nm], marker="o", ms=3, lw=1.0)
+            ax.set_ylabel(nm, fontsize=8)
+            ax.grid(True, alpha=0.3)
+            ax.tick_params(labelsize=8)
+        axes[0].set_title(f"nœud {idx}", fontsize=10)
+        axes[-1].set_xlabel("t [s]")
+        self.ax = axes[0]
         self.canvas.draw_idle()
 
     @staticmethod

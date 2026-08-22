@@ -48,6 +48,7 @@ class MainWindow(QMainWindow):
         self.center.addTab(self.plot, "Courbes")
         self.setCentralWidget(self.center)
         self.geometry.mesh_ready.connect(self._mesh_ready)
+        self.scene.point_picked.connect(self._on_point_picked)
 
         # docks
         self.tree = ModelTree(self.ctrl)
@@ -299,8 +300,14 @@ class MainWindow(QMainWindow):
     def load_results(self, path: str):
         self.scene.load(path)
         self.plot.load_csv(Path(path) / "history.csv")
+        if self.scene.series is not None and len(self.scene.series):
+            self.plot.attach_series(self.scene.series)
         self.center.setCurrentWidget(self.scene)
         self.console.append_log(f"résultats chargés : {path}")
+
+    def _on_point_picked(self, x: float, y: float, z: float):
+        self.plot.set_probe_point(x, y, z)
+        self.center.setCurrentWidget(self.plot)
 
     def _mesh_ready(self, result: dict):
         self.scene.show_mesh(result["vtu"])

@@ -385,6 +385,11 @@ avertissante :
   « V1, 3D ») pour amener le régime géométrie native aux cas 2D ;
 - **S3** un `--dry-run` qui parse, valide, imprime dt/l_cz et sort — la
   checklist §5.6 s'appuierait sur le solveur lui-même.
+- **S4** (demande Fernando 2026-08-22) `probe.<nom> = x y [z]` : sonde
+  nodale DENSE côté solveur — le nœud le plus proche à l'init, colonnes
+  `ux_<nom>,uy_<nom>,vx_<nom>,…` dans history.csv à chaque ligne. C'est
+  l'équivalent du history output d'Abaqus ; la sonde studio actuelle
+  (results/probe.py) n'a que la résolution des frames VTU.
 
 ---
 

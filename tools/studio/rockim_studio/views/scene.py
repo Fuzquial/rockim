@@ -28,6 +28,7 @@ except Exception as e:          # pyvista/pyvistaqt/OpenGL absents
 
 class SceneView(QWidget):
     frame_changed = Signal(int, float)      # index, temps
+    point_picked = Signal(float, float, float)   # sonde : nœud piqué
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -43,6 +44,12 @@ class SceneView(QWidget):
         self.cracks_box.setChecked(True)
         self.cracks_box.toggled.connect(lambda _c: self.refresh())
         bar.addWidget(self.cracks_box)
+        self.pick_box = QCheckBox("sonde au clic")
+        self.pick_box.setToolTip("cliquer un nœud du maillage : ses "
+                                 "coordonnées partent dans la Sonde nodale "
+                                 "de l'onglet Courbes")
+        self.pick_box.toggled.connect(self._toggle_pick)
+        bar.addWidget(self.pick_box)
         lay.addLayout(bar)
 
         if _HAVE_3D:
@@ -96,6 +103,18 @@ class SceneView(QWidget):
     def _slide(self, value: int):
         self.index = value
         self.refresh()
+
+    def _toggle_pick(self, on: bool):
+        if self.plotter is None:
+            return
+        if on:
+            self.plotter.enable_point_picking(
+                callback=lambda p: self.point_picked.emit(
+                    float(p[0]), float(p[1]), float(p[2])),
+                show_message="clic gauche : piquer un nœud",
+                left_clicking=True, show_point=True)
+        else:
+            self.plotter.disable_picking()
 
     def show_mesh(self, path: str):
         """Aperçu d'un maillage seul (sortie du mailleur M2) : filaire."""
