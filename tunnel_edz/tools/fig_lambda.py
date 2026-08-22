@@ -28,7 +28,7 @@ plt.rcParams.update({
 })
 
 RUNS = [(0.50, "out_tunnel_lam0p5"), (0.75, "out_tunnel_lam0p75"),
-        (1.00, "out_tun_ref"), (1.25, "out_tunnel_lam1p25"),
+        (1.00, "out_tun_ref_iso"), (1.25, "out_tunnel_lam1p25"),
         (1.50, "out_tunnel_lam1p5")]
 
 # leur fig. 15f, lue a la regle (la numerisation vaut +-1 m)
