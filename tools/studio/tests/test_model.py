@@ -40,6 +40,28 @@ def test_new_case_is_fdem_and_templates_are_copies():
         pass
 
 
+def test_mesh_file_resolution():
+    """Les decks écrivent meshFile relatif à la RACINE du repo ; un deck de
+    bench (bench_*/configs/) doit résoudre via le parent du parent."""
+    m = RockimModel()
+    m.open_template(ROOT / "configs/tunnel_bore_fast.cfg")
+    p = m.mesh_file_path()
+    if (ROOT / "meshes/tunnel_2d.msh").exists():
+        assert p is not None and p.name == "tunnel_2d.msh"
+        assert not any(lvl == "erreur" and k == "meshFile"
+                       for lvl, k, _m in m.validate())
+    m2 = RockimModel()
+    m2.open_template(ROOT / "bench_abuaisha/configs/hf_iso_hydro_c.cfg")
+    if (ROOT / "meshes/hf_bore_c.msh").exists():
+        assert m2.mesh_file_path() is not None
+    # meshFile manquant = erreur bloquante
+    m3 = RockimModel()
+    m3.set_value("mesh", "file")
+    m3.set_value("meshFile", "meshes/nexiste_pas.msh")
+    assert any(lvl == "erreur" and k == "meshFile"
+               for lvl, k, _m in m3.validate())
+
+
 def test_groups_follow_mode():
     m = RockimModel()
     m.set_value("mode", "fdem3d")

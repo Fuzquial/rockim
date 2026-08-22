@@ -143,6 +143,54 @@ CURATED = {
     "seed": dict(group="Maillage", doc="graine (jitter, Voronoï, phases)"),
     "grainSize": dict(group="Maillage", unit="m", bounds=(0.0, None),
                       doc="diamètre moyen de grain (mesh=voronoi)"),
+    # --- couplage hydro-mécanique (spec 004, AbuAisha) ---------------------
+    "hydro": dict(group="Hydro", doc="active le couplage hydro-mécanique "
+                  "(2D fdem, scénarios à cavité)"),
+    "hydroSource": dict(group="Hydro", choices=("bore", "all"),
+                        doc="faces sources : paroi du forage ou toute la "
+                            "frontière"),
+    "hydroInjection": dict(group="Hydro", choices=("rate", "pressure"),
+                           doc="pompe à débit (pression = sortie) ou "
+                               "pression imposée (contrôles)"),
+    "hydroRate": dict(group="Hydro", unit="m³/s/m",
+                      doc="débit de pompe — 20 l/s de l'article = 0.02"),
+    "hydroPressure": dict(group="Hydro", unit="Pa",
+                          doc="pression imposée (mode pressure)"),
+    "hydroP0": dict(group="Hydro", unit="Pa",
+                    doc="pression de référence (0 = pressions effectives)"),
+    "hydroRamp": dict(group="Hydro", unit="s",
+                      doc="rampe cosinus de la pompe"),
+    "fluidBulk": dict(group="Hydro", unit="Pa", bounds=(0.0, None),
+                      doc="module du fluide K_f — 2.2 GPa = eau ; fixe "
+                          "toute la chronologie (hypothèse, pas une donnée "
+                          "de l'article)"),
+    "fluidDensity": dict(group="Hydro", unit="kg/m³", bounds=(0.0, None),
+                         doc="masse volumique du fluide"),
+    "boreCX": dict(group="Hydro", unit="m", doc="centre X du forage"),
+    "boreCY": dict(group="Hydro", unit="m", doc="centre Y du forage"),
+    "boreSelectR": dict(group="Hydro", unit="m",
+                        doc="rayon de sélection des faces de forage "
+                            "(R forage + une maille de garde)"),
+    # --- état in-situ et excavation (tunnel EDZ) ---------------------------
+    "insituSh": dict(group="Conditions aux limites", unit="Pa",
+                     doc="contrainte in-situ HORIZONTALE (x) — attention : "
+                         "le sigma_H d'AbuAisha (piège de nomenclature)"),
+    "insituSv": dict(group="Conditions aux limites", unit="Pa",
+                     doc="contrainte in-situ VERTICALE (y)"),
+    "insituSxy": dict(group="Conditions aux limites", unit="Pa",
+                      doc="cisaillement in-situ"),
+    "excavRelease": dict(group="Conditions aux limites",
+                         doc="relâchement d'excavation (tunnel)"),
+    "excavStart": dict(group="Conditions aux limites", unit="s",
+                       doc="début de l'excavation"),
+    "excavRamp": dict(group="Conditions aux limites", unit="s",
+                      doc="durée de la rampe d'excavation"),
+    "confiningPressure": dict(group="Conditions aux limites", unit="Pa",
+                              doc="pression de confinement / de paroi"),
+    "confineFaces": dict(group="Conditions aux limites",
+                         doc="faces recevant le confinement (bore, …)"),
+    "confiningRamp": dict(group="Conditions aux limites", unit="s",
+                          doc="rampe du confinement"),
 }
 
 

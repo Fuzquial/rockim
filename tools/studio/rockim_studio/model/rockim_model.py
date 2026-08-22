@@ -17,12 +17,16 @@ class RockimModel:
         self.registry = registry or Registry.load()
         self.cfg = CfgFile()
         self.path: Path | None = None
+        # dossier d'origine du cfg source : base de résolution des chemins
+        # RELATIFS (meshFile) — conservé même pour un gabarit sans chemin
+        self.source_dir: Path | None = None
         self.dirty = False
 
     # --- cycle de vie -----------------------------------------------------
     def open(self, path: str | Path) -> None:
         self.cfg = CfgFile.parse(path)
         self.path = Path(path)
+        self.source_dir = self.path.parent
         self.dirty = False
 
     def new(self) -> None:
@@ -38,7 +42,33 @@ class RockimModel:
         jamais écraser la référence."""
         self.cfg = CfgFile.parse(path)
         self.path = None
+        self.source_dir = Path(path).parent
         self.dirty = True
+
+    def mesh_file_path(self) -> Path | None:
+        """Chemin ABSOLU du meshFile, ou None s'il est introuvable.
+
+        Les decks du dépôt écrivent des chemins relatifs à la RACINE du
+        repo (convention des scripts run_*), pas au dossier du cfg — on
+        essaie donc, dans l'ordre : le chemin tel quel, le dossier source
+        du cfg, ses parents (jusqu'à 2 niveaux : bench_*/configs/ → racine),
+        et le cwd."""
+        raw = self.cfg.pairs.get("meshFile", "")
+        if not raw:
+            return None
+        p = Path(raw)
+        if p.is_absolute():
+            return p if p.exists() else None
+        bases = []
+        if self.source_dir is not None:
+            bases += [self.source_dir, self.source_dir.parent,
+                      self.source_dir.parent.parent]
+        bases.append(Path.cwd())
+        for base in bases:
+            cand = base / p
+            if cand.exists():
+                return cand.resolve()
+        return None
 
     def save(self, path: str | Path | None = None) -> Path:
         target = Path(path) if path else self.path
@@ -106,6 +136,12 @@ class RockimModel:
     def validate(self) -> list[tuple[str, str, str]]:
         """Retourne [(niveau, clé, message)] ; niveau = 'erreur'|'alerte'."""
         issues: list[tuple[str, str, str]] = []
+        if self.cfg.pairs.get("mesh") == "file" \
+                and self.mesh_file_path() is None:
+            issues.append(("erreur", "meshFile",
+                           f"maillage '{self.cfg.pairs.get('meshFile', '')}'"
+                           " introuvable — le générer (voir l'en-tête du "
+                           "deck) ou corriger le chemin"))
         for name, raw in self.cfg.pairs.items():
             hit = self.registry.lookup(name)
             if hit is None:

@@ -13,7 +13,7 @@ from ..controller import Controller
 
 # Ordre d'affichage des groupes (le reste vient après, trié).
 _ORDER = ["Général", "Maillage", "Matériau", "Joints", "Contact", "Outil",
-          "Conditions aux limites", "Corps et groupes", "Sorties",
+          "Conditions aux limites", "Hydro", "Corps et groupes", "Sorties",
           "Autres", "Inconnues"]
 
 

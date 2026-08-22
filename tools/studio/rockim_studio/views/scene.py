@@ -85,7 +85,7 @@ class SceneView(QWidget):
         self.array_box.blockSignals(True)
         self.array_box.clear()
         self.array_box.addItems(arrays)
-        for prefer in ("damage", "vonMises", "sigmaYY", "velocity"):
+        for prefer in ("bulkD", "damage", "vonMises", "sigmaYY", "velocity"):
             if prefer in arrays:
                 self.array_box.setCurrentText(prefer)
                 break

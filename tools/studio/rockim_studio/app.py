@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (QDockWidget, QFileDialog, QInputDialog,
                                QWidget)
 
 from .controller import Controller
+from .model.cfg_io import CfgFile
 from .run.monitor import HistoryMonitor
 from .run.runner import Runner
 from .views.console import Console
@@ -119,6 +120,25 @@ class MainWindow(QMainWindow):
     # Gabarits FDEM : les configs de référence du dépôt, par essai. Chemins
     # relatifs à la racine du repo (détectée depuis ce fichier).
     _TEMPLATES = [
+        # — les trois filières de production —
+        ("Tunnel EDZ pressurisé (rapide)", "configs/tunnel_bore_fast.cfg"),
+        ("Tunnel EDZ pressurisé (production)", "configs/tunnel_bore.cfg"),
+        ("Tunnel EDZ Weibull", "configs/tunnel_bore_weib.cfg"),
+        None,
+        ("Impact 3D smoke (bench1 réduit)", "configs/smoke_impact.cfg"),
+        ("Impact banc St Anne s1,5 (spec 005)",
+         "bench_impact/configs/impact_stanne_s15.cfg"),
+        ("Impact St Anne FIDÈLE (tout comme eux sauf adaptatif)",
+         "bench_impact/configs/impact_stanne_fidele_s15.cfg"),
+        None,
+        ("Hydro-frac Abu-Aisha ISO (grossier, hydro=on)",
+         "bench_abuaisha/configs/hf_iso_hydro_c.cfg"),
+        ("Hydro-frac Abu-Aisha ISO (production)",
+         "bench_abuaisha/configs/hf_iso_hydro.cfg"),
+        ("Hydro-frac Abu-Aisha ANISO (production)",
+         "bench_abuaisha/configs/hf_aniso_hydro.cfg"),
+        None,
+        # — essais de laboratoire et divers —
         ("Percussion 2D (insert disque)", "configs/fdem_percussion.cfg"),
         ("Percussion 3D (insert sphère)", "configs/fdem3d_percussion.cfg"),
         ("Percussion 3D GBM Voronoï",
@@ -126,7 +146,6 @@ class MainWindow(QMainWindow):
         ("UCS Bohus (platines)", "configs/cal_ucs_bohus.cfg"),
         ("Brésilien Bohus (disque)", "configs/cal_bts_bohus.cfg"),
         ("Triaxial Bohus GBM", "configs/triax_bohus_gbm.cfg"),
-        ("Tunnel / EDZ", "configs/tunnel_bore.cfg"),
         ("Coupe 2D (couteau PDC)", "configs/fdem_shear.cfg"),
         ("Vérification traction FDEM", "configs/verify_fdem_tension.cfg"),
     ]
@@ -134,7 +153,11 @@ class MainWindow(QMainWindow):
     def _build_templates_menu(self, menu_parent):
         root = Path(__file__).resolve().parents[3]
         sub = menu_parent.addMenu("Nouveau depuis un &modèle FDEM")
-        for label, rel in self._TEMPLATES:
+        for entry in self._TEMPLATES:
+            if entry is None:
+                sub.addSeparator()
+                continue
+            label, rel = entry
             path = root / rel
             a = QAction(label, self)
             a.setEnabled(path.exists())
@@ -217,13 +240,26 @@ class MainWindow(QMainWindow):
             return
         self.settings.setValue("lastOut", out)
         self.settings.setValue("threads", self.threads.value())
+        self.launch_case(out, exe=exe, threads=self.threads.value())
 
-        out_dir = Path(out)
+    def launch_case(self, out_dir: str | Path, exe: str = "",
+                    threads: int = 0):
+        """Lancement NON interactif (utilisé par l'UI et les tests) : copie
+        la config dans out_dir avec le meshFile ABSOLUTISÉ (les decks du
+        dépôt utilisent des chemins relatifs à la racine, qui casseraient
+        depuis la copie), puis lance."""
+        model = self.ctrl.model
+        out_dir = Path(out_dir)
         out_dir.mkdir(parents=True, exist_ok=True)
         cfg_path = out_dir / "studio.cfg"
-        self.ctrl.model.cfg.write(cfg_path, header="écrit par rockim-studio")
-        self.runner.exe = exe
-        self.runner.threads = self.threads.value()
+        copy = CfgFile(pairs=dict(model.cfg.pairs),
+                       comments=list(model.cfg.comments))
+        mesh = model.mesh_file_path()
+        if mesh is not None:
+            copy.pairs["meshFile"] = str(mesh)
+        copy.write(cfg_path, header="écrit par rockim-studio")
+        self.runner.exe = exe or self.settings.value("exe", "")
+        self.runner.threads = threads
         self.runner.launch(cfg_path, out_dir)
 
     def _stop(self):
@@ -253,9 +289,13 @@ class MainWindow(QMainWindow):
         path = QFileDialog.getExistingDirectory(
             self, "Dossier de résultats (out_*)", start)
         if path:
-            self.scene.load(path)
-            self.center.setCurrentWidget(self.scene)
-            self.console.append_log(f"résultats chargés : {path}")
+            self.load_results(path)
+
+    def load_results(self, path: str):
+        self.scene.load(path)
+        self.plot.load_csv(Path(path) / "history.csv")
+        self.center.setCurrentWidget(self.scene)
+        self.console.append_log(f"résultats chargés : {path}")
 
     # --- divers -----------------------------------------------------------
     def _dock(self, title: str, widget: QWidget, area) -> QDockWidget:

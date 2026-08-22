@@ -54,6 +54,31 @@ class LivePlot(QWidget):
         self.data.extend(rows)
         self._redraw()
 
+    def load_csv(self, path):
+        """Charge un history.csv complet (run terminé)."""
+        import csv
+        from pathlib import Path
+        path = Path(path)
+        if not path.exists():
+            return
+        self.reset()
+        with open(path, newline="", encoding="utf-8",
+                  errors="replace") as f:
+            reader = csv.reader(f)
+            header = next(reader, None)
+            if not header:
+                return
+            rows = []
+            for row in reader:
+                if len(row) < 2:
+                    continue
+                try:
+                    rows.append([float(v) for v in row])
+                except ValueError:
+                    continue
+        self.data = rows
+        self.set_header(header)
+
     def _redraw(self):
         if not self.header or not self.data:
             return
