@@ -414,3 +414,34 @@ le chantier s'arrête là.
 2. WP0.1 + WP0.2 : squelette + registre + extracteur (première PR).
 3. WP0.3 : round-trip sur les 104 configs — le premier verdict chiffré du
    chantier.
+
+## 10. Journal d'avancement
+
+**2026-08-22 (jour 1).** Spec validée par Fernando ; recentrage FDEM acté
+(§0.4). LIVRÉ et poussé, 14 tests PASS :
+
+- **M0 complet** : registre (256 clés extraites de src+include, garde
+  anti-dérive `--check`), round-trip vérifié sur les 104 configs, squelette
+  PySide6 (arbre / formulaire auto-généré / console / validation
+  types-bornes-énums-virgule FR / undo-redo), run manager QProcess + suivi
+  live de history.csv. Bout-en-bout réel : verify_fdem_tension lancé par le
+  Runner, 2074 lignes suivies, verdict [PASS] au journal.
+- **M1 quasi complet** : scène 3D pyvistaqt (champ au choix, preset
+  fissures = joints tBreak>=0 en rouge sur bulk translucide, érodés
+  masqués, vue à plat 2D, caméra conservée), série de frames VTU par les
+  lecteurs VTK avec cache, courbes post-run + superposition d'un run de
+  référence. Reste : mesure formelle du budget de perf sur un cas 150 k
+  tets (le critère bloquant du jalon).
+- **Les trois filières de production validées en chaîne complète**
+  (gabarit → validation → lancement meshFile absolutisé → suivi live →
+  scène 3D), sous Xvfb avec le solveur compilé sur place :
+  * tunnel EDZ (`tunnel_bore_fast`) : 78 s, fissures radiales, [PASS] ;
+  * impact 3D (`smoke_impact`, deux corps rock/insert) : 167 s, résumé
+    par corps au journal ;
+  * hydro-frac Abu-Aisha (`hf_iso_hydro_c`, hydro=on, pompe à débit) :
+    validée le même jour (maillage `make_circle_mesh` régénéré, 26
+    éléments au pourtour).
+- Registre en service actif : la clé morte `fragBrushV` du deck St Anne
+  fidèle (solveur lit `fragBrushV0` ; valeur = défaut, bit-neutre) a été
+  repérée par le contrôle de couverture et corrigée.
+- GUIDE_studio.md rédigé (installation, écran, filières, limites datées).
