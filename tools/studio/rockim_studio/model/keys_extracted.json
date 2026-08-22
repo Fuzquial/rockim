@@ -1,0 +1,3653 @@
+{
+ "dynamic_prefixes": {
+  "gauge.": "jauge en tranche : gauge.<nom> = \"z0 z1\"",
+  "groupBond.": "liaison entre corps : groupBond.<A>.<B> = joints",
+  "groupPhase.": "matériau d'un corps : groupPhase.<nom> = <phase>",
+  "groupVel.": "vitesse initiale d'un corps : groupVel.<nom> = vx vy vz",
+  "phase.": "propriété de phase minérale : phase.<nom>.<prop>"
+ },
+ "keys": {
+  "D": {
+   "required": false,
+   "sites": [
+    {
+     "default": "0.1",
+     "file": "Dem3dSolver.cpp"
+    },
+    {
+     "default": "0.08",
+     "file": "Fdem3dSolver.cpp"
+    },
+    {
+     "default": "0.1",
+     "file": "Fem3dSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "E": {
+   "required": false,
+   "sites": [
+    {
+     "default": "m.E",
+     "file": "Material.hpp"
+    }
+   ],
+   "type": "float"
+  },
+  "Gf": {
+   "required": false,
+   "sites": [
+    {
+     "default": "m.Gf",
+     "file": "Material.hpp"
+    }
+   ],
+   "type": "float"
+  },
+  "H": {
+   "required": false,
+   "sites": [
+    {
+     "default": "0.08",
+     "file": "Dem3dSolver.cpp"
+    },
+    {
+     "default": "H_",
+     "file": "DemSolver.cpp"
+    },
+    {
+     "default": "0.06",
+     "file": "Fdem3dSolver.cpp"
+    },
+    {
+     "default": "0.2",
+     "file": "FdemSolver.cpp"
+    },
+    {
+     "default": "0.08",
+     "file": "Fem3dSolver.cpp"
+    },
+    {
+     "default": "H_",
+     "file": "FemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "T": {
+   "required": false,
+   "sites": [
+    {
+     "default": "2e-4",
+     "file": "Dem3dSolver.cpp"
+    },
+    {
+     "default": "250e-6",
+     "file": "DemSolver.cpp"
+    },
+    {
+     "default": "2e-4",
+     "file": "Fdem3dSolver.cpp"
+    },
+    {
+     "default": "2.5e-4",
+     "file": "FdemSolver.cpp"
+    },
+    {
+     "default": "2e-4",
+     "file": "Fem3dSolver.cpp"
+    },
+    {
+     "default": "200e-6",
+     "file": "FemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "W": {
+   "required": false,
+   "sites": [
+    {
+     "default": "0.1",
+     "file": "Dem3dSolver.cpp"
+    },
+    {
+     "default": "W_",
+     "file": "DemSolver.cpp"
+    },
+    {
+     "default": "0.08",
+     "file": "Fdem3dSolver.cpp"
+    },
+    {
+     "default": "0.2",
+     "file": "FdemSolver.cpp"
+    },
+    {
+     "default": "0.1",
+     "file": "Fem3dSolver.cpp"
+    },
+    {
+     "default": "W_",
+     "file": "FemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "absorbFactor": {
+   "required": false,
+   "sites": [
+    {
+     "default": "1.0",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "absorbLayer": {
+   "required": false,
+   "sites": [
+    {
+     "default": "2.2",
+     "file": "Dem3dSolver.cpp"
+    },
+    {
+     "default": "2.2",
+     "file": "DemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "absorbSpringFactor": {
+   "required": false,
+   "sites": [
+    {
+     "default": "1.0",
+     "file": "Dem3dSolver.cpp"
+    },
+    {
+     "default": "1.0",
+     "file": "DemSolver.cpp"
+    },
+    {
+     "default": "1.0",
+     "file": "Fdem3dSolver.cpp"
+    },
+    {
+     "default": "1.0",
+     "file": "FdemSolver.cpp"
+    },
+    {
+     "default": "1.0",
+     "file": "Fem3dSolver.cpp"
+    },
+    {
+     "default": "1.0",
+     "file": "FemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "absorbSpringR": {
+   "required": false,
+   "sites": [
+    {
+     "default": "0.5 * W_",
+     "file": "Dem3dSolver.cpp"
+    },
+    {
+     "default": "0.5 * D_",
+     "file": "Dem3dSolver.cpp"
+    },
+    {
+     "default": "H_",
+     "file": "Dem3dSolver.cpp"
+    },
+    {
+     "default": "0.5 * W_",
+     "file": "DemSolver.cpp"
+    },
+    {
+     "default": "H_",
+     "file": "DemSolver.cpp"
+    },
+    {
+     "default": "0.5 * W_",
+     "file": "Fdem3dSolver.cpp"
+    },
+    {
+     "default": "0.5 * D_",
+     "file": "Fdem3dSolver.cpp"
+    },
+    {
+     "default": "H_",
+     "file": "Fdem3dSolver.cpp"
+    },
+    {
+     "default": "0.5 * W_",
+     "file": "FdemSolver.cpp"
+    },
+    {
+     "default": "H_",
+     "file": "FdemSolver.cpp"
+    },
+    {
+     "default": "0.5 * W_",
+     "file": "Fem3dSolver.cpp"
+    },
+    {
+     "default": "0.5 * D_",
+     "file": "Fem3dSolver.cpp"
+    },
+    {
+     "default": "H_",
+     "file": "Fem3dSolver.cpp"
+    },
+    {
+     "default": "0.5 * W_",
+     "file": "FemSolver.cpp"
+    },
+    {
+     "default": "H_",
+     "file": "FemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "absorbing": {
+   "required": false,
+   "sites": [
+    {
+     "default": "\"none\"",
+     "file": "Dem3dSolver.cpp"
+    },
+    {
+     "default": "\"none\"",
+     "file": "DemSolver.cpp"
+    },
+    {
+     "default": "\"none\"",
+     "file": "Fdem3dSolver.cpp"
+    },
+    {
+     "default": "\"none\"",
+     "file": "FdemSolver.cpp"
+    },
+    {
+     "default": "\"none\"",
+     "file": "FdemSolver.cpp"
+    },
+    {
+     "default": "\"none\"",
+     "file": "Fem3dSolver.cpp"
+    },
+    {
+     "default": "\"none\"",
+     "file": "FemSolver.cpp"
+    }
+   ],
+   "type": "str"
+  },
+  "backRakeDeg": {
+   "required": false,
+   "sites": [
+    {
+     "default": "20.0",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "barGaugeFrac": {
+   "required": false,
+   "sites": [
+    {
+     "default": "0.8",
+     "file": "FemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "barV0": {
+   "required": false,
+   "sites": [
+    {
+     "default": "1.0",
+     "file": "FemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "bondCohesion": {
+   "required": false,
+   "sites": [
+    {
+     "default": "mat_.cohesion",
+     "file": "Dem3dSolver.cpp"
+    },
+    {
+     "default": "mat_.cohesion",
+     "file": "DemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "bondFrictionDeg": {
+   "required": false,
+   "sites": [
+    {
+     "default": "mat_.phiDeg",
+     "file": "Dem3dSolver.cpp"
+    },
+    {
+     "default": "mat_.phiDeg",
+     "file": "DemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "bondRadiusFactor": {
+   "required": false,
+   "sites": [
+    {
+     "default": "1.0",
+     "file": "Dem3dSolver.cpp"
+    },
+    {
+     "default": "1.0",
+     "file": "DemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "bondStrengthScatter": {
+   "required": false,
+   "sites": [
+    {
+     "default": "0.0",
+     "file": "Dem3dSolver.cpp"
+    },
+    {
+     "default": "0.0",
+     "file": "DemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "bondTensile": {
+   "required": false,
+   "sites": [
+    {
+     "default": "mat_.ft",
+     "file": "Dem3dSolver.cpp"
+    },
+    {
+     "default": "mat_.ft",
+     "file": "Dem3dSolver.cpp"
+    },
+    {
+     "default": "mat_.ft",
+     "file": "DemSolver.cpp"
+    },
+    {
+     "default": "mat_.ft",
+     "file": "DemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "boreCX": {
+   "required": false,
+   "sites": [
+    {
+     "default": "0.5 * W_",
+     "file": "FdemSolver.cpp"
+    },
+    {
+     "default": "0.5 * W_",
+     "file": "FdemSolver.cpp"
+    },
+    {
+     "default": "0.5 * W_",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "boreCY": {
+   "required": false,
+   "sites": [
+    {
+     "default": "0.5 * H_",
+     "file": "FdemSolver.cpp"
+    },
+    {
+     "default": "0.5 * H_",
+     "file": "FdemSolver.cpp"
+    },
+    {
+     "default": "0.5 * H_",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "boreSelectR": {
+   "required": false,
+   "sites": [
+    {
+     "default": "0.0",
+     "file": "FdemSolver.cpp"
+    },
+    {
+     "default": "0.0",
+     "file": "FdemSolver.cpp"
+    },
+    {
+     "default": "0.0",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "bottomWall": {
+   "required": false,
+   "sites": [
+    {
+     "default": "scen_ != Scenario::TENSION",
+     "file": "Dem3dSolver.cpp"
+    },
+    {
+     "default": "scen_ != Scenario::TENSION",
+     "file": "DemSolver.cpp"
+    }
+   ],
+   "type": "bool"
+  },
+  "brazilianLoading": {
+   "required": false,
+   "sites": [
+    {
+     "default": "\"platens\"",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "str"
+  },
+  "brazilianStopAfterPeak": {
+   "required": false,
+   "sites": [
+    {
+     "default": "false",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "bool"
+  },
+  "brazilianStopDelay": {
+   "required": false,
+   "sites": [
+    {
+     "default": "5e-5",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "budgetAbortMin": {
+   "required": false,
+   "sites": [
+    {
+     "default": "0.0",
+     "file": "Fdem3dSolver.cpp"
+    },
+    {
+     "default": "0.0",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "budgetAbortPct": {
+   "required": false,
+   "sites": [
+    {
+     "default": "0.0",
+     "file": "Fdem3dSolver.cpp"
+    },
+    {
+     "default": "0.0",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "bulkCohesion": {
+   "required": false,
+   "sites": [
+    {
+     "default": "mBulk.cohesion",
+     "file": "Fdem3dSolver.cpp"
+    },
+    {
+     "default": "mBulk.cohesion",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "bulkDamage": {
+   "required": false,
+   "sites": [
+    {
+     "default": "\"off\"",
+     "file": "Fdem3dSolver.cpp"
+    },
+    {
+     "default": "\"off\"",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "str"
+  },
+  "bulkDamageCd": {
+   "required": false,
+   "sites": [
+    {
+     "default": "1.0",
+     "file": "Fdem3dSolver.cpp"
+    },
+    {
+     "default": "1.0",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "bulkDamageDelta0": {
+   "required": false,
+   "sites": [
+    {
+     "default": "1.4e-5",
+     "file": "Fdem3dSolver.cpp"
+    },
+    {
+     "default": "1.4e-5",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "bulkDamageDeltaF": {
+   "required": false,
+   "sites": [
+    {
+     "default": "4.0e-4",
+     "file": "Fdem3dSolver.cpp"
+    },
+    {
+     "default": "4.0e-4",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "bulkDamageDmax": {
+   "required": false,
+   "sites": [
+    {
+     "default": "0.9",
+     "file": "Fdem3dSolver.cpp"
+    },
+    {
+     "default": "0.9",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "bulkFrictionDeg": {
+   "required": false,
+   "sites": [
+    {
+     "default": "mBulk.phiDeg",
+     "file": "Fdem3dSolver.cpp"
+    },
+    {
+     "default": "mBulk.phiDeg",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "bulkFt": {
+   "required": false,
+   "sites": [
+    {
+     "default": "mBulk.ft",
+     "file": "Fdem3dSolver.cpp"
+    },
+    {
+     "default": "mBulk.ft",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "bulkGf": {
+   "required": false,
+   "sites": [
+    {
+     "default": "mBulk.Gf",
+     "file": "Fdem3dSolver.cpp"
+    },
+    {
+     "default": "mBulk.Gf",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "bulkViscosity": {
+   "required": false,
+   "sites": [
+    {
+     "default": "0.0",
+     "file": "Fdem3dSolver.cpp"
+    },
+    {
+     "default": "0.0",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "bulkViscosityGraded": {
+   "required": false,
+   "sites": [
+    {
+     "default": "0",
+     "file": "Fdem3dSolver.cpp"
+    }
+   ],
+   "type": "int"
+  },
+  "bulkViscosityXi": {
+   "required": false,
+   "sites": [
+    {
+     "default": "0.0",
+     "file": "Fdem3dSolver.cpp"
+    },
+    {
+     "default": "0.0",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "capH": {
+   "required": false,
+   "sites": [
+    {
+     "default": "m.K(",
+     "file": "MatLaw.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "capP0": {
+   "required": false,
+   "sites": [
+    {
+     "default": "8.0 * m.cohesion",
+     "file": "MatLaw.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "cfl": {
+   "required": false,
+   "sites": [
+    {
+     "default": "0.7",
+     "file": "FemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "chamferDeg": {
+   "required": false,
+   "sites": [
+    {
+     "default": "45.0",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "chamferLen": {
+   "required": false,
+   "sites": [
+    {
+     "default": "0.0",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "cohesion": {
+   "required": false,
+   "sites": [
+    {
+     "default": "m.cohesion",
+     "file": "Material.hpp"
+    }
+   ],
+   "type": "float"
+  },
+  "confineFaces": {
+   "required": false,
+   "sites": [
+    {
+     "default": "\"lateral\"",
+     "file": "Fdem3dSolver.cpp"
+    },
+    {
+     "default": "\"sides\"",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "str"
+  },
+  "confineGaugeTime": {
+   "required": false,
+   "sites": [
+    {
+     "default": "3.0 * confRamp_",
+     "file": "Fdem3dSolver.cpp"
+    },
+    {
+     "default": "3.0 * confRamp_",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "confiningPressure": {
+   "required": false,
+   "sites": [
+    {
+     "default": "0.0",
+     "file": "Fdem3dSolver.cpp"
+    },
+    {
+     "default": "0.0",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "confiningRamp": {
+   "required": false,
+   "sites": [
+    {
+     "default": "2e-4",
+     "file": "Fdem3dSolver.cpp"
+    },
+    {
+     "default": "0.0",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "contact": {
+   "required": false,
+   "sites": [
+    {
+     "default": "\"penalty\"",
+     "file": "Fdem3dSolver.cpp"
+    },
+    {
+     "default": "\"penalty\"",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "str"
+  },
+  "contactMu": {
+   "required": false,
+   "sites": [
+    {
+     "default": "mu_",
+     "file": "Dem3dSolver.cpp"
+    },
+    {
+     "default": "mu_",
+     "file": "DemSolver.cpp"
+    },
+    {
+     "default": "0.5",
+     "file": "Fdem3dSolver.cpp"
+    },
+    {
+     "default": "0.5",
+     "file": "FdemSolver.cpp"
+    },
+    {
+     "default": "0.5",
+     "file": "Fem3dSolver.cpp"
+    },
+    {
+     "default": "muC_",
+     "file": "FemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "contactVreg": {
+   "required": false,
+   "sites": [
+    {
+     "default": "1e-3",
+     "file": "Fdem3dSolver.cpp"
+    },
+    {
+     "default": "1e-3",
+     "file": "FdemSolver.cpp"
+    },
+    {
+     "default": "1e-3",
+     "file": "Fem3dSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "contactXi": {
+   "required": false,
+   "sites": [
+    {
+     "default": "xiC_",
+     "file": "Dem3dSolver.cpp"
+    },
+    {
+     "default": "xiC_",
+     "file": "DemSolver.cpp"
+    },
+    {
+     "default": "0.05",
+     "file": "Fdem3dSolver.cpp"
+    },
+    {
+     "default": "0.05",
+     "file": "FdemSolver.cpp"
+    },
+    {
+     "default": "0.05",
+     "file": "Fem3dSolver.cpp"
+    },
+    {
+     "default": "xiC_",
+     "file": "FemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "crushCap": {
+   "required": false,
+   "sites": [
+    {
+     "default": "8.0 * m.cohesion",
+     "file": "Fdem3dSolver.cpp"
+    },
+    {
+     "default": "8.0 * cfg_.getd(\"cohesion\", 0.0",
+     "file": "FdemSolver.cpp"
+    },
+    {
+     "default": "8.0 * m.cohesion",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "cutDepth": {
+   "required": false,
+   "sites": [
+    {
+     "default": "0.004",
+     "file": "Dem3dSolver.cpp"
+    },
+    {
+     "default": "0.004",
+     "file": "DemSolver.cpp"
+    },
+    {
+     "default": "0.004",
+     "file": "Fdem3dSolver.cpp"
+    },
+    {
+     "default": "0.004",
+     "file": "FdemSolver.cpp"
+    },
+    {
+     "default": "0.004",
+     "file": "Fem3dSolver.cpp"
+    },
+    {
+     "default": "0.003",
+     "file": "FemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "cutSpeed": {
+   "required": false,
+   "sites": [
+    {
+     "default": "10.0",
+     "file": "Dem3dSolver.cpp"
+    },
+    {
+     "default": "10.0",
+     "file": "DemSolver.cpp"
+    },
+    {
+     "default": "10.0",
+     "file": "Fdem3dSolver.cpp"
+    },
+    {
+     "default": "10.0",
+     "file": "FdemSolver.cpp"
+    },
+    {
+     "default": "10.0",
+     "file": "Fem3dSolver.cpp"
+    },
+    {
+     "default": "10.0",
+     "file": "FemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "cutterLen": {
+   "required": false,
+   "sites": [
+    {
+     "default": "0.013",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "cutterThick": {
+   "required": false,
+   "sites": [
+    {
+     "default": "0.0",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "damage": {
+   "required": false,
+   "sites": [
+    {
+     "default": "scen_ != Scenario::BAR_WAVE",
+     "file": "FemSolver.cpp"
+    }
+   ],
+   "type": "bool"
+  },
+  "dampingLocal": {
+   "required": false,
+   "sites": [
+    {
+     "default": "scen_ == Scenario::TENSION ? 0.7 : 0.02",
+     "file": "Dem3dSolver.cpp"
+    },
+    {
+     "default": "scen_ == Scenario::TENSION ? 0.7 : 0.02",
+     "file": "DemSolver.cpp"
+    },
+    {
+     "default": "scen_ == Scenario::TENSION ? 0.7 : 0.05",
+     "file": "Fdem3dSolver.cpp"
+    },
+    {
+     "default": "scen_ == Scenario::SHPB ? 0.0\n                                                 : (quasiStatic ? 0.7 : 0.02",
+     "file": "FdemSolver.cpp"
+    },
+    {
+     "default": "scen_ == Scenario::TENSION ? 0.7 : 0.05",
+     "file": "Fem3dSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "dfhBetaDeg": {
+   "required": false,
+   "sites": [
+    {
+     "default": "51.7",
+     "file": "MatLaw.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "dfhDCoh": {
+   "required": false,
+   "sites": [
+    {
+     "default": "153.3e6",
+     "file": "MatLaw.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "dfhDeld": {
+   "required": false,
+   "sites": [
+    {
+     "default": "1.0e9",
+     "file": "MatLaw.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "dfhK": {
+   "required": false,
+   "sites": [
+    {
+     "default": "0.38",
+     "file": "MatLaw.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "dfhPsiDeg": {
+   "required": false,
+   "sites": [
+    {
+     "default": "15.0",
+     "file": "MatLaw.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "dfhS": {
+   "required": false,
+   "sites": [
+    {
+     "default": "4.18879",
+     "file": "MatLaw.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "dfhSigW": {
+   "required": false,
+   "sites": [
+    {
+     "default": "120.0e6",
+     "file": "MatLaw.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "dfhWeibullM": {
+   "required": false,
+   "sites": [
+    {
+     "default": "24.0",
+     "file": "MatLaw.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "dfhZeff": {
+   "required": false,
+   "sites": [
+    {
+     "default": "1.0e-9",
+     "file": "MatLaw.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "diametralBand": {
+   "required": false,
+   "sites": [
+    {
+     "default": "0.15",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "discFlattenDeg": {
+   "required": false,
+   "sites": [
+    {
+     "default": "0.0",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "discMesh": {
+   "required": false,
+   "sites": [
+    {
+     "default": "\"cut\"",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "str"
+  },
+  "dtFactor": {
+   "required": false,
+   "sites": [
+    {
+     "default": "0.2",
+     "file": "Dem3dSolver.cpp"
+    },
+    {
+     "default": "0.2",
+     "file": "DemSolver.cpp"
+    },
+    {
+     "default": "0.15",
+     "file": "Fdem3dSolver.cpp"
+    },
+    {
+     "default": "0.2",
+     "file": "FdemSolver.cpp"
+    },
+    {
+     "default": "0.3",
+     "file": "Fem3dSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "elasticGaugeHi": {
+   "required": false,
+   "sites": [
+    {
+     "default": "0.8",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "elasticGaugeLo": {
+   "required": false,
+   "sites": [
+    {
+     "default": "0.3",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "erodeD": {
+   "required": false,
+   "sites": [
+    {
+     "default": "erodeD_",
+     "file": "FemSolver.cpp"
+    },
+    {
+     "default": "0.98",
+     "file": "MatLaw.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "erodeEpv": {
+   "required": false,
+   "sites": [
+    {
+     "default": "1.5",
+     "file": "MatLaw.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "excavRamp": {
+   "required": false,
+   "sites": [
+    {
+     "default": "0.0",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "excavRelease": {
+   "required": false,
+   "sites": [
+    {
+     "default": "false",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "bool"
+  },
+  "excavStart": {
+   "required": false,
+   "sites": [
+    {
+     "default": "0.0",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "extraContacts": {
+   "required": false,
+   "sites": [
+    {
+     "default": "8.0",
+     "file": "Dem3dSolver.cpp"
+    },
+    {
+     "default": "8.0",
+     "file": "DemSolver.cpp"
+    },
+    {
+     "default": "2.0",
+     "file": "Fdem3dSolver.cpp"
+    },
+    {
+     "default": "2.0",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "fieldSeed": {
+   "required": false,
+   "sites": [
+    {
+     "default": "cfg_.geti(\"seed\", 12345",
+     "file": "Fdem3dSolver.cpp"
+    },
+    {
+     "default": "cfg_.geti(\"seed\", 12345",
+     "file": "FdemSolver.cpp"
+    },
+    {
+     "default": "cfg_.geti(\"seed\", 12345",
+     "file": "Fem3dSolver.cpp"
+    }
+   ],
+   "type": "int"
+  },
+  "fixSides": {
+   "required": false,
+   "sites": [
+    {
+     "default": "false",
+     "file": "FemSolver.cpp"
+    }
+   ],
+   "type": "bool"
+  },
+  "fluidBulk": {
+   "required": false,
+   "sites": [
+    {
+     "default": "2.2e9",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "fluidDensity": {
+   "required": false,
+   "sites": [
+    {
+     "default": "1000.0",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "fragBrushAccel": {
+   "required": false,
+   "sites": [
+    {
+     "default": "98.1",
+     "file": "Fdem3dSolver.cpp"
+    },
+    {
+     "default": "98.1",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "fragBrushBeta": {
+   "required": false,
+   "sites": [
+    {
+     "default": "0.8",
+     "file": "Fdem3dSolver.cpp"
+    },
+    {
+     "default": "0.8",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "fragBrushDirX": {
+   "required": false,
+   "sites": [
+    {
+     "default": "0.0",
+     "file": "Fdem3dSolver.cpp"
+    },
+    {
+     "default": "0.0",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "fragBrushDirY": {
+   "required": false,
+   "sites": [
+    {
+     "default": "0.0",
+     "file": "Fdem3dSolver.cpp"
+    },
+    {
+     "default": "1.0",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "fragBrushDirZ": {
+   "required": false,
+   "sites": [
+    {
+     "default": "1.0",
+     "file": "Fdem3dSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "fragBrushStart": {
+   "required": false,
+   "sites": [
+    {
+     "default": "0.0",
+     "file": "Fdem3dSolver.cpp"
+    },
+    {
+     "default": "0.0",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "fragBrushV0": {
+   "required": false,
+   "sites": [
+    {
+     "default": "2.5e-3",
+     "file": "Fdem3dSolver.cpp"
+    },
+    {
+     "default": "2.5e-3",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "fragBrushZeroV": {
+   "required": false,
+   "sites": [
+    {
+     "default": "\"false\"",
+     "file": "Fdem3dSolver.cpp"
+    },
+    {
+     "default": "\"false\"",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "str"
+  },
+  "frames": {
+   "required": false,
+   "sites": [
+    {
+     "default": "50",
+     "file": "main.cpp"
+    }
+   ],
+   "type": "int"
+  },
+  "frictionDeg": {
+   "required": false,
+   "sites": [
+    {
+     "default": "m.phiDeg",
+     "file": "Material.hpp"
+    }
+   ],
+   "type": "float"
+  },
+  "ft": {
+   "required": false,
+   "sites": [
+    {
+     "default": "m.ft",
+     "file": "Material.hpp"
+    }
+   ],
+   "type": "float"
+  },
+  "gaugeHiFrac": {
+   "required": false,
+   "sites": [
+    {
+     "default": "0.75",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "gaugeLoFrac": {
+   "required": false,
+   "sites": [
+    {
+     "default": "0.25",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "gbAlphaCoh": {
+   "required": false,
+   "sites": [
+    {
+     "default": "1.0",
+     "file": "Material.hpp"
+    }
+   ],
+   "type": "float"
+  },
+  "gbAlphaE": {
+   "required": false,
+   "sites": [
+    {
+     "default": "1.0",
+     "file": "Material.hpp"
+    }
+   ],
+   "type": "float"
+  },
+  "gbAlphaFric": {
+   "required": false,
+   "sites": [
+    {
+     "default": "1.0",
+     "file": "Material.hpp"
+    }
+   ],
+   "type": "float"
+  },
+  "gbAlphaGf": {
+   "required": false,
+   "sites": [
+    {
+     "default": "1.0",
+     "file": "Material.hpp"
+    }
+   ],
+   "type": "float"
+  },
+  "gbAlphaTen": {
+   "required": false,
+   "sites": [
+    {
+     "default": "1.0",
+     "file": "Material.hpp"
+    }
+   ],
+   "type": "float"
+  },
+  "gbHeteroFactor": {
+   "required": false,
+   "sites": [
+    {
+     "default": "1.0",
+     "file": "Material.hpp"
+    }
+   ],
+   "type": "float"
+  },
+  "gcActEvery": {
+   "required": false,
+   "sites": [
+    {
+     "default": "64",
+     "file": "Fdem3dSolver.cpp"
+    },
+    {
+     "default": "64",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "int"
+  },
+  "gcActMargin": {
+   "required": false,
+   "sites": [
+    {
+     "default": "2.0",
+     "file": "Fdem3dSolver.cpp"
+    },
+    {
+     "default": "2.0",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "gcActivation": {
+   "required": false,
+   "sites": [
+    {
+     "default": "\"full\"",
+     "file": "Fdem3dSolver.cpp"
+    },
+    {
+     "default": "\"full\"",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "str"
+  },
+  "gcBirthTau": {
+   "required": false,
+   "sites": [
+    {
+     "default": "1e-6",
+     "file": "Fdem3dSolver.cpp"
+    },
+    {
+     "default": "1e-6",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "gcBoxMesh": {
+   "required": false,
+   "sites": [
+    {
+     "default": "true",
+     "file": "FdemSolver.cpp"
+    },
+    {
+     "default": "false",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "bool"
+  },
+  "gcCell": {
+   "required": false,
+   "sites": [
+    {
+     "default": "2.0 * hDisc_",
+     "file": "FdemSolver.cpp"
+    },
+    {
+     "default": "0.0",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "gcPenaltyFactor": {
+   "required": false,
+   "sites": [
+    {
+     "default": "0.01",
+     "file": "Fdem3dSolver.cpp"
+    },
+    {
+     "default": "0.01",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "gcRestitution": {
+   "required": false,
+   "sites": [
+    {
+     "default": "0.2",
+     "file": "Fdem3dSolver.cpp"
+    },
+    {
+     "default": "0.2",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "gcSurfaceRefresh": {
+   "required": false,
+   "sites": [
+    {
+     "default": "\"legacy\"",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "str"
+  },
+  "gcXi": {
+   "required": false,
+   "sites": [
+    {
+     "default": "0.8",
+     "file": "Fdem3dSolver.cpp"
+    },
+    {
+     "default": "0.8",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "gcXwindow": {
+   "required": false,
+   "sites": [
+    {
+     "default": "0.10",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "geometry": {
+   "required": false,
+   "sites": [
+    {
+     "default": "scen_ == Scenario::BRAZILIAN ? \"disc\"\n                              : scen_ == Scenario::SHPB      ? \"shpb\" : \"box\"",
+     "file": "FdemSolver.cpp"
+    },
+    {
+     "default": "\"box\"",
+     "file": "Fem3dSolver.cpp"
+    },
+    {
+     "default": "\"box\"",
+     "file": "Fem3dSolver.cpp"
+    }
+   ],
+   "type": "str"
+  },
+  "gfShearFactor": {
+   "required": false,
+   "sites": [
+    {
+     "default": "m.gfShearFactor",
+     "file": "Material.hpp"
+    }
+   ],
+   "type": "float"
+  },
+  "grainElemSize": {
+   "required": true,
+   "sites": [
+    {
+     "file": "FdemSolver.cpp"
+    },
+    {
+     "default": "0.0",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "grainJitter": {
+   "required": false,
+   "sites": [
+    {
+     "default": "0.5",
+     "file": "Fdem3dSolver.cpp"
+    },
+    {
+     "default": "0.5",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "grainMesh": {
+   "required": false,
+   "sites": [
+    {
+     "default": "\"fan\"",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "str"
+  },
+  "grainSeeding": {
+   "required": false,
+   "sites": [
+    {
+     "default": "\"hex\"",
+     "file": "Fdem3dSolver.cpp"
+    },
+    {
+     "default": "\"hex\"",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "str"
+  },
+  "grainSize": {
+   "required": true,
+   "sites": [
+    {
+     "file": "Fdem3dSolver.cpp"
+    },
+    {
+     "file": "FdemSolver.cpp"
+    },
+    {
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "gravity": {
+   "required": false,
+   "sites": [
+    {
+     "default": "0.0",
+     "file": "Fdem3dSolver.cpp"
+    },
+    {
+     "default": "0.0",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "gripLateralFree": {
+   "required": false,
+   "sites": [
+    {
+     "default": "false",
+     "file": "Dem3dSolver.cpp"
+    },
+    {
+     "default": "false",
+     "file": "Fdem3dSolver.cpp"
+    },
+    {
+     "default": "false",
+     "file": "FdemSolver.cpp"
+    },
+    {
+     "default": "false",
+     "file": "Fem3dSolver.cpp"
+    }
+   ],
+   "type": "bool"
+  },
+  "historyFlush": {
+   "required": false,
+   "sites": [
+    {
+     "default": "true",
+     "file": "main.cpp"
+    }
+   ],
+   "type": "bool"
+  },
+  "hydro": {
+   "required": false,
+   "sites": [
+    {
+     "default": "false",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "bool"
+  },
+  "hydroInjection": {
+   "required": false,
+   "sites": [
+    {
+     "default": "\"rate\"",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "str"
+  },
+  "hydroP0": {
+   "required": false,
+   "sites": [
+    {
+     "default": "0.0",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "hydroPressure": {
+   "required": false,
+   "sites": [
+    {
+     "default": "0.0",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "hydroRamp": {
+   "required": false,
+   "sites": [
+    {
+     "default": "0.0",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "hydroRate": {
+   "required": false,
+   "sites": [
+    {
+     "default": "0.0",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "hydroSource": {
+   "required": false,
+   "sites": [
+    {
+     "default": "\"bore\"",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "str"
+  },
+  "hydroStart": {
+   "required": false,
+   "sites": [
+    {
+     "default": "0.0",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "hydroWetDamage": {
+   "required": false,
+   "sites": [
+    {
+     "default": "1.0",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "impactSpeed": {
+   "required": false,
+   "sites": [
+    {
+     "default": "8.0",
+     "file": "Dem3dSolver.cpp"
+    },
+    {
+     "default": "15.0",
+     "file": "DemSolver.cpp"
+    },
+    {
+     "default": "8.0",
+     "file": "Fdem3dSolver.cpp"
+    },
+    {
+     "default": "8.0",
+     "file": "FdemSolver.cpp"
+    },
+    {
+     "default": "8.0",
+     "file": "Fem3dSolver.cpp"
+    },
+    {
+     "default": "15.0",
+     "file": "FemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "insertion": {
+   "required": false,
+   "sites": [
+    {
+     "default": "\"intrinsic\"",
+     "file": "Fdem3dSolver.cpp"
+    },
+    {
+     "default": "\"intrinsic\"",
+     "file": "Fdem3dSolver.cpp"
+    },
+    {
+     "default": "\"intrinsic\"",
+     "file": "FdemSolver.cpp"
+    },
+    {
+     "default": "\"intrinsic\"",
+     "file": "FdemSolver.cpp"
+    },
+    {
+     "default": "\"intrinsic\"",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "str"
+  },
+  "insertionPenaltyFactor": {
+   "required": false,
+   "sites": [
+    {
+     "default": "4.0",
+     "file": "Fdem3dSolver.cpp"
+    },
+    {
+     "default": "4.0",
+     "file": "Fdem3dSolver.cpp"
+    },
+    {
+     "default": "4.0",
+     "file": "FdemSolver.cpp"
+    },
+    {
+     "default": "4.0",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "insituSh": {
+   "required": false,
+   "sites": [
+    {
+     "default": "0.0",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "insituSv": {
+   "required": false,
+   "sites": [
+    {
+     "default": "0.0",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "insituSxy": {
+   "required": false,
+   "sites": [
+    {
+     "default": "0.0",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "jointContactPenalty": {
+   "required": false,
+   "sites": [
+    {
+     "default": "\"fixed\"",
+     "file": "Fdem3dSolver.cpp"
+    },
+    {
+     "default": "\"fixed\"",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "str"
+  },
+  "jointFrictionScaled": {
+   "required": false,
+   "sites": [
+    {
+     "default": "0",
+     "file": "Fdem3dSolver.cpp"
+    },
+    {
+     "default": "0",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "int"
+  },
+  "jointPenaltyFactor": {
+   "required": false,
+   "sites": [
+    {
+     "default": "20.0",
+     "file": "Fdem3dSolver.cpp"
+    },
+    {
+     "default": "20.0",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "jointShearEnvelope": {
+   "required": false,
+   "sites": [
+    {
+     "default": "\"yan\"",
+     "file": "Fdem3dSolver.cpp"
+    },
+    {
+     "default": "\"yan\"",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "str"
+  },
+  "jointShearUnload": {
+   "required": false,
+   "sites": [
+    {
+     "default": "\"plastic\"",
+     "file": "Fdem3dSolver.cpp"
+    },
+    {
+     "default": "\"plastic\"",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "str"
+  },
+  "jointSizeEffect": {
+   "required": false,
+   "sites": [
+    {
+     "default": "false",
+     "file": "Fdem3dSolver.cpp"
+    },
+    {
+     "default": "false",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "bool"
+  },
+  "jointSizeEffectClamp": {
+   "required": false,
+   "sites": [
+    {
+     "default": "5.0",
+     "file": "Fdem3dSolver.cpp"
+    },
+    {
+     "default": "5.0",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "jointSizeEffectM": {
+   "required": false,
+   "sites": [
+    {
+     "default": "mWeib",
+     "file": "Fdem3dSolver.cpp"
+    },
+    {
+     "default": "mWeib",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "jointSoftening": {
+   "required": false,
+   "sites": [
+    {
+     "default": "\"linear\"",
+     "file": "Fdem3dSolver.cpp"
+    },
+    {
+     "default": "\"linear\"",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "str"
+  },
+  "jointWeibullM": {
+   "required": false,
+   "sites": [
+    {
+     "default": "0.0",
+     "file": "Fdem3dSolver.cpp"
+    },
+    {
+     "default": "0.0",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "jointXi": {
+   "required": false,
+   "sites": [
+    {
+     "default": "0.05",
+     "file": "Fdem3dSolver.cpp"
+    },
+    {
+     "default": "0.05",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "jointZeff": {
+   "required": false,
+   "sites": [
+    {
+     "default": "1e-9",
+     "file": "Fdem3dSolver.cpp"
+    },
+    {
+     "default": "1e-9",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "knFactor": {
+   "required": false,
+   "sites": [
+    {
+     "default": "1.0",
+     "file": "Dem3dSolver.cpp"
+    },
+    {
+     "default": "1.0",
+     "file": "DemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "kpFactor": {
+   "required": false,
+   "sites": [
+    {
+     "default": "1.0",
+     "file": "FemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "ksRatio": {
+   "required": false,
+   "sites": [
+    {
+     "default": "ksRatio_",
+     "file": "Dem3dSolver.cpp"
+    },
+    {
+     "default": "ksRatio_",
+     "file": "DemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "lateralRollers": {
+   "required": false,
+   "sites": [
+    {
+     "default": "false",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "bool"
+  },
+  "law": {
+   "required": false,
+   "sites": [
+    {
+     "default": "\"elastic\"",
+     "file": "Fdem3dSolver.cpp"
+    },
+    {
+     "default": "\"elastic\"",
+     "file": "Fdem3dSolver.cpp"
+    },
+    {
+     "default": "\"elastic\"",
+     "file": "FdemSolver.cpp"
+    },
+    {
+     "default": "\"elastic\"",
+     "file": "FdemSolver.cpp"
+    },
+    {
+     "default": "\"dpr\"",
+     "file": "Fem3dSolver.cpp"
+    }
+   ],
+   "type": "str"
+  },
+  "lloydIters": {
+   "required": false,
+   "sites": [
+    {
+     "default": "2",
+     "file": "Fdem3dSolver.cpp"
+    },
+    {
+     "default": "2",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "int"
+  },
+  "loadArcDeg": {
+   "required": false,
+   "sites": [
+    {
+     "default": "7.5",
+     "file": "FdemSolver.cpp"
+    },
+    {
+     "default": "7.5",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "loadRate": {
+   "required": false,
+   "sites": [
+    {
+     "default": "20.0 * mat_.ft / T_",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "loading": {
+   "required": false,
+   "sites": [
+    {
+     "default": "\"grips\"",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "str"
+  },
+  "matWeibullM": {
+   "required": false,
+   "sites": [
+    {
+     "default": "0.0",
+     "file": "Fem3dSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "mcCohesion": {
+   "required": false,
+   "sites": [
+    {
+     "default": "m.cohesion",
+     "file": "MatLaw.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "mcDilationDeg": {
+   "required": false,
+   "sites": [
+    {
+     "default": "0.0",
+     "file": "MatLaw.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "mcFrictionDeg": {
+   "required": false,
+   "sites": [
+    {
+     "default": "m.phiDeg",
+     "file": "MatLaw.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "meanTensionCapFactor": {
+   "required": false,
+   "sites": [
+    {
+     "default": "3.0",
+     "file": "Fdem3dSolver.cpp"
+    },
+    {
+     "default": "3.0",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "mesh": {
+   "required": false,
+   "sites": [
+    {
+     "default": "\"grid\"",
+     "file": "Fdem3dSolver.cpp"
+    },
+    {
+     "default": "\"grid\"",
+     "file": "FdemSolver.cpp"
+    },
+    {
+     "default": "\"grid\"",
+     "file": "main.cpp"
+    }
+   ],
+   "type": "str"
+  },
+  "meshFile": {
+   "required": true,
+   "sites": [
+    {
+     "file": "Fdem3dSolver.cpp"
+    },
+    {
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "str"
+  },
+  "meshJitter": {
+   "required": false,
+   "sites": [
+    {
+     "default": "0.0",
+     "file": "Fdem3dSolver.cpp"
+    },
+    {
+     "default": "0.0",
+     "file": "FdemSolver.cpp"
+    },
+    {
+     "default": "0.25",
+     "file": "FdemSolver.cpp"
+    },
+    {
+     "default": "0.25",
+     "file": "FdemSolver.cpp"
+    },
+    {
+     "default": "0.0",
+     "file": "Fem3dSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "meshMirror": {
+   "required": false,
+   "sites": [
+    {
+     "default": "true",
+     "file": "Fem3dSolver.cpp"
+    }
+   ],
+   "type": "bool"
+  },
+  "mode": {
+   "required": false,
+   "sites": [
+    {
+     "default": "\"fem\"",
+     "file": "main.cpp"
+    }
+   ],
+   "type": "str"
+  },
+  "nu": {
+   "required": false,
+   "sites": [
+    {
+     "default": "m.nu",
+     "file": "Material.hpp"
+    }
+   ],
+   "type": "float"
+  },
+  "nx": {
+   "required": false,
+   "sites": [
+    {
+     "default": "20",
+     "file": "Fdem3dSolver.cpp"
+    },
+    {
+     "default": "64",
+     "file": "FdemSolver.cpp"
+    },
+    {
+     "default": "24",
+     "file": "Fem3dSolver.cpp"
+    },
+    {
+     "default": "nx_",
+     "file": "FemSolver.cpp"
+    }
+   ],
+   "type": "int"
+  },
+  "ny": {
+   "required": false,
+   "sites": [
+    {
+     "default": "20",
+     "file": "Fdem3dSolver.cpp"
+    },
+    {
+     "default": "64",
+     "file": "FdemSolver.cpp"
+    },
+    {
+     "default": "24",
+     "file": "Fem3dSolver.cpp"
+    },
+    {
+     "default": "ny_",
+     "file": "FemSolver.cpp"
+    }
+   ],
+   "type": "int"
+  },
+  "nz": {
+   "required": false,
+   "sites": [
+    {
+     "default": "15",
+     "file": "Fdem3dSolver.cpp"
+    },
+    {
+     "default": "18",
+     "file": "Fem3dSolver.cpp"
+    }
+   ],
+   "type": "int"
+  },
+  "outputDir": {
+   "required": false,
+   "sites": [
+    {
+     "default": "\"out\"",
+     "file": "main.cpp"
+    }
+   ],
+   "type": "str"
+  },
+  "packing": {
+   "required": false,
+   "sites": [
+    {
+     "default": "scen_ == Scenario::TENSION ? \"cubic\" : \"hcp\"",
+     "file": "Dem3dSolver.cpp"
+    },
+    {
+     "default": "\"hex\"",
+     "file": "DemSolver.cpp"
+    }
+   ],
+   "type": "str"
+  },
+  "particleRadius": {
+   "required": false,
+   "sites": [
+    {
+     "default": "1.5e-3",
+     "file": "Dem3dSolver.cpp"
+    },
+    {
+     "default": "r_",
+     "file": "DemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "phases": {
+   "required": false,
+   "sites": [
+    {
+     "default": "\"\"",
+     "file": "Material.hpp"
+    }
+   ],
+   "type": "str"
+  },
+  "platenHalfWidth": {
+   "required": false,
+   "sites": [
+    {
+     "default": "hwDef",
+     "file": "FdemSolver.cpp"
+    },
+    {
+     "default": "discR_",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "platenPenaltyFactor": {
+   "required": false,
+   "sites": [
+    {
+     "default": "1.0",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "platenTributary": {
+   "required": false,
+   "sites": [
+    {
+     "default": "true",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "bool"
+  },
+  "potPenaltyFactor": {
+   "required": false,
+   "sites": [
+    {
+     "default": "1.0",
+     "file": "Fdem3dSolver.cpp"
+    },
+    {
+     "default": "1.0",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "potTangentFactor": {
+   "required": false,
+   "sites": [
+    {
+     "default": "1.0",
+     "file": "Fdem3dSolver.cpp"
+    },
+    {
+     "default": "1.0",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "potXi": {
+   "required": false,
+   "sites": [
+    {
+     "default": "0.0",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "pullDelay": {
+   "required": false,
+   "sites": [
+    {
+     "default": "0.0",
+     "file": "Fdem3dSolver.cpp"
+    },
+    {
+     "default": "0.0",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "pullRamp": {
+   "required": false,
+   "sites": [
+    {
+     "default": "0.0",
+     "file": "Dem3dSolver.cpp"
+    },
+    {
+     "default": "0.0",
+     "file": "Fdem3dSolver.cpp"
+    },
+    {
+     "default": "0.0",
+     "file": "FdemSolver.cpp"
+    },
+    {
+     "default": "0.0",
+     "file": "Fem3dSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "pullV": {
+   "required": false,
+   "sites": [
+    {
+     "default": "0.05",
+     "file": "Dem3dSolver.cpp"
+    },
+    {
+     "default": "0.05",
+     "file": "DemSolver.cpp"
+    },
+    {
+     "default": "0.05",
+     "file": "Fdem3dSolver.cpp"
+    },
+    {
+     "default": "0.05",
+     "file": "FdemSolver.cpp"
+    },
+    {
+     "default": "0.05",
+     "file": "FdemSolver.cpp"
+    },
+    {
+     "default": "0.05",
+     "file": "FdemSolver.cpp"
+    },
+    {
+     "default": "0.05",
+     "file": "FdemSolver.cpp"
+    },
+    {
+     "default": "0.05",
+     "file": "Fem3dSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "refineLevels": {
+   "required": false,
+   "sites": [
+    {
+     "default": "0",
+     "file": "Fdem3dSolver.cpp"
+    },
+    {
+     "default": "0",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "int"
+  },
+  "rho": {
+   "required": false,
+   "sites": [
+    {
+     "default": "m.rho",
+     "file": "Material.hpp"
+    }
+   ],
+   "type": "float"
+  },
+  "saksalaEta": {
+   "required": false,
+   "sites": [
+    {
+     "default": "0.05e6",
+     "file": "MatLaw.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "scenario": {
+   "required": false,
+   "sites": [
+    {
+     "default": "\"percussion\"",
+     "file": "Dem3dSolver.cpp"
+    },
+    {
+     "default": "\"percussion\"",
+     "file": "DemSolver.cpp"
+    },
+    {
+     "default": "\"percussion\"",
+     "file": "Fdem3dSolver.cpp"
+    },
+    {
+     "default": "\"percussion\"",
+     "file": "FdemSolver.cpp"
+    },
+    {
+     "default": "\"percussion\"",
+     "file": "Fem3dSolver.cpp"
+    },
+    {
+     "default": "\"percussion\"",
+     "file": "FemSolver.cpp"
+    }
+   ],
+   "type": "str"
+  },
+  "seed": {
+   "required": false,
+   "sites": [
+    {
+     "default": "12345",
+     "file": "Dem3dSolver.cpp"
+    },
+    {
+     "default": "42",
+     "file": "DemSolver.cpp"
+    },
+    {
+     "default": "12345",
+     "file": "Fdem3dSolver.cpp"
+    },
+    {
+     "default": "12345",
+     "file": "Fdem3dSolver.cpp"
+    },
+    {
+     "default": "12345",
+     "file": "FdemSolver.cpp"
+    },
+    {
+     "default": "12345",
+     "file": "FdemSolver.cpp"
+    },
+    {
+     "default": "12345",
+     "file": "FdemSolver.cpp"
+    },
+    {
+     "default": "12345",
+     "file": "FdemSolver.cpp"
+    },
+    {
+     "default": "12345",
+     "file": "Fem3dSolver.cpp"
+    }
+   ],
+   "type": "int"
+  },
+  "shpbBarDiameter": {
+   "required": false,
+   "sites": [
+    {
+     "default": "0.05",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "shpbBarElemSize": {
+   "required": false,
+   "sites": [
+    {
+     "default": "5e-3",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "shpbDiscDiameter": {
+   "required": false,
+   "sites": [
+    {
+     "default": "0.050",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "shpbDiscElemSize": {
+   "required": false,
+   "sites": [
+    {
+     "default": "7.5e-4",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "shpbDiscSmooth": {
+   "required": false,
+   "sites": [
+    {
+     "default": "8",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "int"
+  },
+  "shpbGap": {
+   "required": false,
+   "sites": [
+    {
+     "default": "0.0",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "shpbGaugeHalfLength": {
+   "required": false,
+   "sites": [
+    {
+     "default": "2.0 * hBar_",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "shpbIncidentLength": {
+   "required": false,
+   "sites": [
+    {
+     "default": "2.00",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "shpbMonitor1": {
+   "required": false,
+   "sites": [
+    {
+     "default": "shpbLIB_ - 1.00",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "shpbMonitor2": {
+   "required": false,
+   "sites": [
+    {
+     "default": "xDiscL + shpbDrock_ + shpbGap_ + 1.00",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "shpbNoDisc": {
+   "required": false,
+   "sites": [
+    {
+     "default": "false",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "bool"
+  },
+  "shpbPulse": {
+   "required": false,
+   "sites": [
+    {
+     "default": "\"halfsine\"",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "str"
+  },
+  "shpbPulsePlateau": {
+   "required": false,
+   "sites": [
+    {
+     "default": "0.5",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "shpbPulseTau": {
+   "required": false,
+   "sites": [
+    {
+     "default": "2.2e-4",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "shpbPulseV0": {
+   "required": false,
+   "sites": [
+    {
+     "default": "5.2",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "shpbTransmitLength": {
+   "required": false,
+   "sites": [
+    {
+     "default": "1.50",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "sideWalls": {
+   "required": false,
+   "sites": [
+    {
+     "default": "false",
+     "file": "DemSolver.cpp"
+    }
+   ],
+   "type": "bool"
+  },
+  "skAt": {
+   "required": false,
+   "sites": [
+    {
+     "default": "0.98",
+     "file": "MatLaw.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "skBetaDP": {
+   "required": false,
+   "sites": [
+    {
+     "default": "0.0346",
+     "file": "MatLaw.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "skBetaT": {
+   "required": false,
+   "sites": [
+    {
+     "default": "5000.0",
+     "file": "MatLaw.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "skCres": {
+   "required": false,
+   "sites": [
+    {
+     "default": "2.89e6",
+     "file": "MatLaw.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "skDcap": {
+   "required": false,
+   "sites": [
+    {
+     "default": "1.0e-9",
+     "file": "MatLaw.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "skHdp": {
+   "required": false,
+   "sites": [
+    {
+     "default": "-10.0e9",
+     "file": "MatLaw.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "skNd": {
+   "required": false,
+   "sites": [
+    {
+     "default": "7.5e-8",
+     "file": "MatLaw.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "skPp0": {
+   "required": false,
+   "sites": [
+    {
+     "default": "1040.0e6",
+     "file": "MatLaw.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "skPtr0": {
+   "required": false,
+   "sites": [
+    {
+     "default": "377.0e6",
+     "file": "MatLaw.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "skSdp": {
+   "required": false,
+   "sites": [
+    {
+     "default": "1.0e4",
+     "file": "MatLaw.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "skSmr": {
+   "required": false,
+   "sites": [
+    {
+     "default": "1.0e4",
+     "file": "MatLaw.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "skWcap": {
+   "required": false,
+   "sites": [
+    {
+     "default": "0.0433",
+     "file": "MatLaw.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "stopOnRebound": {
+   "required": false,
+   "sites": [
+    {
+     "default": "false",
+     "file": "FemSolver.cpp"
+    }
+   ],
+   "type": "bool"
+  },
+  "stopPeakDrop": {
+   "required": false,
+   "sites": [
+    {
+     "default": "0.0",
+     "file": "Fdem3dSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "strainCap": {
+   "required": false,
+   "sites": [
+    {
+     "default": "strainCap_",
+     "file": "FemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "strainRateDIF": {
+   "required": false,
+   "sites": [
+    {
+     "default": "\"off\"",
+     "file": "Fdem3dSolver.cpp"
+    },
+    {
+     "default": "\"off\"",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "str"
+  },
+  "strainRateTau": {
+   "required": false,
+   "sites": [
+    {
+     "default": "1.0e-6",
+     "file": "Fdem3dSolver.cpp"
+    },
+    {
+     "default": "1.0e-6",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "strengthCorrAngleDeg": {
+   "required": false,
+   "sites": [
+    {
+     "default": "0.0",
+     "file": "Fdem3dSolver.cpp"
+    },
+    {
+     "default": "0.0",
+     "file": "FdemSolver.cpp"
+    },
+    {
+     "default": "0.0",
+     "file": "Fem3dSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "strengthCorrLength": {
+   "required": false,
+   "sites": [
+    {
+     "default": "0.0",
+     "file": "Fdem3dSolver.cpp"
+    },
+    {
+     "default": "0.0",
+     "file": "FdemSolver.cpp"
+    },
+    {
+     "default": "0.0",
+     "file": "Fem3dSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "strengthCorrLengthB": {
+   "required": false,
+   "sites": [
+    {
+     "default": "ell",
+     "file": "Fdem3dSolver.cpp"
+    },
+    {
+     "default": "ell",
+     "file": "FdemSolver.cpp"
+    },
+    {
+     "default": "ell",
+     "file": "Fem3dSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "thickness": {
+   "required": false,
+   "sites": [
+    {
+     "default": "1.0",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "toolContact": {
+   "required": false,
+   "sites": [
+    {
+     "default": "\"penalty\"",
+     "file": "Fdem3dSolver.cpp"
+    },
+    {
+     "default": "\"penalty\"",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "str"
+  },
+  "toolGap": {
+   "required": false,
+   "sites": [
+    {
+     "default": "1e-4",
+     "file": "Dem3dSolver.cpp"
+    },
+    {
+     "default": "1e-4",
+     "file": "DemSolver.cpp"
+    },
+    {
+     "default": "1e-4",
+     "file": "Fdem3dSolver.cpp"
+    },
+    {
+     "default": "1e-4",
+     "file": "FdemSolver.cpp"
+    },
+    {
+     "default": "1e-4",
+     "file": "Fem3dSolver.cpp"
+    },
+    {
+     "default": "1e-4",
+     "file": "FemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "toolImpulseCap": {
+   "required": false,
+   "sites": [
+    {
+     "default": "0.0",
+     "file": "Fdem3dSolver.cpp"
+    },
+    {
+     "default": "0.0",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "toolMass": {
+   "required": false,
+   "sites": [
+    {
+     "default": "0.5",
+     "file": "Dem3dSolver.cpp"
+    },
+    {
+     "default": "5.0",
+     "file": "DemSolver.cpp"
+    },
+    {
+     "default": "0.5",
+     "file": "Fdem3dSolver.cpp"
+    },
+    {
+     "default": "5.0",
+     "file": "FdemSolver.cpp"
+    },
+    {
+     "default": "0.5",
+     "file": "Fem3dSolver.cpp"
+    },
+    {
+     "default": "5.0",
+     "file": "FemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "toolRadius": {
+   "required": false,
+   "sites": [
+    {
+     "default": "0.015",
+     "file": "Dem3dSolver.cpp"
+    },
+    {
+     "default": "0.015",
+     "file": "DemSolver.cpp"
+    },
+    {
+     "default": "0.015",
+     "file": "Fdem3dSolver.cpp"
+    },
+    {
+     "default": "0.015",
+     "file": "FdemSolver.cpp"
+    },
+    {
+     "default": "0.015",
+     "file": "Fem3dSolver.cpp"
+    },
+    {
+     "default": "0.01",
+     "file": "FemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "toolShape": {
+   "required": false,
+   "sites": [
+    {
+     "default": "\"sphere\"",
+     "file": "Dem3dSolver.cpp"
+    },
+    {
+     "default": "\"disc\"",
+     "file": "DemSolver.cpp"
+    },
+    {
+     "default": "\"sphere\"",
+     "file": "Fdem3dSolver.cpp"
+    },
+    {
+     "default": "\"disc\"",
+     "file": "FdemSolver.cpp"
+    },
+    {
+     "default": "\"sphere\"",
+     "file": "Fem3dSolver.cpp"
+    },
+    {
+     "default": "scen_ == Scenario::SHEAR ? \"disc\" : \"flat\"",
+     "file": "FemSolver.cpp"
+    }
+   ],
+   "type": "str"
+  },
+  "toolSignoriniRelax": {
+   "required": false,
+   "sites": [
+    {
+     "default": "0.0",
+     "file": "Fdem3dSolver.cpp"
+    },
+    {
+     "default": "0.0",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "toolStop": {
+   "required": false,
+   "sites": [
+    {
+     "default": "0.0",
+     "file": "Fdem3dSolver.cpp"
+    },
+    {
+     "default": "0.0",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "toolWidth": {
+   "required": false,
+   "sites": [
+    {
+     "default": "0.02",
+     "file": "DemSolver.cpp"
+    },
+    {
+     "default": "0.02",
+     "file": "FdemSolver.cpp"
+    },
+    {
+     "default": "0.02",
+     "file": "FemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "toolX": {
+   "required": false,
+   "sites": [
+    {
+     "default": "0.5 * W_",
+     "file": "Dem3dSolver.cpp"
+    },
+    {
+     "default": "-tool_.radius - gap",
+     "file": "Dem3dSolver.cpp"
+    },
+    {
+     "default": "0.5 * W_",
+     "file": "DemSolver.cpp"
+    },
+    {
+     "default": "0.5 * W_",
+     "file": "Fdem3dSolver.cpp"
+    },
+    {
+     "default": "-tool_.radius - gap",
+     "file": "Fdem3dSolver.cpp"
+    },
+    {
+     "default": "0.5 * W_",
+     "file": "FdemSolver.cpp"
+    },
+    {
+     "default": "-0.002",
+     "file": "FdemSolver.cpp"
+    },
+    {
+     "default": "-tool_.radius - gap",
+     "file": "FdemSolver.cpp"
+    },
+    {
+     "default": "0.5 * W_",
+     "file": "Fem3dSolver.cpp"
+    },
+    {
+     "default": "-tool_.radius - gap",
+     "file": "Fem3dSolver.cpp"
+    },
+    {
+     "default": "0.5 * W_",
+     "file": "FemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "toolY": {
+   "required": false,
+   "sites": [
+    {
+     "default": "0.5 * D_",
+     "file": "Dem3dSolver.cpp"
+    },
+    {
+     "default": "0.5 * D_",
+     "file": "Fdem3dSolver.cpp"
+    },
+    {
+     "default": "0.5 * D_",
+     "file": "Fem3dSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "trackGroup": {
+   "required": false,
+   "sites": [
+    {
+     "default": "\"\"",
+     "file": "Fdem3dSolver.cpp"
+    }
+   ],
+   "type": "str"
+  },
+  "trackGroups": {
+   "required": false,
+   "sites": [
+    {
+     "default": "\"\"",
+     "file": "Fdem3dSolver.cpp"
+    }
+   ],
+   "type": "str"
+  },
+  "ucsStopAfterPeak": {
+   "required": false,
+   "sites": [
+    {
+     "default": "false",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "bool"
+  },
+  "ucsStopDelay": {
+   "required": false,
+   "sites": [
+    {
+     "default": "5e-5",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "verifyFt": {
+   "required": false,
+   "sites": [
+    {
+     "default": "true",
+     "file": "Fdem3dSolver.cpp"
+    },
+    {
+     "default": "true",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "bool"
+  },
+  "vertexMergeFrac": {
+   "required": false,
+   "sites": [
+    {
+     "default": "0.12",
+     "file": "Fdem3dSolver.cpp"
+    },
+    {
+     "default": "0.12",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "viscousInInsertion": {
+   "required": false,
+   "sites": [
+    {
+     "default": "1",
+     "file": "Fdem3dSolver.cpp"
+    }
+   ],
+   "type": "int"
+  },
+  "weibullScope": {
+   "required": false,
+   "sites": [
+    {
+     "default": "\"strength\"",
+     "file": "Fdem3dSolver.cpp"
+    },
+    {
+     "default": "\"strength\"",
+     "file": "FdemSolver.cpp"
+    },
+    {
+     "default": "\"strength\"",
+     "file": "MatLaw.cpp"
+    }
+   ],
+   "type": "str"
+  },
+  "writeJointMode": {
+   "required": false,
+   "sites": [
+    {
+     "default": "false",
+     "file": "Fdem3dSolver.cpp"
+    },
+    {
+     "default": "false",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "bool"
+  },
+  "yanA": {
+   "required": false,
+   "sites": [
+    {
+     "default": "0.63",
+     "file": "Fdem3dSolver.cpp"
+    },
+    {
+     "default": "0.63",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "yanB": {
+   "required": false,
+   "sites": [
+    {
+     "default": "1.8",
+     "file": "Fdem3dSolver.cpp"
+    },
+    {
+     "default": "1.8",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "yanC": {
+   "required": false,
+   "sites": [
+    {
+     "default": "6.0",
+     "file": "Fdem3dSolver.cpp"
+    },
+    {
+     "default": "6.0",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "float"
+  },
+  "yanQuadN": {
+   "required": false,
+   "sites": [
+    {
+     "default": "4096",
+     "file": "Fdem3dSolver.cpp"
+    },
+    {
+     "default": "4096",
+     "file": "FdemSolver.cpp"
+    }
+   ],
+   "type": "int"
+  }
+ }
+}

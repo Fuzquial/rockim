@@ -241,6 +241,20 @@ existantes immédiatement.
 
 ### M1 — Vue 3D et résultats (le gain visible)
 
+> **Budget de performance (ajout 2026-08-22, suite à la revue de Fernando —
+> la lenteur et la laideur du tkinter actuel ne doivent PAS se reproduire).**
+> Critères mesurés à la fin de M1, bloquants pour le jalon :
+> démarrage de l'application < 3 s ; chargement du run de référence spec 005
+> (~150 k tets × 50 frames) < 10 s avec navigation temporelle ensuite < 0,5 s
+> par frame (cache) ; rotation/zoom fluides (> 30 fps) sur la frame la plus
+> lourde ; aucune opération UI > 100 ms sur le thread principal (tout le
+> long passe en worker). Rappel d'architecture qui rend ces chiffres
+> atteignables : le rendu est fait par VTK (C++/GPU), le maillage par Gmsh
+> (C++/OCC), les données par les lecteurs VTK binaires + numpy — Python
+> n'est jamais dans une boucle par élément. Si un composant précis rate son
+> budget malgré profilage, la parade est un module C++ ciblé lié par
+> pybind11 (même chaîne oneAPI que le solveur), PAS une réécriture.
+
 - **WP1.1** `scene.py` : QtInteractor PyVista, thèmes, axes, échelle.
 - **WP1.2** `vtu_series.py` : slider temporel, presets d'affichage par mode
   (fdem : joints seuillés `state` + bulk ; fem : `damage` + érodés masqués ;
@@ -347,6 +361,7 @@ avertissante :
 | R5 | gros VTU 3D lents à charger (runs de 150 k tets × 50 frames) | cache décimé pour la navigation, chargement pleine résolution à la demande ; seuils appliqués côté lecture |
 | R6 | le chantier GUI cannibalise le temps de thèse | jalons M0/M1 courts et utiles seuls ; M2/M3 planifiés dans les creux (runs longs qui tournent) ; l'IA fait le gros du code, Fernando valide l'ergonomie |
 | R7 | round-trip impossible sur configs exotiques (commentaires, astuces) | dict `extra` conservatif + les commentaires du cfg source archivés en tête du fichier réécrit |
+| R8 | la pile Python déçoit malgré tout (perf ou rendu) | **clause de sortie** : le budget de perf M1 est bloquant ; composant fautif remplacé par un module C++/pybind11 ciblé ; au pire, le principe n°1 (solveur ignorant de la GUI) et les acquis transposables (registre des clés, format projet, recettes gmsh, mapping groupes → CL) permettent une GUI Qt/C++ ultérieure sans rien perdre du travail conceptuel. Le tout-C++ d'emblée est rejeté : itération d'ergonomie 3-5× plus lente, chaîne de build Qt+VTK+OCC lourde, et aucun gain là où ça compte (rendu, maillage, données sont déjà en C++ dans la pile retenue — PrePoMax lui-même est en C#, pas en C++) |
 
 ---
 
