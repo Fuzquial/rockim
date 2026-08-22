@@ -172,7 +172,9 @@ class GeometryPanel(QWidget):
         form_box.addLayout(form)
 
         self.mesh_btn = QPushButton("Mailler")
-        self.mesh_btn.clicked.connect(self.do_mesh)
+        # clicked(checked: bool) : ne PAS laisser le booleen du signal
+        # se faire passer pour le chemin de sortie de do_mesh
+        self.mesh_btn.clicked.connect(lambda: self.do_mesh())
         form_box.addWidget(self.mesh_btn)
         self.status = QLabel("—")
         self.status.setWordWrap(True)
@@ -216,6 +218,10 @@ class GeometryPanel(QWidget):
         recipe = self.canvas.recipe
         if recipe.validate():
             return
+        if out_msh is None or isinstance(out_msh, bool):
+            # ceinture et bretelles : un signal Qt connecte en direct passe
+            # clicked(checked) — un bool n'est jamais un chemin
+            out_msh = None
         if out_msh is None:
             base = self.ctrl.model.source_dir or Path.cwd()
             out_msh = Path(base) / "meshes/studio_mesh.msh"
