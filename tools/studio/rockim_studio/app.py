@@ -1,0 +1,247 @@
+"""app.py — la fenêtre principale de rockim-studio (spec 006, WP0.1/0.4/0.5).
+
+Disposition M0 (la scène 3D PyVista arrive en M1 au centre) :
+  gauche  = arbre du modèle ; droite = propriétés du groupe sélectionné ;
+  centre  = courbe live du run ; bas = console (journal + validation).
+"""
+from __future__ import annotations
+
+from pathlib import Path
+
+from PySide6.QtCore import QSettings, Qt
+from PySide6.QtGui import QAction, QKeySequence
+from PySide6.QtWidgets import (QDockWidget, QFileDialog, QInputDialog,
+                               QMainWindow, QMessageBox, QSpinBox, QToolBar,
+                               QWidget)
+
+from .controller import Controller
+from .run.monitor import HistoryMonitor
+from .run.runner import Runner
+from .views.console import Console
+from .views.plots import LivePlot
+from .views.props import PropertyPanel
+from .views.tree import ModelTree
+
+
+class MainWindow(QMainWindow):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("rockim-studio")
+        self.settings = QSettings("rockim", "studio")
+
+        self.ctrl = Controller(parent=self)
+        self.runner = Runner(parent=self)
+        self.monitor = HistoryMonitor(parent=self)
+
+        # centre : courbe live (M1 : scène 3D + onglets)
+        self.plot = LivePlot()
+        self.setCentralWidget(self.plot)
+
+        # docks
+        self.tree = ModelTree(self.ctrl)
+        self._dock("Modèle", self.tree, Qt.LeftDockWidgetArea)
+        self.props = PropertyPanel(self.ctrl)
+        self._dock("Propriétés", self.props, Qt.RightDockWidgetArea)
+        self.console = Console(self.ctrl)
+        self._dock("Console", self.console, Qt.BottomDockWidgetArea)
+
+        self.tree.group_selected.connect(self.props.show_group)
+        self.ctrl.model_reset.connect(self._refresh_title)
+        self.ctrl.key_changed.connect(lambda _k: self._refresh_title())
+
+        self.runner.output.connect(self.console.append_log)
+        self.runner.started.connect(self._run_started)
+        self.runner.finished.connect(self._run_finished)
+        self.monitor.header_ready.connect(self.plot.set_header)
+        self.monitor.rows_added.connect(self.plot.add_rows)
+
+        self._build_actions()
+        self._restore_state()
+        self.ctrl.new()
+
+    # --- actions et barre d'outils ---------------------------------------
+    def _build_actions(self):
+        bar = QToolBar("Principal")
+        bar.setObjectName("mainToolbar")
+        self.addToolBar(bar)
+        menu_f = self.menuBar().addMenu("&Fichier")
+        menu_e = self.menuBar().addMenu("&Édition")
+        menu_r = self.menuBar().addMenu("&Calcul")
+
+        def act(text, slot, seq=None, menus=(), toolbar=False):
+            a = QAction(text, self)
+            if seq:
+                a.setShortcut(QKeySequence(seq))
+            a.triggered.connect(slot)
+            for m in menus:
+                m.addAction(a)
+            if toolbar:
+                bar.addAction(a)
+            return a
+
+        act("&Nouveau", self._new, "Ctrl+N", (menu_f,))
+        act("&Ouvrir un cfg…", self._open, "Ctrl+O", (menu_f,), True)
+        act("&Enregistrer", self._save, "Ctrl+S", (menu_f,), True)
+        act("Enregistrer &sous…", self._save_as, "Ctrl+Shift+S", (menu_f,))
+        menu_f.addSeparator()
+        act("&Quitter", self.close, "Ctrl+Q", (menu_f,))
+
+        act("&Annuler", self.ctrl.undo, "Ctrl+Z", (menu_e,))
+        act("&Rétablir", self.ctrl.redo, "Ctrl+Shift+Z", (menu_e,))
+
+        bar.addSeparator()
+        act("&Lancer", self._launch, "F5", (menu_r,), True)
+        act("&Arrêter", self._stop, "Shift+F5", (menu_r,), True)
+        act("&Exécutable rockim…", self._pick_exe, None, (menu_r,))
+        menu_r.addSeparator()
+
+        self.threads = QSpinBox()
+        self.threads.setRange(0, 128)
+        self.threads.setToolTip("OMP_NUM_THREADS (0 = environnement)")
+        self.threads.setValue(int(self.settings.value("threads", 0)))
+        bar.addWidget(self.threads)
+
+        self.statusBar().showMessage("prêt")
+        self.ctrl.validation_changed.connect(self._status_validation)
+
+    # --- fichier ----------------------------------------------------------
+    def _confirm_discard(self) -> bool:
+        if not self.ctrl.model.dirty:
+            return True
+        r = QMessageBox.question(self, "Modifications non enregistrées",
+                                 "Abandonner les modifications en cours ?")
+        return r == QMessageBox.Yes
+
+    def _new(self):
+        if self._confirm_discard():
+            self.ctrl.new()
+
+    def _open(self):
+        if not self._confirm_discard():
+            return
+        start = self.settings.value("lastDir", str(Path.cwd()))
+        path, _f = QFileDialog.getOpenFileName(
+            self, "Ouvrir une configuration", start, "Config rockim (*.cfg)")
+        if path:
+            self.settings.setValue("lastDir", str(Path(path).parent))
+            self.ctrl.open(path)
+
+    def _save(self):
+        if self.ctrl.model.path is None:
+            self._save_as()
+        else:
+            self.ctrl.save()
+            self._refresh_title()
+
+    def _save_as(self):
+        start = self.settings.value("lastDir", str(Path.cwd()))
+        path, _f = QFileDialog.getSaveFileName(
+            self, "Enregistrer la configuration", start,
+            "Config rockim (*.cfg)")
+        if path:
+            self.settings.setValue("lastDir", str(Path(path).parent))
+            self.ctrl.save(path)
+            self._refresh_title()
+
+    # --- calcul -----------------------------------------------------------
+    def _pick_exe(self):
+        path, _f = QFileDialog.getOpenFileName(
+            self, "Exécutable rockim",
+            self.settings.value("exe", str(Path.cwd())),
+            "Exécutable (rockim rockim.exe);;Tous (*)")
+        if path:
+            self.settings.setValue("exe", path)
+
+    def _launch(self):
+        issues = self.ctrl.model.validate()
+        errors = [i for i in issues if i[0] == "erreur"]
+        if errors:
+            QMessageBox.warning(
+                self, "Validation",
+                "Erreurs bloquantes :\n" + "\n".join(
+                    f"• {k} : {m}" for _l, k, m in errors[:12]))
+            return
+        exe = self.settings.value("exe", "")
+        if not exe or not Path(exe).exists():
+            self._pick_exe()
+            exe = self.settings.value("exe", "")
+            if not exe:
+                return
+        out, ok = QInputDialog.getText(
+            self, "Dossier de sortie", "out_dir :",
+            text=self.settings.value("lastOut", "out_studio"))
+        if not ok or not out:
+            return
+        self.settings.setValue("lastOut", out)
+        self.settings.setValue("threads", self.threads.value())
+
+        out_dir = Path(out)
+        out_dir.mkdir(parents=True, exist_ok=True)
+        cfg_path = out_dir / "studio.cfg"
+        self.ctrl.model.cfg.write(cfg_path, header="écrit par rockim-studio")
+        self.runner.exe = exe
+        self.runner.threads = self.threads.value()
+        self.runner.launch(cfg_path, out_dir)
+
+    def _stop(self):
+        self.runner.stop()
+
+    def _run_started(self, out_dir: str):
+        self.console.append_log(f"=== run lancé -> {out_dir} ===")
+        self.plot.reset()
+        self.monitor.watch(out_dir)
+        self.statusBar().showMessage(f"run en cours : {out_dir}")
+
+    def _run_finished(self, code: int, out_dir: str):
+        self.monitor.stop()
+        verdict = "OK" if code == 0 else f"code retour {code}"
+        self.console.append_log(f"=== run terminé ({verdict}) ===")
+        summary = Path(out_dir) / "summary.txt"
+        if summary.exists():
+            self.console.append_log(summary.read_text(
+                encoding="utf-8", errors="replace"))
+        self.statusBar().showMessage(f"terminé : {out_dir} ({verdict})")
+
+    # --- divers -----------------------------------------------------------
+    def _dock(self, title: str, widget: QWidget, area):
+        d = QDockWidget(title, self)
+        d.setObjectName(title)
+        d.setWidget(widget)
+        self.addDockWidget(area, d)
+
+    def _refresh_title(self):
+        name = self.ctrl.model.path.name if self.ctrl.model.path \
+            else "sans titre"
+        star = " *" if self.ctrl.model.dirty else ""
+        self.setWindowTitle(f"rockim-studio — {name}{star} "
+                            f"[{self.ctrl.model.mode}]")
+
+    def _status_validation(self, issues: list):
+        n_err = sum(1 for i in issues if i[0] == "erreur")
+        if n_err:
+            self.statusBar().showMessage(
+                f"{n_err} erreur(s) de validation — voir la console")
+
+    def _restore_state(self):
+        geo = self.settings.value("geometry")
+        if geo:
+            self.restoreGeometry(geo)
+        state = self.settings.value("windowState")
+        if state:
+            self.restoreState(state)
+
+    def closeEvent(self, event):
+        if self.runner.busy:
+            r = QMessageBox.question(self, "Run en cours",
+                                     "Un run tourne encore. L'arrêter et "
+                                     "quitter ?")
+            if r != QMessageBox.Yes:
+                event.ignore()
+                return
+            self.runner.stop()
+        if not self._confirm_discard():
+            event.ignore()
+            return
+        self.settings.setValue("geometry", self.saveGeometry())
+        self.settings.setValue("windowState", self.saveState())
+        super().closeEvent(event)
