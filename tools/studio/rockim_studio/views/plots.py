@@ -21,6 +21,8 @@ class LivePlot(QWidget):
         self.column = QComboBox()
         self.column.currentTextChanged.connect(lambda _t: self._redraw())
         bar.addWidget(self.column, 1)
+        self.ref_label = QLabel("")
+        bar.addWidget(self.ref_label)
         lay.addLayout(bar)
 
         self.canvas = FigureCanvasQTAgg(Figure(tight_layout=True))
@@ -29,6 +31,8 @@ class LivePlot(QWidget):
 
         self.header: list[str] = []
         self.data: list[list] = []
+        # run de référence superposé (tirets) : (nom, header, data)
+        self.ref: tuple[str, list, list] | None = None
 
     def reset(self):
         self.header = []
@@ -36,6 +40,12 @@ class LivePlot(QWidget):
         self.column.clear()
         self.ax.clear()
         self.canvas.draw_idle()
+
+    def set_reference(self, name: str | None, header=None, data=None):
+        """Fixe (ou efface, name=None) le run de référence superposé."""
+        self.ref = (name, header, data) if name else None
+        self.ref_label.setText(f"réf : {name}" if name else "")
+        self._redraw()
 
     def set_header(self, header: list):
         self.header = header
@@ -56,27 +66,11 @@ class LivePlot(QWidget):
 
     def load_csv(self, path):
         """Charge un history.csv complet (run terminé)."""
-        import csv
-        from pathlib import Path
-        path = Path(path)
-        if not path.exists():
+        header, data = self.read_csv(path)
+        if header is None:
             return
         self.reset()
-        with open(path, newline="", encoding="utf-8",
-                  errors="replace") as f:
-            reader = csv.reader(f)
-            header = next(reader, None)
-            if not header:
-                return
-            rows = []
-            for row in reader:
-                if len(row) < 2:
-                    continue
-                try:
-                    rows.append([float(v) for v in row])
-                except ValueError:
-                    continue
-        self.data = rows
+        self.data = data
         self.set_header(header)
 
     def _redraw(self):
@@ -89,8 +83,38 @@ class LivePlot(QWidget):
         t = [r[0] for r in self.data if len(r) > j]
         y = [r[j] for r in self.data if len(r) > j]
         self.ax.clear()
-        self.ax.plot(t, y, lw=1.0)
+        self.ax.plot(t, y, lw=1.0, label="courant")
+        if self.ref is not None:
+            ref_name, ref_header, ref_data = self.ref
+            if name in ref_header:
+                k = ref_header.index(name)
+                rt = [r[0] for r in ref_data if len(r) > k]
+                ry = [r[k] for r in ref_data if len(r) > k]
+                self.ax.plot(rt, ry, lw=1.0, ls="--", label=ref_name)
+                self.ax.legend(loc="best", fontsize=8)
         self.ax.set_xlabel(self.header[0])
         self.ax.set_ylabel(name)
         self.ax.grid(True, alpha=0.3)
         self.canvas.draw_idle()
+
+    @staticmethod
+    def read_csv(path):
+        """Lit un history.csv -> (header, data) ou (None, None)."""
+        import csv
+        from pathlib import Path
+        path = Path(path)
+        if not path.exists():
+            return None, None
+        with open(path, newline="", encoding="utf-8",
+                  errors="replace") as f:
+            reader = csv.reader(f)
+            header = next(reader, None)
+            if not header:
+                return None, None
+            data = []
+            for row in reader:
+                try:
+                    data.append([float(v) for v in row])
+                except ValueError:
+                    continue
+        return header, data

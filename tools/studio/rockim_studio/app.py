@@ -106,6 +106,7 @@ class MainWindow(QMainWindow):
         act("&Exécutable rockim…", self._pick_exe, None, (menu_r,))
         act("Ouvrir un &dossier de résultats…", self._open_results,
             "Ctrl+R", (menu_r,), True)
+        act("&Comparer avec un run…", self._compare_run, None, (menu_r,))
         menu_r.addSeparator()
 
         self.threads = QSpinBox()
@@ -296,6 +297,20 @@ class MainWindow(QMainWindow):
         self.plot.load_csv(Path(path) / "history.csv")
         self.center.setCurrentWidget(self.scene)
         self.console.append_log(f"résultats chargés : {path}")
+
+    def _compare_run(self):
+        start = self.settings.value("lastOut", str(Path.cwd()))
+        path = QFileDialog.getExistingDirectory(
+            self, "Run de référence à superposer (out_*)", start)
+        if not path:
+            self.plot.set_reference(None)
+            return
+        header, data = self.plot.read_csv(Path(path) / "history.csv")
+        if header is None:
+            self.console.append_log(f"pas de history.csv dans {path}")
+            return
+        self.plot.set_reference(Path(path).name, header, data)
+        self.center.setCurrentWidget(self.plot)
 
     # --- divers -----------------------------------------------------------
     def _dock(self, title: str, widget: QWidget, area) -> QDockWidget:
