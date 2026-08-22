@@ -5,7 +5,7 @@ framework to investigate near-wellbore hydraulic fracturing in homogeneous and
 fractured rock formations*, *J. Petrol. Sci. Eng.* **154** (2017) 100–113,
 section 3 et annexe A.
 
-État au 2026-08-21, 04 h 10. Source : `simulations/FDEM/rockim/rockim_p1/`.
+État au 2026-08-22, 02 h 30. Source : `simulations/FDEM/rockim/rockim_p1/`.
 
 ---
 
@@ -290,11 +290,47 @@ et non plus inférée.
 | pic isotrope | 13,750 (+14,6 %) | 12,806 (+6,7 %) |
 | écart entre les deux | 10,36 points | 11,15 points |
 
-### 7.3 En cours
+### 7.3 L'essai 3 : le protocole de l'article, et la falsification du recouvrement
 
-Aucun calcul en cours.
+La courbe p(t) des essais 1-2 montre deux pentes : 8,13 MPa/ms jusqu'à
+1,46 MPa (t = 0,2 ms), puis 4,82 jusqu'au pic. La première est le
+recouvrement excavation/pompe — la paroi converge pendant que la pompe
+débite déjà — alors que l'article (section 3.2) exécute le pas géostatique
+et l'excavation AVANT toute injection. L'hypothèse testée, proposée par
+F. Uzquiano : cet offset de ~1,5-2 MPa se retrancherait du pic.
 
-### 7.4 Proposés, non lancés
+La clé `hydroStart` (binaire rockim_e3.exe) reproduit le protocole exact :
+pompe à l'arrêt jusqu'à 0,4 ms, masse re-basée sur le volume courant,
+injection depuis l'état excavé et convergé. Résultat isotrope, terminé le
+2026-08-22 :
+
+| | essai 1 (pompe dès t=0) | essai 3 (protocole article) |
+|---|---|---|
+| première insertion | 12,613 MPa | 12,596 |
+| pic | 13,750 | **13,755** |
+| incubation | 1,137 | 1,158 |
+| instant du pic | 2,724 ms | 3,225 |
+
+**Verdict : H0.** Le pic est reproduit à 0,04 % et l'insertion à 0,13 % ;
+seule l'horloge a glissé (+0,50 ms). Le recouvrement excavation/pompe ne
+pesait RIEN sur le pic — l'hypothèse du retranchement est falsifiée, et
+avec elle l'hypothèse de l'onde d'excavation réfléchie (l'insertion n'a pas
+bougé alors que le pic s'est éloigné du retour d'onde). Le dépassement
+reste entièrement expliqué par le budget statique + incubation. Corollaire
+utile : cette insensibilité est aussi la meilleure non-régression de la clé
+`hydroStart` — la physique est intacte, seul le temps se déplace.
+
+L'anisotrope, terminé le 2026-08-22 à 02 h 12, confirme à l'identique :
+pic **14,999 MPa** contre 14,993 au run de référence (0,04 %), insertion
+13,324 contre 13,312 mesurés à l'essai 2 (0,09 %), pic à 3,491 ms contre
+2,928 (+0,56 ms d'horloge). H0 tient dans les DEUX états de contrainte :
+le protocole de l'article ne change que l'horloge, dans les deux cas.
+
+### 7.4 En cours
+
+Aucun calcul hydraulique en cours.
+
+### 7.5 Proposés, non lancés
 
 | essai | ce qu'il tranche | clé | coût |
 |---|---|---|---|
