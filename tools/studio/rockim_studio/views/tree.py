@@ -23,6 +23,7 @@ class ModelTree(QTreeWidget):
     def __init__(self, ctrl: Controller, parent=None):
         super().__init__(parent)
         self.ctrl = ctrl
+        self.allowed: set[str] | None = None   # None = tous (mode expert)
         self.setColumnCount(2)
         self.setHeaderLabels(["Modèle", "Valeur"])
         self.itemClicked.connect(self._clicked)
@@ -40,6 +41,11 @@ class ModelTree(QTreeWidget):
         for name in names:
             explicit = [k for k in groups[name]
                         if model.is_explicit(k.name)]
+            # module metier : un groupe hors module n'apparait que s'il
+            # porte des cles posees (on ne cache jamais une cle explicite)
+            if self.allowed is not None and name not in self.allowed \
+                    and not explicit:
+                continue
             top = QTreeWidgetItem([name, f"{len(explicit)} posée(s)"
                                    if explicit else ""])
             self.addTopLevelItem(top)
@@ -53,3 +59,8 @@ class ModelTree(QTreeWidget):
     def _clicked(self, item: QTreeWidgetItem, _col: int):
         top = item if item.parent() is None else item.parent()
         self.group_selected.emit(top.text(0))
+
+    def set_allowed(self, groups: set[str] | None):
+        """Filtre du MODULE metier (None = tout montrer)."""
+        self.allowed = groups
+        self.rebuild()

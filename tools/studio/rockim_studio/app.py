@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (QDockWidget, QFileDialog, QInputDialog,
                                QMainWindow, QMessageBox, QSpinBox, QToolBar,
                                QWidget)
 
+from . import modules
 from .controller import Controller
 from .model.cfg_io import CfgFile
 from .run.monitor import HistoryMonitor
@@ -72,6 +73,12 @@ class MainWindow(QMainWindow):
 
         self._build_actions()
         self._restore_state()
+        # ---- MODULE metier (Fernando 2026-08-22) : choisi au demarrage,
+        # memorise ; l'interface ne montre que ce qui appartient au module.
+        mk = self.settings.value("module", "")
+        if not mk:
+            mk = self._choose_module(initial=True)
+        self.set_module(modules.by_key(mk), startup=True)
         self.ctrl.new()
 
     # --- actions et barre d'outils ---------------------------------------
@@ -94,6 +101,8 @@ class MainWindow(QMainWindow):
                 bar.addAction(a)
             return a
 
+        act("Changer de &module…", self._change_module, None, (menu_f,))
+        menu_f.addSeparator()
         act("&Nouveau (fdem)", self._new, "Ctrl+N", (menu_f,))
         self._build_templates_menu(menu_f)
         act("&Ouvrir un cfg…", self._open, "Ctrl+O", (menu_f,), True)
@@ -112,6 +121,7 @@ class MainWindow(QMainWindow):
         act("Ouvrir un &dossier de résultats…", self._open_results,
             "Ctrl+R", (menu_r,), True)
         act("&Comparer avec un run…", self._compare_run, None, (menu_r,))
+        self._sweep_menu = menu_r.addMenu("&Balayages du module")
         menu_r.addSeparator()
 
         self.threads = QSpinBox()
@@ -157,11 +167,18 @@ class MainWindow(QMainWindow):
     ]
 
     def _build_templates_menu(self, menu_parent):
+        self._tpl_menu = menu_parent.addMenu("Nouveau depuis un &modèle FDEM")
+        self._fill_templates_menu()
+
+    def _fill_templates_menu(self):
         root = Path(__file__).resolve().parents[3]
-        sub = menu_parent.addMenu("Nouveau depuis un &modèle FDEM")
-        for entry in self._TEMPLATES:
+        self._tpl_menu.clear()
+        mod = getattr(self, "module", None)
+        entries = (list(mod.templates) if mod and mod.templates
+                   else self._TEMPLATES)
+        for entry in entries:
             if entry is None:
-                sub.addSeparator()
+                self._tpl_menu.addSeparator()
                 continue
             label, rel = entry
             path = root / rel
@@ -170,7 +187,102 @@ class MainWindow(QMainWindow):
             a.triggered.connect(
                 lambda _c=False, p=path, lbl=label: self._from_template(
                     p, lbl))
-            sub.addAction(a)
+            self._tpl_menu.addAction(a)
+
+    # --- modules metier ----------------------------------------------------
+    def _choose_module(self, initial=False):
+        from PySide6.QtWidgets import QInputDialog
+        items = ["%s — %s" % (m.label, m.doc) for m in modules.MODULES]
+        cur = 0
+        saved = self.settings.value("module", "")
+        for i, m in enumerate(modules.MODULES):
+            if m.key == saved:
+                cur = i
+        text, ok = QInputDialog.getItem(
+            self, "Choisir un module",
+            "Le studio ne montrera que les gabarits, groupes de clés et\n"
+            "actions de ce module (le mode Expert montre tout) :",
+            items, cur, False)
+        if not ok and initial:
+            return "expert"
+        if not ok:
+            return self.module.key
+        return modules.MODULES[items.index(text)].key
+
+    def _change_module(self):
+        self.set_module(modules.by_key(self._choose_module()))
+
+    def set_module(self, mod, startup=False):
+        self.module = mod
+        self.settings.setValue("module", mod.key)
+        self.tree.set_allowed(set(mod.groups) if mod.groups else None)
+        if hasattr(self, "_tpl_menu"):
+            self._fill_templates_menu()
+        if hasattr(self, "_sweep_menu"):
+            self._sweep_menu.clear()
+            self._sweep_menu.setEnabled(bool(mod.sweeps))
+            for sw in mod.sweeps:
+                a = QAction(sw.name, self)
+                a.triggered.connect(lambda _c=False, s=sw: self._do_sweep(s))
+                self._sweep_menu.addAction(a)
+        self.setWindowTitle("rockim-studio — module %s" % mod.label)
+        if not startup:
+            self.statusBar().showMessage("module : %s" % mod.label)
+
+    def _do_sweep(self, sweep):
+        """Genere un deck par valeur (copie du cas courant + cles du
+        balayage) et, sur demande, met les runs en FILE (le runner est
+        deja sequentiel : un seul job a la fois)."""
+        from PySide6.QtWidgets import QCheckBox, QInputDialog
+        vals, ok = QInputDialog.getText(
+            self, sweep.name, sweep.doc + "\n\nValeurs :",
+            text=sweep.values)
+        if not ok or not vals.strip():
+            return
+        try:
+            values = [float(v) for v in vals.split()]
+        except ValueError:
+            QMessageBox.warning(self, "Balayage", "Valeurs illisibles.")
+            return
+        base, ok = QInputDialog.getText(
+            self, sweep.name, "Prefixe des decks et des out_dir :",
+            text=self.settings.value("sweepBase", "sweep"))
+        if not ok or not base:
+            return
+        self.settings.setValue("sweepBase", base)
+        lancer = QMessageBox.question(
+            self, sweep.name,
+            "Mettre les %d runs en file maintenant ?\n(Non = generer "
+            "seulement les decks)" % len(values),
+            QMessageBox.Yes | QMessageBox.No) == QMessageBox.Yes
+        model = self.ctrl.model
+        root = Path(model.source_dir or Path.cwd())
+        made = []
+        for tag, pairs in modules.sweep_cases(dict(model.cfg.pairs),
+                                              sweep, values):
+            copy = CfgFile(pairs=pairs, comments=list(model.cfg.comments))
+            mesh = model.mesh_file_path()
+            if mesh is not None:
+                copy.pairs["meshFile"] = str(mesh)
+            cfg_path = root / ("%s_%s.cfg" % (base, tag))
+            copy.write(cfg_path, header="balayage %s — rockim-studio"
+                       % sweep.name)
+            made.append((cfg_path, root / ("out_%s_%s" % (base, tag))))
+        self.console.append_log("balayage : %d decks écrits (%s)"
+                                % (len(made), root))
+        if lancer:
+            exe = self.settings.value("exe", "")
+            if not exe or not Path(exe).exists():
+                self._pick_exe()
+                exe = self.settings.value("exe", "")
+                if not exe:
+                    return
+            self.runner.exe = exe
+            self.runner.threads = self.threads.value()
+            for cfg_path, out_dir in made:
+                self.runner.launch(cfg_path, out_dir)
+            self.console.append_log(
+                "balayage : %d runs en file (sequentiels)" % len(made))
 
     def _from_template(self, path, label):
         if self._confirm_discard():

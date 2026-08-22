@@ -25,6 +25,20 @@ Premier démarrage : menu **Calcul → Exécutable rockim…** pour pointer ton
 `rockim.exe` (mémorisé ensuite). La spinbox de la barre = OMP_NUM_THREADS
 (0 = laisser l'environnement).
 
+## 2 bis. Les MODULES métier (2026-08-22)
+
+Au démarrage, le studio demande un module : **Tunnel EDZ**, **Fracturation
+hydraulique**, **Impact / percussion**, **Essais de laboratoire**, ou
+**Expert** (tout). Le choix est mémorisé ; **Fichier → Changer de module…**
+pour en changer. Un module ne montre QUE ses gabarits et ses groupes de
+clés — le panneau **Matériau** (ρ, E, ν, ft, cohésion, φ, G_f…) est dans
+tous. Une clé posée hors module reste toujours visible.
+
+Le module Tunnel EDZ porte les **balayages** de Wang et al. 2024 (menu
+Calcul → Balayages du module) : λ (σ_h = 5 MPa fixe, σ_v = 5/λ) et σ₀
+hydrostatique. Le dialogue écrit un deck par valeur et, sur demande, met
+les runs en FILE — le lanceur est séquentiel, un job à la fois.
+
 ## 3. L'écran
 
 * **Gauche — arbre du modèle** : les groupes (Général, Maillage, Matériau,
