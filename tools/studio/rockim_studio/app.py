@@ -39,11 +39,13 @@ class MainWindow(QMainWindow):
 
         # docks
         self.tree = ModelTree(self.ctrl)
-        self._dock("Modèle", self.tree, Qt.LeftDockWidgetArea)
+        d_tree = self._dock("Modèle", self.tree, Qt.LeftDockWidgetArea)
         self.props = PropertyPanel(self.ctrl)
-        self._dock("Propriétés", self.props, Qt.RightDockWidgetArea)
+        d_props = self._dock("Propriétés", self.props, Qt.RightDockWidgetArea)
         self.console = Console(self.ctrl)
-        self._dock("Console", self.console, Qt.BottomDockWidgetArea)
+        d_console = self._dock("Console", self.console,
+                               Qt.BottomDockWidgetArea)
+        self._docks = (d_tree, d_props, d_console)
 
         self.tree.group_selected.connect(self.props.show_group)
         self.ctrl.model_reset.connect(self._refresh_title)
@@ -203,11 +205,12 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(f"terminé : {out_dir} ({verdict})")
 
     # --- divers -----------------------------------------------------------
-    def _dock(self, title: str, widget: QWidget, area):
+    def _dock(self, title: str, widget: QWidget, area) -> QDockWidget:
         d = QDockWidget(title, self)
         d.setObjectName(title)
         d.setWidget(widget)
         self.addDockWidget(area, d)
+        return d
 
     def _refresh_title(self):
         name = self.ctrl.model.path.name if self.ctrl.model.path \
@@ -229,6 +232,17 @@ class MainWindow(QMainWindow):
         state = self.settings.value("windowState")
         if state:
             self.restoreState(state)
+        else:
+            self._first_layout = True
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        # resizeDocks n'a d'effet qu'une fois la fenêtre réellement layoutée
+        if getattr(self, "_first_layout", False):
+            self._first_layout = False
+            d_tree, d_props, d_console = self._docks
+            self.resizeDocks([d_tree, d_props], [300, 420], Qt.Horizontal)
+            self.resizeDocks([d_console], [220], Qt.Vertical)
 
     def closeEvent(self, event):
         if self.runner.busy:
