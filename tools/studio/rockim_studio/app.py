@@ -33,9 +33,16 @@ class MainWindow(QMainWindow):
         self.runner = Runner(parent=self)
         self.monitor = HistoryMonitor(parent=self)
 
-        # centre : courbe live (M1 : scène 3D + onglets)
+        # centre : scène 3D + courbes
+        from PySide6.QtWidgets import QTabWidget
+
+        from .views.scene import SceneView
+        self.scene = SceneView()
         self.plot = LivePlot()
-        self.setCentralWidget(self.plot)
+        self.center = QTabWidget()
+        self.center.addTab(self.scene, "Résultats 3D")
+        self.center.addTab(self.plot, "Courbes")
+        self.setCentralWidget(self.center)
 
         # docks
         self.tree = ModelTree(self.ctrl)
@@ -95,6 +102,8 @@ class MainWindow(QMainWindow):
         act("&Lancer", self._launch, "F5", (menu_r,), True)
         act("&Arrêter", self._stop, "Shift+F5", (menu_r,), True)
         act("&Exécutable rockim…", self._pick_exe, None, (menu_r,))
+        act("Ouvrir un &dossier de résultats…", self._open_results,
+            "Ctrl+R", (menu_r,), True)
         menu_r.addSeparator()
 
         self.threads = QSpinBox()
@@ -203,6 +212,18 @@ class MainWindow(QMainWindow):
             self.console.append_log(summary.read_text(
                 encoding="utf-8", errors="replace"))
         self.statusBar().showMessage(f"terminé : {out_dir} ({verdict})")
+        if code == 0:
+            self.scene.load(out_dir)
+            self.center.setCurrentWidget(self.scene)
+
+    def _open_results(self):
+        start = self.settings.value("lastOut", str(Path.cwd()))
+        path = QFileDialog.getExistingDirectory(
+            self, "Dossier de résultats (out_*)", start)
+        if path:
+            self.scene.load(path)
+            self.center.setCurrentWidget(self.scene)
+            self.console.append_log(f"résultats chargés : {path}")
 
     # --- divers -----------------------------------------------------------
     def _dock(self, title: str, widget: QWidget, area) -> QDockWidget:
