@@ -67,3 +67,6 @@ _backup_*/
 uploads/
 bench_impact/*.pdf
 bench_impact/*.txt
+
+# arbre de build CMake local
+build/
