@@ -1,97 +1,123 @@
 #!/usr/bin/env python3
 # ---------------------------------------------------------------------------
-# wall_convergence.py — la convergence de la paroi, mesuree ROBUSTEMENT.
+# wall_convergence.py — convergence de paroi U(t) d'un run tunnel et VERDICT
+# de stabilisation. Ne le maximum du champ (pollue par les debris volants),
+# on suit la MOYENNE par secteur des noeuds de paroi (r0 dans [4,5 ; 7,5] m).
 #
-#   python tunnel_edz/tools/wall_convergence.py out_tun_s3 out_tun_s4 ...
+#   python tunnel_edz/tools/wall_convergence.py out_tun_ref_stab \
+#          --stem tunnel_edz/fig_wall_stab
 #
-# POURQUOI. `edz_metrics` rapporte le deplacement MAXIMAL sur tous les noeuds.
-# Un seul bloc detache qui part en vol suffit a le fixer : la mesure n'est
-# alors plus la convergence du tunnel mais la trajectoire d'un debris. Le
-# balayage du 2026-08-17 a produit un resultat non monotone (0,389 m a 5 MPa
-# contre 0,204 m a 6 MPa) qui sent exactement ce piege.
-#
-# CE QU'ON MESURE ICI, sur les seuls noeuds de la PAROI (a moins de 0,4 m du
-# contour initial) et en projetant sur la direction RADIALE (positif = vers
-# l'interieur du tunnel) :
-#   moyenne   : la convergence d'ensemble, insensible a un bloc isole
-#   p90       : la convergence des zones les plus sollicitees
-#   max       : pour comparaison avec la mesure fragile
-#   fraction  : part des noeuds de paroi qui depassent 2 x la moyenne
-#               (un chiffre eleve = deformation localisee ; tres eleve = debris)
+# Verdict : STABILISE si le gain de U moyen de paroi entre 0,8*t_end et t_end
+# est < 5 % de la valeur finale (le run de reference a 0,25 s en gagnait 20 %).
+# Lecture VTU identique a fig_wang11.py (positions COURANTES des noeuds).
 # ---------------------------------------------------------------------------
+import argparse
 import glob
+import io
 import os
+import re
 import sys
 
 import numpy as np
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, os.path.join(HERE, ".."))
-sys.path.insert(0, os.path.join(HERE, "..", "..", "tools"))
-from plot_tunnel_fields import read_vtu, complete  # noqa: E402
-from plot_tunnel_mesh import profile_xy  # noqa: E402
-from make_unstructured_mesh import TUNNEL_HS  # noqa: E402
+plt.rcParams.update({
+    "font.family": "serif",
+    "font.serif": ["CMU Serif", "STIXGeneral", "DejaVu Serif"],
+    "axes.unicode_minus": False,
+})
 
-
-def wall_nodes(P0, cx, cy, tol=0.4):
-    """Noeuds initialement sur le contour de la cavite."""
-    px, py, _ = profile_xy(cx, cy - 0.5 * TUNNEL_HS["height"], n=1200)
-    C = np.stack([px, py], axis=1)
-    # distance au contour par recherche du point de contour le plus proche
-    sel = np.hypot(P0[:, 0] - cx, P0[:, 1] - cy) < 9.0        # pre-filtre
-    idx = np.where(sel)[0]
-    d = np.full(len(idx), 1e9)
-    for k in range(0, len(C), 4):                             # 1 point sur 4
-        d = np.minimum(d, np.hypot(P0[idx, 0] - C[k, 0], P0[idx, 1] - C[k, 1]))
-    return idx[d < tol]
+CX = CY = 50.0
+SECTEURS = (("voûte", 80, 100), ("rein g.", 170, 190),
+            ("rein d.", -10, 10), ("radier", 260, 280))
 
 
-def convergence(run):
-    """(moyenne, p90, max, % de noeuds au-dela de 2x la moyenne), en metres.
-
-    Utilisable comme fonction : c'est ce que trace plot_sweep.py.
-    """
-    el = [f for f in sorted(glob.glob(os.path.join(run, "fdem_[0-9]*.vtu")))
-          if complete(f)]
-    if len(el) < 2:
-        return None
-    P0, _, _ = read_vtu(el[0], [])
-    P, _, _ = read_vtu(el[-1], [])
-    cx, cy = 0.5 * P0[:, 0].max(), 0.5 * P0[:, 1].max()
-    w = wall_nodes(P0, cx, cy)
-    u = P[w] - P0[w]
-    r = np.stack([P0[w, 0] - cx, P0[w, 1] - cy], axis=1)
-    r /= np.linalg.norm(r, axis=1)[:, None]
-    conv = -(u * r).sum(axis=1)
-    return (conv.mean(), np.percentile(conv, 90), conv.max(),
-            100.0 * np.mean(conv > 2.0 * conv.mean()))
+def vtu_points(path):
+    s = io.open(path, encoding="utf-8", errors="ignore").read()
+    a = np.fromstring(
+        re.search(r'<Points>.*?<DataArray[^>]*>\s*(.*?)\s*</DataArray>', s,
+                  re.S).group(1), sep=" ")
+    return a.reshape(-1, 3)[:, :2]
 
 
 def main():
-    runs = sys.argv[1:]
-    print(f"{'run':18s} {'moyenne':>9s} {'p90':>8s} {'max':>8s} "
-          f"{'noeuds':>7s} {'>2x moy':>8s}")
-    for rn in runs:
-        run = rn if os.path.isabs(rn) else os.path.join(HERE, "..", "..", rn)
-        el = [f for f in sorted(glob.glob(os.path.join(run, "fdem_[0-9]*.vtu")))
-              if complete(f)]
-        if len(el) < 2:
-            print(f"{os.path.basename(rn):18s}  (pas assez de trames)")
-            continue
-        P0, _, _ = read_vtu(el[0], [])
-        P, _, _ = read_vtu(el[-1], [])
-        W, H = P0[:, 0].max(), P0[:, 1].max()
-        cx, cy = 0.5 * W, 0.5 * H
-        w = wall_nodes(P0, cx, cy)
-        u = P[w] - P0[w]
-        r = np.stack([P0[w, 0] - cx, P0[w, 1] - cy], axis=1)
-        r /= np.linalg.norm(r, axis=1)[:, None]
-        conv = -(u * r).sum(axis=1)          # positif = vers l'interieur
-        frac = 100.0 * np.mean(conv > 2.0 * conv.mean())
-        print(f"{os.path.basename(rn):18s} {conv.mean():8.4f} m "
-              f"{np.percentile(conv, 90):7.4f} {conv.max():7.4f} "
-              f"{len(w):7d} {frac:7.1f} %")
+    ap = argparse.ArgumentParser()
+    ap.add_argument("run")
+    ap.add_argument("--stem", default="fig_wall_convergence")
+    a = ap.parse_args()
+
+    frames = [f for f in sorted(glob.glob(a.run + "/fdem_[0-9]*.vtu"))
+              if "joints" not in os.path.basename(f)]
+    ft = {}
+    for line in open(a.run + "/frames.csv").read().splitlines()[1:]:
+        p = line.split(",")
+        ft[int(p[0])] = float(p[1])
+    times = np.array([ft[i] for i in range(len(frames))])
+
+    P0 = vtu_points(frames[0])
+    r0 = np.hypot(P0[:, 0] - CX, P0[:, 1] - CY)
+    ang = np.degrees(np.arctan2(P0[:, 1] - CY, P0[:, 0] - CX)) % 360.0
+    wall = (r0 >= 4.5) & (r0 <= 7.5)
+    masks = [(nom, wall & (((ang >= a0 % 360) | (ang <= a1)) if a0 < 0
+                           else ((ang >= a0) & (ang <= a1))))
+             for nom, a0, a1 in SECTEURS]
+
+    hist = {nom: [] for nom, _ in masks}
+    hist["paroi (moy.)"] = []
+    for f in frames:
+        U = np.linalg.norm(vtu_points(f) - P0, axis=1)
+        for nom, m in masks:
+            hist[nom].append(float(U[m].mean()))
+        hist["paroi (moy.)"].append(float(U[wall].mean()))
+
+    # verdict sur la moyenne de paroi
+    um = np.array(hist["paroi (moy.)"])
+    i80 = int(np.argmin(np.abs(times - 0.8 * times[-1])))
+    gain = um[-1] - um[i80]
+    pct = 100.0 * gain / um[-1] if um[-1] > 0 else 0.0
+    stable = pct < 5.0
+    verdict = "STABILISE" if stable else "CONVERGE ENCORE"
+
+    # distribution finale hors debris (r final < 4 m ou U > 0,3 m)
+    P1 = vtu_points(frames[-1])
+    U1 = np.linalg.norm(P1 - P0, axis=1)
+    r1 = np.hypot(P1[:, 0] - CX, P1[:, 1] - CY)
+    keep = wall & (r1 >= 4.0) & (U1 <= 3.0 * um[-1] + 0.1)
+    p50, p95 = np.percentile(U1[keep], [50, 95])
+
+    fig, ax = plt.subplots(figsize=(7.6, 4.9))
+    for nom, _ in masks:
+        ax.plot(times, hist[nom], lw=1.1, label=nom)
+    ax.plot(times, um, "k-", lw=2.0, label="paroi (moy.)")
+    ax.axvspan(0.02, 0.10, color="0.92", zorder=0)
+    ax.text(0.06, ax.get_ylim()[1] * 0.02, "relâchement", ha="center",
+            fontsize=8, color="0.4")
+    ax.axvline(times[i80], color="0.6", ls="--", lw=0.8)
+    ax.set_xlabel("t [s]")
+    ax.set_ylabel("U moyen du secteur [m]")
+    ax.set_title("Convergence de paroi — %s : %s "
+                 "(gain %.1f %% sur le dernier cinquième)"
+                 % (os.path.basename(a.run.rstrip("/\\")), verdict, pct),
+                 fontsize=11)
+    ax.legend(fontsize=9, loc="upper left")
+    ax.grid(alpha=0.25)
+    fig.tight_layout()
+    for ext in ("pdf", "png"):
+        fig.savefig(a.stem + "." + ext, dpi=165)
+
+    print("run           : %s (%d frames, t_end %.4f s)"
+          % (a.run, len(frames), times[-1]))
+    print("VERDICT       : %s (gain paroi %.4f m = %.1f %% du final "
+          "entre 0,8 t_end et t_end ; seuil 5 %%)" % (verdict, gain, pct))
+    print("U paroi final : moy %.4f | p50 %.4f | p95 %.4f | "
+          "max hors débris %.4f m" % (um[-1], p50, p95, U1[keep].max()))
+    for nom, _ in masks:
+        print("   %-9s : %.4f m" % (nom, hist[nom][-1]))
+    print("écrit : %s.pdf/.png" % a.stem)
+    return 0 if stable else 1
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

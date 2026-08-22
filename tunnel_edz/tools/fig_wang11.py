@@ -71,6 +71,14 @@ def main():
     P0, _ = read_tri_vtu(frames[0])
     P1, tri = read_tri_vtu(frames[-1])
     U = np.linalg.norm(P1 - P0, axis=1)
+    # max de PAROI hors debris volants (leur 0,347 est une valeur de paroi) :
+    # meme critere que wall_convergence.py — bande de paroi par rayon INITIAL,
+    # noeuds ni retombes dans la cavite ni detaches (U >> moyenne de bande)
+    r0 = np.hypot(P0[:, 0] - CX, P0[:, 1] - CY)
+    r1 = np.hypot(P1[:, 0] - CX, P1[:, 1] - CY)
+    band = (r0 >= 4.5) & (r0 <= 7.5)
+    keep = band & (r1 >= 4.0) & (U <= 3.0 * U[band].mean() + 0.1)
+    uwall = float(U[keep].max())
     umax = a.umax or float(U.max())
     x, y = P1[:, 0] - CX, P1[:, 1] - CY
     jf = sorted(glob.glob(a.run + "/fdem_joints_[0-9]*.vtu"))
@@ -116,11 +124,12 @@ def main():
         B.set_yticks([])
 
     fig.suptitle("Tunnel de Hutou Beishan — leur fig. 11 "
-                 "(σ₀ = 5 MPa, λ = 1) : U max = %.3f m (publié : 0,347)"
-                 % U.max(), fontsize=13)
+                 "(σ₀ = 5 MPa, λ = 1) : U paroi %.3f m, débris %.3f m "
+                 "(publié : 0,347)" % (uwall, U.max()), fontsize=13)
     for ext in ("pdf", "png"):
         fig.savefig(a.stem + "." + ext, dpi=165)
-    print("écrit : %s | U max %.3f m" % (a.stem, U.max()))
+    print("écrit : %s | U paroi %.3f m | U max (débris) %.3f m"
+          % (a.stem, uwall, U.max()))
 
 
 if __name__ == "__main__":
