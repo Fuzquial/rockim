@@ -220,7 +220,10 @@ class MainWindow(QMainWindow):
         path, _f = QFileDialog.getOpenFileName(
             self, "Exécutable rockim",
             self.settings.value("exe", str(Path.cwd())),
-            "Exécutable (rockim rockim.exe);;Tous (*)")
+            "Exécutables rockim (rockim* rockim*.exe);;Tous (*)")
+        # rockim*N : la convention du depot est UN exe dedie par
+        # chantier (rockim_i4.exe, rockim_e3.exe...) — le filtre
+        # initial ne montrait que "rockim.exe" et masquait tout le parc
         if path:
             self.settings.setValue("exe", path)
 
