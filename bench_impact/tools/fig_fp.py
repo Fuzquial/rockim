@@ -62,11 +62,13 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("run")
     ap.add_argument("--stem", default="fig_fp")
+    ap.add_argument("--gap", type=float, default=GAP,
+                    help="jeu insert-roche du maillage [m]")
     a = ap.parse_args()
 
     h = history(a.run)
     t = h["t"]
-    p = (h["z_bit"][0] - h["z_bit"] - GAP) * 1e3
+    p = (h["z_bit"][0] - h["z_bit"] - a.gap) * 1e3
     m = masse_bit_insert()
 
     # (a) force de contact INSERT-ROCHE, exacte par Newton sur LES DEUX
