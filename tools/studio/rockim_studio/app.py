@@ -48,6 +48,10 @@ class MainWindow(QMainWindow):
         self.center.addTab(self.scene, "Résultats 3D")
         self.center.addTab(self.plot, "Courbes")
         self.setCentralWidget(self.center)
+        self.center.currentChanged.connect(
+            lambda i: self.console.append_log(
+                "onglet actif : %s" % self.center.tabText(i))
+            if hasattr(self, "console") else None)
         self.geometry.mesh_ready.connect(self._mesh_ready)
         self.scene.point_picked.connect(self._on_point_picked)
 
@@ -86,9 +90,19 @@ class MainWindow(QMainWindow):
         bar = QToolBar("Principal")
         bar.setObjectName("mainToolbar")
         self.addToolBar(bar)
+        self._toolbar = bar
         menu_f = self.menuBar().addMenu("&Fichier")
         menu_e = self.menuBar().addMenu("&Édition")
+        menu_v = self.menuBar().addMenu("&Affichage")
         menu_r = self.menuBar().addMenu("&Calcul")
+        # panneaux fermables -> TOUJOURS re-ouvrables (bug signale par
+        # Fernando : un dock ferme etait perdu, faute de menu Affichage)
+        for d in self._docks:
+            menu_v.addAction(d.toggleViewAction())
+        menu_v.addSeparator()
+        ra = QAction("&Réinitialiser la disposition", self)
+        ra.triggered.connect(self._reset_layout)
+        menu_v.addAction(ra)
 
         def act(text, slot, seq=None, menus=(), toolbar=False):
             a = QAction(text, self)
@@ -111,6 +125,12 @@ class MainWindow(QMainWindow):
         menu_f.addSeparator()
         act("&Quitter", self.close, "Ctrl+Q", (menu_f,))
 
+        for i, seq in ((0, "Ctrl+1"), (1, "Ctrl+2"), (2, "Ctrl+3")):
+            a = QAction(self)
+            a.setShortcut(QKeySequence(seq))
+            a.triggered.connect(
+                lambda _c=False, k=i: self.center.setCurrentIndex(k))
+            self.addAction(a)
         act("&Annuler", self.ctrl.undo, "Ctrl+Z", (menu_e,))
         act("&Rétablir", self.ctrl.redo, "Ctrl+Shift+Z", (menu_e,))
 
@@ -499,3 +519,14 @@ class MainWindow(QMainWindow):
         self.settings.setValue("geometry", self.saveGeometry())
         self.settings.setValue("windowState", self.saveState())
         super().closeEvent(event)
+
+    def _reset_layout(self):
+        """Re-ouvre tous les panneaux et rend les largeurs par defaut."""
+        for d in self._docks:
+            d.show()
+        if hasattr(self, "_toolbar"):
+            self._toolbar.show()
+        d_tree, d_props, d_console = self._docks
+        self.resizeDocks([d_tree, d_props], [300, 420], Qt.Horizontal)
+        self.resizeDocks([d_console], [170], Qt.Vertical)
+        self.statusBar().showMessage("disposition réinitialisée")
