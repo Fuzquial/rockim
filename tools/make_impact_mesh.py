@@ -42,6 +42,11 @@ R_INS, R_SHANK, H_INS = 0.00851, 0.00794, 0.0232
 R_BIT = 0.015
 L_BIT = 0.265 - H_INS        # le bit fait 265 mm INSERT COMPRIS
 R_PIS, L_PIS = 0.01325, 0.260
+# circlip (bague carbure brasee au bit) et plaque de charge (acier) : leur
+# fig. 5c-d. La plaque 119,9 x 40 x 6 mm percee a Phi 31 REPOSE sur le
+# circlip (jeu 0,05 mm) : son poids charge le bit par gravite, comme au banc.
+R_CLIP, H_CLIP, Z_CLIP = 0.018, 0.003, 0.030
+PL_X, PL_Y, PL_H, R_HOLE = 0.1199, 0.040, 0.006, 0.0155
 
 gmsh.initialize()
 gmsh.option.setNumber("General.Terminal", 0)
@@ -57,24 +62,34 @@ zb0 = GAPR + H_INS                     # bas du bit = haut de l'insert
 bit = occ.addCylinder(0, 0, zb0, 0, 0, L_BIT, R_BIT)
 zp0 = zb0 + L_BIT + GAP
 pis = occ.addCylinder(0, 0, zp0, 0, 0, L_PIS, R_PIS)
+clip_o = occ.addCylinder(0, 0, Z_CLIP, 0, 0, H_CLIP, R_CLIP)
+clip_i = occ.addCylinder(0, 0, Z_CLIP, 0, 0, H_CLIP, R_BIT)
+clip = occ.cut([(3, clip_o)], [(3, clip_i)])[0]
+zpl = Z_CLIP + H_CLIP + 5.0e-5
+box = occ.addBox(-PL_X / 2, -PL_Y / 2, zpl, PL_X, PL_Y, PL_H)
+hole = occ.addCylinder(0, 0, zpl, 0, 0, PL_H, R_HOLE)
+plate = occ.cut([(3, box)], [(3, hole)])[0]
 
-# conformite insert/bit (face partagee) ; les autres paires restent au contact
-all3 = occ.fragment(ins, [(3, bit)])[0]
+# conformite insert/bit ET bit/circlip (faces partagees) ; le reste au contact
+all3 = occ.fragment(ins + clip, [(3, bit)])[0]
 occ.synchronize()
 
 vols = gmsh.model.getEntities(3)
 names = {}
 for dim, tag in vols:
     x, y, z = occ.getCenterOfMass(dim, tag)
-    if z < 0:              nm = "rock"
-    elif z < zb0:          nm = "insert"
-    elif z < zp0 - 1e-6:   nm = "bit"
-    else:                  nm = "piston"
+    # le centre de masse d'un ANNEAU est sur l'axe : on classe par cote z
+    if z < 0:                                   nm = "rock"
+    elif z < zb0:                               nm = "insert"
+    elif Z_CLIP - 1e-6 < z < zpl - 1e-9:        nm = "circlip"
+    elif zpl - 1e-9 <= z < zpl + PL_H:          nm = "plate"
+    elif z < zp0 - 1e-6:                        nm = "bit"
+    else:                                       nm = "piston"
     names.setdefault(nm, []).append(tag)
 for nm, tags in names.items():
     p = gmsh.model.addPhysicalGroup(3, tags)
     gmsh.model.setPhysicalName(3, p, nm)
-assert set(names) == {"rock", "insert", "bit", "piston"}, names
+assert set(names) == {"rock", "insert", "bit", "piston", "circlip", "plate"}, names
 
 # ---- tailles --------------------------------------------------------------
 # raffinement de la roche : boules concentriques sous le point d'impact
@@ -112,6 +127,8 @@ set_pts(names["rock"], 0.010 * s)
 set_pts(names["bit"], 0.003 * s)
 set_pts(names["piston"], 0.005 * s)
 set_pts(names["insert"], 0.0007 * s)
+set_pts(names["circlip"], 0.0015 * s)
+set_pts(names["plate"], 0.004 * s)
 
 gmsh.option.setNumber("Mesh.RandomSeed", 1)
 gmsh.model.mesh.generate(3)
