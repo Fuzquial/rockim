@@ -35,6 +35,10 @@ s = float(sys.argv[2]) if len(sys.argv) > 2 else 1.0
 # poids sur l'outil assied le bit) — c'est elle qui donne la courbe F-p en
 # rampe de leur fig. 7b, l'onde de frappe enfoncant l'insert directement.
 GAPR = float(sys.argv[3]) if len(sys.argv) > 3 else 2.0e-4
+# echelle PROPRE A LA ROCHE (4e argument, defaut = s). Les fissures vivent
+# dans la roche : on peut la mailler a l'echelle de l'article (1,0) en
+# laissant l'acier grossier — le dt reste commande par l'insert.
+SR = float(sys.argv[4]) if len(sys.argv) > 4 else s
 
 GAP = 2.0e-4                 # jeu piston/bit [m]
 R_ROCK, H_ROCK = 0.125, 0.150
@@ -94,11 +98,11 @@ assert set(names) == {"rock", "insert", "bit", "piston", "circlip", "plate"}, na
 # ---- tailles --------------------------------------------------------------
 # raffinement de la roche : boules concentriques sous le point d'impact
 f1 = gmsh.model.mesh.field.add("Ball")
-gmsh.model.mesh.field.setNumber(f1, "VIn", 0.001 * s)
+gmsh.model.mesh.field.setNumber(f1, "VIn", 0.001 * SR)
 gmsh.model.mesh.field.setNumber(f1, "VOut", 1.0)
 gmsh.model.mesh.field.setNumber(f1, "Radius", 0.0125)
 f2 = gmsh.model.mesh.field.add("Ball")
-gmsh.model.mesh.field.setNumber(f2, "VIn", 0.002 * s)
+gmsh.model.mesh.field.setNumber(f2, "VIn", 0.002 * SR)
 gmsh.model.mesh.field.setNumber(f2, "VOut", 1.0)
 gmsh.model.mesh.field.setNumber(f2, "Radius", 0.025)
 # taille de fond : graduation 2 mm -> 10 mm entre R 25 et R 100 mm
@@ -108,8 +112,8 @@ occ.synchronize()
 gmsh.model.mesh.field.setNumbers(fd, "PointsList", [pt0])
 f3 = gmsh.model.mesh.field.add("Threshold")
 gmsh.model.mesh.field.setNumber(f3, "InField", fd)
-gmsh.model.mesh.field.setNumber(f3, "SizeMin", 0.002 * s)
-gmsh.model.mesh.field.setNumber(f3, "SizeMax", 0.010 * s)
+gmsh.model.mesh.field.setNumber(f3, "SizeMin", 0.002 * SR)
+gmsh.model.mesh.field.setNumber(f3, "SizeMax", 0.010 * SR)
 gmsh.model.mesh.field.setNumber(f3, "DistMin", 0.025)
 gmsh.model.mesh.field.setNumber(f3, "DistMax", 0.100)
 fmin = gmsh.model.mesh.field.add("Min")
@@ -123,7 +127,7 @@ def set_pts(tags, size):
     pts = gmsh.model.getBoundary([(3, t) for t in tags], recursive=True)
     gmsh.model.mesh.setSize([p for p in pts if p[0] == 0], size)
 
-set_pts(names["rock"], 0.010 * s)
+set_pts(names["rock"], 0.010 * SR)
 set_pts(names["bit"], 0.003 * s)
 set_pts(names["piston"], 0.005 * s)
 set_pts(names["insert"], 0.0007 * s)
@@ -136,4 +140,4 @@ gmsh.option.setNumber("Mesh.MshFileVersion", 2.2)
 gmsh.write(out)
 ntet = len(gmsh.model.mesh.getElementsByType(4)[0])
 gmsh.finalize()
-print("ecrit : %s  (%d tets, echelle %.2f)" % (out, ntet, s))
+print("ecrit : %s  (%d tets, echelle %.2f, roche %.2f)" % (out, ntet, s, SR))
