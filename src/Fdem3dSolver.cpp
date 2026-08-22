@@ -227,10 +227,14 @@ void Fdem3dSolver::init() {
     // the fracture energies through I = int_0^1 f(D) dD.
     {
         std::string js = cfg_.gets("jointSoftening", "linear");
-        if (js != "linear" && js != "yan")
+        if (js != "linear" && js != "yan" && js != "munjiza")
             throw std::runtime_error("jointSoftening must be linear | yan "
-                                     "(got '" + js + "')");
-        yanSoft_ = js == "yan";
+                                     "| munjiza (got '" + js + "') — munjiza "
+                                     "est un ALIAS de yan : Yan et al. 2023 "
+                                     "ont repris la z-curve f(D) de Munjiza "
+                                     "2004 (a=0,63, b=1,8, c=6), celle de "
+                                     "Y-Geo/Solidity");
+        yanSoft_ = js == "yan" || js == "munjiza";
     }
     if (yanSoft_) {
         yanP_.a = cfg_.getd("yanA", 0.63);

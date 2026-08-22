@@ -198,6 +198,7 @@ pré-fissurée par un petit α (1e-3), jamais 0.
 | `groupBond.<A>.<B>` (—) | **liaison entre corps** (3D, mesh = file) : l'interface conforme entre deux volumes physiques nommés reçoit des joints cohésifs (type GBM frontière, moyenne des phases × facteurs gb*) au lieu d'être remise au contact — le brasage insert/bit de la spec 005. Valeur : `joints`. L'insertion adaptative lie les nœuds de l'interface comme partout (rebindVertex) |
 | `trackGroups` (—) | 3D, mesh = file : colonnes `z_<nom>,vz_<nom>` (centroïde massique, vitesse moyenne) par corps listé — vitesses d'indentation et de rebond du bit (spec 005). S'ajoute au `trackGroup` singulier existant |
 | `gauge.<nom>` (—) | 3D : `"z0 z1"` — colonne `szz_<nom>`, σ_zz moyenné en volume dans la tranche [z0,z1] du corps (la jauge à mi-bit de leur fig. 8) ; tranche figée en configuration de référence |
+| `jointSoftening = munjiza` | **alias** de `yan` : la f(D) de Yan et al. 2023 EST la z-curve de Munjiza 2004 (a = 0,63, b = 1,8, c = 6, ∫f dD = 0,386307), celle de Y-Geo et de Solidity (Yang et al.). Avec `jointShearUnload = origin`, le moteur √(rn²+rs²) de cette branche est l'ellipse mode I-II exacte de leur éq. 3 — le modèle cohésif de l'article est donc INTÉGRALEMENT disponible, insertion adaptative comprise |
 
 ### 5.5 Lois de comportement (`law`, modes fem3d / fdem / fdem3d)
 
