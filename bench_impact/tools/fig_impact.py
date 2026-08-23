@@ -101,7 +101,8 @@ def main():
                  "10,66 m/s  (schéma adaptatif, DIF Yang fig. 2)", fontsize=13)
 
     A = fig.add_subplot(2, 2, 1)
-    A.plot(t, h["vz_piston"], color="#888", lw=1.2, label="piston")
+    if "vz_piston" in h:                # montage complet ; absent en allege
+        A.plot(t, h["vz_piston"], color="#888", lw=1.2, label="piston")
     A.plot(t, vz, color="#1f4e79", lw=1.6, label="bit")
     A.axhline(0, color="k", lw=0.5)
     A.annotate("indentation %.2f m/s" % vInd, (t[after], vz.min()),
