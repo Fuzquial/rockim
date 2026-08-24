@@ -221,6 +221,25 @@ void Fdem3dSolver::init() {
                                      "(got '" + ins + "')");
         adaptive_ = ins == "adaptive";
     }
+    // ---- insertion preferentielle en POINTE (OPT-IN, miroir du 2D) ------
+    {
+        tipFactor_ = cfg_.getd("insertionTipFactor", 1.0);
+        tipD_ = cfg_.getd("insertionTipDamage", 0.5);
+        if (tipFactor_ < 1.0)
+            throw std::runtime_error("insertionTipFactor doit etre >= 1 "
+                                     "(1 = comportement d origine)");
+        if (tipD_ < 0.0 || tipD_ > 1.0)
+            throw std::runtime_error("insertionTipDamage doit etre dans [0,1]");
+        if (tipFactor_ > 1.0) {
+            if (!adaptive_)
+                throw std::runtime_error("insertionTipFactor exige "
+                                         "insertion = adaptive");
+            std::cout << "[FDEM3D] insertion preferentielle en pointe : "
+                      << "enveloppe relachee /" << tipFactor_
+                      << " en pointe (sommet portant un joint de D >= "
+                      << tipD_ << ")\n";
+        }
+    }
     // jointSoftening = linear (default, unchanged) | yan — the exponential
     // reduction factor f(D) of Yan et al. eq. 11, ported from the 2D solver.
     // Read BEFORE assignJointProps(): it sets the critical opening/slip from
@@ -1271,6 +1290,20 @@ void Fdem3dSolver::rebindVertex(int v) {
 void Fdem3dSolver::insertionSweep() {
     struct Hit { int jI; double sig, fs; Eigen::Vector3d tauV; };
     std::vector<Hit> hits;
+    // pointes de fissure (opt-in) — miroir du 2D, cf. Fdem3dSolver.hpp
+    const bool tipBias = tipFactor_ > 1.0;
+    if (tipBias) {
+        vertTip_.assign(nVert_, 0);
+        for (const auto& J : jt_) {
+            if (J.bonded || J.D < tipD_) continue;
+            for (int k = 0; k < 3; ++k) vertTip_[vOf_[J.a[k]]] = 1;
+        }
+    }
+    auto atTip = [&](const Joint& J) {
+        for (int k = 0; k < 3; ++k)
+            if (vertTip_[vOf_[J.a[k]]]) return true;
+        return false;
+    };
     auto testJoint = [&](int jI, std::vector<Hit>& out) {
         const Joint& J = jt_[jI];
         if (!J.bonded) return;
@@ -1300,7 +1333,8 @@ void Fdem3dSolver::insertionSweep() {
         double fs = dC * J.coh
                   + J.tanPhi * rockim::mcFrictionTerm(sig, J.ft, yangEnv_);
         if (fs < 0.0) fs = 0.0;
-        if (sig >= dT * J.ft || tauV.norm() >= fs)
+        double fac = (tipBias && atTip(J)) ? 1.0 / tipFactor_ : 1.0;
+        if (sig >= fac * dT * J.ft || tauV.norm() >= fac * fs)
             out.push_back({jI, sig, fs, tauV});
     };
 #ifdef _OPENMP
@@ -1318,7 +1352,10 @@ void Fdem3dSolver::insertionSweep() {
     if (hits.empty()) return;
     std::sort(hits.begin(), hits.end(),
               [](const Hit& x, const Hit& y) { return x.jI < y.jI; });
-    for (const Hit& h : hits) activateJoint(h.jI, h.sig, h.tauV, h.fs);
+    for (const Hit& h : hits) {
+        if (tipBias) { if (atTip(jt_[h.jI])) ++nProp_; else ++nNuc_; }
+        activateJoint(h.jI, h.sig, h.tauV, h.fs);
+    }
 }
 
 // Stress continuity at insertion, as in 2D: opening offset so the elastic
@@ -3637,6 +3674,13 @@ void Fdem3dSolver::finalize() {
                   << jt_.size() << " joints inserted ("
                   << (jt_.empty() ? 0.0 : 100.0 * nInserted_ / jt_.size())
                   << " %), " << nBroken_ << " fully broken\n";
+    if (tipFactor_ > 1.0) {
+        long tot = nProp_ + nNuc_;
+        std::cout << "[FDEM3D] insertions en POINTE : " << nProp_
+                  << " propagations / " << nNuc_ << " nucleations ("
+                  << (tot ? 100.0 * nProp_ / tot : 0.0)
+                  << " % de propagation)\n";
+    }
     if (difOn_) {
         std::vector<double> er, dtv;
         for (const auto& J : jt_)

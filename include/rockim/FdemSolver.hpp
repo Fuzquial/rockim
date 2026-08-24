@@ -370,6 +370,28 @@ private:
     // component of the element fan over still-bonded edges.
     bool adaptive_ = false;
     long nInserted_ = 0;
+    // ---- Insertion preferentielle en POINTE (2026-08-24, opt-in) ---------
+    // Mesure qui la motive : l adaptatif ne propage que 43,7 % de ses
+    // ruptures (le reste NUCLEE en terrain vierge) contre 56,8 % pour
+    // l intrinseque a loi de joint identique. Cause : la contrainte est
+    // moyennee sur deux CST, ce qui ECRASE la singularite de pointe (2,7
+    // elements par zone cohesive de mode I) — la facette devant une pointe
+    // ne se distingue plus d une facette quelconque de l anneau plastique.
+    // Correctif : une facette EN POINTE voit son enveloppe DIVISEE par
+    // insertionTipFactor ; une facette en terrain vierge garde l enveloppe
+    // nominale. Defaut 1,0 = chemin inchange, bit-identique.
+    //
+    // Pourquoi relacher la POINTE plutot que penaliser la nucleation (les
+    // deux se valent a un facteur global pres) : mesure du 2026-08-24 sur
+    // verify_fdem_voronoi_tension — penaliser la nucleation x1,6 fait passer
+    // l essai de 15 joints rompus a ZERO. Sans fissure preexistante tout est
+    // terrain vierge, donc le facteur relevait la RESISTANCE MACROSCOPIQUE
+    // de 60 % et aurait invalide le calage GBM Red Bohus. Relacher la pointe
+    // laisse l amorcage — donc la resistance mesuree — inchange.
+    double tipFactor_ = 1.0;      // insertionTipFactor
+    double tipD_ = 0.5;           // insertionTipDamage : ce qui compte comme pointe
+    std::vector<char> vertTip_;   // sommet touche par un joint rompu (>= tipD_)
+    long nNuc_ = 0, nProp_ = 0;   // compteurs de diagnostic
     std::vector<std::vector<int>> copiesOfVert_;   // vertex -> node copies
     std::vector<std::vector<int>> jointsOfVert_;   // vertex -> incident joints
     std::vector<std::vector<std::vector<int>>> grpsOfVert_; // vertex -> groups

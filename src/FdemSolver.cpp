@@ -448,6 +448,35 @@ void FdemSolver::init() {
                                      "(got '" + ins + "')");
         adaptive_ = ins == "adaptive";
     }
+    // ---- insertion preferentielle en POINTE (2026-08-24, OPT-IN) --------
+    // insertionNucleationFactor = 1 (defaut) : chemin d origine, resultats
+    // bit-identiques. > 1 : une facette en terrain VIERGE doit franchir
+    // l enveloppe multipliee par ce facteur, tandis qu une facette adjacente
+    // a une fissure existante (sommet portant un joint de D >= tipD) garde
+    // l enveloppe nominale. Motivation mesuree : voir FdemSolver.hpp.
+    {
+        tipFactor_ = cfg_.getd("insertionTipFactor", 1.0);
+        tipD_ = cfg_.getd("insertionTipDamage", 0.5);
+        if (tipFactor_ < 1.0)
+            throw std::runtime_error("insertionTipFactor doit etre >= 1 "
+                                     "(1 = comportement d origine ; au-dela, "
+                                     "l enveloppe est RELACHEE en pointe de "
+                                     "fissure, l amorcage restant intact)");
+        if (tipD_ < 0.0 || tipD_ > 1.0)
+            throw std::runtime_error("insertionTipDamage doit etre dans [0,1]");
+        if (tipFactor_ > 1.0) {
+            if (!adaptive_)
+                throw std::runtime_error("insertionTipFactor exige "
+                                         "insertion = adaptive (en "
+                                         "intrinsique tous les joints "
+                                         "existent deja : il n y a rien a "
+                                         "inserer)");
+            std::cout << "[FDEM] insertion preferentielle en pointe : "
+                      << "enveloppe relachee /" << tipFactor_
+                      << " en pointe (pointe = sommet portant un joint de "
+                      << "D >= " << tipD_ << ") ; amorcage inchange\n";
+        }
+    }
     // jointSoftening = linear (default, unchanged) | yan — the exponential
     // reduction factor f(D) of the article (its eq. 11), see YanSoftening.hpp.
     // Read BEFORE assignJointProps(): it sets the critical opening/slip from
@@ -1931,6 +1960,21 @@ void FdemSolver::rebindVertex(int v) {
 void FdemSolver::insertionSweep() {
     struct Hit { int jI; double sig, tau; };
     std::vector<Hit> hits;
+    // ---- pointes de fissure (opt-in, cf. FdemSolver.hpp) -----------------
+    // Un sommet est une POINTE des qu il porte un joint deja insere et
+    // suffisamment endommage (D >= tipD_). Le balayage des sommets coute
+    // O(joints), le meme ordre que le balayage lui-meme, et n a lieu que si
+    // la capacite est armee : tipFactor_ = 1 laisse le chemin d origine
+    // intact au bit pres.
+    const bool tipBias = tipFactor_ > 1.0;
+    if (tipBias) {
+        vertTip_.assign(nVert_, 0);
+        for (const auto& J : jt_) {
+            if (J.bonded || J.D < tipD_) continue;
+            vertTip_[vOf_[J.a1]] = 1;
+            vertTip_[vOf_[J.a2]] = 1;
+        }
+    }
 #ifdef _OPENMP
     #pragma omp parallel
     {
@@ -1969,7 +2013,11 @@ void FdemSolver::insertionSweep() {
             double fs = dC * J.coh
                       + J.tanPhi * rockim::mcFrictionTerm(sig, J.ft, yangEnv_);
             if (fs < 0.0) fs = 0.0;
-            if (sig >= dT * J.ft || std::abs(tau) >= fs)
+            // enveloppe RELACHEE en pointe (voir plus haut)
+            double fac = 1.0;
+            if (tipBias && (vertTip_[vOf_[J.a1]] || vertTip_[vOf_[J.a2]]))
+                fac = 1.0 / tipFactor_;
+            if (sig >= fac * dT * J.ft || std::abs(tau) >= fac * fs)
                 mine.push_back({jI, sig, tau});
         }
         #pragma omp critical
@@ -2004,7 +2052,10 @@ void FdemSolver::insertionSweep() {
         double fs = dC * J.coh
                   + J.tanPhi * rockim::mcFrictionTerm(sig, J.ft, yangEnv_);
         if (fs < 0.0) fs = 0.0;
-        if (sig >= dT * J.ft || std::abs(tau) >= fs)
+        double fac = 1.0;                          // idem branche OpenMP
+        if (tipBias && (vertTip_[vOf_[J.a1]] || vertTip_[vOf_[J.a2]]))
+            fac = 1.0 / tipFactor_;
+        if (sig >= fac * dT * J.ft || std::abs(tau) >= fac * fs)
             hits.push_back({jI, sig, tau});
     }
 #endif
@@ -2012,7 +2063,16 @@ void FdemSolver::insertionSweep() {
     // deterministic activation order whatever the thread count
     std::sort(hits.begin(), hits.end(),
               [](const Hit& x, const Hit& y) { return x.jI < y.jI; });
-    for (const Hit& h : hits) activateJoint(h.jI, h.sig, h.tau);
+    for (const Hit& h : hits) {
+        // diagnostic : l insertion prolonge-t-elle une fissure ou en ouvre-t-elle
+        // une nouvelle ? Le rapport est l observable que la capacite vise.
+        if (tipBias) {
+            const Joint& J = jt_[h.jI];
+            if (vertTip_[vOf_[J.a1]] || vertTip_[vOf_[J.a2]]) ++nProp_;
+            else ++nNuc_;
+        }
+        activateJoint(h.jI, h.sig, h.tau);
+    }
 }
 
 // Stress continuity at insertion (the article's guard against the classical
@@ -5855,6 +5915,14 @@ void FdemSolver::finalize() {
                   << jt_.size() << " joints inserted ("
                   << (jt_.empty() ? 0.0 : 100.0 * nInserted_ / jt_.size())
                   << " %), " << nBroken_ << " fully broken\n";
+    if (tipFactor_ > 1.0) {
+        long tot = nProp_ + nNuc_;
+        std::cout << "[FDEM] insertions en POINTE : " << nProp_
+                  << " propagations / " << nNuc_ << " nucleations ("
+                  << (tot ? 100.0 * nProp_ / tot : 0.0)
+                  << " % de propagation ; reference sans biais : 43,7 %, "
+                     "schema intrinsique : 56,8 %)\n";
+    }
     if (difOn_) {
         // Sur les joints REELLEMENT inseres : c est la seule population sur
         // laquelle le DIF a ete evalue.

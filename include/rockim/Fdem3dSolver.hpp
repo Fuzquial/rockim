@@ -369,6 +369,15 @@ private:
     void brushReport();
 
     long nInserted_ = 0;
+    // ---- Insertion preferentielle en POINTE — miroir EXACT du 2D --------
+    // (principe III : memes cles, meme loi). Voir FdemSolver.hpp pour la
+    // mesure qui la motive. En 3D la pointe est un FRONT, mais le test reste
+    // porte par les SOMMETS de la facette : une facette dont un sommet porte
+    // deja un joint rompu est en propagation. Defaut 1,0 = bit-identique.
+    double tipFactor_ = 1.0;      // insertionTipFactor
+    double tipD_ = 0.5;           // insertionTipDamage
+    std::vector<char> vertTip_;
+    long nNuc_ = 0, nProp_ = 0;
     std::vector<std::vector<int>> copiesOfVert_;
     std::vector<std::vector<int>> jointsOfVert_;
     std::vector<std::vector<std::vector<int>>> grpsOfVert_;
