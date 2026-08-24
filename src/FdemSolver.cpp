@@ -5574,9 +5574,32 @@ void FdemSolver::writeFrame(int frame) {
         sxy[e] = el_[e].sxy;                           // shear (was missing)
         exx[e] = el_[e].exx;                           // axial strain
     }
+    // ---- endommagement de la LOI DE VOLUME (2026-08-24) -----------------
+    // law = dpdfh calcule trois endommagements directionnels dans un repere
+    // fige (SDV 4-6 de la VUMAT) mais rien ne sortait : les .vtu ne portaient
+    // que les contraintes. On ecrit DMAX = max(D1,D2,D3), exactement ce que
+    // lisent les extracteurs du banc 6 (leur SDV 2), plus l instant du
+    // premier amorcage. AJOUT DE SORTIE PUR : aucune trajectoire ne change.
     char name[64];
     std::snprintf(name, sizeof(name), "/fdem_%04d.vtu", frame);
-    if (bdOn_) {
+    if (law_ && law_->name() == "dpdfh") {
+        std::vector<double> dfh(el_.size()), tini(el_.size());
+        for (std::size_t e = 0; e < el_.size(); ++e) {
+            const auto& d = el_[e].st.dfh;
+            dfh[e] = std::max(d.Dv[0], std::max(d.Dv[1], d.Dv[2]));
+            double t0 = 0.0;
+            for (int i = 0; i < 3; ++i)
+                if (d.ti[i] > 0.0 && (t0 == 0.0 || d.ti[i] < t0)) t0 = d.ti[i];
+            tini[e] = t0;
+        }
+        vtk::writeTriMesh(out_ + name, pts, tris,
+                          {{"vonMises", &svm}, {"fragment", &frag},
+                           {"phase", &phs}, {"grain", &grn},
+                           {"sigmaXX", &sxx}, {"sigmaYY", &syy},
+                           {"sigmaXY", &sxy}, {"epsXX", &exx},
+                           {"dfhD", &dfh}, {"dfhTini", &tini}},
+                          {{"velocity", &vel}});
+    } else if (bdOn_) {
         std::vector<double> bdv(el_.size());
         for (std::size_t e = 0; e < el_.size(); ++e) bdv[e] = el_[e].bdD;
         vtk::writeTriMesh(out_ + name, pts, tris,

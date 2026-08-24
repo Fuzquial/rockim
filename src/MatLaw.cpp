@@ -727,6 +727,16 @@ struct Props {
     double m = 24.0, sigw = 120.0e6, zeff = 1.0e-9;   // SI: Pa, m^3
     double k = 0.38, S = 4.18879;                     // thesis card 4pi/3
     double deld = 1.0e9;                              // deletion OFF
+    // ---- dilatance VARIABLE (2026-08-24, OPT-IN) ---------------------
+    // vumat_hole.f / vumat_kstdfh_psivar_phicap.f l.336-339 :
+    //   psi = clamp(PSI0 - KPSI * pbar[MPa], 0, PSIMAX)
+    // La constante #5 de la carte (15 deg) est alors MORTE. Avec les
+    // valeurs de la these, psi ne descend sous PSIMAX qu au-dela de
+    // pbar = (PSI0 - PSIMAX)/KPSI = 509 MPa : en dessous l ecoulement est
+    // ASSOCIE (psi = beta). psiVar = false laisse psiDeg fixe, chemin
+    // d origine bit-identique.
+    bool psiVar = false;
+    double psi0 = 160.345, kpsi = 0.213793, psiMax = 51.7;   // deg, deg/MPa
 };
 
 constexpr double DCAP = 0.9999;
@@ -878,7 +888,7 @@ inline void updatePoint(double dt, const V6& deps, const Props& P,
     double xK = P.E / (3.0 * (1.0 - 2.0 * P.nu));
     double alam = P.E * P.nu / ((1.0 + P.nu) * (1.0 - 2.0 * P.nu));
     double tanb = std::tan(P.betaDeg * M_PI / 180.0);
-    double tanp = std::tan(P.psiDeg * M_PI / 180.0);
+    double tanp = std::tan(P.psiDeg * M_PI / 180.0);   // ecrase si psiVar
     double oxm = 1.0 / P.m;
 
     if (st.dead) {
@@ -930,6 +940,12 @@ inline void updatePoint(double dt, const V6& deps, const Props& P,
                + sbar[3] * sbar[3] + sbar[4] * sbar[4] + sbar[5] * sbar[5];
     double q = std::sqrt(3.0 * std::max(sJ2, 0.0));
     double f = q - pbar * tanb - P.dcoh;
+    if (P.psiVar) {                       // psi(pbar), cf. Props::psiVar
+        double ps = P.psi0 - P.kpsi * (pbar * 1.0e-6);     // pbar en MPa
+        if (ps > P.psiMax) ps = P.psiMax;
+        if (ps < 0.0) ps = 0.0;
+        tanp = std::tan(ps * M_PI / 180.0);
+    }
     if (f > 0.0 && pbar > 0.0) {
         double dlam = f / (3.0 * G + xK * tanb * tanp);
         double qn = q - 3.0 * G * dlam;
@@ -1287,6 +1303,12 @@ std::unique_ptr<MatLaw> MatLaw::make(const std::string& kind,
         p.k = c.getd("dfhK", 0.38);
         p.S = c.getd("dfhS", 4.18879);
         p.deld = c.getd("dfhDeld", 1.0e9);             // deletion OFF
+        // dilatance variable psi(pbar) — la forme de vumat_hole.f. OPT-IN :
+        // absente => psiDeg fixe, trajectoires inchangees au bit pres.
+        p.psiVar = c.getb("dfhPsiVar", false);
+        p.psi0 = c.getd("dfhPsi0", 160.345);
+        p.kpsi = c.getd("dfhKPsi", 0.213793);
+        p.psiMax = c.getd("dfhPsiMax", 51.7);
         if (!(p.m > 1.0) || !(p.sigw > 0.0) || !(p.zeff > 0.0)
             || !(p.k > 0.0) || !(p.S > 0.0) || !(p.dcoh > 0.0)
             || !(p.betaDeg > 0.0 && p.betaDeg < 89.0))
