@@ -1739,7 +1739,12 @@ void Fdem3dSolver::computeStableDt() {
         K[i] = 4.0 * phases_.mat[e.phase].E * h;
     }
     for (const auto& J : jt_) {
-        double k = J.pj * J.A0 / 3.0;
+        // jointElastic = parabolic : la tangente INITIALE de la branche
+        // de Guo (eq. 2.31) vaut 2 ft/dnE = 2 pj, des deux cotes de
+        // dn = 0. Sans ce facteur le pas de temps serait sqrt(2) trop
+        // grand — un run de plusieurs heures gache EN SILENCE.
+        const double kPara = paraElastic_ ? 2.0 : 1.0;
+        double k = kPara * J.pj * J.A0 / 3.0;
         for (int q = 0; q < 3; ++q) { K[J.a[q]] += k; K[J.b[q]] += k; }
     }
     double nExtra = cfg_.getd("extraContacts", 2.0);
