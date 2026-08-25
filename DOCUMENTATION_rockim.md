@@ -307,6 +307,53 @@ charge nulle `zeroload_dif_intrinseque_2d` (aucun joint armé sous charge nulle)
 | `jointShearEnvelope` (yan) | `yan` = son éq. 8, le terme de frottement tombe à **zéro dès que la contrainte normale est en traction** ; `yang` = l'**éq. 1 de Yang et al.**, il décroît jusqu'au cut-off en ft : fs = c − tanφ·min(σn, ft). Les deux **coïncident exactement en compression** et ne diffèrent qu'en traction, où la forme de Yang AFFAIBLIT le cisaillement (−34 % au cut-off sur le banc de percussion). C'est ce qui gouverne le partage traction/cisaillement dans les zones tendues, donc le faciès radial. **La forme de l'article est `yang`** | fdem, fdem3d |
 | `meanTensionCapFactor` (0 = off) | plafond sur la contrainte moyenne de l'élément, en multiples de `ft`. Garde-fou rockim, sans équivalent dans la littérature de référence : laisser éteint pour toute réplique | fdem, fdem3d |
 
+### 5.4 ter La loi de VOLUME : `bulkModel`
+
+*Ajouté le 2026-08-25 — point 4 du tableau de comparaison à Yang et al.*
+
+| clé (défaut) | rôle | portée |
+|---|---|---|
+| **`bulkModel`** (corotational) | `corotational` (défaut, historique) : décomposition polaire, déformation de **Biot** ε = sym(RᵀF) − I, σ = λ tr(ε) I + 2μ ε, assemblage P = R·σ. Exact en grandes **rotations**, valable en petites **déformations** seulement. `neohookean` : la loi de **Guo** (thèse Imperial 2014, **éq. 2.6**), celle du code **Solidity** de Yang et al. — `T = (μ/J)(B − I) + (λ/J)·ln(J)·I` avec B = FFᵀ et J = det F — assortie de l'assemblage **exact** P = J·T·F⁻ᵀ. Incompatible avec `law` (qui remplace déjà toute la loi de volume) | fdem, fdem3d |
+
+**C'est un portage, pas une invention.** La formule est citée verbatim de la thèse
+qui décrit leur code. La loi est **hyperélastique** — elle dérive de
+W(F) = (μ/2)(tr B − 3) − μ·ln J + (λ/2)(ln J)², le néo-hookéen compressible de
+Simo-Hughes — donc conservative, et la configuration initiale y est **naturelle**
+(W(I) = 0, dW/dF(I) = 0).
+
+**Elle redonne l'élasticité linéaire au premier ordre**, avec les *mêmes* λ et μ.
+C'est un remplacement continu, pas un modèle concurrent. Écart vérifié
+analytiquement hors solveur, en déformation uniaxiale :
+
+| ε | −0,40 | −0,30 | −0,10 | +0,01 | +1e−4 |
+|---|---|---|---|---|---|
+| écart néo-hookéen / linéaire | **+59,8 %** | +37,6 % | +9,4 % | −0,82 % | −0,008 % |
+
+Le signe compte : **en compression la loi se raidit**. Le terme (λ/J)·ln J diverge
+quand J → 0, donc le matériau oppose une barrière infinie à l'écrasement et
+l'élément ne peut plus s'inverser — ce que la loi linéaire ne fait pas, et c'est
+la raison d'être du `crushCap`, garde-fou qui n'existe dans aucun code de
+référence. Sous l'insert, det F tombe à **0,5–0,7** : c'est précisément là que
+les deux lois cessent d'être interchangeables.
+
+**L'assemblage vient avec, et c'est le point 5 du tableau.** La forme
+co-rotationnelle assemble une contrainte de Cauchy sur une aire de **référence** :
+il lui manque exactement le transport d'aire de Nanson, cof(U) = J·U⁻¹. Le
+facteur d'écart est **J^(−2/3) en 3D** — soit +40,6 % sur la force interne à
+det F = 0,6 — mais **J^(−1/2) en déformation plane**. ⚠️ Ne jamais écrire cet
+exposant en dur : rockim passe par la forme générique `P = J·R·σ·U⁻¹`, correcte
+dans les deux dimensions. Le signe de det F est conservé partout dans le chemin
+des forces (en prendre la valeur absolue retournerait la force d'un élément
+inversé et l'enfoncerait davantage) ; à det F ≤ 0 le solveur retombe sur
+l'assemblage co-rotationnel.
+
+En déformation plane, J = det(F₂ₓ₂) exactement et **T_zz = (λ/J)·ln J**, purement
+volumique — et non la relation de Poisson ν(σ_xx + σ_yy) de la branche linéaire.
+
+Repères : `bulkmodel_neohooke_2d` et `zeroload_neohooke_2d` (fast),
+`bulkmodel_neohooke_3d` (full — indispensable, l'exposant de l'écart diffère
+entre dimensions).
+
 ### 5.5 Lois de comportement (`law`, modes fem3d / fdem / fdem3d)
 
 `law = elastic | dpr | saksala | saksala2011 | dpdfh` (défaut : dpr en fem3d ; absent

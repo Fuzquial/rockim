@@ -233,6 +233,29 @@ TESTS = [
          over=["verifyFt = false", "pullV = 1e-12", "jointDeath = damage"],
          checks=[("broken", 0, 0, True),
                  ("dampwork", 0.0, 1e-12, True)]),
+    # ---- bulkModel = neohookean : la loi de volume de Guo (eq. 2.6) -------
+    # T = (mu/J)(B - I) + (lambda/J) ln(J) I, avec l assemblage EXACT
+    # P = J T F^-T = R sigma cof(U). La loi est hyperelastique et redonne
+    # l elasticite lineaire AU PREMIER ORDRE avec les memes lambda et mu :
+    # verifie analytiquement hors solveur, l ecart vaut -0,008 % a eps = 1e-4,
+    # -0,82 % a 1 %, puis +9,4 % a -10 % et +59,8 % a -40 % de deformation.
+    # C est donc un remplacement CONTINU de la branche co-rotationnelle, qui
+    # n en diverge qu aux grandes deformations — celles de la zone broyee.
+    # Sur cette traction (deformations de l ordre du %), l ecart mesure est
+    # de 0,81 point : coherent avec la table analytique, et le nombre de
+    # casses est INCHANGE (24).
+    dict(name="bulkmodel_neohooke_2d", tier="fast", cfg="verify_fdem_tension.cfg",
+         over=["bulkModel = neohookean"],
+         checks=[("err_pct", -2.20202, 0.01, True),
+                 ("broken", 24, 0, True),
+                 ("dampwork", 0.0, 1e-12, True)]),
+    # Charge nulle sous la loi neuve : aucune casse, aucune injection. La
+    # configuration de reference est NATURELLE pour cette loi (W(I) = 0 et
+    # dW/dF(I) = 0), donc un maillage au repos ne doit rien produire.
+    dict(name="zeroload_neohooke_2d", tier="fast", cfg="verify_fdem_tension.cfg",
+         over=["verifyFt = false", "pullV = 1e-12", "bulkModel = neohookean"],
+         checks=[("broken", 0, 0, True),
+                 ("dampwork", 0.0, 1e-12, True)]),
     # --- tier full : bit-repères 2D longs, adaptatif, 3D grille -------------
     # charge nulle AVEC viscosite : le terme dissipatif ne doit rien casser ni
     # rien injecter quand il n y a pas de chargement (patron zeroload).
@@ -282,6 +305,17 @@ TESTS = [
     # armes sur 11400, 0 endommage sans DIF. A comparer au repere adaptatif
     # ci-dessus, dont il ne differe QUE par le schema : taux median 1,197 /s
     # contre 1,575, DIF 1,373 contre 1,393, casse 200 contre 198.
+    # bulkModel = neohookean en 3D (principe III). L exposant de l ecart a la
+    # forme co-rotationnelle DIFFERE entre dimensions — J^(-2/3) en 3D contre
+    # J^(-1/2) en deformation plane — d ou l importance d avoir ce repere dans
+    # les deux : un exposant ecrit en dur au lieu de la forme generique
+    # cof(U) = J U^-1 passerait le test 2D et casserait celui-ci.
+    # Mesure du 2026-08-25 : -4,55926 % contre -4,76678 en co-rotationnel,
+    # 200 casses des deux cotes.
+    dict(name="bulkmodel_neohooke_3d", tier="full", cfg="verify_fdem3d_tension.cfg",
+         over=["bulkModel = neohookean"],
+         checks=[("err_pct", -4.55926, 0.02, True),
+                 ("broken", 200, 0, True)]),
     # jointDeath = damage en 3D : meme invariance qu en 2D (principe III).
     # Mesure du 2026-08-25 : la reference en `separation` ne tue AUCUN joint
     # (aucun n atteint dnMax > 3 dnF dans la duree du test) tandis que `damage`

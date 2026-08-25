@@ -110,6 +110,33 @@ void Fdem3dSolver::init() {
                                      "(le temoin intrinseque)");
         difIntrinsic_ = arm == "envelope";
     }
+    // ---- bulkModel : la loi de VOLUME (2026-08-25) ------------------------
+    // Voir le header. ADDITION (principes I et VIII) : `corotational` est le
+    // defaut et reproduit le comportement historique mot pour mot.
+    {
+        std::string bm = cfg_.gets("bulkModel", "corotational");
+        if (bm != "corotational" && bm != "neohookean")
+            throw std::runtime_error("bulkModel must be corotational | "
+                                     "neohookean (corotational = Biot + "
+                                     "P = R sigma, le defaut historique ; "
+                                     "neohookean = Guo 2014 eq. 2.6, la loi de "
+                                     "volume de Solidity, avec l assemblage "
+                                     "exact P = J T F^-T)");
+        neoHooke_ = bm == "neohookean";
+        if (neoHooke_ && !cfg_.gets("law", "").empty())
+            throw std::runtime_error("bulkModel = neohookean et law = ... sont "
+                                     "exclusives : `law` remplace deja toute "
+                                     "la loi de volume. Le neo-hookeen est la "
+                                     "loi ELASTIQUE de base, il ne se compose "
+                                     "pas avec une loi de comportement");
+        if (neoHooke_)
+            std::cout << "[FDEM3D] bulkModel = neohookean (Guo 2014, eq. 2.6) "
+                         ": T = (mu/J)(B - I) + (lambda/J) ln(J) I, assemblage "
+                         "EXACT P = J T F^-T. Loi de volume du code Solidity "
+                         "de Yang et al. Redonne l elasticite lineaire au "
+                         "premier ordre ; elle en diverge la ou det F s ecarte "
+                         "de 1, c est-a-dire sous l insert.\n";
+    }
     // ---- jointDeath : quand le joint passe la main au contact (2026-08-25) -
     // Voir le header. ADDITION (principes I et VIII) : le defaut `separation`
     // est le comportement historique mot pour mot.
@@ -1861,6 +1888,29 @@ void Fdem3dSolver::elementForces() {
         double tr = eps.trace();
         Eigen::Matrix3d sig;
         if (law_) sig = law_->stress(eps, e.st, dt_, hEl_[eI]);
+        else if (neoHooke_) {
+            // ---- bulkModel = neohookean : Guo, these Imperial 2014, eq. 2.6
+            //   T = (mu/J) (B - I) + (lambda/J) ln(J) I,   B = F F^T, J = det F
+            // en contraintes de CAUCHY, repere GLOBAL. C est la loi de volume
+            // de Solidity, le code de Yang et al. — un portage, pas une
+            // invention. mu2 vaut 2G, d ou le facteur 0,5.
+            // On la ramene ensuite dans le repere CO-ROTE : tout l aval (caps,
+            // pulverisation, viscosite, ventilation d energie) opere sur des
+            // invariants isotropes, donc indifferents au repere, et n a pas a
+            // etre touche.
+            // Au premier ordre en petites deformations cette loi redonne
+            // EXACTEMENT lambda tr(eps) I + 2 mu eps : c est un remplacement
+            // continu de la branche co-rotationnelle, qui n en diverge qu aux
+            // grandes deformations — celles que l on trouve sous l insert, ou
+            // det F tombe a 0,5-0,7.
+            double Jd = det > 1e-9 ? det : 1e-9;
+            Eigen::Matrix3d B = F * F.transpose();
+            Eigen::Matrix3d T = (0.5 * mu2 / Jd)
+                                * (B - Eigen::Matrix3d::Identity())
+                              + (lam * std::log(Jd) / Jd)
+                                * Eigen::Matrix3d::Identity();
+            sig = R.transpose() * T * R;
+        }
         else      sig = lam * tr * Eigen::Matrix3d::Identity() + mu2 * eps;
         double pm = sig.trace() / 3.0;
         Eigen::Matrix3d dev = sig - pm * Eigen::Matrix3d::Identity();
@@ -1903,8 +1953,32 @@ void Fdem3dSolver::elementForces() {
                 if (D >= bdDmax_) ++nPv;
             }
         }
-        Eigen::Matrix3d P = R * sig;
-        e.sigG = P * R.transpose();        // global Cauchy (insertion sweep)
+        // ---- assemblage de la force interne -------------------------------
+        // Co-rotationnel (defaut) : P = R sig, la forme historique.
+        // Neo-hookeen : le premier Piola-Kirchhoff EXACT, P = J T F^-T. Comme
+        // F = R U avec U symetrique, F^-T = R U^-1, donc P = J R sig U^-1.
+        // La forme co-rotationnelle neglige donc le facteur J U^-1 — c est le
+        // point 5 du tableau de comparaison (+41 % sur la force interne a
+        // det F = 0,6, en compression quasi isotrope). Il se corrige AVEC le
+        // neo-hookeen et pas separement : c est le meme geste.
+        // GARDE : a det F <= 0 l element est plat ou retourne, U^-1 n existe
+        // pas et R a deja ete remis a l identite plus haut. On retombe alors
+        // sur l assemblage co-rotationnel, comme avant — le crush cap et les
+        // gardes NaN traitent ce cas. Le signe de det est CONSERVE partout
+        // ailleurs : prendre sa valeur absolue dans le chemin des forces
+        // retournerait la force d un element inverse et l enfoncerait
+        // davantage (piege classique de la lignee lagrangienne).
+        const bool nhOK = neoHooke_ && det > 1e-9;
+        Eigen::Matrix3d Ubi;
+        if (nhOK) Ubi = Ub.inverse();
+        Eigen::Matrix3d P;
+        if (nhOK) {
+            P = det * R * sig * Ubi;
+            e.sigG = R * sig * R.transpose();
+        } else {
+            P = R * sig;
+            e.sigG = P * R.transpose();    // global Cauchy (insertion sweep)
+        }
         // ---- viscosite newtonienne 2 mu D (Yan eq. 6) et taux pour le DIF
         // Ce n est PAS une  viscosite de volume  au sens zeta tr(D) I : le
         // terme agit sur le tenseur COMPLET, trace comprise. En 3D sig est
@@ -1931,8 +2005,13 @@ void Fdem3dSolver::elementForces() {
                 // est le volume de REFERENCE — sous un insert ou det F tombe
                 // a 0,5-0,7, cette ligne SOUS-ESTIME la dissipation reelle.
                 wVi -= 2.0 * mue * Dc.squaredNorm() * e.V0;
-                P = R * sig;                   // forces AVEC le visqueux
-                if (viscIns_) e.sigG = P * R.transpose();
+                if (nhOK) {                    // meme assemblage exact
+                    P = det * R * sig * Ubi;
+                    if (viscIns_) e.sigG = R * sig * R.transpose();
+                } else {
+                    P = R * sig;               // forces AVEC le visqueux
+                    if (viscIns_) e.sigG = P * R.transpose();
+                }
             }
         }
         for (int a = 0; a < 4; ++a) {

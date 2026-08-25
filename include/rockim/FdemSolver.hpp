@@ -406,6 +406,9 @@ private:
     // per-phase element data (indexed by Elem::phase)
     std::vector<Eigen::Matrix3d> DmP_;
     std::vector<double> nuP_, crushCapP_, ftP_, rhoP_;
+    // Constantes de Lame par phase, pour bulkModel = neohookean seulement
+    // (la branche co-rotationnelle passe par DmP_, inchangee).
+    std::vector<double> lamP_, mu2P_;
     std::vector<double> hEl_;              // per-element inscribed size (4A/P)
 
     // contact
@@ -453,6 +456,19 @@ private:
     // pour la comparaison a Yang et al. (joints intrinseques AVEC DIF).
     // Combinaison auparavant REFUSEE par une exception : aucune configuration
     // valide ne change de comportement (principe I).
+    // ---- bulkModel : la loi de VOLUME (2026-08-25) ---------------------
+    // `corotational` (defaut, historique) : Biot + P = R sigma.
+    // `neohookean` : Guo (these Imperial 2014, eq. 2.6),
+    //   T = (mu/J)(B - I) + (lambda/J) ln(J) I,   B = F F^T,
+    // avec l assemblage EXACT P = J T F^-T = R sigma cof(U). La loi est
+    // hyperelastique (W = mu/2 (tr B - 3) - mu ln J + lambda/2 (ln J)^2,
+    // le neo-hookeen compressible de Simo-Hughes) et redonne l elasticite
+    // lineaire au premier ordre avec les MEMES lambda et mu.
+    // ATTENTION : le facteur d ecart a la forme co-rotationnelle vaut
+    // J^(-2/3) en 3D mais J^(-1/2) en DEFORMATION PLANE. On n ecrit donc
+    // JAMAIS l exposant en dur : la forme generique cof(U) = J U^-1 est
+    // correcte dans les deux dimensions.
+    bool neoHooke_ = false;
     bool difIntrinsic_ = false;
     long nDifStamped_ = 0;                 // joints ayant recu le gel
     long nDifLate_ = 0;                    // dont DEJA endommages au gel

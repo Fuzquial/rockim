@@ -159,6 +159,33 @@ void FdemSolver::init() {
                                      "(le temoin intrinseque)");
         difIntrinsic_ = arm == "envelope";
     }
+    // ---- bulkModel : la loi de VOLUME (2026-08-25) ------------------------
+    // Voir le header. ADDITION (principes I et VIII) : `corotational` est le
+    // defaut et reproduit le comportement historique mot pour mot.
+    {
+        std::string bm = cfg_.gets("bulkModel", "corotational");
+        if (bm != "corotational" && bm != "neohookean")
+            throw std::runtime_error("bulkModel must be corotational | "
+                                     "neohookean (corotational = Biot + "
+                                     "P = R sigma, le defaut historique ; "
+                                     "neohookean = Guo 2014 eq. 2.6, la loi de "
+                                     "volume de Solidity, avec l assemblage "
+                                     "exact P = J T F^-T)");
+        neoHooke_ = bm == "neohookean";
+        if (neoHooke_ && cfg_.has("law"))
+            throw std::runtime_error("bulkModel = neohookean et law = ... sont "
+                                     "exclusives : `law` remplace deja toute "
+                                     "la loi de volume. Le neo-hookeen est la "
+                                     "loi ELASTIQUE de base, il ne se compose "
+                                     "pas avec une loi de comportement");
+        if (neoHooke_)
+            std::cout << "[FDEM] bulkModel = neohookean (Guo 2014, eq. 2.6) : "
+                         "T = (mu/J)(B - I) + (lambda/J) ln(J) I, assemblage "
+                         "EXACT P = J T F^-T. Loi de volume du code Solidity "
+                         "de Yang et al. Hyperelastique (W de Simo-Hughes), "
+                         "elle redonne l elasticite lineaire au premier ordre "
+                         "et n en diverge que la ou det F s ecarte de 1.\n";
+    }
     // ---- jointDeath : quand le joint passe la main au contact (2026-08-25) -
     // Voir le header. ADDITION (principes I et VIII) : le defaut `separation`
     // est le comportement historique mot pour mot.
@@ -422,9 +449,12 @@ void FdemSolver::init() {
 
     // ---- per-phase element tables (elementForces hot loop) ------------------
     DmP_.clear(); nuP_.clear(); crushCapP_.clear(); ftP_.clear(); rhoP_.clear();
+    lamP_.clear(); mu2P_.clear();      // bulkModel = neohookean (Guo eq. 2.6)
     for (const Material& m : phases_.mat) {
         DmP_.push_back(m.Dmat());
         nuP_.push_back(m.nu);
+        lamP_.push_back(m.E * m.nu / ((1 + m.nu) * (1 - 2 * m.nu)));
+        mu2P_.push_back(m.E / (1 + m.nu));             // 2G, comme en 3D
         crushCapP_.push_back(cfg_.getd("crushCap", 8.0 * m.cohesion));
         ftP_.push_back(m.ft);
         rhoP_.push_back(m.rho);
@@ -2991,10 +3021,32 @@ void FdemSolver::elementForces() {
             E3(0, 1) = E3(1, 0) = 0.5 * eps(2);        // tensorial shear
             Eigen::Matrix3d S3 = law_->stress(E3, e.st, dt_, hEl_[eI]);
             s << S3(0, 0), S3(1, 1), S3(0, 1);
+        } else if (neoHooke_) {
+            // ---- bulkModel = neohookean, Guo 2014 eq. 2.6, EN DEFORMATION
+            // PLANE. F_zz = 1 exactement, donc J = det(F 2x2) et B_zz = 1 :
+            // la composante hors plan du terme mu s annule et il reste
+            // T_zz = (lambda/J) ln J, PUREMENT volumique. C est la valeur
+            // exacte, pas la relation de Poisson nu (s0 + s1) de la branche
+            // lineaire — d ou la reprise de szz plus bas.
+            double Jd = F.determinant();
+            double Jc = Jd > 1e-12 ? Jd : 1e-12;
+            double lam = lamP_[e.phase], mu = 0.5 * mu2P_[e.phase];
+            Eigen::Matrix2d Bm = F * F.transpose();
+            double vol = lam * std::log(Jc) / Jc;
+            Eigen::Matrix2d T = (mu / Jc)
+                                * (Bm - Eigen::Matrix2d::Identity())
+                              + vol * Eigen::Matrix2d::Identity();
+            Eigen::Matrix2d Sc = R.transpose() * T * R;   // repere co-rote
+            s << Sc(0, 0), Sc(1, 1), 0.5 * (Sc(0, 1) + Sc(1, 0));
         } else {
             s = Dm * eps;
         }
         double szz = nuP_[e.phase] * (s(0) + s(1));
+        if (neoHooke_ && !law_) {              // T_zz exact (voir ci-dessus)
+            double Jd = F.determinant();
+            double Jc = Jd > 1e-12 ? Jd : 1e-12;
+            szz = lamP_[e.phase] * std::log(Jc) / Jc;
+        }
         double pm = (s(0) + s(1) + szz) / 3.0;
         e.svm = std::sqrt(1.5 * ((s(0) - pm) * (s(0) - pm)
                                  + (s(1) - pm) * (s(1) - pm)
@@ -3102,7 +3154,19 @@ void FdemSolver::elementForces() {
         }
         Eigen::Matrix2d sig;
         sig << s(0), s(2), s(2), s(1);
-        Eigen::Matrix2d P = R * sig;                   // rotate back
+        // Assemblage. Co-rotationnel (defaut) : P = R sigma, la forme
+        // historique. Neo-hookeen : le premier Piola-Kirchhoff EXACT
+        // P = J T F^-T = R sigma cof(U), avec cof(U) = J U^-1 — forme
+        // GENERIQUE, valable en 2D comme en 3D (l exposant scalaire, lui,
+        // differe : J^(2/3) en 3D contre J^(1/2) en deformation plane).
+        // GARDE : a det F <= 0 l element est plat ou retourne, U^-1 n existe
+        // pas et R vaut deja l identite : on retombe sur la forme
+        // co-rotationnelle. Le SIGNE de det est conserve.
+        double detF2 = F.determinant();
+        const bool nhOK = neoHooke_ && detF2 > 1e-12;
+        Eigen::Matrix2d P;
+        if (nhOK) P = detF2 * R * sig * U.inverse();
+        else      P = R * sig;                   // rotate back
         // ---- contrainte in situ ---------------------------------------
         // sigma_global_total = R sig R^T + sigma0, et la force interne
         // s'ecrit avec P = sigma_global * R : il suffit donc d'ajouter

@@ -472,6 +472,20 @@ private:
     // recherche pour la comparaison a Yang et al. (joints intrinseques AVEC
     // DIF). Combinaison auparavant REFUSEE par une exception : aucune config
     // valide ne change de comportement (principe I).
+    // ---- bulkModel : la loi de VOLUME (2026-08-25) ------------------------
+    // `corotational` (defaut, historique) : decomposition polaire, deformation
+    // de Biot, sigma = lambda tr(eps) I + 2 mu eps, assemblage P = R sigma.
+    // Exact en grandes ROTATIONS, valable en petites DEFORMATIONS seulement.
+    // `neohookean` : la loi de Guo (these Imperial 2014, eq. 2.6),
+    //   T = (mu/J)(B - I) + (lambda/J) ln(J) I,
+    // celle du code Solidity de Yang et al., avec l assemblage EXACT
+    // P = J T F^-T. Elle redonne l elasticite lineaire au premier ordre et
+    // n en diverge qu aux grandes deformations — sous l insert det F tombe a
+    // 0,5-0,7. Le terme (lambda/J) ln J diverge quand J -> 0 : le materiau se
+    // raidit sans borne a l ecrasement et l element ne peut plus s inverser,
+    // ce que la loi lineaire ne fait pas (d ou le crushCap, garde-fou qui n
+    // existe chez personne d autre).
+    bool neoHooke_ = false;
     bool difIntrinsic_ = false;
     long nDifStamped_ = 0;                 // joints ayant recu le gel
     long nDifLate_ = 0;                    // dont DEJA endommages au gel
