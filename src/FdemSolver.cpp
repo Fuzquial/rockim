@@ -163,6 +163,39 @@ void FdemSolver::init() {
     // Voir le header. ADDITION (principes I et VIII) : `corotational` est le
     // defaut et reproduit le comportement historique mot pour mot.
     {
+        // ---- loi de joint : les deux dernieres conventions de Guo -----
+        {
+            std::string je = cfg_.gets("jointElastic", "linear");
+            if (je != "linear" && je != "parabolic")
+                throw std::runtime_error("jointElastic must be linear | "
+                                         "parabolic (parabolic = Guo 2014 "
+                                         "eq. 2.31, tangente nulle au pic et "
+                                         "pente initiale 2 pj)");
+            paraElastic_ = je == "parabolic";
+            // LECON DU 2026-08-25, deux fois dans la meme seance : une cle
+            // implementee dans le SEUL chemin `yan` est INERTE sous le defaut
+            // `linear`, et rien ne le dit a l utilisateur. La branche
+            // parabolique de Guo va avec sa z-curve : on REFUSE la combinaison
+            // au lieu de la laisser sans effet.
+            // yanSoft_ n est arme que PLUS BAS dans init() : on relit donc
+            // la cle directement, sinon le garde se declencherait toujours.
+            const std::string jsNow = cfg_.gets("jointSoftening", "linear");
+            if (paraElastic_ && jsNow != "yan" && jsNow != "munjiza")
+                throw std::runtime_error("jointElastic = parabolic exige "
+                                         "jointSoftening = yan (ou munjiza) : "
+                                         "la branche parabolique de Guo "
+                                         "eq. 2.31 va avec sa z-curve, et elle "
+                                         "n est implementee que sur ce chemin. "
+                                         "Sans cette garde la cle serait INERTE "
+                                         "sans le dire");
+            std::string jc = cfg_.gets("jointDeltaC", "exact");
+            if (jc != "exact" && jc != "guo")
+                throw std::runtime_error("jointDeltaC must be exact | guo "
+                                         "(exact = integrale exacte de la "
+                                         "z-curve, 0,386307 ; guo = son "
+                                         "eq. 2.30, delta_c = 3 Gf/f)");
+            guoDeltaC_ = jc == "guo";
+        }
         std::string bm = cfg_.gets("bulkModel", "corotational");
         if (bm != "corotational" && bm != "neohookean")
             throw std::runtime_error("bulkModel must be corotational | "
@@ -1830,8 +1863,15 @@ void FdemSolver::assignJointProps() {
         // the factor: linear branch of peak ft and width w has area ft w / 2,
         // the f(D) branch of eq. 11 has area ft w I with I = int_0^1 f(D) dD
         // (eq. 13 and 15 of the article).
-        double kI = yanSoft_ ? 1.0 / yanI_ : 2.0;
-        J.dnF = J.dnE + kI * Gf / ft;                  // mode-I critical opening
+        double kI = guoDeltaC_ ? 3.0 : (yanSoft_ ? 1.0 / yanI_ : 2.0);
+        // jointDeltaC = guo : Guo eq. 2.30 pose delta_c = 3 Gf/f
+        // depuis ZERO (il approche l integrale de la z-curve par
+        // 1/3 la ou elle vaut 0,386307). On retire donc dnE, que sa
+        // convention inclut. Son modele dissipe de fait 3/0,386307
+        // = 1,159 fois son Gf nominal — c est SA convention, et il
+        // faut la reproduire pour retrouver ses chiffres calibres.
+        const double dOff = guoDeltaC_ ? 0.0 : 1.0;
+        J.dnF = std::max(dOff * J.dnE + kI * Gf / ft, 1.0000001 * J.dnE);                  // mode-I critical opening
         J.slipF = kI * GfII / coh;                     // mode-II critical slip
         J.tanPhi = std::tan(phiDeg * M_PI / 180.0);
     }
@@ -1910,8 +1950,15 @@ void FdemSolver::applyJointStatistics() {
         // `strength` = comportement historique, bit-identique.
         if (wGf) { J.Gf *= J.stat; J.GfII *= J.stat; }
         J.dnE = J.ft / J.pj;
-        double kI = yanSoft_ ? 1.0 / yanI_ : 2.0;
-        J.dnF = J.dnE + kI * J.Gf / J.ft;
+        double kI = guoDeltaC_ ? 3.0 : (yanSoft_ ? 1.0 / yanI_ : 2.0);
+        // jointDeltaC = guo : Guo eq. 2.30 pose delta_c = 3 Gf/f
+        // depuis ZERO (il approche l integrale de la z-curve par
+        // 1/3 la ou elle vaut 0,386307). On retire donc dnE, que sa
+        // convention inclut. Son modele dissipe de fait 3/0,386307
+        // = 1,159 fois son Gf nominal — c est SA convention, et il
+        // faut la reproduire pour retrouver ses chiffres calibres.
+        const double dOff = guoDeltaC_ ? 0.0 : 1.0;
+        J.dnF = std::max(dOff * J.dnE + kI * J.Gf / J.ft, 1.0000001 * J.dnE);
         J.slipF = kI * J.GfII / J.coh;
         xmin = std::min(xmin, J.stat);
         xmax = std::max(xmax, J.stat);
@@ -2063,9 +2110,16 @@ void FdemSolver::stampDif(Joint& J, double er) {
     J.coh  *= dC;
     J.GfII *= dC;
     J.difT = dT; J.difC = dC; J.edotIns = er;
-    double kI = yanSoft_ ? 1.0 / yanI_ : 2.0;
+    double kI = guoDeltaC_ ? 3.0 : (yanSoft_ ? 1.0 / yanI_ : 2.0);
+        // jointDeltaC = guo : Guo eq. 2.30 pose delta_c = 3 Gf/f
+        // depuis ZERO (il approche l integrale de la z-curve par
+        // 1/3 la ou elle vaut 0,386307). On retire donc dnE, que sa
+        // convention inclut. Son modele dissipe de fait 3/0,386307
+        // = 1,159 fois son Gf nominal — c est SA convention, et il
+        // faut la reproduire pour retrouver ses chiffres calibres.
+        const double dOff = guoDeltaC_ ? 0.0 : 1.0;
     J.dnE   = J.ft / J.pj;
-    J.dnF   = J.dnE + kI * J.Gf / J.ft;
+    J.dnF   = std::max(dOff * J.dnE + kI * J.Gf / J.ft, 1.0000001 * J.dnE);
     J.slipF = kI * J.GfII / J.coh;
     J.difStamped = true;
 }
@@ -3559,7 +3613,20 @@ void FdemSolver::jointForces() {
                     // is continuous at dn = dnE where pj dnE = ft
                     if (dn > J.omax[k]) J.omax[k] = dn;
                     double om = J.omax[k];
-                    double sMax = std::min(J.pj * om, fdY * J.ft);
+                    // jointElastic = parabolic : Guo eq. 2.31,
+                    //   sigma = ft (2 r - r^2),  r = dn/dnE, pour 0 <= r <= 1.
+                    // La branche arrive au pic avec une TANGENTE NULLE (fin
+                    // douce de l elastique) et part de l origine avec la pente
+                    // 2 ft/dnE = 2 pj — deux fois la pente lineaire de rockim.
+                    // C est ce qui rend la penalite equivalente p0/(2E) = 26,32
+                    // coherente A LA FOIS sur l ouverture au pic ET sur la
+                    // raideur initiale : en lineaire, seule la premiere colle.
+                    double envE;
+                    if (paraElastic_) {
+                        double r = om / J.dnE;
+                        envE = (r < 1.0) ? J.ft * (2.0 * r - r * r) : J.ft;
+                    } else envE = J.pj * om;
+                    double sMax = std::min(envE, fdY * J.ft);
                     // eq. 17: below omax the element unloads/reloads on the
                     // secant to the origin. At dn = omax this returns sMax, so
                     // loading and unloading agree on the envelope.
@@ -3568,7 +3635,11 @@ void FdemSolver::jointForces() {
                     // k- = k+(D) en mode adaptatif : la MEME secante des deux
                     // cotes de dn = 0, donc plus de saut de raideur.
                     // (EPFL arXiv:2511.14323 sec. 4 ; voir FdemSolver.hpp)
-                    sigEl = (jcAdaptive_ ? (1.0 - J.D) * J.pj : J.pj) * dn;
+                    // Guo eq. 2.31, premiere ligne : en COMPRESSION la pente
+                    // est 2 ft/dnE = 2 pj, continument raccordee a la parabole
+                    // en dn = 0 (la loi est C1 a l origine). rockim gardait pj.
+                    double pjC = paraElastic_ ? 2.0 * J.pj : J.pj;
+                    sigEl = (jcAdaptive_ ? (1.0 - J.D) * pjC : pjC) * dn;
                 }
             } else if (dn >= 0.0) {
                 double env = (dn <= J.dnE) ? J.pj * dn

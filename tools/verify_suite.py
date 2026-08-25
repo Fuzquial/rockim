@@ -256,6 +256,30 @@ TESTS = [
          over=["verifyFt = false", "pullV = 1e-12", "bulkModel = neohookean"],
          checks=[("broken", 0, 0, True),
                  ("dampwork", 0.0, 1e-12, True)]),
+    # ---- loi de joint : les deux dernieres conventions de Guo -------------
+    # jointElastic = parabolic (son eq. 2.31) et jointDeltaC = guo (son
+    # eq. 2.30). Mesures du 2026-08-25, toutes sous jointSoftening = yan
+    # puisque c est le chemin ou la parabole vit :
+    #   yan seul                    -1,70281 %
+    #   + parabolic                 -2,49639 %   (0,79 point)
+    #   + parabolic + deltaC guo    -2,33108 %
+    # Le nombre de casses est INCHANGE (24) dans les trois cas : ces
+    # conventions deplacent la COMPLAISANCE et l energie dissipee par
+    # fissure, pas le nombre de fissures.
+    dict(name="jointlaw_guo_2d", tier="fast", cfg="verify_fdem_tension.cfg",
+         over=["jointSoftening = yan", "jointElastic = parabolic",
+               "jointDeltaC = guo"],
+         checks=[("err_pct", -2.33108, 0.01, True),
+                 ("broken", 24, 0, True),
+                 ("dampwork", 0.0, 1e-12, True)]),
+    # Charge nulle sous la loi de joint complete : rien ne casse, rien
+    # n injecte (principe II applique a la capacite neuve).
+    dict(name="zeroload_jointlaw_guo_2d", tier="fast",
+         cfg="verify_fdem_tension.cfg",
+         over=["verifyFt = false", "pullV = 1e-12", "jointSoftening = yan",
+               "jointElastic = parabolic", "jointDeltaC = guo"],
+         checks=[("broken", 0, 0, True),
+                 ("dampwork", 0.0, 1e-12, True)]),
     # --- tier full : bit-repères 2D longs, adaptatif, 3D grille -------------
     # charge nulle AVEC viscosite : le terme dissipatif ne doit rien casser ni
     # rien injecter quand il n y a pas de chargement (patron zeroload).

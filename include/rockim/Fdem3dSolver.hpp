@@ -485,6 +485,21 @@ private:
     // raidit sans borne a l ecrasement et l element ne peut plus s inverser,
     // ce que la loi lineaire ne fait pas (d ou le crushCap, garde-fou qui n
     // existe chez personne d autre).
+    // ---- Loi de joint : les deux dernieres conventions de Guo -------------
+    // jointElastic = linear (defaut) | parabolic : la branche elastique du
+    // joint. Guo eq. 2.31 la pose PARABOLIQUE, sigma = ft(2r - r^2) avec
+    // r = dn/dnE, ce qui donne une tangente NULLE au pic (transition douce
+    // vers l adoucissement) et une pente initiale 2 pj, valable des DEUX
+    // cotes de dn = 0 (loi C1 a l origine). rockim posait une droite de
+    // pente pj, avec un coude au pic.
+    bool paraElastic_ = false;
+    // jointDeltaC = exact (defaut) | guo : l ouverture critique. Guo
+    // eq. 2.30 pose delta_c = 3 Gf/f mesure depuis ZERO, en approchant
+    // l integrale de la z-curve par 1/3 la ou elle vaut 0,386307. Son
+    // modele dissipe donc 3/0,386307 = 1,159 fois son Gf nominal. C est
+    // SA convention, et ses Gf publies ont ete calibres avec : il faut la
+    // reproduire pour retrouver ses chiffres.
+    bool guoDeltaC_ = false;
     bool neoHooke_ = false;
     bool difIntrinsic_ = false;
     long nDifStamped_ = 0;                 // joints ayant recu le gel

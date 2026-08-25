@@ -307,6 +307,42 @@ charge nulle `zeroload_dif_intrinseque_2d` (aucun joint armé sous charge nulle)
 | `jointShearEnvelope` (yan) | `yan` = son éq. 8, le terme de frottement tombe à **zéro dès que la contrainte normale est en traction** ; `yang` = l'**éq. 1 de Yang et al.**, il décroît jusqu'au cut-off en ft : fs = c − tanφ·min(σn, ft). Les deux **coïncident exactement en compression** et ne diffèrent qu'en traction, où la forme de Yang AFFAIBLIT le cisaillement (−34 % au cut-off sur le banc de percussion). C'est ce qui gouverne le partage traction/cisaillement dans les zones tendues, donc le faciès radial. **La forme de l'article est `yang`** | fdem, fdem3d |
 | `meanTensionCapFactor` (0 = off) | plafond sur la contrainte moyenne de l'élément, en multiples de `ft`. Garde-fou rockim, sans équivalent dans la littérature de référence : laisser éteint pour toute réplique | fdem, fdem3d |
 
+### 5.4 quater Loi de joint : les deux dernières conventions de Guo
+
+*Ajouté le 2026-08-25. Avec `jointShearEnvelope = yang`, `jointSoftening = yan`,
+`jointShearUnload = origin` et une pénalité de 26,32 E/h, ces deux clés
+achèvent le portage de la loi de joint de Solidity.*
+
+| clé (défaut) | rôle | portée |
+|---|---|---|
+| **`jointElastic`** (linear) | `parabolic` = **Guo éq. 2.31** : la branche élastique vaut σ = ft·(2r − r²) avec r = δn/δnE, au lieu de la droite σ = pj·δn. Elle arrive au pic avec une **tangente nulle** — transition douce vers l'adoucissement, là où rockim a un coude — et part de l'origine avec la pente **2·pj**, des deux côtés de δn = 0 (la loi est C¹ à l'origine, la branche de compression devenant σ = 2·pj·δn, première ligne de son éq. 2.31). ⚠️ **Exige `jointSoftening = yan` ou `munjiza`** : la parabole va avec la z-curve et n'est implémentée que sur ce chemin. La combinaison est **refusée** plutôt que laissée sans effet | fdem, fdem3d |
+| **`jointDeltaC`** (exact) | `guo` = **Guo éq. 2.30** : δc = 3·Gf/f mesuré **depuis zéro**, au lieu de δnE + Gf/(ft·∫f dD). Il approxime l'intégrale de la z-curve par 1/3 là où elle vaut **0,386307** : son modèle dissipe donc **1,159 fois son Gf nominal**. C'est SA convention, et ses Gf publiés ont été calibrés avec — il faut la reproduire pour retrouver ses chiffres | fdem, fdem3d |
+
+**Pourquoi la parabole rend la pénalité cohérente.** L'équivalence de pénalité
+(§5.4, `jointPenaltyFactor` ≈ 26,32 pour leur p0 = 3 000 GPa) a été établie en
+faisant coïncider **l'ouverture au pic** δnE = δnp. Avec la branche linéaire,
+cela laisse la **raideur initiale** à la moitié de la leur. Avec la parabole, la
+pente à l'origine vaut 2·ft/δnE : les deux quantités coïncident alors
+**simultanément**. Les deux clés vont donc ensemble.
+
+Mesures sur `verify_fdem_tension.cfg`, sous `jointSoftening = yan` :
+
+| | err_pct | casses |
+|---|---|---|
+| yan seul | −1,70281 % | 24 |
+| + `jointElastic = parabolic` | −2,49639 % | 24 |
+| + `jointDeltaC = guo` | −2,33108 % | 24 |
+
+Le **nombre de fissures ne bouge pas** : ces conventions déplacent la
+complaisance et l'énergie dissipée par fissure, pas le compte.
+
+⚠️ **Reste non porté : la quadrature.** Guo intègre le joint sur trois points
+aux **milieux d'arêtes** (sa Table 2.2, poids 1/3) ; rockim intègre aux
+**nœuds**. Les deux sont des règles à trois points de poids égaux, exactes pour
+une variation linéaire ; elles ne diffèrent que sur la part non linéaire, donc
+dans l'adoucissement. Non implémenté : cela demande de redéfinir les points
+d'intégration, et l'état par point (`omax`, `smax`, `slip`) avec eux.
+
 ### 5.4 ter La loi de VOLUME : `bulkModel`
 
 *Ajouté le 2026-08-25 — point 4 du tableau de comparaison à Yang et al.*
