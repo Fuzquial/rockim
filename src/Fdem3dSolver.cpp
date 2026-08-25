@@ -289,6 +289,28 @@ void Fdem3dSolver::init() {
         yanP_.b = cfg_.getd("yanB", 1.8);
         yanP_.c = cfg_.getd("yanC", 6.0);
         yanFricScaled_ = cfg_.geti("jointFrictionScaled", 0) != 0;
+        // ---- jointResidualMu : le frottement RESIDUEL (2026-08-25) -----
+        // Voir le header. GENERALISE jointFrictionScaled (muRes = 0 le
+        // reproduit) : les deux cles sont donc exclusives. Une valeur < 0,
+        // ou l absence de la cle, = comportement historique bit-identique.
+        muRes_ = cfg_.getd("jointResidualMu", -1.0);
+        if (muRes_ >= 0.0) {
+            if (yanFricScaled_)
+                throw std::runtime_error(
+                    "jointResidualMu et jointFrictionScaled sont exclusives : "
+                    "la premiere GENERALISE la seconde (jointResidualMu = 0 "
+                    "reproduit jointFrictionScaled = 1, jointResidualMu = "
+                    "tan(frictionDeg) reproduit le defaut). Les cumuler n a "
+                    "pas de sens");
+            std::cout << "[FDEM3D] jointResidualMu = " << muRes_
+                      << " : le frottement du joint glisse du PIC "
+                         "tan(frictionDeg) vers ce residuel par la meme f(D) "
+                         "que la cohesion. C est la distinction pic/fracture "
+                         "de Y-Geo (AbuAisha et al. 2015, eq. 7.5) et "
+                         "l equivalent du glissement que Solidity applique au "
+                         "joint rompu remis au contact (0,6 calcaire, 0,18 "
+                         "granite chez Yang et al.).\n";
+        }
         yanI_ = yan::integralFD(yanP_, cfg_.geti("yanQuadN", 4096));
         if (!(yanI_ > 1e-6))
             throw std::runtime_error("jointSoftening = yan: int f(D) dD is "
@@ -2094,7 +2116,23 @@ void Fdem3dSolver::jointForces() {
             double fdS = yanSoft_ ? yan::fD(J.D, yanP_) : 0.0;
             double coh = yanSoft_ ? fdS * J.coh : (1.0 - J.D) * J.coh;
             double muS = (yanSoft_ && yanFricScaled_) ? fdS : 1.0;
-            double tauLim = coh + muS * J.tanPhi
+            double muEff = muS * J.tanPhi;
+            // ---- jointResidualMu : le frottement RESIDUEL (2026-08-25) -----
+            // Le coefficient glisse du PIC tan(frictionDeg) vers le RESIDUEL
+            // muRes_ par la MEME f(D) que la cohesion. C est la distinction que
+            // fait Y-Geo (AbuAisha et al. 2015, eq. 7.5 : f_r = sigma_n
+            // tan(phi_f), avec un angle de frottement de FRACTURE distinct de
+            // l angle interne du pic) et que Solidity obtient autrement, en
+            // remettant le joint rompu au contact et a son glissement 0,6
+            // (0,18 pour le granite). Chez Yang et al. l ecart pic/residuel
+            // vaut 1,85 contre 0,18 sur le granite de Kuru : un facteur 10,3.
+            // muRes_ < 0 = non pose = comportement historique, bit-identique
+            // (muEff vaut alors exactement muS * J.tanPhi).
+            if (muRes_ >= 0.0) {
+                double g = yanSoft_ ? fdS : std::max(0.0, 1.0 - J.D);
+                muEff = muRes_ + (J.tanPhi - muRes_) * g;
+            }
+            double tauLim = coh + muEff
                           * rockim::mcFrictionTerm(sig, J.ft, yangEnv_);
             if (tauLim < 0.0) tauLim = 0.0;
             Eigen::Vector3d tau;

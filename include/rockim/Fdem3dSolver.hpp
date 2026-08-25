@@ -238,6 +238,20 @@ private:
     //     dnF - dnE = Gf / (ft yanI_),  slipF = GfII / (c yanI_).
     bool yanSoft_ = false;
     bool yanFricScaled_ = false;
+    // ---- jointResidualMu : le frottement RESIDUEL du joint rompu ---------
+    // Coefficient de frottement vers lequel le joint GLISSE quand il
+    // s endommage, par la meme f(D) que la cohesion : mu_eff = muRes +
+    // (tan(frictionDeg) - muRes) f(D). A D = 0 c est le frottement de PIC, a
+    // D = 1 c est muRes. C est la distinction de Y-Geo (AbuAisha et al. 2015,
+    // eq. 7.5 : angle de frottement de FRACTURE phi_f distinct de l angle
+    // interne), et l equivalent de ce que Solidity obtient en remettant le
+    // joint rompu au contact et a son glissement (0,6 calcaire / 0,18
+    // granite). rockim gardait jusqu ici le frottement de PIC a vie.
+    // < 0 = non pose = comportement historique, bit-identique.
+    // Generalise jointFrictionScaled : muRes = tan(frictionDeg) reproduit le
+    // defaut, muRes = 0 reproduit jointFrictionScaled = 1. Les deux cles ne
+    // peuvent donc pas etre posees ensemble (erreur de config).
+    double muRes_ = -1.0;
     yan::Params yanP_;
     double yanI_ = 1.0;                    // int_0^1 f(D) dD
 

@@ -359,6 +359,32 @@ TESTS = [
          over=["jointDeath = damage"],
          checks=[("gcfric", 2.16, 1.0, True),
                  ("deadcomp", 162, 60, True)]),
+    # ---- jointResidualMu : les DEUX equivalences qui prouvent qu il --------
+    # ---- GENERALISE l existant au lieu de le remplacer (principe VIII) -----
+    # La cle interpole le coefficient de frottement du PIC tan(frictionDeg)
+    # vers un RESIDUEL, par la meme f(D) que la cohesion. Elle doit donc
+    # redonner EXACTEMENT les deux comportements deja en place aux deux bouts
+    # de son intervalle. Mesure du 2026-08-25 sur cet UCS (frictionDeg = 23,
+    # donc tan = 0,4244748162096047), a OMP = 1 :
+    #   jointResidualMu = tan(frictionDeg) == defaut
+    #   jointResidualMu = 0               == jointFrictionScaled = 1
+    #                                        (0,13478 J/m, 50,944 MPa, 361)
+    # Les deux egalites sont EXACTES, pas approchees.
+    # L observable discriminante est gcfric et non ucs_mpa : entre le defaut
+    # (0,0725 J/m) et jointFrictionScaled = 1 (0,13478) le pic ne bouge que de
+    # 0,1 MPa, sous la tolerance de plateforme, tandis que le frottement fait
+    # un facteur 1,9. Tolerance 0,03 : assez serree pour attraper un retour au
+    # defaut, assez lache pour la derive MSVC/Linux de cet essai post-pic.
+    dict(name="residualmu_equiv_defaut_2d", tier="full",
+         cfg="../configs_yan/ucs_adap.cfg",
+         over=["jointResidualMu = 0.4244748162096047"],
+         checks=[("gcfric", 0.0724791, 0.03, True),
+                 ("ucs_mpa", 51.0735, 0.15, True)]),
+    dict(name="residualmu_equiv_scaled_2d", tier="full",
+         cfg="../configs_yan/ucs_adap.cfg",
+         over=["jointResidualMu = 0"],
+         checks=[("gcfric", 0.13478, 0.03, True),
+                 ("ucs_mpa", 50.944, 0.15, True)]),
     dict(name="ucs_yan_origin", tier="full", cfg="../configs_yan/ucs_adap.cfg",
          over=["jointShearUnload = origin", "jointFrictionScaled = 1"],
          checks=[("ucs_mpa", 50.3671, 0.15, True), ("broken", 318, 0, True),
