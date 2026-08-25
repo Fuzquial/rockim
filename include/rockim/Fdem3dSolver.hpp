@@ -368,6 +368,7 @@ private:
     void armBrush();
     void brushReport();
 
+    bool noJoints_ = false;   // insertion = none : continuum pur
     long nInserted_ = 0;
     // ---- Insertion preferentielle en POINTE — miroir EXACT du 2D --------
     // (principe III : memes cles, meme loi). Voir FdemSolver.hpp pour la

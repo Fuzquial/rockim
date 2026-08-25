@@ -216,10 +216,19 @@ void Fdem3dSolver::init() {
     // selects the (softer) activation penalty in that mode.
     {
         std::string ins = cfg_.gets("insertion", "intrinsic");
-        if (ins != "intrinsic" && ins != "adaptive")
+        if (ins != "intrinsic" && ins != "adaptive" && ins != "none")
             throw std::runtime_error("insertion must be intrinsic | adaptive "
-                                     "(got '" + ins + "')");
+                                     "| none (got '" + ins + "')");
         adaptive_ = ins == "adaptive";
+        // insertion = none : CONTINUUM PUR — miroir exact du 2D, voir
+        // FdemSolver.cpp pour la mesure qui a motive la cle (impact 3D
+        // DP-DFH du 2026-08-25 : 53 J devenus -89 GJ en 10 us par
+        // activation de joints "neutralises" a ft = 1e12).
+        noJoints_ = ins == "none";
+        if (noJoints_)
+            std::cout << "[FDEM3D] insertion = none : continuum pur, aucun "
+                         "joint ne peut naitre (la loi de volume porte toute "
+                         "la fissuration)" << std::endl;
     }
     // ---- insertion preferentielle en POINTE (OPT-IN, miroir du 2D) ------
     {
@@ -287,7 +296,10 @@ void Fdem3dSolver::init() {
                          "origin + jointFrictionScaled = 1.\n";
     }
     assignJointProps();
-    if (adaptive_) {
+    // insertion = none : les joints doivent AUSSI etre lies (sinon ils
+    // restent intrinseques et cassent, ce qui est l'exact contraire du
+    // continuum pur voulu — bug corrige le 2026-08-25).
+    if (adaptive_ || noJoints_) {
         for (auto& J : jt_) J.bonded = true;
         buildBindingTables();
         std::cout << "[FDEM3D] adaptive insertion: " << jt_.size()
@@ -1593,7 +1605,9 @@ void Fdem3dSolver::computeStableDt() {
         K[i] = 4.0 * phases_.mat[e.phase].E * h;
     }
     for (const auto& J : jt_) {
-        double k = J.pj * J.A0 / 3.0;
+        double k = noJoints_ ? 0.0 : J.pj * J.A0 / 3.0;   // insertion = none :
+        // le ressort de penalite n'est jamais evalue, il ne contraint donc
+        // pas la stabilite (miroir du 2D)
         for (int q = 0; q < 3; ++q) { K[J.a[q]] += k; K[J.b[q]] += k; }
     }
     double nExtra = cfg_.getd("extraContacts", 2.0);
@@ -1650,7 +1664,7 @@ void Fdem3dSolver::step() {
 
     if (f3Prof.on) {
         double t0 = f3now(); elementForces(); bodyForces();
-        double t1 = f3now(); if (adaptive_) insertionSweep();
+        double t1 = f3now(); if (adaptive_ && !noJoints_) insertionSweep();
         double t2 = f3now(); jointForces();
         double t3 = f3now(); generalContact();
         double t4 = f3now(); toolContact();
@@ -1661,7 +1675,7 @@ void Fdem3dSolver::step() {
     } else {
         elementForces();
         bodyForces();                      // gravite + anti-gravite du tri
-        if (adaptive_) insertionSweep();   // before jointForces: a joint born
+        if (adaptive_ && !noJoints_) insertionSweep();   // before jointForces
                                            // this step carries traction now
         jointForces();
         generalContact();
@@ -3009,7 +3023,12 @@ void Fdem3dSolver::integrate() {
         keInit_ = ke0;
     }
     double cw = 0.0, lw = 0.0, bw = 0.0, bias = 0.0;  // V2/B4 compteurs
-    if (adaptive_) {
+    // insertion = none : les groupes lies doivent AUSSI integrer
+    // comme UN noeud, sinon les copies bougent independamment et le
+    // maillage se comporte comme un NUAGE de tetraedres libres (bug
+    // observe le 2026-08-25 : outil freine de 0,1 J seulement, 460 J
+    // d energie elastique nee de rien).
+    if (adaptive_ || noJoints_) {
         // Bound groups integrate as ONE node (sum of forces and masses,
         // damping and quiet-boundary terms on the sums), exactly as in the
         // 2D solver. Copies of a group share flags (same position) and stay
@@ -3382,7 +3401,26 @@ void Fdem3dSolver::writeFrame(int frame) {
     }
     char name[64];
     std::snprintf(name, sizeof(name), "/fdem3d_%04d.vtu", frame);
-    if (bdOn_) {
+    // Miroir du 2D : law = dpdfh calcule DMAX (max des trois endommagements
+    // directionnels du repere fige) mais rien ne sortait. Ajout de SORTIE
+    // pur — aucune trajectoire ne change.
+    if (law_ && law_->name() == "dpdfh") {
+        std::vector<double> dfh(el_.size()), tini(el_.size());
+        for (std::size_t e = 0; e < el_.size(); ++e) {
+            const auto& d = el_[e].st.dfh;
+            dfh[e] = std::max(d.Dv[0], std::max(d.Dv[1], d.Dv[2]));
+            double t0 = 0.0;
+            for (int i = 0; i < 3; ++i)
+                if (d.ti[i] > 0.0 && (t0 == 0.0 || d.ti[i] < t0)) t0 = d.ti[i];
+            tini[e] = t0;
+        }
+        vtk::writeTetMesh(out_ + name, pts, tets,
+                          {{"vonMises", &svm}, {"sigma1", &sg1},
+                           {"tauMax", &tmx}, {"fragment", &frag},
+                           {"phase", &phs}, {"grain", &grn},
+                           {"dfhD", &dfh}, {"dfhTini", &tini}},
+                          {{"velocity", &vel}});
+    } else if (bdOn_) {
         std::vector<double> bdv(el_.size());
         for (std::size_t e = 0; e < el_.size(); ++e) bdv[e] = el_[e].bdD;
         vtk::writeTetMesh(out_ + name, pts, tets,

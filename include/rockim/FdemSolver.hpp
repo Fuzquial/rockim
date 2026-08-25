@@ -369,6 +369,7 @@ private:
     // union-find at the two endpoint vertices: copies bind per connected
     // component of the element fan over still-bonded edges.
     bool adaptive_ = false;
+    bool noJoints_ = false;   // insertion = none : continuum pur
     long nInserted_ = 0;
     // ---- Insertion preferentielle en POINTE (2026-08-24, opt-in) ---------
     // Mesure qui la motive : l adaptatif ne propage que 43,7 % de ses

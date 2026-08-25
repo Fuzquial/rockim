@@ -443,10 +443,34 @@ void FdemSolver::init() {
     // activated when the edge-averaged traction reaches the envelope.
     {
         std::string ins = cfg_.gets("insertion", "intrinsic");
-        if (ins != "intrinsic" && ins != "adaptive")
+        if (ins != "intrinsic" && ins != "adaptive" && ins != "none")
             throw std::runtime_error("insertion must be intrinsic | adaptive "
-                                     "(got '" + ins + "')");
+                                     "| none (got '" + ins + "')");
         adaptive_ = ins == "adaptive";
+        // ---- insertion = none (2026-08-25) : CONTINUUM PUR ---------------
+        // Aucun joint n'existe ni ne peut naitre : les copies de noeuds
+        // restent liees pour toujours (liaison rigide = elements finis a
+        // noeuds partages, exactement). C'est le mode a utiliser quand la
+        // fissuration est portee par la LOI DE VOLUME (law = dpdfh, saksala,
+        // bulkDamage...) et non par des cohesifs.
+        //
+        // Pourquoi la cle existe : on obtenait ce comportement en posant des
+        // resistances de joint inatteignables (ft = 1e12). C'est une bombe a
+        // retardement — mesure du 2026-08-25 sur l'impact 3D DP-DFH : un
+        // element totalement endommage (D -> DCAP, 1 % de raideur, aucune
+        // suppression) se distord, sort une contrainte aberrante, franchit
+        // meme une enveloppe a 1e12, et les 89 424 joints qui s'activent
+        // alors portent dnE = ft/pj = 8 cm : l'energie passe de 53 J a
+        // -89 GJ en 10 microsecondes. Avec insertion = none le balayage
+        // n'existe pas, donc le piege non plus.
+        //
+        // BONUS : le pas de temps ne paie plus le ressort des joints (ils ne
+        // peuvent pas s'activer), ce qui le multiplie par ~2,6.
+        noJoints_ = ins == "none";
+        if (noJoints_)
+            std::cout << "[FDEM] insertion = none : continuum pur, aucun "
+                         "joint ne peut naitre (la loi de volume porte toute "
+                         "la fissuration)" << std::endl;
     }
     // ---- insertion preferentielle en POINTE (2026-08-24, OPT-IN) --------
     // insertionNucleationFactor = 1 (defaut) : chemin d origine, resultats
@@ -526,7 +550,10 @@ void FdemSolver::init() {
                          "origin + jointFrictionScaled = 1.\n";
     }
     assignJointProps();
-    if (adaptive_) {
+    // insertion = none : les joints doivent AUSSI etre lies (sinon ils
+    // restent intrinseques et cassent, ce qui est l'exact contraire du
+    // continuum pur voulu — bug corrige le 2026-08-25).
+    if (adaptive_ || noJoints_) {
         for (auto& J : jt_) J.bonded = true;
         buildBindingTables();
         std::cout << "[FDEM] adaptive insertion: " << jt_.size()
@@ -2667,6 +2694,9 @@ void FdemSolver::computeStableDt() {
     std::vector<double> K(X0_.size());
     for (std::size_t i = 0; i < X0_.size(); ++i)
         K[i] = 2.0 * phases_.mat[el_[elemOf_[i]].phase].E * thk_;
+    // insertion = none : aucun joint ne peut s'activer, son ressort de
+    // penalite ne contraint donc pas la stabilite (il n'est jamais evalue).
+    if (!noJoints_)
     for (const auto& J : jt_) {
         double k = J.pj * 0.5 * J.L0 * thk_;
         K[J.a1] += k; K[J.a2] += k; K[J.b1] += k; K[J.b2] += k;
@@ -2749,7 +2779,7 @@ void FdemSolver::step() {
 
     if (fProf.on) {
         double t0 = fnow(); elementForces(); bodyForces();
-        double t05 = fnow(); if (adaptive_) insertionSweep();
+        double t05 = fnow(); if (adaptive_ && !noJoints_) insertionSweep();
         double t1 = fnow(); jointForces();
         double t2 = fnow(); generalContact();
         double t3 = fnow(); toolContact();
@@ -2760,7 +2790,7 @@ void FdemSolver::step() {
     } else {
         elementForces();
         bodyForces();                      // gravity (no-op when gravity = 0)
-        if (adaptive_) insertionSweep();   // before jointForces: a joint born
+        if (adaptive_ && !noJoints_) insertionSweep();   // before jointForces: a joint born
                                            // this step carries traction now
         jointForces();
         generalContact();
@@ -5288,7 +5318,12 @@ void FdemSolver::integrate() {
         keInit_ = ke0;
     }
     double cw = 0.0, lw = 0.0, bw = 0.0, bias = 0.0;
-    if (adaptive_) {
+    // insertion = none : les groupes lies doivent AUSSI integrer
+    // comme UN noeud, sinon les copies bougent independamment et le
+    // maillage se comporte comme un NUAGE de tetraedres libres (bug
+    // observe le 2026-08-25 : outil freine de 0,1 J seulement, 460 J
+    // d energie elastique nee de rien).
+    if (adaptive_ || noJoints_) {
         // Bound groups integrate as ONE node: forces and masses summed,
         // Cundall damping and the quiet-boundary terms applied to the sums,
         // the common velocity written back to every copy. For a singleton
