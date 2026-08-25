@@ -318,6 +318,19 @@ achèvent le portage de la loi de joint de Solidity.*
 | **`jointElastic`** (linear) | `parabolic` = **Guo éq. 2.31** : la branche élastique vaut σ = ft·(2r − r²) avec r = δn/δnE, au lieu de la droite σ = pj·δn. Elle arrive au pic avec une **tangente nulle** — transition douce vers l'adoucissement, là où rockim a un coude — et part de l'origine avec la pente **2·pj**, des deux côtés de δn = 0 (la loi est C¹ à l'origine, la branche de compression devenant σ = 2·pj·δn, première ligne de son éq. 2.31). ⚠️ **Exige `jointSoftening = yan` ou `munjiza`** : la parabole va avec la z-curve et n'est implémentée que sur ce chemin. La combinaison est **refusée** plutôt que laissée sans effet | fdem, fdem3d |
 | **`jointDeltaC`** (exact) | `guo` = **Guo éq. 2.30** : δc = 3·Gf/f mesuré **depuis zéro**, au lieu de δnE + Gf/(ft·∫f dD). Il approxime l'intégrale de la z-curve par 1/3 là où elle vaut **0,386307** : son modèle dissipe donc **1,159 fois son Gf nominal**. C'est SA convention, et ses Gf publiés ont été calibrés avec — il faut la reproduire pour retrouver ses chiffres | fdem, fdem3d |
 
+**D'où vient le 26,32.** Leur « Penalty Number » de 3 000 GPa n'est qualifié
+nulle part dans l'ARMA. Il est tranché par la citation que fait Guo à propos
+de la pénalité : **Turon, Dávila, Camanho & Costa (2007)**, *Eng. Fract.
+Mech.* 74:1665-1682 — le papier du rapport classique des modèles de zone
+cohésive, **K = α·E/t avec α ≈ 50**. Or 3 000 / 57 = **52,6**. C'est donc la
+pénalité des éléments **cohésifs**, rapportée au module de la **roche**, posée
+par la règle de Turon — ni le contact, ni le carbure. Guo eq. 2.25 posant
+δnp = 2·ft·h/p0, la raideur vaut p0/(2h) et l'équivalent rockim est
+p0/(2E) = 26,32, le facteur 2 venant de **sa** convention.
+⚠️ À noter : l'éq. 2.28 de Guo recommande E ≤ p0 ≤ 10E, ce qui **contredit**
+le α ≈ 50 de Turon qu'il cite deux phrases plus haut. Les auteurs de l'article
+ont suivi Turon, pas la thèse.
+
 **Pourquoi la parabole rend la pénalité cohérente.** L'équivalence de pénalité
 (§5.4, `jointPenaltyFactor` ≈ 26,32 pour leur p0 = 3 000 GPa) a été établie en
 faisant coïncider **l'ouverture au pic** δnE = δnp. Avec la branche linéaire,
