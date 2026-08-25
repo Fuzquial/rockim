@@ -289,28 +289,6 @@ void Fdem3dSolver::init() {
         yanP_.b = cfg_.getd("yanB", 1.8);
         yanP_.c = cfg_.getd("yanC", 6.0);
         yanFricScaled_ = cfg_.geti("jointFrictionScaled", 0) != 0;
-        // ---- jointResidualMu : le frottement RESIDUEL (2026-08-25) -----
-        // Voir le header. GENERALISE jointFrictionScaled (muRes = 0 le
-        // reproduit) : les deux cles sont donc exclusives. Une valeur < 0,
-        // ou l absence de la cle, = comportement historique bit-identique.
-        muRes_ = cfg_.getd("jointResidualMu", -1.0);
-        if (muRes_ >= 0.0) {
-            if (yanFricScaled_)
-                throw std::runtime_error(
-                    "jointResidualMu et jointFrictionScaled sont exclusives : "
-                    "la premiere GENERALISE la seconde (jointResidualMu = 0 "
-                    "reproduit jointFrictionScaled = 1, jointResidualMu = "
-                    "tan(frictionDeg) reproduit le defaut). Les cumuler n a "
-                    "pas de sens");
-            std::cout << "[FDEM3D] jointResidualMu = " << muRes_
-                      << " : le frottement du joint glisse du PIC "
-                         "tan(frictionDeg) vers ce residuel par la meme f(D) "
-                         "que la cohesion. C est la distinction pic/fracture "
-                         "de Y-Geo (AbuAisha et al. 2015, eq. 7.5) et "
-                         "l equivalent du glissement que Solidity applique au "
-                         "joint rompu remis au contact (0,6 calcaire, 0,18 "
-                         "granite chez Yang et al.).\n";
-        }
         yanI_ = yan::integralFD(yanP_, cfg_.geti("yanQuadN", 4096));
         if (!(yanI_ > 1e-6))
             throw std::runtime_error("jointSoftening = yan: int f(D) dD is "
@@ -318,6 +296,34 @@ void Fdem3dSolver::init() {
         std::cout << "[FDEM3D] joint softening: Yan et al. f(D), a = "
                   << yanP_.a << ", b = " << yanP_.b << ", c = " << yanP_.c
                   << ", int f(D) dD = " << yanI_ << "\n";
+    }
+    // ---- jointResidualMu : le frottement RESIDUEL (2026-08-25) -----
+    // Voir le header. GENERALISE jointFrictionScaled (muRes = 0 le
+    // reproduit) : les deux cles sont donc exclusives. Une valeur < 0,
+    // ou l absence de la cle, = comportement historique bit-identique.
+    // Le garde lit la cle TELLE QU ELLE EST ECRITE, et non yanFricScaled_ :
+    // ce dernier n est arme que sous jointSoftening = yan. Sous `linear`,
+    // jointFrictionScaled est deja sans effet (muS = yanSoft_ && ... ) —
+    // piege PREEXISTANT, pas introduit ici, mais le garde d exclusivite doit
+    // quand meme prevenir l utilisateur qui aurait pose les deux.
+    const bool fricScaledEcrite = cfg_.geti("jointFrictionScaled", 0) != 0;
+    muRes_ = cfg_.getd("jointResidualMu", -1.0);
+    if (muRes_ >= 0.0) {
+        if (fricScaledEcrite)
+            throw std::runtime_error(
+                "jointResidualMu et jointFrictionScaled sont exclusives : "
+                "la premiere GENERALISE la seconde (jointResidualMu = 0 "
+                "reproduit jointFrictionScaled = 1, jointResidualMu = "
+                "tan(frictionDeg) reproduit le defaut). Les cumuler n a "
+                "pas de sens");
+        std::cout << "[FDEM3D] jointResidualMu = " << muRes_
+                  << " : le frottement du joint glisse du PIC "
+                     "tan(frictionDeg) vers ce residuel par la meme f(D) "
+                     "que la cohesion. C est la distinction pic/fracture "
+                     "de Y-Geo (AbuAisha et al. 2015, eq. 7.5) et "
+                     "l equivalent du glissement que Solidity applique au "
+                     "joint rompu remis au contact (0,6 calcaire, 0,18 "
+                     "granite chez Yang et al.).\n";
     }
     // jointShearUnload = plastic (defaut, inchange) | origin — eq. 18 de Yan
     // et al., miroir exact du 2D (voir FdemSolver.cpp).
