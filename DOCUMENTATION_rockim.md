@@ -200,6 +200,74 @@ pré-fissurée par un petit α (1e-3), jamais 0.
 | `gauge.<nom>` (—) | 3D : `"z0 z1"` — colonne `szz_<nom>`, σ_zz moyenné en volume dans la tranche [z0,z1] du corps (la jauge à mi-bit de leur fig. 8) ; tranche figée en configuration de référence |
 | `jointSoftening = munjiza` | **alias** de `yan` : la f(D) de Yan et al. 2023 EST la z-curve de Munjiza 2004 (a = 0,63, b = 1,8, c = 6, ∫f dD = 0,386307), celle de Y-Geo et de Solidity (Yang et al.). Avec `jointShearUnload = origin`, le moteur √(rn²+rs²) de cette branche est l'ellipse mode I-II exacte de leur éq. 3 — le modèle cohésif de l'article est donc INTÉGRALEMENT disponible, insertion adaptative comprise |
 
+### 5.4 bis Effets de vitesse : viscosité de volume et DIF
+
+*Section ajoutée le 2026-08-25. Ces clés existaient depuis le 2026-08-18 et
+n'avaient jamais été documentées — dette du principe VII soldée à l'occasion du
+chantier « DIF intrinsèque ». Le code fait foi ; chaque ligne ci-dessous a été
+relue dans `src/FdemSolver.cpp` et `src/Fdem3dSolver.cpp`.*
+
+**Viscosité de volume** — une contrainte visqueuse newtonienne **2 μ D** (D = taux
+de déformation co-rotée) est ajoutée au tenseur de Cauchy de chaque élément.
+C'est le terme de l'éq. 6 de Yan et al. 2023, et c'est aussi le `η·D` de
+l'éq. 2.6 de la thèse de Guo (Imperial College, 2014) dont le code Solidity de
+Yang et al. est issu. ⚠️ **Attention à la convention du facteur 2** : rockim
+applique `2 μ D` là où Guo écrit `η D`, donc **η = 2 μ**. Pour reproduire un η
+publié, poser `bulkViscosity = η/2`.
+
+| clé (défaut) | rôle | portée |
+|---|---|---|
+| `bulkViscosity` (0 = off) | μ **littéral** [Pa·s], le même pour tous les éléments. Exclusive avec `bulkViscosityXi` (le run s'arrête si les deux sont posées) | fdem, fdem3d |
+| `bulkViscosityXi` (0 = off) | μ **calculé du maillage** : μ = ξ·h·√(E ρ) par élément. ξ = **2,0 vaut le critique de Munjiza** 2h√(Eρ) — c'est la valeur de la Table 1 de Yan et al. Le résumé imprime « soit 0,5·ξ × le critique » | fdem, fdem3d |
+| `bulkViscosityGraded` (0) | 1 = μ **gradué** par élément (chaque tétra son h) ; 0 = μ **global**, pris à la médiane. Sur un maillage gradué, μ global fait payer le pas de temps du plus fin tétra partout — mais c'est la forme d'un η constant publié | fdem, fdem3d |
+| `viscousInInsertion` (1) | 1 = le terme visqueux entre dans la contrainte d'essai du **critère d'insertion** ; 0 = le critère ne voit que la contrainte élastique. Argument du 0 : sinon le taux agit deux fois, comme contrainte d'essai ET comme seuil via le DIF. ⚠️ **clé 3D seulement** | fdem3d |
+
+Le pas de temps porte une borne **diffusive** ρh²/4μ en plus de la borne
+élastique : monter μ coûte du dt. Le travail visqueux est compté dans
+`viscWork_`, **ventilé à l'intérieur du poste « éléments »** du bilan B4 (ce
+n'est pas un poste de plus) et imprimé au résumé de fin de run avec son verdict
+de signe. ⚠️ Il n'a **pas de colonne dans `history.csv`** : sur un run tué avant
+la fin, la part visqueuse est irrécupérable.
+
+**DIF (Dynamic Increase Factor)** — les résistances de joint sont multipliées par
+un facteur fonction du taux de déformation, éq. 2 et 3 de Yang et al. 2025.
+`DIF_traction` multiplie `ft` **et** `Gf` ; `DIF_compression` multiplie `cohesion`
+**et** `GfII` — comme eux. Comme ft et Gf reçoivent le même facteur, la
+**longueur de la branche adoucissante** kI·Gf/ft est invariante : seule la limite
+élastique dnE = ft/pj bouge.
+
+| clé (défaut) | rôle | portée |
+|---|---|---|
+| `strainRateDIF` (off) | off \| `yang` = leur éq. 3 **littérale**, exposant 0,07 \| `yang-fig2` = exposant **0,1707** déduit de leur figure 2b. ⚠️ L'exposant 0,07 imprimé ne raccorde pas la loi à ses bornes : elle saute de 1,516 à 1,85 en ε̇ = 10² /s, et en insertion extrinsèque ce saut est un **attracteur** (la population insérée s'empile juste sous 10² /s — mesuré : médiane 99,36 /s contre 40,22 avec `yang-fig2`). Trois repères de la suite verrouillent ce comportement | fdem, fdem3d |
+| `strainRateTau` (1e-6 s) | constante de temps du **filtre exponentiel** du taux par élément (ε̇ = max des valeurs propres absolues de D co-rotée). Doit être > 0 si le DIF est actif | fdem, fdem3d |
+| **`strainRateDIFArm`** (insertion) | **QUAND** le facteur est figé. `insertion` (défaut, comportement historique) : à l'instant de l'insertion — **exige `insertion = adaptive`**. `envelope` (2026-08-25) : au moment où le joint **quitte sa branche élastique**, c'est-à-dire là où il commence à s'endommager — **exige `insertion = intrinsic`**. Les deux sont l'analogue l'un de l'autre : en adaptatif le joint NAÎT au pic de l'enveloppe (continuité de contrainte, `dn0`), naissance et amorçage coïncident donc par construction ; en intrinsèque le joint est déjà là et seul l'amorçage subsiste. La table de validation refuse explicitement les deux croisements (`envelope` + adaptatif appliquerait le facteur deux fois ; `insertion` + intrinsèque est l'erreur historique, dont le message oriente désormais vers `envelope`) | fdem, fdem3d |
+
+**Pourquoi l'armement intrinsèque ne peut PAS réutiliser le critère en
+contrainte d'élément** (mesuré le 2026-08-25, gardé ici pour que le piège ne
+soit pas retenté) : la première version armait sur le critère de
+`insertionSweep()` — la contrainte moyenne des deux éléments contre l'enveloppe
+de Mohr-Coulomb, exactement le critère de l'insertion adaptative. Elle ne
+s'arme **jamais** : 0 joint gelé sur 6840, et 100 % des joints sollicités
+s'endommagent sans DIF. La raison est structurelle et non un réglage : en
+schéma intrinsèque le joint est le maillon faible et **écrête la contrainte que
+ce critère surveille**, si bien que la moyenne des deux éléments n'atteint
+jamais ft. Le critère partagé avec l'adaptatif est donc inutilisable en
+intrinsèque, et l'armement porte sur la cinématique propre du joint.
+
+Sorties : le résumé imprime `DIF intrinseque (armement a l enveloppe): N / M
+joints geles ; K joints endommages SANS DIF`. **K est le contrôle falsifiable
+de l'armement** — il vaut 0 par construction, et une valeur non nulle signale
+que le critère d'armement a dérivé par rapport à la loi de joint. Repères
+`dif_intrinseque_2d` (fast) et `dif_intrinseque_3d` (full), plus le contrôle à
+charge nulle `zeroload_dif_intrinseque_2d` (aucun joint armé sous charge nulle).
+
+**Enveloppe de cisaillement du joint**
+
+| clé (défaut) | rôle | portée |
+|---|---|---|
+| `jointShearEnvelope` (yan) | `yan` = son éq. 8, le terme de frottement tombe à **zéro dès que la contrainte normale est en traction** ; `yang` = l'**éq. 1 de Yang et al.**, il décroît jusqu'au cut-off en ft : fs = c − tanφ·min(σn, ft). Les deux **coïncident exactement en compression** et ne diffèrent qu'en traction, où la forme de Yang AFFAIBLIT le cisaillement (−34 % au cut-off sur le banc de percussion). C'est ce qui gouverne le partage traction/cisaillement dans les zones tendues, donc le faciès radial. **La forme de l'article est `yang`** | fdem, fdem3d |
+| `meanTensionCapFactor` (0 = off) | plafond sur la contrainte moyenne de l'élément, en multiples de `ft`. Garde-fou rockim, sans équivalent dans la littérature de référence : laisser éteint pour toute réplique | fdem, fdem3d |
+
 ### 5.5 Lois de comportement (`law`, modes fem3d / fdem / fdem3d)
 
 `law = elastic | dpr | saksala | saksala2011 | dpdfh` (défaut : dpr en fem3d ; absent

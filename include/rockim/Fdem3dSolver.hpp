@@ -119,6 +119,10 @@ private:
         // Sortie seulement : les facteurs ont deja ete appliques a ft, coh,
         // Gf et GfII lors de activateJoint().
         double difT = 1.0, difC = 1.0, edotIns = 0.0;
+        // En schema INTRINSEQUE (difIntrinsic_), le meme gel a lieu au
+        // franchissement de l enveloppe et non a l insertion : ce drapeau
+        // garantit qu il n a lieu QU UNE FOIS. Inerte en adaptatif.
+        bool difStamped = false;
         double tanPhi = 0.0;                // friction
         double stat = 1.0;                  // Weibull strength factor (output)
         // ---- adaptive insertion (Yan et al. 2023, ported from FdemSolver) --
@@ -180,6 +184,12 @@ private:
     void insertionSweep();
     void activateJoint(int jI, double sig, const Eigen::Vector3d& tauV,
                        double fsNow);
+    // ---- DIF de Yang : application des facteurs a UN joint ---------------
+    // Extrait de activateJoint() le 2026-08-25 pour etre partage avec le gel
+    // a l AMORCAGE du schema intrinseque (difIntrinsic_). Arithmetique
+    // inchangee : les reperes dif_yang_* de la suite verrouillent la
+    // bit-identite du chemin adaptatif.
+    void stampDif(Joint& J, double er);
     void placeTool();
     void setupBoundaries();
     // triaxial 3D : pression suiveuse sur les faces exterieures LATERALES
@@ -434,6 +444,18 @@ private:
     bool difOn_ = false;
     double difExpT_ = 0.07;                // 0,07 litteral | 0,1707 fig. 2b
     double srTau_ = 0.0, srRelax_ = 0.0;   // filtre du taux
+    // ---- DIF en schema INTRINSEQUE : le gel a l AMORCAGE (2026-08-25) -----
+    // Vrai quand strainRateDIF est arme ET insertion = intrinsic. Le meme
+    // balayage d enveloppe que l insertion adaptative est alors execute, mais
+    // au franchissement il ne CREE pas le joint (il existe deja) : il se
+    // contente d y STAMPER le DIF. Les deux schemas partagent donc le critere
+    // exact, et ne different que par sa consequence — c est le temoin
+    // recherche pour la comparaison a Yang et al. (joints intrinseques AVEC
+    // DIF). Combinaison auparavant REFUSEE par une exception : aucune config
+    // valide ne change de comportement (principe I).
+    bool difIntrinsic_ = false;
+    long nDifStamped_ = 0;                 // joints ayant recu le gel
+    long nDifLate_ = 0;                    // dont DEJA endommages au gel
 
     double kp_ = 0.0, muC_ = 0.5, xiC_ = 0.05, vReg_ = 1e-3;
     double kpGC_ = 0.0, xiGC_ = 0.8, gcRest_ = 0.2, gcWork_ = 0.0, relax_ = 1.0;

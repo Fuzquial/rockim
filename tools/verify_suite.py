@@ -49,6 +49,14 @@ RX = {
     "viscwork":  r"dont visqueux \(2 mu D\) : (-?[\d.eE+-]+) J",
     "edotmed":   r"insertion, mediane ([\d.eE+-]+) /s",
     "difmed":    r"DIF_traction median ([\d.eE+-]+)",
+    # --- DIF en schema INTRINSEQUE (strainRateDIFArm = envelope), 2026-08-25
+    # difsansdif est LE controle falsifiable de l armement : un joint qui
+    # s endommage sans avoir recu son DIF est un joint que l armement a rate.
+    # Il doit valoir 0 par construction (le gel a lieu a l instant meme ou le
+    # joint quitte sa branche elastique). Une valeur non nulle signalerait que
+    # le critere d armement a derive par rapport a la loi de joint.
+    "difarmed":   r"armement a l enveloppe\): (\d+) /",
+    "difsansdif": r"; (\d+) joints endommages SANS DIF",
 }
 
 # ---- définition des tests --------------------------------------------------
@@ -162,6 +170,37 @@ TESTS = [
                "strainRateDIF = yang-fig2", "pullV = 1.5", "T = 1.2e-5"],
          checks=[("edotmed", 315.75, 1e-2, True),
                  ("difmed", 1.85, 1e-9, True)]),
+    # ---- DIF en schema INTRINSEQUE (strainRateDIFArm = envelope) ----------
+    # Le TEMOIN de l etude « insertion adaptative vs intrinseque » : meme deck
+    # que dif_yang_fig2_2d ci-dessus, SEUL le schema change. Il faut donc que
+    # le DIF sache s armer sans instant d insertion — c est ce que ce repere
+    # verrouille.
+    # difsansdif = 0 est le controle FALSIFIABLE : le gel a lieu a l instant
+    # meme ou le joint quitte sa branche elastique, donc aucun joint ne peut
+    # s endommager sans DIF. Mesure du 2026-08-25 : 547 joints armes sur 6840,
+    # 0 sans DIF. Le premier essai, qui armait sur la contrainte d ELEMENT (le
+    # critere de insertionSweep), donnait 0 arme et 24 sans DIF — le joint
+    # ecrete la contrainte que ce critere surveille. Ce test existe pour que
+    # ce mode d echec ne revienne pas en silence.
+    dict(name="dif_intrinseque_2d", tier="fast", cfg="verify_fdem_tension.cfg",
+         over=["verifyFt = false", "insertion = intrinsic",
+               "strainRateDIF = yang-fig2", "strainRateDIFArm = envelope",
+               "pullV = 0.5", "T = 3e-5"],
+         checks=[("difarmed", 547, 0, True),
+                 ("difsansdif", 0, 0, True),
+                 ("edotmed", 57.1995, 1e-3, True),
+                 ("difmed", 1.76803, 1e-4, True)]),
+    # Charge nulle AVEC le DIF intrinseque arme : personne ne doit franchir
+    # l enveloppe, donc AUCUN joint arme, aucun joint casse, dampWork <= 0.
+    # C est le patron zeroload applique a la capacite nouvelle (principe II).
+    dict(name="zeroload_dif_intrinseque_2d", tier="fast",
+         cfg="verify_fdem_tension.cfg",
+         over=["verifyFt = false", "pullV = 1e-12", "insertion = intrinsic",
+               "strainRateDIF = yang-fig2", "strainRateDIFArm = envelope"],
+         checks=[("difarmed", 0, 0, True),
+                 ("difsansdif", 0, 0, True),
+                 ("broken", 0, 0, True),
+                 ("dampwork", 0.0, 1e-12, True)]),
     # --- tier full : bit-repères 2D longs, adaptatif, 3D grille -------------
     # charge nulle AVEC viscosite : le terme dissipatif ne doit rien casser ni
     # rien injecter quand il n y a pas de chargement (patron zeroload).
@@ -205,6 +244,20 @@ TESTS = [
          checks=[("edotmed", 1.57523, 1e-4, True),
                  ("difmed", 1.39307, 1e-5, True),
                  ("broken", 198, 0, True)]),
+    # Le meme, en schema INTRINSEQUE : le DIF s arme a l enveloppe DU JOINT
+    # faute d instant d insertion (principe III — la capacite nait dans les
+    # deux solveurs au meme chantier). Mesure du 2026-08-25 : 1800 joints
+    # armes sur 11400, 0 endommage sans DIF. A comparer au repere adaptatif
+    # ci-dessus, dont il ne differe QUE par le schema : taux median 1,197 /s
+    # contre 1,575, DIF 1,373 contre 1,393, casse 200 contre 198.
+    dict(name="dif_intrinseque_3d", tier="full", cfg="verify_fdem3d_tension.cfg",
+         over=["insertion = intrinsic", "strainRateDIF = yang-fig2",
+               "strainRateDIFArm = envelope"],
+         checks=[("difarmed", 1800, 0, True),
+                 ("difsansdif", 0, 0, True),
+                 ("edotmed", 1.19703, 1e-4, True),
+                 ("difmed", 1.37278, 1e-5, True),
+                 ("broken", 200, 0, True)]),
     dict(name="fdem3d_tension", tier="full", cfg="verify_fdem3d_tension.cfg",
          over=["jointXi = 0"],                          # doctrine 2026-08-05 :
          # une vérification de la LOI ne mesure pas la dissipation visqueuse

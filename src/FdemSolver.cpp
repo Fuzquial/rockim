@@ -120,11 +120,45 @@ void FdemSolver::init() {
         difOn_ = sd != "off";
         difExpT_ = sd == "yang-fig2" ? 0.1707 : 0.07;
     }
-    if (difOn_ && cfg_.gets("insertion", "intrinsic") != "adaptive")
-        throw std::runtime_error("strainRateDIF = yang exige insertion = "
-                                 "adaptive : le DIF est fige a l instant "
-                                 "d insertion du joint, et le schema "
-                                 "intrinseque n en a pas");
+    // ---- strainRateDIFArm : QUAND le DIF est fige (2026-08-25) -----------
+    // Historiquement le DIF etait fige a l instant de l INSERTION, ce qui
+    // exigeait insertion = adaptive : un joint intrinseque n a pas d instant
+    // d insertion, et la combinaison etait refusee. On ajoute l armement a
+    // l ENVELOPPE : le joint intrinseque recoit son DIF au franchissement du
+    // MEME critere que celui de l insertion adaptative. C est l analogue
+    // exact — en adaptatif le joint NAIT au pic de l enveloppe (continuite de
+    // contrainte, dn0), naissance et amorcage coincident donc par
+    // construction ; en intrinseque le joint est deja la et seul l amorcage
+    // subsiste. Les deux schemas partagent alors le critere et ne different
+    // que par sa consequence : c est le temoin recherche.
+    // ADDITION (principes I et VIII) : le defaut reste `insertion`, mot pour
+    // mot le comportement d hier, et la cle n est meme pas lue sans DIF.
+    if (difOn_) {
+        std::string arm = cfg_.gets("strainRateDIFArm", "insertion");
+        if (arm != "insertion" && arm != "envelope")
+            throw std::runtime_error("strainRateDIFArm must be insertion | "
+                                     "envelope (insertion = gel a l instant "
+                                     "de l insertion, exige insertion = "
+                                     "adaptive ; envelope = gel au "
+                                     "franchissement de l enveloppe, pour "
+                                     "insertion = intrinsic)");
+        bool adaptiveCfg = cfg_.gets("insertion", "intrinsic") == "adaptive";
+        if (arm == "envelope" && adaptiveCfg)
+            throw std::runtime_error("strainRateDIFArm = envelope est "
+                                     "l armement du schema INTRINSEQUE : en "
+                                     "insertion adaptative le DIF est deja "
+                                     "fige a l insertion, les cumuler "
+                                     "appliquerait le facteur DEUX FOIS");
+        if (arm == "insertion" && !adaptiveCfg)
+            throw std::runtime_error("strainRateDIF = yang exige insertion = "
+                                     "adaptive : le DIF est fige a l instant "
+                                     "d insertion du joint, et le schema "
+                                     "intrinseque n en a pas. Poser "
+                                     "strainRateDIFArm = envelope pour geler "
+                                     "le DIF au franchissement de l enveloppe "
+                                     "(le temoin intrinseque)");
+        difIntrinsic_ = arm == "envelope";
+    }
     // jointShearEnvelope / meanTensionCapFactor : voir le header.
     {
         std::string se = cfg_.gets("jointShearEnvelope", "yan");
@@ -704,6 +738,19 @@ void FdemSolver::init() {
                      "de 5e-6 /s, contre 1 en dessous) a "
                   << difTensionYang(99.0, difExpT_) << " (juste sous 1e2 /s, "
                      "contre 1,85 au-dessus)\n";
+        if (difIntrinsic_)
+            std::cout << "[FDEM]   strainRateDIFArm = envelope : les joints "
+                         "existent des t = 0, il n y a donc pas d instant "
+                         "d insertion. Le DIF est gele au FRANCHISSEMENT de "
+                         "l enveloppe — le MEME critere que celui de "
+                         "l insertion adaptative (contrainte moyenne des deux "
+                         "triangles contre ft dynamique et l enveloppe de "
+                         "Mohr-Coulomb). Les deux schemas partagent donc le "
+                         "critere et ne different que par sa consequence : "
+                         "l un cree le joint, l autre se contente d y geler "
+                         "le DIF. Un joint deja adouci est REFUSE au gel "
+                         "(sinon sa resistance remonterait) ; le resume "
+                         "recense ces cas.\n";
         if (difExpT_ < 0.1)
             std::cout << "[FDEM]   AVERTISSEMENT : avec l exposant litteral "
                          "0,07 ces deux paires ne se raccordent PAS (sauts de "
@@ -1928,6 +1975,29 @@ void FdemSolver::rebindVertex(int v) {
 // |tau| >= fs, with fs = c - sigma_n tan(phi) in compression, c otherwise.
 // The sweep is O(bonded edges) per step and runs before jointForces so a
 // newborn joint carries traction the very step it is inserted.
+// ---- DIF de Yang et al. 2025 : application des facteurs a UN joint --------
+// Extrait VERBATIM de activateJoint() le 2026-08-25 pour etre partage avec le
+// gel a l amorcage du schema intrinseque. Aucune expression n a change : les
+// trois reperes dif_yang_* de la suite verrouillent la bit-identite du chemin
+// adaptatif, et la suite fast complete la prouve.
+// Les ouvertures critiques sont recalculees : dnE = ft/pj suit le DIF, tandis
+// que kI Gf/ft ne bouge pas puisque ft et Gf recoivent le MEME facteur —
+// dnF - dnE est donc invariante et le compteur d endommagement reste coherent.
+void FdemSolver::stampDif(Joint& J, double er) {
+    double dT = difTensionYang(er, difExpT_);
+    double dC = difCompressionYang(er);
+    J.ft   *= dT;
+    J.Gf   *= dT;
+    J.coh  *= dC;
+    J.GfII *= dC;
+    J.difT = dT; J.difC = dC; J.edotIns = er;
+    double kI = yanSoft_ ? 1.0 / yanI_ : 2.0;
+    J.dnE   = J.ft / J.pj;
+    J.dnF   = J.dnE + kI * J.Gf / J.ft;
+    J.slipF = kI * J.GfII / J.coh;
+    J.difStamped = true;
+}
+
 void FdemSolver::insertionSweep() {
     struct Hit { int jI; double sig, tau; };
     std::vector<Hit> hits;
@@ -2043,17 +2113,7 @@ void FdemSolver::activateJoint(int jI, double sig, double tau) {
     // invariante et le compteur d endommagement reste coherent.
     if (difOn_) {
         double er = 0.5 * (el_[J.eA].edot + el_[J.eB].edot);
-        double dT = difTensionYang(er, difExpT_);
-        double dC = difCompressionYang(er);
-        J.ft   *= dT;
-        J.Gf   *= dT;
-        J.coh  *= dC;
-        J.GfII *= dC;
-        J.difT = dT; J.difC = dC; J.edotIns = er;
-        double kI = yanSoft_ ? 1.0 / yanI_ : 2.0;
-        J.dnE   = J.ft / J.pj;
-        J.dnF   = J.dnE + kI * J.Gf / J.ft;
-        J.slipF = kI * J.GfII / J.coh;
+        stampDif(J, er);
     }
     J.dn0 = std::min(sig, J.ft) / J.pj;
     double fsNow = J.coh
@@ -3240,12 +3300,52 @@ void FdemSolver::jointForces() {
         Eigen::Vector2d n(e.y(), -e.x());              // outward from A
 
         double Ltrib = 0.5 * J.L0 * thk_;
+        const int ia[2] = {J.a1, J.a2};
+        const int ib[2] = {J.b1, J.b2};
+        // ---- DIF intrinseque : armement a l enveloppe DU JOINT ------------
+        // Le gel du DIF a lieu au moment ou le joint QUITTE sa branche
+        // elastique, c est-a-dire a l instant meme ou il commence a
+        // s endommager. C est l analogue exact du gel a l insertion : en
+        // adaptatif le joint NAIT au pic de l enveloppe, naissance et amorcage
+        // coincident donc par construction.
+        //
+        // MESURE DU 2026-08-25 — pourquoi ce n est PAS le critere en
+        // contrainte d element de insertionSweep() : essaye d abord, il ne
+        // s arme JAMAIS en intrinseque (0 joint gele sur 6840, 100 % des
+        // joints sollicites endommages sans DIF). La raison est structurelle :
+        // le joint est le maillon faible, il ecrete la contrainte que ce
+        // critere surveille, si bien que la moyenne des deux triangles
+        // n atteint jamais ft. Le critere partage avec l adaptatif est
+        // inutilisable ici.
+        //
+        // Le gel a lieu AVANT le calcul des tractions du meme pas : la loi ne
+        // tourne donc jamais un pas avec la resistance statique. Ecriture
+        // PRIVEE au joint (aucune course sous OpenMP) et deterministe : elle
+        // ne depend que de l etat du joint et du taux de ses deux triangles,
+        // tous deux figes pendant jointForces().
+        if (difIntrinsic_ && !J.difStamped) {
+            bool onset = false;
+            for (int k = 0; k < 2 && !onset; ++k) {
+                Eigen::Vector2d delta = (X0_[ib[k]] + u_[ib[k]])
+                                      - (X0_[ia[k]] + u_[ia[k]]);
+                double dn = delta.dot(n) + J.dn0;
+                if (dn > J.dnE) { onset = true; break; }
+                // s_p de Munjiza, evalue sur l enveloppe NON endommagee et sur
+                // la part geometrique pj*dn de la contrainte normale — la meme
+                // expression que la branche `origin` de la loi ci-dessous.
+                double sE = (J.coh + J.tanPhi
+                             * rockim::mcFrictionTerm(J.pj * dn, J.ft,
+                                                      yangEnv_)) / J.pj;
+                if (sE < 0.0) sE = 0.0;
+                if (std::abs(delta.dot(e)) > sE) onset = true;
+            }
+            if (onset)
+                stampDif(J, 0.5 * (el_[J.eA].edot + el_[J.eB].edot));
+        }
         double dnMax = -1e30;
         double rsMaxO = 0.0;               // moteur de mode II du pas courant
                                            // (jointShearUnload = origin)
 
-        const int ia[2] = {J.a1, J.a2};
-        const int ib[2] = {J.b1, J.b2};
         for (int k = 0; k < 2; ++k) {
             Eigen::Vector2d delta = (X0_[ib[k]] + u_[ib[k]])
                                   - (X0_[ia[k]] + u_[ia[k]]);
@@ -5855,12 +5955,43 @@ void FdemSolver::finalize() {
                   << jt_.size() << " joints inserted ("
                   << (jt_.empty() ? 0.0 : 100.0 * nInserted_ / jt_.size())
                   << " %), " << nBroken_ << " fully broken\n";
+    if (difIntrinsic_) {
+        // CONTROLE (principe IV) : le critere porte sur la contrainte MOYENNE
+        // des deux triangles, l endommagement sur l ouverture PROPRE du joint.
+        // Les deux ne franchissent pas forcement au meme pas. Un joint qui
+        // s endommage AVANT d avoir franchi le critere est refuse au gel (il
+        // garderait sinon une resistance qui remonte) : il traverse donc tout
+        // le run avec ses resistances STATIQUES. Recensement en fin de run —
+        // si cette part n est pas petite, l armement a l enveloppe rate sa
+        // cible et il faut le dire.
+        long nSansDif = 0, nArm = 0;
+        for (const auto& J : jt_) {
+            if (J.difStamped) ++nArm;
+            else if (J.D > 0.0) ++nSansDif;
+        }
+        nDifStamped_ = nArm;
+        nDifLate_ = nSansDif;
+        std::cout << "[FDEM] DIF intrinseque (armement a l enveloppe): "
+                  << nDifStamped_ << " / " << jt_.size() << " joints geles ("
+                  << (jt_.empty() ? 0.0 : 100.0 * nDifStamped_ / jt_.size())
+                  << " %) ; " << nSansDif << " joints endommages SANS DIF ("
+                  << (nDifStamped_ + nSansDif
+                      ? 100.0 * nSansDif / (double)(nDifStamped_ + nSansDif)
+                      : 0.0)
+                  << " % des joints sollicites — refuses au gel parce que deja "
+                     "adoucis ; au-dela de quelques % l armement rate sa "
+                     "cible)\n";
+    }
     if (difOn_) {
         // Sur les joints REELLEMENT inseres : c est la seule population sur
-        // laquelle le DIF a ete evalue.
+        // laquelle le DIF a ete evalue. En intrinseque, ce sont les joints
+        // GELES (bonded vaut false partout des t = 0 : le filtre historique
+        // aurait avale les 100 % de joints, geles ou non).
         std::vector<double> er, dt_v;
         for (const auto& J : jt_)
-            if (!J.bonded) { er.push_back(J.edotIns); dt_v.push_back(J.difT); }
+            if (difIntrinsic_ ? J.difStamped : !J.bonded) {
+                er.push_back(J.edotIns); dt_v.push_back(J.difT);
+            }
         if (er.empty()) {
             std::cout << "[FDEM] strainRateDIF : aucun joint insere — le DIF "
                          "n a jamais ete evalue.\n";

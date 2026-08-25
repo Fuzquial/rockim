@@ -165,6 +165,10 @@ private:
         // Gf et GfII lors de activateJoint(). edotIns est le taux de
         // deformation moyen des deux elements a cet instant.
         double difT = 1.0, difC = 1.0, edotIns = 0.0;
+        // En schema INTRINSEQUE (difIntrinsic_), le meme gel a lieu au
+        // franchissement de l enveloppe et non a l insertion : ce drapeau
+        // garantit qu il n a lieu QU UNE FOIS. Inerte en adaptatif.
+        bool difStamped = false;
         // ---- mode de rupture (Yan et al. fig. 18 / 20) --------------------
         // Renseigne UNE FOIS, a l'instant ou D atteint 1, en comparant les
         // deux moteurs de l'eq. 16 : rn = (dn - dnE)/(dnF - dnE) (ouverture)
@@ -262,6 +266,12 @@ private:
     void rebindVertex(int v);
     void insertionSweep();
     void activateJoint(int jI, double sig, double tau);
+    // ---- DIF de Yang : application des facteurs a UN joint ---------------
+    // Extrait de activateJoint() le 2026-08-25 pour etre partage avec le gel
+    // a l AMORCAGE du schema intrinseque (difIntrinsic_). Arithmetique
+    // inchangee : les reperes dif_yang_* de la suite verrouillent la
+    // bit-identite du chemin adaptatif.
+    void stampDif(Joint& J, double er);
     void setupBrazilianLoad();
     void initPlatens(double xc, double hw);  // geometry + tributary weights
     void setupBoundaries();
@@ -415,6 +425,18 @@ private:
     // quelqu un d autre. <= 0 le desarme. Defaut 3 = inchange.
     double mtCap_ = 3.0;
     bool difOn_ = false;
+    // ---- DIF en schema INTRINSEQUE : le gel a l AMORCAGE (2026-08-25) -----
+    // Vrai quand strainRateDIF est arme ET insertion = intrinsic. Le meme
+    // balayage d enveloppe que l insertion adaptative est alors execute, mais
+    // au franchissement il ne CREE pas le joint (il existe deja) : il se
+    // contente d y STAMPER le DIF. Les deux schemas partagent donc le critere
+    // exact et ne different que par sa consequence — c est le temoin recherche
+    // pour la comparaison a Yang et al. (joints intrinseques AVEC DIF).
+    // Combinaison auparavant REFUSEE par une exception : aucune configuration
+    // valide ne change de comportement (principe I).
+    bool difIntrinsic_ = false;
+    long nDifStamped_ = 0;                 // joints ayant recu le gel
+    long nDifLate_ = 0;                    // dont DEJA endommages au gel
     double srTau_ = 0.0;                   // constante du filtre de taux [s]
     double srRelax_ = 0.0;                 // exp(-dt/srTau_), pose apres dt
     // Exposant de DIF_traction. 0,07 = transcription LITTERALE de leur eq. 3.
