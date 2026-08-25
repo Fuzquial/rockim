@@ -492,6 +492,18 @@ private:
     // vers l adoucissement) et une pente initiale 2 pj, valable des DEUX
     // cotes de dn = 0 (loi C1 a l origine). rockim posait une droite de
     // pente pj, avec un coude au pic.
+    // ---- jointQuadrature : les points d integration du joint -------------
+    // `vertex` (defaut) : aux NOEUDS. C est la regle de Newton-Cotes nodale,
+    // celle des elements cohesifs d Abaqus, retenue contre les oscillations
+    // parasites du champ de traction a forte penalite (Schellekens & de
+    // Borst). `midedge` : aux MILIEUX D ARETES, poids 1/3 — la regle de Guo
+    // (Table 2.2), exacte a l ordre 2 au lieu de 1.
+    // Les deux coincident EXACTEMENT en chargement uniforme ; elles different
+    // de 50 a 200 % la ou l ouverture a un gradient a travers la facette,
+    // c est-a-dire au front de fissure. Ce n est donc PAS un raffinement de
+    // second ordre : c est un effet nul la ou on le mesure d habitude et fort
+    // la ou la fissure se decide.
+    bool midEdge_ = false;
     bool paraElastic_ = false;
     // jointDeltaC = exact (defaut) | guo : l ouverture critique. Guo
     // eq. 2.30 pose delta_c = 3 Gf/f mesure depuis ZERO, en approchant

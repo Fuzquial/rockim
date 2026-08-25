@@ -116,6 +116,14 @@ void Fdem3dSolver::init() {
     {
         // ---- loi de joint : les deux dernieres conventions de Guo -----
         {
+            std::string jq = cfg_.gets("jointQuadrature", "vertex");
+            if (jq != "vertex" && jq != "midedge")
+                throw std::runtime_error("jointQuadrature must be vertex | "
+                                         "midedge (vertex = Newton-Cotes "
+                                         "nodale, le defaut et le choix "
+                                         "d Abaqus ; midedge = Guo 2014 "
+                                         "Table 2.2, aux milieux d aretes)");
+            midEdge_ = jq == "midedge";
             std::string je = cfg_.gets("jointElastic", "linear");
             if (je != "linear" && je != "parabolic")
                 throw std::runtime_error("jointElastic must be linear | "
@@ -2150,8 +2158,28 @@ void Fdem3dSolver::jointForces() {
                                            // (jointShearUnload = origin)
 
         for (int k = 0; k < 3; ++k) {
+            // ---- POINTS D INTEGRATION ------------------------------------
+            // `vertex` (defaut, historique) : le point k EST la paire de
+            // noeuds k. C est la regle de Newton-Cotes nodale — celle
+            // d Abaqus pour ses elements cohesifs, choisie contre les
+            // oscillations parasites du champ de traction a forte penalite
+            // (Schellekens & de Borst).
+            // `midedge` (Guo Table 2.2) : le point k est le MILIEU de l arete
+            // joignant les paires k et k+1, poids 1/3. L ouverture y vaut la
+            // MOYENNE des deux paires (elle varie lineairement sur la facette)
+            // et la traction s y repartit pour moitie sur chacune.
+            // Ecart entre les deux : NUL en chargement uniforme — d ou son
+            // invisibilite dans toute la suite — mais 50 a 200 % la ou
+            // l ouverture a un gradient a travers la facette, c est-a-dire au
+            // FRONT DE FISSURE. La regle nodale echantillonne les extremes,
+            // celle de Guo lisse.
+            const int k2 = (k + 1) % 3;
             int ia = J.a[k], ib = J.b[k];
+            const int ia2 = J.a[k2], ib2 = J.b[k2];
             Eigen::Vector3d delta = (X0_[ib] + u_[ib]) - (X0_[ia] + u_[ia]);
+            if (midEdge_)
+                delta = 0.5 * (delta + ((X0_[ib2] + u_[ib2])
+                                        - (X0_[ia2] + u_[ia2])));
             // dn0: adaptive-insertion opening offset (0 for intrinsic
             // joints) — a joint born under tension starts AT the envelope
             // peak, stress continuity as in the 2D solver
@@ -2332,11 +2360,21 @@ void Fdem3dSolver::jointForces() {
 
             Eigen::Vector3d trac = (sig * n + tau) * At;
             fnSum += sig * At;             // mesure : charge NORMALE portee
-            addF(ib, -trac);
-            addF(ia, trac);
             // V2/B4 : travail TOTAL des tractions de joint (visqueux inclus,
-            // deja isole dans dampW) — lecture pure des vitesses
-            jw += trac.dot(v_[ia] - v_[ib]) * dt_;
+            // deja isole dans dampW) — lecture pure des vitesses. En midedge
+            // la traction du point milieu se repartit pour MOITIE sur chacune
+            // des deux paires de l arete, et le travail suit la meme regle.
+            if (midEdge_) {
+                Eigen::Vector3d h = 0.5 * trac;
+                addF(ib, -h);  addF(ia, h);
+                addF(ib2, -h); addF(ia2, h);
+                jw += h.dot(v_[ia] - v_[ib]) * dt_
+                    + h.dot(v_[ia2] - v_[ib2]) * dt_;
+            } else {
+                addF(ib, -trac);
+                addF(ia, trac);
+                jw += trac.dot(v_[ia] - v_[ib]) * dt_;
+            }
         }
 
         if (J.D >= 1.0) {

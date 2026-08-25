@@ -329,6 +329,30 @@ TESTS = [
     # armes sur 11400, 0 endommage sans DIF. A comparer au repere adaptatif
     # ci-dessus, dont il ne differe QUE par le schema : taux median 1,197 /s
     # contre 1,575, DIF 1,373 contre 1,393, casse 200 contre 198.
+    # ---- jointQuadrature = midedge : la regle de Guo (Table 2.2) ---------
+    # Les deux regles a 3 points coincident EXACTEMENT en chargement uniforme
+    # — ce qui les rend invisibles a tout essai de traction directe classique.
+    # Elles ne different que la ou l ouverture a un gradient a travers la
+    # facette. Ces reperes existent donc pour verrouiller la MECANIQUE de la
+    # regle (repartition des forces sur les deux paires, ponderation), pas un
+    # effet physique que ces essais ne montrent pas.
+    # Mesures du 2026-08-26 : 2D -1,38789 -> -2,72922 %, 3D -4,76678 ->
+    # -3,65374 %, nombre de casses INCHANGE (24 et 200).
+    dict(name="jointquad_midedge_2d", tier="fast", cfg="verify_fdem_tension.cfg",
+         over=["jointQuadrature = midedge"],
+         checks=[("err_pct", -2.72922, 0.01, True),
+                 ("broken", 24, 0, True),
+                 ("dampwork", 0.0, 1e-12, True)]),
+    dict(name="zeroload_jointquad_2d", tier="fast", cfg="verify_fdem_tension.cfg",
+         over=["verifyFt = false", "pullV = 1e-12",
+               "jointQuadrature = midedge"],
+         checks=[("broken", 0, 0, True),
+                 ("dampwork", 0.0, 1e-12, True)]),
+    dict(name="jointquad_midedge_3d", tier="full",
+         cfg="verify_fdem3d_tension.cfg",
+         over=["jointQuadrature = midedge"],
+         checks=[("err_pct", -3.65374, 0.02, True),
+                 ("broken", 200, 0, True)]),
     # bulkModel = neohookean en 3D (principe III). L exposant de l ecart a la
     # forme co-rotationnelle DIFFERE entre dimensions — J^(-2/3) en 3D contre
     # J^(-1/2) en deformation plane — d ou l importance d avoir ce repere dans

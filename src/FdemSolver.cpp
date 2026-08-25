@@ -165,6 +165,14 @@ void FdemSolver::init() {
     {
         // ---- loi de joint : les deux dernieres conventions de Guo -----
         {
+            std::string jq = cfg_.gets("jointQuadrature", "vertex");
+            if (jq != "vertex" && jq != "midedge")
+                throw std::runtime_error("jointQuadrature must be vertex | "
+                                         "midedge (vertex = Newton-Cotes "
+                                         "nodale, le defaut et le choix "
+                                         "d Abaqus ; midedge = Guo 2014 "
+                                         "Table 2.2, aux milieux d aretes)");
+            midEdge_ = jq == "midedge";
             std::string je = cfg_.gets("jointElastic", "linear");
             if (je != "linear" && je != "parabolic")
                 throw std::runtime_error("jointElastic must be linear | "
@@ -3512,9 +3520,24 @@ void FdemSolver::jointForces() {
         double rsMaxO = 0.0;               // moteur de mode II du pas courant
                                            // (jointShearUnload = origin)
 
+        // jointQuadrature : `vertex` (defaut) place les 2 points AUX NOEUDS
+        // (Newton-Cotes, le choix d Abaqus). `midedge` place des points
+        // INTERIEURS — en 2D l analogue de la regle de Guo (ses milieux
+        // d aretes du triangle 3D, Table 2.2) est la quadrature de GAUSS a
+        // deux points, aux parametres (1 -+ 1/sqrt(3))/2. RESERVE : Guo ne
+        // specifie que le triangle 3D ; ce choix 2D est l analogue naturel,
+        // pas une citation.
+        const double gq = 0.5 - 0.5 / std::sqrt(3.0);      // ~0,21132
+        const double tq[2] = {gq, 1.0 - gq};
         for (int k = 0; k < 2; ++k) {
-            Eigen::Vector2d delta = (X0_[ib[k]] + u_[ib[k]])
-                                  - (X0_[ia[k]] + u_[ia[k]]);
+            Eigen::Vector2d d0 = (X0_[ib[0]] + u_[ib[0]])
+                               - (X0_[ia[0]] + u_[ia[0]]);
+            Eigen::Vector2d d1 = (X0_[ib[1]] + u_[ib[1]])
+                               - (X0_[ia[1]] + u_[ia[1]]);
+            Eigen::Vector2d delta = midEdge_
+                ? Eigen::Vector2d((1.0 - tq[k]) * d0 + tq[k] * d1)
+                : Eigen::Vector2d((X0_[ib[k]] + u_[ib[k]])
+                                  - (X0_[ia[k]] + u_[ia[k]]));
             // dn0: adaptive-insertion opening offset (0 for intrinsic joints).
             // A joint born under tension starts AT the envelope peak, so the
             // traction it hands the fresh crack faces equals the traction the
@@ -3758,11 +3781,21 @@ void FdemSolver::jointForces() {
 
             Eigen::Vector2d trac = (sig * n + tau * e) * Ltrib;
             fnSum += sig * Ltrib;          // mesure : charge NORMALE portee
-            addF(ib[k], -trac);                        // pull B back toward A
-            addF(ia[k], trac);
             // V2/B4 : travail TOTAL des tractions (visqueux inclus, isole
-            // dans dampW) — lecture pure des vitesses
-            jw += trac.dot(v_[ia[k]] - v_[ib[k]]) * dt_;
+            // dans dampW) — lecture pure des vitesses. En midedge le point de
+            // Gauss repartit sa traction sur les DEUX paires, aux poids
+            // (1 - t) et t, et le travail suit la meme repartition.
+            if (midEdge_) {
+                const double w0 = 1.0 - tq[k], w1 = tq[k];
+                addF(ib[0], -w0 * trac); addF(ia[0], w0 * trac);
+                addF(ib[1], -w1 * trac); addF(ia[1], w1 * trac);
+                jw += w0 * trac.dot(v_[ia[0]] - v_[ib[0]]) * dt_
+                    + w1 * trac.dot(v_[ia[1]] - v_[ib[1]]) * dt_;
+            } else {
+                addF(ib[k], -trac);                    // pull B back toward A
+                addF(ia[k], trac);
+                jw += trac.dot(v_[ia[k]] - v_[ib[k]]) * dt_;
+            }
         }
 
         if (J.D >= 1.0) {
