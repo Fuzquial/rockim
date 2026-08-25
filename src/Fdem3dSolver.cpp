@@ -110,6 +110,20 @@ void Fdem3dSolver::init() {
                                      "(le temoin intrinseque)");
         difIntrinsic_ = arm == "envelope";
     }
+    // ---- jointDeath : quand le joint passe la main au contact (2026-08-25) -
+    // Voir le header. ADDITION (principes I et VIII) : le defaut `separation`
+    // est le comportement historique mot pour mot.
+    {
+        std::string jd = cfg_.gets("jointDeath", "separation");
+        if (jd != "separation" && jd != "damage")
+            throw std::runtime_error("jointDeath must be separation | damage "
+                                     "(separation = le joint ne meurt qu une "
+                                     "fois franchement ouvert, defaut "
+                                     "historique ; damage = il meurt des que "
+                                     "D >= 1 et passe la main au contact, la "
+                                     "regle de Guo 2014 §2.3.3)");
+        deathOnDamage_ = jd == "damage";
+    }
     // jointShearEnvelope / meanTensionCapFactor : voir le header.
     {
         std::string se = cfg_.gets("jointShearEnvelope", "yan");
@@ -1965,6 +1979,7 @@ void Fdem3dSolver::jointForces() {
                 stampDif(J, 0.5 * (el_[J.eA].edot + el_[J.eB].edot));
         }
         double dnMax = -1e30;
+        double fnSum = 0.0;                // charge normale nette portee [N]
         double rsMaxO = 0.0;               // moteur de mode II du pas courant
                                            // (jointShearUnload = origin)
 
@@ -2117,6 +2132,7 @@ void Fdem3dSolver::jointForces() {
             }
 
             Eigen::Vector3d trac = (sig * n + tau) * At;
+            fnSum += sig * At;             // mesure : charge NORMALE portee
             addF(ib, -trac);
             addF(ia, trac);
             // V2/B4 : travail TOTAL des tractions de joint (visqueux inclus,
@@ -2148,7 +2164,21 @@ void Fdem3dSolver::jointForces() {
                 J.rsB = rsF;
                 J.bmode = (rnF >= rsF) ? 1 : 2;  // 1 traction, 2 cisaillement
             }
-            if (dnMax > 3.0 * J.dnF) J.dead = true;    // separation only
+            // jointDeath : `separation` (defaut) ne tue le joint qu une fois
+            // FRANCHEMENT ouvert, donc jamais en compression — sous l insert
+            // le contact et son glissement contactMu ne prennent jamais le
+            // relais. `damage` applique la regle de Guo §2.3.3 : mort des que
+            // D >= 1, quel que soit le signe de l ouverture.
+            bool die = deathOnDamage_ || dnMax > 3.0 * J.dnF;
+            if (die && !J.dead) {
+                // MESURE (principe IV) : la charge normale que le relais au
+                // contact doit reprendre a cet instant precis. Negative =
+                // compression. C est ce chiffre qui dit si la releve de
+                // naissance du contact (pen0_, qui demarre a force NULLE) est
+                // acceptable ou s il faut une continuite de traction.
+                J.fDeath = fnSum;
+                J.dead = true;
+            }
         }
     };
 
@@ -3731,6 +3761,40 @@ void Fdem3dSolver::finalize() {
             std::cout << "[FDEM3D] breakage mode: " << nTm << " tensile, "
                       << nSm << " shear ("
                       << 100.0 * nSm / (double)(nTm + nSm) << " % shear)\n";
+    }
+    {   // ---- relais joint -> contact : ce que la mort du joint transmet ----
+        // MESURE (principe IV). Un joint qui meurt EN COMPRESSION lache une
+        // charge que le contact doit reprendre. Or la releve de naissance du
+        // contact (pen0_) le fait demarrer a force NULLE, sur une constante de
+        // temps gcBirthTau. La somme ci-dessous est donc la charge qui
+        // DISPARAIT du chemin d effort au moment du relais. Si elle est
+        // negligeable, la releve convient ; sinon il faut une continuite de
+        // traction — le miroir exact du dn0 de l insertion adaptative.
+        long nD = 0, nDc = 0;
+        double fSum = 0.0, fMax = 0.0;
+        for (const auto& J : jt_) {
+            if (!J.dead) continue;
+            ++nD;
+            if (J.fDeath < 0.0) {
+                ++nDc;
+                fSum += -J.fDeath;
+                fMax = std::max(fMax, -J.fDeath);
+            }
+        }
+        if (nD > 0)
+            std::cout << "[FDEM3D] relais joint->contact: " << nD
+                      << " joints morts, dont " << nDc << " EN COMPRESSION ("
+                      << 100.0 * nDc / (double)nD << " %) ; charge normale "
+                      << "lachee au relais " << fSum * 1e-3 << " kN cumules, "
+                      << fMax * 1e-3 << " kN au maximum pour un joint"
+                      << "\n";
+        // MESURE DU 2026-08-25, contre-intuitive et donc consignee (mesuree en
+        // 2D, meme mecanisme ici) : meme en jointDeath = separation, des
+        // joints meurent EN COMPRESSION. La garde « separation seule » ne
+        // l empeche pas : dnMax est le maximum sur les points d integration,
+        // si bien qu un joint beant d un cote et comprime de l autre — une
+        // interface en flexion — franchit dnMax > 3 dnF avec une resultante
+        // normale encore compressive.
     }
     if (adaptive_)
         std::cout << "[FDEM3D] adaptive insertion: " << nInserted_ << " / "

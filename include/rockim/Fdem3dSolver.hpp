@@ -108,6 +108,11 @@ private:
                                            // activateJoint() (0 en intrinseque),
                                            // seulement reprojetee dans le plan.
         bool dead = false;
+        // Force NORMALE nette que le joint transmettait a l instant EXACT de
+        // sa mort, en N (negatif = compression). Sortie de mesure seulement :
+        // c est la charge que le relais au contact doit reprendre. Voir
+        // jointDeath dans le header ci-dessous.
+        double fDeath = 0.0;
         double tBreak = -1.0;
         int type = 0;
         double pj = 0.0;                    // penalty per area [Pa/m]
@@ -456,6 +461,17 @@ private:
     bool difIntrinsic_ = false;
     long nDifStamped_ = 0;                 // joints ayant recu le gel
     long nDifLate_ = 0;                    // dont DEJA endommages au gel
+    // ---- jointDeath : QUAND le joint passe la main au contact -------------
+    // `separation` (defaut, historique) : le joint ne meurt qu une fois
+    // FRANCHEMENT ouvert (dnMax > 3 dnF). En compression il ne meurt donc
+    // JAMAIS, et l algorithme de contact — qui porte le glissement contactMu,
+    // le 0,6 de leur Table 4 — ne prend jamais le relais sous l insert.
+    // `damage` : le joint meurt des que D >= 1, quel que soit le signe de
+    // l ouverture. C est la regle de Guo (these Imperial 2014, §2.3.3) : « the
+    // stress-displacement relation is not applied to this failed joint element
+    // anymore ; instead, the interaction between the fracture walls will be
+    // counted as contact forces that are calculated by the contact algorithm ».
+    bool deathOnDamage_ = false;
 
     double kp_ = 0.0, muC_ = 0.5, xiC_ = 0.05, vReg_ = 1e-3;
     double kpGC_ = 0.0, xiGC_ = 0.8, gcRest_ = 0.2, gcWork_ = 0.0, relax_ = 1.0;

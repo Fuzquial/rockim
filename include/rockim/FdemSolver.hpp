@@ -150,6 +150,11 @@ private:
         double smax[2] = {0.0, 0.0};       // largest SLIDING ever reached, the
                                            // s_max of eq. 18 (jointShearUnload
                                            // = origin only; unused otherwise)
+        // Force NORMALE nette que le joint transmettait a l instant EXACT de
+        // sa mort, en N par metre d epaisseur (negatif = compression). Sortie
+        // de mesure seulement : c est la charge que le relais au contact doit
+        // reprendre. Voir jointDeath dans ce header.
+        double fDeath = 0.0;
         bool dead = false;                 // faces released to general contact
         double tBreak = -1.0;              // first time D reached 1
         int type = 0;
@@ -437,6 +442,21 @@ private:
     bool difIntrinsic_ = false;
     long nDifStamped_ = 0;                 // joints ayant recu le gel
     long nDifLate_ = 0;                    // dont DEJA endommages au gel
+    // ---- jointDeath : QUAND le joint passe la main au contact -------------
+    // `separation` (defaut, historique) : le joint ne meurt qu une fois
+    // FRANCHEMENT ouvert (dnMax > 3 dnF). En compression il ne meurt donc
+    // JAMAIS, et l algorithme de contact — qui porte le glissement contactMu,
+    // le 0,6 de leur Table 4 — ne prend jamais le relais sous l insert. Le
+    // commentaire du site de mort explique le choix : un joint broye qui
+    // glisse en compression reste VIVANT et sert de contact frottant de ses
+    // propres levres. C est defendable, a une chose pres — il frotte alors a
+    // tan(frictionDeg), le frottement de PIC, et non au glissement residuel.
+    // `damage` : mort des que D >= 1, quel que soit le signe de l ouverture,
+    // la regle de Guo (these Imperial 2014, §2.3.3). Le risque documente est
+    // la pompe a energie (le contact materialise 1/2 k pen^2 sur des levres
+    // interpenetrees) ; la releve de naissance pen0_ ajoutee depuis devrait
+    // la neutraliser — c est ce que la mesure fDeath doit trancher.
+    bool deathOnDamage_ = false;
     double srTau_ = 0.0;                   // constante du filtre de taux [s]
     double srRelax_ = 0.0;                 // exp(-dt/srTau_), pose apres dt
     // Exposant de DIF_traction. 0,07 = transcription LITTERALE de leur eq. 3.

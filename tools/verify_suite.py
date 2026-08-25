@@ -57,6 +57,13 @@ RX = {
     # le critere d armement a derive par rapport a la loi de joint.
     "difarmed":   r"armement a l enveloppe\): (\d+) /",
     "difsansdif": r"; (\d+) joints endommages SANS DIF",
+    # --- jointDeath : le relais joint -> contact, 2026-08-25 ---------------
+    # deadcomp compte les joints morts EN COMPRESSION, c est-a-dire ceux dont
+    # la charge normale doit etre reprise par le contact. deadload est cette
+    # charge cumulee. Les deux sont des MESURES du relais, pas des verdicts.
+    "dead":       r"relais joint->contact: (\d+) joints morts",
+    "deadcomp":   r"dont (\d+) EN COMPRESSION",
+    "deadload":   r"relais ([\d.eE+-]+) kN",
 }
 
 # ---- définition des tests --------------------------------------------------
@@ -201,6 +208,26 @@ TESTS = [
                  ("difsansdif", 0, 0, True),
                  ("broken", 0, 0, True),
                  ("dampwork", 0.0, 1e-12, True)]),
+    # ---- jointDeath = damage : le relais joint -> contact de Guo §2.3.3 ----
+    # INVARIANCE EN TRACTION PURE. Un joint qui atteint D = 1 en traction ne
+    # transmet deja plus rien (f(1) = 0) et ses levres s ecartent : le tuer
+    # tout de suite ou attendre dnMax > 3 dnF revient EXACTEMENT au meme. Ce
+    # repere verrouille cette equivalence — mesure du 2026-08-25 : err_pct et
+    # nombre de casses identiques a la reference fdem_tension, 24 joints morts
+    # dont ZERO en compression. Si un jour ce test devie, c est que la mort du
+    # joint a cesse d etre neutre la ou elle doit l etre.
+    dict(name="jointdeath_tension_2d", tier="fast", cfg="verify_fdem_tension.cfg",
+         over=["jointDeath = damage"],
+         checks=[("err_pct", -1.38789, 0.01, True),
+                 ("dead", 24, 0, True),
+                 ("deadcomp", 0, 0, True),
+                 ("dampwork", 0.0, 1e-12, True)]),
+    # Charge nulle AVEC le relais arme : personne ne casse, donc personne ne
+    # meurt, donc aucune charge lachee. Patron zeroload (principe II).
+    dict(name="zeroload_jointdeath_2d", tier="fast", cfg="verify_fdem_tension.cfg",
+         over=["verifyFt = false", "pullV = 1e-12", "jointDeath = damage"],
+         checks=[("broken", 0, 0, True),
+                 ("dampwork", 0.0, 1e-12, True)]),
     # --- tier full : bit-repères 2D longs, adaptatif, 3D grille -------------
     # charge nulle AVEC viscosite : le terme dissipatif ne doit rien casser ni
     # rien injecter quand il n y a pas de chargement (patron zeroload).
@@ -250,6 +277,17 @@ TESTS = [
     # armes sur 11400, 0 endommage sans DIF. A comparer au repere adaptatif
     # ci-dessus, dont il ne differe QUE par le schema : taux median 1,197 /s
     # contre 1,575, DIF 1,373 contre 1,393, casse 200 contre 198.
+    # jointDeath = damage en 3D : meme invariance qu en 2D (principe III).
+    # Mesure du 2026-08-25 : la reference en `separation` ne tue AUCUN joint
+    # (aucun n atteint dnMax > 3 dnF dans la duree du test) tandis que `damage`
+    # en tue 200 — et pourtant err_pct et le nombre de casses sont IDENTIQUES
+    # au chiffre pres (-4,76678 %, 200). Le relais est donc bien neutre en
+    # traction pure, ou les levres s ecartent et ne portent plus rien.
+    dict(name="jointdeath_tension_3d", tier="full", cfg="verify_fdem3d_tension.cfg",
+         over=["jointDeath = damage"],
+         checks=[("err_pct", -4.76678, 0.02, True),
+                 ("dead", 200, 0, True),
+                 ("deadcomp", 0, 0, True)]),
     dict(name="dif_intrinseque_3d", tier="full", cfg="verify_fdem3d_tension.cfg",
          over=["insertion = intrinsic", "strainRateDIF = yang-fig2",
                "strainRateDIFArm = envelope"],
