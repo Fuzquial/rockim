@@ -201,6 +201,43 @@ pré-fissurée par un petit α (1e-3), jamais 0.
 | `jointSoftening = munjiza` | **alias** de `yan` : la f(D) de Yan et al. 2023 EST la z-curve de Munjiza 2004 (a = 0,63, b = 1,8, c = 6, ∫f dD = 0,386307), celle de Y-Geo et de Solidity (Yang et al.). Avec `jointShearUnload = origin`, le moteur √(rn²+rs²) de cette branche est l'ellipse mode I-II exacte de leur éq. 3 — le modèle cohésif de l'article est donc INTÉGRALEMENT disponible, insertion adaptative comprise |
 | **`jointDeath`** (separation) | **QUAND le joint passe la main à l'algorithme de contact.** `separation` (défaut, historique) : le joint ne meurt qu'une fois franchement ouvert (`dnMax > 3·dnF`) ; un joint broyé qui glisse en compression reste **vivant** et sert de contact frottant de ses propres lèvres. `damage` : il meurt dès que **D ≥ 1**, quel que soit le signe de l'ouverture — la règle de **Guo (thèse Imperial 2014, §2.3.3)** : « the stress-displacement relation is not applied to this failed joint element anymore ; instead, the interaction between the fracture walls will be counted as contact forces that are calculated by the contact algorithm ». C'est ce relais qui, chez eux, achemine les 32 J de frottement entre fragments (65 % du budget d'impact, ARMA 2024). Sorties : ligne `relais joint->contact` au résumé — joints morts, part morte **en compression**, et charge normale lâchée au relais |
 
+**Ce que le relais change, mesuré** (UCS `configs_yan/ucs_adap.cfg`, 2026-08-25,
+`separation` → `damage`) :
+
+| poste | separation | damage | |
+|---|---|---|---|
+| joints morts | 143 | 270 | |
+| dont **en compression** | 11 (7,7 %) | 162 (60 %) | |
+| charge lâchée au relais | 110 kN/m | 4 169 kN/m | ×38 |
+| travail de contact | 0,765 J/m | **24,68 J/m** | **×32** |
+| dont **frottement** | 0,0725 J/m | **2,160 J/m** | **×30** |
+| UCS | 51,0395 MPa | 51,0395 MPa | inchangé |
+| part de cisaillement | 48,6 % | 60,7 % | |
+| résidu du bilan | −2,64e−12 J/m | −2,30e−12 J/m | OK |
+
+Le relais achemine donc bel et bien la dissipation vers le contact — c'est le
+mécanisme qui manquait — **sans dégrader le bilan d'énergie**. Et cet UCS tourne
+à `contactMu = 0,1` seulement ; l'impact est à 0,6.
+
+⚠️ **La crainte historique est levée, mais elle était fondée.** Le commentaire
+du site de mort disait : *« killing it by slip hands interpenetrated faces to
+the general contact, whose penalty then releases ½ k pen² of energy created from
+nothing »*. C'était vrai avant la **relève de naissance `pen0_`** ajoutée au
+chantier A3 ; le résidu mesuré ci-dessus montre qu'elle la neutralise.
+
+⚠️ **Réserve ouverte.** Les 4 169 kN/m lâchés ne créent pas d'énergie mais
+**disparaissent du chemin d'effort** le temps que `pen0_` décroisse
+(`gcBirthTau`). Sans conséquence sur l'UCS, dont le pic précède le relais. À
+mesurer sur l'impact, où le chemin d'effort sous l'insert est justement l'enjeu :
+si le déficit s'y voit, il faudra une **continuité de traction** au relais,
+miroir du `dn0` de l'insertion adaptative.
+
+⚠️ **Constat sur le mode `separation` lui-même.** Il ne garantit PAS l'absence de
+mort en compression : 11 joints sur 143 y meurent comprimés, parce que `dnMax`
+est le **maximum sur les points d'intégration** — une interface en flexion,
+béante d'un côté et comprimée de l'autre, franchit `dnMax > 3·dnF` avec une
+résultante normale encore compressive.
+
 ### 5.4 bis Effets de vitesse : viscosité de volume et DIF
 
 *Section ajoutée le 2026-08-25. Ces clés existaient depuis le 2026-08-18 et

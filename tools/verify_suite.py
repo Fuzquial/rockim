@@ -64,6 +64,11 @@ RX = {
     "dead":       r"relais joint->contact: (\d+) joints morts",
     "deadcomp":   r"dont (\d+) EN COMPRESSION",
     "deadload":   r"relais ([\d.eE+-]+) kN",
+    # gcfric = le travail de FROTTEMENT du contact general. C est l observable
+    # centrale du point 2 : chez Yang et al. c est ce poste qui porte 65 % de
+    # l energie d impact (32,0 J sur 49,3, ARMA 2024), et il ne peut se remplir
+    # que si les joints rompus passent la main au contact.
+    "gcfric":     r"dont frottement (-?[\d.eE+-]+) J",
 }
 
 # ---- définition des tests --------------------------------------------------
@@ -335,6 +340,25 @@ TESTS = [
     dict(name="ucs_yan_adaptive", tier="full", cfg="../configs_yan/ucs_adap.cfg",
          checks=[("ucs_mpa", 51.0735, 0.15, True), ("broken", 327, 0, True),
                  ("inserted", 1288, 0, True)]),
+    # ---- LE repere du point 2 : le relais ACHEMINE-T-IL la dissipation ? ---
+    # Chez Yang et al. (ARMA 2024) le frottement entre fragments porte 65 % de
+    # l energie d impact, et il ne peut se remplir que si les joints rompus
+    # passent la main au contact. Mesure du 2026-08-25 sur cet UCS, separation
+    # -> damage : travail de contact 0,765 -> 24,68 J/m (x32) et sa part de
+    # FROTTEMENT 0,0725 -> 2,160 J/m (x30), a bilan d energie inchange
+    # (residu 4,7e-13 % de l echelle). C est la demonstration que le relais
+    # fonctionne — et cet UCS tourne a contactMu = 0,1 seulement.
+    # ⚠️ TOLERANCE LARGE ASSUMEE. Cet essai est post-pic et chaotique : ses
+    # comptages entiers divergent deja entre MSVC et la baseline Linux (cf.
+    # SUITE_full_MSVC). On ne verrouille donc pas une valeur mais un ORDRE DE
+    # GRANDEUR : le frottement doit rester au voisinage de 2 J/m et surtout ne
+    # pas retomber vers les 0,07 du mode separation. C est un test de
+    # MECANISME, pas de chiffre.
+    dict(name="jointdeath_friction_2d", tier="full",
+         cfg="../configs_yan/ucs_adap.cfg",
+         over=["jointDeath = damage"],
+         checks=[("gcfric", 2.16, 1.0, True),
+                 ("deadcomp", 162, 60, True)]),
     dict(name="ucs_yan_origin", tier="full", cfg="../configs_yan/ucs_adap.cfg",
          over=["jointShearUnload = origin", "jointFrictionScaled = 1"],
          checks=[("ucs_mpa", 50.3671, 0.15, True), ("broken", 318, 0, True),
