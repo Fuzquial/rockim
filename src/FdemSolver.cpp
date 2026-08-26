@@ -135,13 +135,23 @@ void FdemSolver::init() {
     // mot le comportement d hier, et la cle n est meme pas lue sans DIF.
     if (difOn_) {
         std::string arm = cfg_.gets("strainRateDIFArm", "insertion");
-        if (arm != "insertion" && arm != "envelope")
+        if (arm != "insertion" && arm != "envelope" && arm != "continuous")
             throw std::runtime_error("strainRateDIFArm must be insertion | "
-                                     "envelope (insertion = gel a l instant "
-                                     "de l insertion, exige insertion = "
-                                     "adaptive ; envelope = gel au "
+                                     "envelope | continuous (insertion = gel a "
+                                     "l instant de l insertion, exige "
+                                     "insertion = adaptive ; envelope = gel au "
                                      "franchissement de l enveloppe, pour "
-                                     "insertion = intrinsic)");
+                                     "insertion = intrinsic ; continuous = "
+                                     "recalcul a CHAQUE pas depuis les "
+                                     "proprietes de base, l architecture de "
+                                     "Solidity, Y3Dfd.c l. 1448-1456)");
+        // ---- continuous : ni gel, ni exigence de schema ------------------
+        // Leur dpeftdif est une variable LOCALE de la boucle element, reprise
+        // a chaque pas : elle ne depend ni de l insertion ni du franchissement
+        // d une enveloppe, et marche donc sous les deux schemas. Elle ne peut
+        // pas s appliquer EN PLACE sur ft/coh/Gf/GfII, sans quoi le facteur se
+        // composerait a chaque pas : la loi repart des valeurs de base.
+        difContinuous_ = arm == "continuous";
         bool adaptiveCfg = cfg_.gets("insertion", "intrinsic") == "adaptive";
         if (arm == "envelope" && adaptiveCfg)
             throw std::runtime_error("strainRateDIFArm = envelope est "
@@ -197,12 +207,38 @@ void FdemSolver::init() {
                                          "Sans cette garde la cle serait INERTE "
                                          "sans le dire");
             std::string jc = cfg_.gets("jointDeltaC", "exact");
-            if (jc != "exact" && jc != "guo")
-                throw std::runtime_error("jointDeltaC must be exact | guo "
-                                         "(exact = integrale exacte de la "
-                                         "z-curve, 0,386307 ; guo = son "
-                                         "eq. 2.30, delta_c = 3 Gf/f)");
+            if (jc != "exact" && jc != "guo" && jc != "solidity")
+                throw std::runtime_error("jointDeltaC must be exact | guo | "
+                                         "solidity (exact = integrale exacte "
+                                         "de la z-curve, 0,386307 ; guo = son "
+                                         "eq. 2.30, delta_c = 3 Gf/f ; solidity "
+                                         "= ce que fait leur CODE, "
+                                         "delta_c = dnE + max(2 dnE, 3 Gf/ft), "
+                                         "Y3Dfd.c l. 1099)");
             guoDeltaC_ = jc == "guo";
+            solidityDeltaC_ = jc == "solidity";
+            // ---- jointFailRule : COMBIEN de points doivent rompre ---------
+            // `any` (defaut, historique) : le joint meurt des qu UN point
+            // atteint D >= 1 — c est ce que fait le scalaire partage J.D, qui
+            // est deja le max sur les points.
+            // `majority` : la regle de Solidity (`nfail>1`, Y3Dfd.c l. 1175).
+            // Le joint 2D n ayant que DEUX points, elle y exige les deux.
+            std::string jf = cfg_.gets("jointFailRule", "any");
+            if (jf != "any" && jf != "majority")
+                throw std::runtime_error("jointFailRule must be any | majority "
+                                         "(any = un point suffit, le defaut ; "
+                                         "majority = plus d UN point, la regle "
+                                         "nfail>1 de Solidity, donc les DEUX "
+                                         "points en 2D — endommagement par "
+                                         "point)");
+            majorityFail_ = jf == "majority";
+            if (majorityFail_ && !midEdge_)
+                throw std::runtime_error("jointFailRule = majority exige "
+                                         "jointQuadrature = midedge : la regle "
+                                         "compte les points d integration de "
+                                         "Solidity. Sur la regle nodale les "
+                                         "points ne sont pas les leurs et le "
+                                         "compte n aurait pas le meme sens");
         }
         std::string bm = cfg_.gets("bulkModel", "corotational");
         if (bm != "corotational" && bm != "neohookean")
@@ -278,11 +314,36 @@ void FdemSolver::init() {
     }
     mtCap_ = cfg_.getd("meanTensionCapFactor", 3.0);
     srTau_ = cfg_.getd("strainRateTau", 1.0e-6);
-    if (difOn_ && !(srTau_ > 0.0))
+    // ---- strainRateFilter : LISSE-T-ON le taux avant d en tirer le DIF ? --
+    // ADDITION (principe VIII) : `exponential` est le defaut et reproduit le
+    // comportement historique mot pour mot, garde comprise.
+    // `none` = ce que fait LEUR code : Y3Dfd.c l. 1448 prend le taux de
+    // l element tel quel. Noter la raison du filtre, dans le message ci-
+    // dessous : « trop bruite pour FIGER un DIF dessus ». Elle vise le gel.
+    // Sous strainRateDIFArm = continuous le facteur est repris a chaque pas,
+    // donc un pic ne dure qu un pas et l argument tombe. Les deux cles se
+    // repondent, et c est ensemble qu elles font leur schema.
+    {
+        std::string sf = cfg_.gets("strainRateFilter", "exponential");
+        if (sf != "exponential" && sf != "none")
+            throw std::runtime_error("strainRateFilter must be exponential | "
+                                     "none (exponential = passe-bas de "
+                                     "constante strainRateTau, le defaut ; "
+                                     "none = taux BRUT, ce que fait Solidity, "
+                                     "Y3Dfd.c l. 1448)");
+        srFilterOff_ = sf == "none";
+    }
+    if (srFilterOff_ && cfg_.has("strainRateTau"))
+        throw std::runtime_error("strainRateFilter = none et strainRateTau "
+                                 "sont exclusives : sans filtre la constante "
+                                 "de temps n a aucun effet, et la laisser "
+                                 "ecrite ferait croire le contraire");
+    if (difOn_ && !srFilterOff_ && !(srTau_ > 0.0))
         throw std::runtime_error("strainRateTau must be > 0 [s] (filtre du "
                                  "taux de deformation : le taux brut par "
                                  "element est trop bruite pour figer un DIF "
-                                 "dessus)");
+                                 "dessus ; poser strainRateFilter = none pour "
+                                 "le taux brut de Solidity)");
     // Body force. Absent (or 0) leaves every existing model bit-identical:
     // bodyForces() returns immediately and no other code path is touched.
     gravity_ = cfg_.getd("gravity", 0.0);
@@ -595,6 +656,23 @@ void FdemSolver::init() {
                   << yanP_.a << ", b = " << yanP_.b << ", c = " << yanP_.c
                   << ", int f(D) dD = " << yanI_ << "\n";
     }
+    // ---- les deux conventions relevees dans le code de Solidity ---------
+    // Toute cle qui change la loi DOIT s annoncer : une capacite active et
+    // muette est indiscernable d une capacite inerte.
+    if (solidityDeltaC_)
+        std::cout << "[FDEM] jointDeltaC = solidity (Y3Dfd.c l. 1099) : "
+                     "plage d adoucissement ot = max(2 dnE, 3 Gf/ft) et "
+                     "rupture a dnE + ot. Differe de `guo` par l offset dnE "
+                     "ET par le plancher 2 dnE — ce dernier ne mord qu en "
+                     "maillage FIN devant Gf/ft.\n";
+    if (majorityFail_)
+        std::cout << "[FDEM] jointFailRule = majority (Y3Dfd.c l. 1175, "
+                     "`nfail>1`) : la facette ne meurt qu au-dela d UN point "
+                     "d integration a D >= 1 — le joint 2D n en ayant que "
+                     "deux, elle les exige tous les deux. Chaque point porte "
+                     "desormais SON endommagement (Joint::Dk) et sa propre "
+                     "traction. J.D reste le max des points pour les "
+                     "sorties.\n";
     // ---- jointResidualMu : le frottement RESIDUEL (2026-08-25) -----
     // Voir le header. GENERALISE jointFrictionScaled (muRes = 0 le
     // reproduit) : les deux cles sont donc exclusives. Une valeur < 0,
@@ -831,16 +909,76 @@ void FdemSolver::init() {
     computeStableDt();
 
     relax_ = std::exp(-dt_ / cfg_.getd("gcBirthTau", 1e-6));
-    srRelax_ = srTau_ > 0.0 ? std::exp(-dt_ / srTau_) : 0.0;
+    // ---- gcBirth : COMMENT nait un contact sur un joint qui vient de mourir
+    // ADDITION (principe VIII) : `ramp` est le defaut, mot pour mot l ancien.
+    {
+        std::string gb = cfg_.gets("gcBirth", "ramp");
+        if (gb != "ramp" && gb != "penalty")
+            throw std::runtime_error("gcBirth must be ramp | penalty (ramp = "
+                                     "force partant de ZERO et montant sur "
+                                     "gcBirthTau, le defaut ; penalty = leur "
+                                     "re-echelonnement de la penalite de la "
+                                     "paire pour que la force soit CONTINUE, "
+                                     "Y3Did.c l. 915-964)");
+        birthPenalty_ = gb == "penalty";
+        if (birthPenalty_ && !contactPot_)
+            throw std::runtime_error("gcBirth = penalty exige contact = "
+                                     "potential : le re-echelonnement de la "
+                                     "penalite de naissance vit dans le "
+                                     "contact par POTENTIEL. Sous contact = "
+                                     "penalty (le defaut) la cle serait INERTE "
+                                     "sans le dire — et c est precisement le "
+                                     "piege qu on refuse de laisser passer");
+        // La banniere est ICI, apres la lecture de la cle, et non pres de
+        // celle du contact : birthPenalty_ n y est pas encore arme et le
+        // message ne se serait JAMAIS imprime (constate au datacheck du
+        // 2026-08-26 — meme piege d ordre que jointResidualMu avant lui).
+        if (birthPenalty_)
+            std::cout << "[FDEM] gcBirth = penalty (Y3Did.c l. 915-964) : au "
+                         "pas de naissance d un contact issu d un joint MORT, "
+                         "la penalite de la paire est calee sur "
+                         "fn_joint/fn_contact, borne a [" << birthPenMin_
+                      << " ; " << birthPenMax_ << "], pour que la force soit "
+                         "CONTINUE. La rampe historique (gcBirth = ramp) "
+                         "partait de ZERO sur gcBirthTau : sous l insert, ou "
+                         "les joints meurent EN COMPRESSION, c etait une perte "
+                         "de portance. La raideur tangentielle suit le meme "
+                         "facteur.\n";
+        if (birthPenalty_ && cfg_.has("gcBirthTau"))
+            throw std::runtime_error("gcBirth = penalty et gcBirthTau sont "
+                                     "exclusives : la rampe n existe plus, la "
+                                     "constante de temps n a aucun effet");
+        // Leurs deux bornes, exposees parce qu elles sont ARBITRAIRES chez eux
+        // (aucune justification dans le code ni dans les articles).
+        birthPenMin_ = cfg_.getd("gcBirthPenMin", 0.01);
+        birthPenMax_ = cfg_.getd("gcBirthPenMax", 3.0);
+        if (birthPenalty_ && !(birthPenMin_ > 0.0 && birthPenMax_ >= birthPenMin_))
+            throw std::runtime_error("gcBirthPenMin doit etre > 0 et "
+                                     "gcBirthPenMax >= gcBirthPenMin");
+    }
+    // srRelax_ = 0 -> e.edot = taux BRUT (le filtre du premier ordre degenere
+    // exactement sur son entree) : `none` passe par le meme chemin.
+    srRelax_ = (!srFilterOff_ && srTau_ > 0.0) ? std::exp(-dt_ / srTau_) : 0.0;
     if (difOn_) {
         std::cout << "[FDEM] strainRateDIF = yang (Yang et al., IJRMMS 191, "
                      "2025, eq. 2-3) : ft et Gf recoivent DIF_traction, "
                      "cohesion et GfII recoivent DIF_compression, l angle de "
-                     "frottement est inchange. Facteurs FIGES a l insertion "
-                     "du joint.\n"
+                     "frottement est inchange. "
+                  << (difContinuous_ ? "Facteurs REPRIS A CHAQUE PAS.\n"
+                                     : "Facteurs FIGES a l insertion "
+                                       "du joint.\n")
                   << "[FDEM]   taux de deformation = principale max de "
-                     "sym(Fdot F^-1), filtre a strainRateTau = " << srTau_
-                  << " s (" << (srTau_ / dt_) << " pas)\n"
+                     "sym(Fdot F^-1), "
+                  << (srFilterOff_
+                      ? std::string("strainRateFilter = none : taux BRUT, "
+                                    "aucun lissage — ce que fait Solidity "
+                                    "(Y3Dfd.c l. 1448). A n utiliser qu avec "
+                                    "strainRateDIFArm = continuous : un pic de "
+                                    "bruit ne dure alors qu un pas, la ou un "
+                                    "armement a GEL le graverait dans le "
+                                    "joint.\n")
+                      : "filtre a strainRateTau = " + std::to_string(srTau_)
+                        + " s (" + std::to_string(srTau_ / dt_) + " pas)\n")
                   << "[FDEM]   exposant de DIF_traction = " << difExpT_
                   << (difExpT_ > 0.1 ? " (deduit de LEUR figure 2b : la loi "
                                        "se raccorde alors a ses deux bornes)"
@@ -851,6 +989,18 @@ void FdemSolver::init() {
                      "de 5e-6 /s, contre 1 en dessous) a "
                   << difTensionYang(99.0, difExpT_) << " (juste sous 1e2 /s, "
                      "contre 1,85 au-dessus)\n";
+        if (difContinuous_)
+            std::cout << "[FDEM]   strainRateDIFArm = continuous : "
+                         "l architecture de Solidity (Y3Dfd.c l. 1448-1456), "
+                         "ou dpeftdif est une variable LOCALE de la boucle "
+                         "element, reevaluee a chaque pas. Aucun gel : ft, "
+                         "coh, Gf et GfII sont RECONSTRUITS a chaque pas "
+                         "depuis les valeurs de base, si bien que le facteur "
+                         "peut redescendre quand le taux retombe et ne se "
+                         "compose jamais. Le champ edotIns du resume porte "
+                         "donc le taux FINAL, pas celui d un instant de gel : "
+                         "il ne se lit pas comme celui des deux autres "
+                         "armements.\n";
         if (difIntrinsic_)
             std::cout << "[FDEM]   strainRateDIFArm = envelope : les joints "
                          "existent des t = 0, il n y a donc pas d instant "
@@ -1865,22 +2015,7 @@ void FdemSolver::assignJointProps() {
         J.coh = coh;
         J.Gf = Gf;
         J.GfII = GfII;
-        J.dnE = ft / J.pj;
-        // Critical opening / slip. The softening branch must enclose exactly
-        // GfI (resp. GfII), the elastic part excluded — that is what fixes
-        // the factor: linear branch of peak ft and width w has area ft w / 2,
-        // the f(D) branch of eq. 11 has area ft w I with I = int_0^1 f(D) dD
-        // (eq. 13 and 15 of the article).
-        double kI = guoDeltaC_ ? 3.0 : (yanSoft_ ? 1.0 / yanI_ : 2.0);
-        // jointDeltaC = guo : Guo eq. 2.30 pose delta_c = 3 Gf/f
-        // depuis ZERO (il approche l integrale de la z-curve par
-        // 1/3 la ou elle vaut 0,386307). On retire donc dnE, que sa
-        // convention inclut. Son modele dissipe de fait 3/0,386307
-        // = 1,159 fois son Gf nominal — c est SA convention, et il
-        // faut la reproduire pour retrouver ses chiffres calibres.
-        const double dOff = guoDeltaC_ ? 0.0 : 1.0;
-        J.dnF = std::max(dOff * J.dnE + kI * Gf / ft, 1.0000001 * J.dnE);                  // mode-I critical opening
-        J.slipF = kI * GfII / coh;                     // mode-II critical slip
+        setJointLengths(J);
         J.tanPhi = std::tan(phiDeg * M_PI / 180.0);
     }
     applyJointStatistics();
@@ -1957,17 +2092,7 @@ void FdemSolver::applyJointStatistics() {
         // resistance ? Voir MatLaw.hpp pour les deux conventions. Defaut
         // `strength` = comportement historique, bit-identique.
         if (wGf) { J.Gf *= J.stat; J.GfII *= J.stat; }
-        J.dnE = J.ft / J.pj;
-        double kI = guoDeltaC_ ? 3.0 : (yanSoft_ ? 1.0 / yanI_ : 2.0);
-        // jointDeltaC = guo : Guo eq. 2.30 pose delta_c = 3 Gf/f
-        // depuis ZERO (il approche l integrale de la z-curve par
-        // 1/3 la ou elle vaut 0,386307). On retire donc dnE, que sa
-        // convention inclut. Son modele dissipe de fait 3/0,386307
-        // = 1,159 fois son Gf nominal — c est SA convention, et il
-        // faut la reproduire pour retrouver ses chiffres calibres.
-        const double dOff = guoDeltaC_ ? 0.0 : 1.0;
-        J.dnF = std::max(dOff * J.dnE + kI * J.Gf / J.ft, 1.0000001 * J.dnE);
-        J.slipF = kI * J.GfII / J.coh;
+        setJointLengths(J);
         xmin = std::min(xmin, J.stat);
         xmax = std::max(xmax, J.stat);
         xsum += J.stat;
@@ -2110,6 +2235,45 @@ void FdemSolver::rebindVertex(int v) {
 // Les ouvertures critiques sont recalculees : dnE = ft/pj suit le DIF, tandis
 // que kI Gf/ft ne bouge pas puisque ft et Gf recoivent le MEME facteur —
 // dnF - dnE est donc invariante et le compteur d endommagement reste coherent.
+// Les trois longueurs caracteristiques du joint (dnE, dnF, slipF) a partir de
+// ses resistances et energies COURANTES. UN SEUL endroit : ces lignes etaient
+// dupliquees en trois sites. Appele par assignJointProps(),
+// applyJointStatistics(), stampDif() et refreshDif().
+void FdemSolver::setJointLengths(Joint& J) {
+    J.dnE = J.ft / J.pj;
+    if (solidityDeltaC_) {
+        // Y3Dfd.c l. 1098-1099 (mode I) et 1125-1126 (mode II) :
+        //     op = 2 el ft/p0                 <-> J.dnE
+        //     ot = MAXIM(2 op, 3 Gf/ft)       la PLAGE d adoucissement
+        // et la rupture est a op + ot. rockim mesure rn = (dn-dnE)/(dnF-dnE),
+        // donc dnF = dnE + plage : l offset est porte ici, pas dans la plage.
+        J.dnF = J.dnE + std::max(2.0 * J.dnE, 3.0 * J.Gf / J.ft);
+        const double sE = J.coh / J.pj;              // le sp de leur l. 1125
+        J.slipF = std::max(2.0 * sE, 3.0 * J.GfII / J.coh);
+        return;
+    }
+    // Critical opening / slip. The softening branch must enclose exactly GfI
+    // (resp. GfII), the elastic part excluded — that is what fixes the factor:
+    // linear branch of peak ft and width w has area ft w / 2, the f(D) branch
+    // of eq. 11 has area ft w I with I = int_0^1 f(D) dD (eq. 13 and 15).
+    const double kI = guoDeltaC_ ? 3.0 : (yanSoft_ ? 1.0 / yanI_ : 2.0);
+    // jointDeltaC = guo : Guo eq. 2.30 pose delta_c = 3 Gf/f depuis ZERO (il
+    // approche l integrale de la z-curve par 1/3 la ou elle vaut 0,386307).
+    // On retire donc dnE, que sa convention inclut. Son modele dissipe de
+    // fait 3/0,386307 = 1,159 fois son Gf nominal — c est SA convention.
+    const double dOff = guoDeltaC_ ? 0.0 : 1.0;
+    J.dnF   = std::max(dOff * J.dnE + kI * J.Gf / J.ft, 1.0000001 * J.dnE);
+    J.slipF = kI * J.GfII / J.coh;
+}
+
+// Sauvegarde des proprietes de BASE, une fois par joint. Sans elle un DIF
+// recalcule a chaque pas se composerait indefiniment.
+void FdemSolver::snapBase(Joint& J) {
+    if (J.baseSnapped) return;
+    J.ftB = J.ft; J.cohB = J.coh; J.GfB = J.Gf; J.GfIIB = J.GfII;
+    J.baseSnapped = true;
+}
+
 void FdemSolver::stampDif(Joint& J, double er) {
     double dT = difTensionYang(er, difExpT_);
     double dC = difCompressionYang(er);
@@ -2118,18 +2282,25 @@ void FdemSolver::stampDif(Joint& J, double er) {
     J.coh  *= dC;
     J.GfII *= dC;
     J.difT = dT; J.difC = dC; J.edotIns = er;
-    double kI = guoDeltaC_ ? 3.0 : (yanSoft_ ? 1.0 / yanI_ : 2.0);
-        // jointDeltaC = guo : Guo eq. 2.30 pose delta_c = 3 Gf/f
-        // depuis ZERO (il approche l integrale de la z-curve par
-        // 1/3 la ou elle vaut 0,386307). On retire donc dnE, que sa
-        // convention inclut. Son modele dissipe de fait 3/0,386307
-        // = 1,159 fois son Gf nominal — c est SA convention, et il
-        // faut la reproduire pour retrouver ses chiffres calibres.
-        const double dOff = guoDeltaC_ ? 0.0 : 1.0;
-    J.dnE   = J.ft / J.pj;
-    J.dnF   = std::max(dOff * J.dnE + kI * J.Gf / J.ft, 1.0000001 * J.dnE);
-    J.slipF = kI * J.GfII / J.coh;
+    setJointLengths(J);
     J.difStamped = true;
+}
+
+// strainRateDIFArm = continuous : l architecture de Solidity. Leur dpeftdif
+// est une variable locale de la boucle element, reprise a CHAQUE pas
+// (Y3Dfd.c l. 1448-1456), et le meme facteur multiplie la resistance ET son
+// energie de rupture — ft avec Gf, c avec GfII. On repart donc toujours des
+// valeurs de base : jamais de composition, et le facteur peut redescendre.
+void FdemSolver::refreshDif(Joint& J, double er) {
+    snapBase(J);
+    const double dT = difTensionYang(er, difExpT_);
+    const double dC = difCompressionYang(er);
+    J.ft   = J.ftB   * dT;
+    J.Gf   = J.GfB   * dT;
+    J.coh  = J.cohB  * dC;
+    J.GfII = J.GfIIB * dC;
+    J.difT = dT; J.difC = dC; J.edotIns = er;
+    setJointLengths(J);
 }
 
 void FdemSolver::insertionSweep() {
@@ -3496,6 +3667,14 @@ void FdemSolver::jointForces() {
         // PRIVEE au joint (aucune course sous OpenMP) et deterministe : elle
         // ne depend que de l etat du joint et du taux de ses deux triangles,
         // tous deux figes pendant jointForces().
+        // strainRateDIFArm = continuous : le facteur est REPRIS a chaque pas,
+        // avant toute traction, exactement comme leur dpeftdif est reevalue en
+        // tete de la boucle element (Y3Dfd.c l. 1448). Aucun gel, aucun
+        // drapeau : le joint suit le taux courant, a la hausse comme a la
+        // baisse. Le taux est la moyenne des deux elements adjacents, la meme
+        // mesure que celle des deux autres armements.
+        if (difContinuous_)
+            refreshDif(J, 0.5 * (el_[J.eA].edot + el_[J.eB].edot));
         if (difIntrinsic_ && !J.difStamped) {
             bool onset = false;
             for (int k = 0; k < 2 && !onset; ++k) {
@@ -3530,6 +3709,14 @@ void FdemSolver::jointForces() {
         const double gq = 0.5 - 0.5 / std::sqrt(3.0);      // ~0,21132
         const double tq[2] = {gq, 1.0 - gq};
         for (int k = 0; k < 2; ++k) {
+            // ---- QUI porte l endommagement ------------------------------
+            // `any` (defaut) : un seul scalaire pour tout le joint, et il est
+            // le MAX sur les points — le premier point qui casse emporte la
+            // facette. `majority` : chaque point porte le sien, comme dans
+            // Sigma_tau ou z est une variable LOCALE de la boucle
+            // d integration, si bien qu un point rompu cesse de transmettre
+            // pendant que l autre tient encore.
+            double& Dref = majorityFail_ ? J.Dk[k] : J.D;
             Eigen::Vector2d d0 = (X0_[ib[0]] + u_[ib[0]])
                                - (X0_[ia[0]] + u_[ia[0]]);
             Eigen::Vector2d d1 = (X0_[ib[1]] + u_[ib[1]])
@@ -3633,8 +3820,8 @@ void FdemSolver::jointForces() {
                 double Dnow = std::sqrt(rn * rn + rs * rs);
                 // irreversibility (Fukuda et al. rule quoted by the article):
                 // J.D IS Dmax, it never decreases
-                if (Dnow > J.D) J.D = std::min(1.0, Dnow);
-                double fdY = yan::fD(J.D, yanP_);
+                if (Dnow > Dref) Dref = std::min(1.0, Dnow);
+                double fdY = yan::fD(Dref, yanP_);
                 if (dn >= 0.0) {
                     // envelope: min(elastic branch, f(D) ft) — the min is what
                     // makes shear damage cut the tensile strength too, and it
@@ -3667,23 +3854,23 @@ void FdemSolver::jointForces() {
                     // est 2 ft/dnE = 2 pj, continument raccordee a la parabole
                     // en dn = 0 (la loi est C1 a l origine). rockim gardait pj.
                     double pjC = paraElastic_ ? 2.0 * J.pj : J.pj;
-                    sigEl = (jcAdaptive_ ? (1.0 - J.D) * pjC : pjC) * dn;
+                    sigEl = (jcAdaptive_ ? (1.0 - Dref) * pjC : pjC) * dn;
                 }
             } else if (dn >= 0.0) {
                 double env = (dn <= J.dnE) ? J.pj * dn
                            : (dn >= J.dnF) ? 0.0
                            : J.ft * (J.dnF - dn) / (J.dnF - J.dnE);
-                double tr = (1.0 - J.D) * J.pj * dn;
+                double tr = (1.0 - Dref) * J.pj * dn;
                 if (tr > env) {
                     sigEl = env;
                     if (dn > 1e-30) {
                         double Dn = 1.0 - env / (J.pj * dn);
-                        if (Dn > J.D) J.D = std::min(1.0, Dn);
+                        if (Dn > Dref) Dref = std::min(1.0, Dn);
                     }
                 } else sigEl = tr;
             } else {
                 // idem : k- = k+(D) = (1-D) pj (EPFL arXiv:2511.14323 sec. 4)
-                sigEl = (jcAdaptive_ ? (1.0 - J.D) * J.pj : J.pj) * dn;
+                sigEl = (jcAdaptive_ ? (1.0 - Dref) * J.pj : J.pj) * dn;
             }
 
             double sig = sigEl;
@@ -3718,8 +3905,8 @@ void FdemSolver::jointForces() {
             // The Coulomb term is left unscaled by default so a crushed joint
             // keeps residual friction (jointFrictionScaled = 1 for the literal
             // eq. 10, where f(D) multiplies the whole cap).
-            double fdS = yanSoft_ ? yan::fD(J.D, yanP_) : 0.0;
-            double coh = yanSoft_ ? fdS * J.coh : (1.0 - J.D) * J.coh;
+            double fdS = yanSoft_ ? yan::fD(Dref, yanP_) : 0.0;
+            double coh = yanSoft_ ? fdS * J.coh : (1.0 - Dref) * J.coh;
             double muS = (yanSoft_ && yanFricScaled_) ? fdS : 1.0;
             double muEff = muS * J.tanPhi;
             // ---- jointResidualMu : le frottement RESIDUEL (2026-08-25) -----
@@ -3753,7 +3940,7 @@ void FdemSolver::jointForces() {
                 double tauEnv = std::min(J.pj * smx, tauLim);
                 tau = (noTau || smx <= 1e-30) ? 0.0 : tauEnv * sEff / smx;
                 // en `yan`, D a deja ete mis a jour par l'eq. 16 au-dessus
-                if (!yanSoft_ && rsO > J.D) J.D = std::min(1.0, rsO);
+                if (!yanSoft_ && rsO > Dref) Dref = std::min(1.0, rsO);
             } else {
                 // ---- retour radial (defaut, inchange) --------------------
                 // Plasticite a retour, comme dans la loi lineaire : sur le cap
@@ -3775,7 +3962,7 @@ void FdemSolver::jointForces() {
                     } else {
                         Dt = std::abs(J.slip[k]) / J.slipF;
                     }
-                    if (Dt > J.D) J.D = std::min(1.0, Dt);
+                    if (Dt > Dref) Dref = std::min(1.0, Dt);
                 }
             }
 
@@ -3798,7 +3985,19 @@ void FdemSolver::jointForces() {
             }
         }
 
-        if (J.D >= 1.0) {
+        // jointFailRule = majority : on compte les points arrives a D >= 1.
+        // Leur test est `nfail>1` (Y3Dfd.c l. 1175) ; le joint 2D n ayant que
+        // deux points, il les exige tous les deux. J.D reste tenu a jour comme
+        // le max des points — toutes les sorties le lisent — mais il ne decide
+        // plus seul.
+        int nFailPts = 0;
+        if (majorityFail_) {
+            for (int q = 0; q < 2; ++q) {
+                if (J.Dk[q] > J.D) J.D = J.Dk[q];
+                if (J.Dk[q] >= 1.0) ++nFailPts;
+            }
+        }
+        if (J.D >= 1.0 && (!majorityFail_ || nFailPts > 1)) {
             if (J.tBreak < 0) {
                 J.tBreak = t_; ++nb;
                 // partition of the eq. 16 driver at the breaking instant:
@@ -4256,9 +4455,39 @@ void FdemSolver::potentialContact() {
                     // constante de temps gcBirthTau (1 us), semantique pen0_
                     auto [itH, isNewH] = potFt_.try_emplace(pk);
                     PotHist& H = itH->second;
-                    if (isNewH) H.aRef = R.area;
-                    else H.aRef *= relax_;
-                    double sc = std::max(0.0, 1.0 - H.aRef / R.area);
+                    double sc;
+                    if (birthPenalty_) {
+                        // ---- gcBirth = penalty (Y3Did.c l. 915-964) ------
+                        // Au pas EXACT de la naissance ils lisent la force que
+                        // le joint portait en mourant et calent la penalite de
+                        // CETTE paire pour que la force du contact naissant
+                        // l egale : d1pepe[icoup] = penalty*fn_joint/fn_contact,
+                        // borne. Le facteur persiste ensuite pour la paire.
+                        // fDeath est la charge NORMALE nette a l instant de la
+                        // mort (negatif = compression) ; comme chez eux seul le
+                        // MODULE compte — leurs deux branches de signe (l. 921
+                        // et 949) aboutissent au meme clamp.
+                        if (H.penScale < 0.0) {
+                            double fnJ = (itJ != jointOfPair_.end())
+                                ? std::fabs(jt_[itJ->second].fDeath) : 0.0;
+                            double fnC = R.F.norm();
+                            double fac = (fnJ > 0.0 && fnC > 1e-300)
+                                       ? fnJ / fnC : 1.0;
+                            H.penScale = std::min(birthPenMax_,
+                                         std::max(birthPenMin_, fac));
+                            // leur fcn/ftn = 0 et deltat1/2 = 0 au pas de
+                            // naissance : aucun effort tangentiel, et le
+                            // glissement memorise repart de zero.
+                            H.Ft.setZero();
+                            ++nBirthScaled_;
+                            birthScaleSum_ += H.penScale;
+                        }
+                        sc = H.penScale;
+                    } else {
+                        if (isNewH) H.aRef = R.area;
+                        else H.aRef *= relax_;
+                        sc = std::max(0.0, 1.0 - H.aRef / R.area);
+                    }
                     R.F *= sc;
                     for (int k = 0; k < 3; ++k) {
                         R.fA[k] *= sc;
@@ -4345,7 +4574,12 @@ void FdemSolver::potentialContact() {
                             if (H.step < stepCount_ - 1) H.Ft.setZero();
                             Eigen::Vector2d Ft =
                                 H.Ft - H.Ft.dot(nh) * nh;      // rotation
-                            Ft -= potKt_ * (vrel.dot(th) * dt_) * th;
+                            // gcBirth = penalty : leur raideur tangentielle
+                            // suit la penalite RE-ECHELONNEE de la paire
+                            // (`ktss = 2.0/(7.0)*d1pepe[icoup]`, l. 940 et
+                            // 965), et non la penalite nominale.
+                            Ft -= (birthPenalty_ ? sc * potKt_ : potKt_)
+                                * (vrel.dot(th) * dt_) * th;
                             double cap = muC_ * Fn;
                             double Ftn = Ft.norm();
                             if (Ftn > cap && Ftn > 0.0)
@@ -6220,6 +6454,15 @@ void FdemSolver::finalize() {
                       << "lachee au relais " << fSum * 1e-3 << " kN/m cumules, "
                       << fMax * 1e-3 << " kN/m au maximum pour un joint"
                       << "\n";
+        // gcBirth = penalty : la MESURE du relais. Un facteur moyen colle a
+        // une borne signale que le clamp — arbitraire chez eux — decide a la
+        // place de la physique, et qu il faut l elargir pour le savoir.
+        if (birthPenalty_ && nBirthScaled_ > 0)
+            std::cout << "[FDEM]   gcBirth = penalty : " << nBirthScaled_
+                      << " paires calees a la naissance, facteur moyen "
+                      << birthScaleSum_ / (double)nBirthScaled_
+                      << " (bornes " << birthPenMin_ << " / " << birthPenMax_
+                      << ")\n";
         // MESURE DU 2026-08-25, contre-intuitive et donc consignee : meme en
         // jointDeath = separation, des joints meurent EN COMPRESSION (11 sur
         // 143, soit 7,7 %, sur l UCS de configs_yan/ucs_adap.cfg). La garde

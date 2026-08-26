@@ -202,6 +202,18 @@ private:
         // (opening), 0 = pure mode II (sliding). -1 while the joint is intact.
         // Written to the joint VTU as `failMode` when writeJointMode = true.
         double failMode = -1.0;
+        // ---- jointFailRule = majority (Solidity Y3Dfd.c, Sigma_tau) -------
+        // Chez eux chaque point d integration porte SON z et SA traction, et
+        // le joint ne meurt qu au-dela d UN point rompu (`nfail>1`, l. 1175).
+        // Le joint 2D n a que deux points : la regle y demande donc les DEUX.
+        // Inerte sous `any` (defaut) — le scalaire partage D pilote seul.
+        double Dk[2] = {0.0, 0.0};
+        // ---- strainRateDIFArm = continuous --------------------------------
+        // Leur dpeftdif est recalcule a chaque pas (l. 1448-1456), jamais
+        // fige : on garde donc les proprietes de BASE intactes et la loi
+        // reconstruit ft = ftB*DIF a chaque pas, sans jamais composer.
+        double ftB = 0.0, cohB = 0.0, GfB = 0.0, GfIIB = 0.0;
+        bool baseSnapped = false;
     };
 
     struct BEdge {                         // active contact edge (elem face)
@@ -277,6 +289,12 @@ private:
     // inchangee : les reperes dif_yang_* de la suite verrouillent la
     // bit-identite du chemin adaptatif.
     void stampDif(Joint& J, double er);
+    // dnE / dnF / slipF depuis les resistances COURANTES du joint — un seul
+    // site, partage par assignJointProps, applyJointStatistics, stampDif et
+    // refreshDif (voir jointDeltaC).
+    void setJointLengths(Joint& J);
+    void snapBase(Joint& J);              // proprietes de base, une fois
+    void refreshDif(Joint& J, double er); // strainRateDIFArm = continuous
     void setupBrazilianLoad();
     void initPlatens(double xc, double hw);  // geometry + tributary weights
     void setupBoundaries();
@@ -495,8 +513,36 @@ private:
     // SA convention, et ses Gf publies ont ete calibres avec : il faut la
     // reproduire pour retrouver ses chiffres.
     bool guoDeltaC_ = false;
+    // jointDeltaC = solidity : ce que fait REELLEMENT leur code, qui n est
+    // pas ce qu ecrit la these. Y3Dfd.c lignes 1098-1099 et 1125-1126 :
+    //     op = 2 el ft / p0                   (l ouverture au pic)
+    //     ot = MAXIM(2 op, 3 Gf/ft)           (la PLAGE d adoucissement)
+    // la rupture est donc a op + ot, pas a 3 Gf/ft : la convention `guo`
+    // oublie et l offset op et le plancher 2 op. Le plancher mord quand le
+    // maillage est fin devant Gf/ft — exactement le regime d un impact.
+    bool solidityDeltaC_ = false;
     bool neoHooke_ = false;
     bool difIntrinsic_ = false;
+    // strainRateDIFArm = continuous : DIF recalcule a CHAQUE pas depuis les
+    // proprietes de base, comme leur dpeftdif. Exclusif de insertion/envelope.
+    bool difContinuous_ = false;
+    // jointFailRule = majority : mort du joint seulement au-dela d UN point
+    // d integration a D >= 1 (leur `nfail>1`), donc les DEUX points en 2D.
+    bool majorityFail_ = false;
+    // ---- gcBirth : la naissance d un contact sur un joint qui vient de mourir
+    // `ramp` (defaut, historique) : la force part de ZERO et monte sur
+    // gcBirthTau (releve de naissance par AIRE, voir PotHist::aRef).
+    // `penalty` : leur solution (Y3Did.c l. 915-964) — la penalite de la paire
+    // est calee sur fn_joint/fn_contact, bornee, pour que la force soit
+    // CONTINUE. Le facteur persiste, la raideur tangentielle le suit.
+    bool birthPenalty_ = false;
+    double birthPenMin_ = 0.01, birthPenMax_ = 3.0;   // leurs deux bornes
+    long nBirthScaled_ = 0;                           // mesure : paires calees
+    double birthScaleSum_ = 0.0;                      // ... et facteur moyen
+    // ---- strainRateFilter : le taux qui alimente le DIF ------------------
+    // `exponential` (defaut) : passe-bas de constante strainRateTau.
+    // `none` : le taux BRUT, ce que fait leur code (Y3Dfd.c l. 1448).
+    bool srFilterOff_ = false;
     long nDifStamped_ = 0;                 // joints ayant recu le gel
     long nDifLate_ = 0;                    // dont DEJA endommages au gel
     // ---- jointDeath : QUAND le joint passe la main au contact -------------
@@ -651,6 +697,11 @@ private:
                                            // Jamais reinitialise (parite
                                            // pen0_) : une paire retrouvee
                                            // reprend sa force pleine.
+        // ---- gcBirth = penalty (Solidity Y3Did.c l. 915-964) --------------
+        // Facteur de penalite PROPRE A CETTE PAIRE, fige au pas de naissance
+        // pour que la force du contact naissant egale celle du joint mourant.
+        // C est leur d1pepe[icoup]. < 0 = pas encore ne. Inerte sous `ramp`.
+        double penScale = -1.0;
     };
     std::unordered_map<uint64_t, PotHist> potFt_;
     std::unordered_map<uint64_t, int> jointOfPair_;   // (eMin,eMax) -> joint

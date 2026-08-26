@@ -69,6 +69,13 @@ RX = {
     # l energie d impact (32,0 J sur 49,3, ARMA 2024), et il ne peut se remplir
     # que si les joints rompus passent la main au contact.
     "gcfric":     r"dont frottement (-?[\d.eE+-]+) J",
+    # --- gcBirth = penalty : le facteur de naissance, 2026-08-26 -----------
+    # C est LA mesure qui dit si le re-echelonnement a seulement pu s exercer :
+    # il ne vaut 1 que si AUCUN joint mort ne portait de charge (rupture en
+    # traction pure). Un facteur different de 1 prouve que le relais a repris
+    # une charge reelle. `birthn` compte les paires concernees.
+    "birthfac":   r"paires calees a la naissance, facteur moyen ([\d.eE+-]+)",
+    "birthn":     r"gcBirth = penalty : (\d+) paires calees",
 }
 
 # ---- définition des tests --------------------------------------------------
@@ -348,11 +355,194 @@ TESTS = [
                "jointQuadrature = midedge"],
          checks=[("broken", 0, 0, True),
                  ("dampwork", 0.0, 1e-12, True)]),
+    # ---- les trois conventions relevees dans le CODE de Solidity ----------
+    # (ImperialCollegeLondon/solidity-solver-open, LGPL-3.0, lu le 2026-08-26).
+    # jointDeltaC = solidity : leur ot = MAXIM(2 op, 3 Gf/ft) et la rupture a
+    # op + ot (Y3Dfd.c l. 1099). Contre `guo` (3 Gf/ft depuis zero), la plage
+    # d adoucissement s allonge : l essai doit donc casser AUSSI PEU mais plus
+    # tard, et l ecart au pic theorique se creuser. Le plancher 2 op mord ici.
+    dict(name="jointdeltac_solidity_2d", tier="fast",
+         cfg="verify_fdem_tension.cfg",
+         over=["jointSoftening = yan", "jointElastic = parabolic",
+               "jointDeltaC = solidity"],
+         checks=[("err_pct", -2.33345, 0.01, True),
+                 ("broken", 24, 0, True),
+                 ("dampwork", 0.0, 1e-12, True)]),
+    dict(name="zeroload_jointdeltac_solidity_2d", tier="fast",
+         cfg="verify_fdem_tension.cfg",
+         over=["verifyFt = false", "pullV = 1e-12", "jointSoftening = yan",
+               "jointElastic = parabolic", "jointDeltaC = solidity"],
+         checks=[("broken", 0, 0, True),
+                 ("dampwork", 0.0, 1e-12, True)]),
+    # jointFailRule = majority : leur `nfail>1` (l. 1175). Le joint 2D n a que
+    # deux points, la regle exige donc les DEUX. Elle arme l endommagement PAR
+    # POINT : la facette ne meurt plus au premier point casse, ce qui doit
+    # RETARDER la rupture et donc casser moins ou plus tard.
+    dict(name="jointfailrule_majority_2d", tier="fast",
+         cfg="verify_fdem_tension.cfg",
+         over=["jointQuadrature = midedge", "jointFailRule = majority"],
+         checks=[("err_pct", -2.78505, 0.01, True),
+                 ("dampwork", 0.0, 1e-12, True)]),
+    dict(name="zeroload_jointfailrule_2d", tier="fast",
+         cfg="verify_fdem_tension.cfg",
+         over=["verifyFt = false", "pullV = 1e-12",
+               "jointQuadrature = midedge", "jointFailRule = majority"],
+         checks=[("broken", 0, 0, True),
+                 ("dampwork", 0.0, 1e-12, True)]),
+    # strainRateDIFArm = continuous : leur dpeftdif, recalcule a chaque pas
+    # (l. 1448-1456). CONTROLE FALSIFIANT : sans composition, le facteur median
+    # doit rester du meme ordre que celui des deux armements a gel — s il
+    # derivait vers des valeurs enormes, ce serait la signature du bug que
+    # snapBase() previent (le facteur applique en place a chaque pas).
+    # Meme essai que dif_intrinseque_2d, au SEUL armement pres : le repere se
+    # lit donc en regard du sien (edot 57,1995 / dif 1,76803, gel a
+    # l enveloppe). L ecart entre les deux EST la difference entre geler le
+    # facteur une fois et le suivre a chaque pas.
+    dict(name="dif_continuous_2d", tier="fast", cfg="verify_fdem_tension.cfg",
+         over=["verifyFt = false", "insertion = intrinsic",
+               "strainRateDIF = yang-fig2", "strainRateDIFArm = continuous",
+               "pullV = 0.5", "T = 3e-5"],
+         checks=[("edotmed", 7.65775, 1e-3, True),
+                 ("difmed", 1.53036, 1e-4, True)]),
+    dict(name="zeroload_dif_continuous_2d", tier="fast",
+         cfg="verify_fdem_tension.cfg",
+         over=["verifyFt = false", "pullV = 1e-12", "strainRateDIF = yang",
+               "strainRateDIFArm = continuous"],
+         checks=[("broken", 0, 0, True),
+                 ("dampwork", 0.0, 1e-12, True)]),
+    # ---- gcBirth = penalty : la naissance du contact sur un joint mort -----
+    # Y3Did.c l. 915-964. Il FAUT contact = potential (la cle y vit) et
+    # jointDeath = damage (sinon rien ne meurt et le relais ne se produit
+    # jamais). Le temoin a comparer est gcbirth_ramp_2d, meme deck a la seule
+    # cle pres : l ecart entre les deux EST le prix de la rampe a force nulle.
+    dict(name="gcbirth_ramp_2d", tier="fast", cfg="verify_fdem_tension.cfg",
+         over=["contact = potential", "jointDeath = damage"],
+         checks=[("err_pct", -1.67766, 0.01, True),
+                 ("dead", 24, 0, True)]),
+    dict(name="gcbirth_penalty_2d", tier="fast", cfg="verify_fdem_tension.cfg",
+         over=["contact = potential", "jointDeath = damage",
+               "gcBirth = penalty"],
+         # ATTENTION a la lecture : ici les 24 joints meurent en TRACTION PURE
+         # (deadcomp = 0, charge relayee 0 kN/m), donc fDeath = 0 et le facteur
+         # de naissance retombe a 1 pour toutes les paires. Ce repere mesure
+         # donc la SUPPRESSION DE LA RAMPE (-1,67766 -> -1,85267 %), pas le
+         # re-echelonnement. Celui-ci est verrouille par
+         # gcbirth_penalty_percussion_2d, ou l indenteur fait mourir des joints
+         # COMPRIMES.
+         checks=[("err_pct", -1.85267, 0.01, True),
+                 ("dead", 24, 0, True),
+                 ("birthfac", 1.0, 1e-9, True)]),
+    dict(name="zeroload_gcbirth_penalty_2d", tier="fast",
+         cfg="verify_fdem_tension.cfg",
+         over=["verifyFt = false", "pullV = 1e-12", "contact = potential",
+               "jointDeath = damage", "gcBirth = penalty"],
+         checks=[("broken", 0, 0, True),
+                 ("dampwork", 0.0, 1e-12, True)]),
+    # ---- strainRateFilter = none : le taux BRUT, ce que fait leur code -----
+    # Meme essai que dif_intrinseque_2d/dif_continuous_2d, au seul filtre
+    # pres. Se lit en regard de dif_continuous_2d (edot 7,65775 filtre) :
+    # l ecart est exactement ce que le passe-bas retirait.
+    dict(name="srfilter_none_2d", tier="fast", cfg="verify_fdem_tension.cfg",
+         over=["verifyFt = false", "insertion = intrinsic",
+               "strainRateDIF = yang-fig2", "strainRateDIFArm = continuous",
+               "strainRateFilter = none", "pullV = 0.5", "T = 3e-5"],
+         checks=[("edotmed", 4.02148, 1e-3, True),
+                 ("difmed", 1.46994, 1e-4, True)]),
+    # LE repere qui exerce vraiment le re-echelonnement. En TRACTION pure les
+    # joints meurent sans charge a relayer (fDeath = 0) et le facteur retombe
+    # a 1 : gcbirth_penalty_2d ne teste alors que la SUPPRESSION de la rampe.
+    # Il faut un indenteur pour que des joints meurent EN COMPRESSION. Mesure
+    # du 2026-08-26 : 4 joints morts, 100 % en compression, 651 kN/m relayes,
+    # facteur moyen 1,03077 — et le travail de contact passe de 0,213 a
+    # 0,274 J/m, dont frottement 0,111 -> 0,116.
+    dict(name="gcbirth_penalty_percussion_2d", tier="full",
+         cfg="fdem_percussion.cfg",
+         over=["contact = potential", "jointDeath = damage",
+               "gcBirth = penalty"],
+         # LE garde-fou. Le releve de naissance par AIRE n existait pas que
+         # pour la douceur : il empeche une INJECTION d energie sur les paires
+         # nees en recouvrement (l en-tete de PotHist::aRef mesure +936 J/m
+         # SANS releve). gcBirth = penalty le supprime — il faut donc verifier
+         # que le bilan reste dissipatif. Le solveur l ecrit lui-meme :
+         # « en mode penalty tout positif est une injection ».
+         # MESURE 2026-08-26 : residu -0,9174 J/m en `ramp`, -0,994861 en
+         # `penalty` — NEGATIF donc dissipatif dans les deux cas, et meme
+         # legerement PLUS dissipatif. Aucune injection sur cet essai.
+         checks=[("birthfac", 1.03077, 1e-4, True),
+                 ("birthn", 260, 0, True),
+                 ("broken", 4, 0, True),
+                 ("budget", -0.994861, 1e-3, True)]),
+    dict(name="zeroload_srfilter_none_2d", tier="fast",
+         cfg="verify_fdem_tension.cfg",
+         over=["verifyFt = false", "pullV = 1e-12", "strainRateDIF = yang",
+               "strainRateDIFArm = continuous", "strainRateFilter = none"],
+         checks=[("broken", 0, 0, True),
+                 ("dampwork", 0.0, 1e-12, True)]),
     dict(name="jointquad_midedge_3d", tier="full",
          cfg="verify_fdem3d_tension.cfg",
          over=["jointQuadrature = midedge"],
          checks=[("err_pct", -3.65374, 0.02, True),
                  ("broken", 200, 0, True)]),
+    # ---- miroirs 3D des trois conventions de Solidity (2026-08-26) --------
+    # La constitution impose 2D ET 3D : les memes lignes ont ete ecrites dans
+    # les deux solveurs, les deux doivent etre verrouillees. Tier full parce
+    # que verify_fdem3d_tension est long, pas parce qu ils seraient secondaires.
+    dict(name="jointdeltac_solidity_3d", tier="full",
+         cfg="verify_fdem3d_tension.cfg",
+         over=["jointSoftening = yan", "jointElastic = parabolic",
+               "jointDeltaC = solidity"],
+         # broken = 0 et NON 200 : sous `guo` comme sous `solidity` le joint
+         # 3D est assez ductile (kI = 3 contre 2) pour survivre au deplacement
+         # impose de cet essai. VERIFIE le 2026-08-26 : `guo` seul donne deja
+         # 0 casse et -1,11074 %, `exact` en donne 200 et -1,27035 %. L ecart
+         # solidity/guo (-1,10893 contre -1,11074) est celui des 0,2 % de dnF
+         # en plus, le plancher 2 dnE ne mordant pas sur ce maillage.
+         checks=[("err_pct", -1.10893, 0.02, True),
+                 ("broken", 0, 0, True)]),
+    dict(name="jointfailrule_majority_3d", tier="full",
+         cfg="verify_fdem3d_tension.cfg",
+         over=["jointQuadrature = midedge", "jointFailRule = majority"],
+         checks=[("err_pct", -2.25444, 0.02, True)]),
+    dict(name="zeroload_jointfailrule_3d", tier="full",
+         cfg="verify_fdem3d_tension.cfg",
+         over=["pullV = 1e-12", "verifyFt = false",
+               "jointQuadrature = midedge", "jointFailRule = majority"],
+         checks=[("broken", 0, 0, True)]),
+    # gcBirth = penalty en 3D. MESURE HONNETE du 2026-08-26 : sur cet essai de
+    # TRACTION les deux modes donnent le MEME err_pct (-4,75889 %) — les 200
+    # joints meurent en traction pure, il n y a aucune charge a relayer et les
+    # contacts naissants ne pesent pas sur le pic. Le repere ne verrouille donc
+    # pas un ECART mais le FAIT que le mecanisme se declenche : 118 paires
+    # calees. Si le relais cessait de s armer, birthn changerait.
+    # La discrimination reelle est en 2D, sous indenteur :
+    # gcbirth_penalty_percussion_2d.
+    dict(name="gcbirth_penalty_3d", tier="full",
+         cfg="verify_fdem3d_tension.cfg",
+         over=["contact = potential", "jointDeath = damage",
+               "gcBirth = penalty"],
+         checks=[("err_pct", -4.75889, 0.02, True),
+                 ("birthn", 118, 0, True),
+                 ("birthfac", 1.0, 1e-9, True)]),
+    dict(name="zeroload_gcbirth_penalty_3d", tier="full",
+         cfg="verify_fdem3d_tension.cfg",
+         over=["pullV = 1e-12", "verifyFt = false", "contact = potential",
+               "jointDeath = damage", "gcBirth = penalty"],
+         checks=[("broken", 0, 0, True)]),
+    # strainRateFilter = none en 3D : a lire en regard de dif_continuous_3d
+    # (edot 0,094298 filtre contre 0,0746516 brut) — l ecart est exactement ce
+    # que le passe-bas retirait.
+    dict(name="srfilter_none_3d", tier="full",
+         cfg="verify_fdem3d_tension.cfg",
+         over=["verifyFt = false", "strainRateDIF = yang-fig2",
+               "strainRateDIFArm = continuous", "strainRateFilter = none"],
+         checks=[("edotmed", 0.0746516, 1e-5, True),
+                 ("difmed", 1.21328, 1e-4, True)]),
+    dict(name="dif_continuous_3d", tier="full",
+         cfg="verify_fdem3d_tension.cfg",
+         over=["verifyFt = false", "strainRateDIF = yang-fig2",
+               "strainRateDIFArm = continuous"],
+         checks=[("edotmed", 0.094298, 1e-3, True),
+                 ("difmed", 1.22399, 1e-4, True)]),
     # bulkModel = neohookean en 3D (principe III). L exposant de l ecart a la
     # forme co-rotationnelle DIFFERE entre dimensions — J^(-2/3) en 3D contre
     # J^(-1/2) en deformation plane — d ou l importance d avoir ce repere dans

@@ -74,7 +74,19 @@ def history(run):
 def broken(pts, con, f):
     """Faces ROMPUES (D = 1, plus bondees) : sommets (n,3,3), centroides,
     normales unitaires et mode de rupture (1 = traction, 2 = cisaillement)."""
-    sel = (f["damage"] >= 0.999) & (f["bonded"] < 0.5)
+    # CRITERE DE RUPTURE : tBreak >= 0, l instant de mort ecrit par le
+    # solveur — et NON damage >= 0.999.
+    # Depuis jointFailRule = majority (2026-08-26), J.D est le MAX sur les
+    # points d integration : un seul point a D = 1 suffit a mettre le champ
+    # `damage` a 1, alors qu il en faut DEUX pour tuer le joint. Mesure du
+    # 2026-08-27 sur out_imperial : 206 facettes a damage >= 0.999 contre 88
+    # reellement mortes, soit un facteur 2,3 qui gonflait la fissure radiale
+    # et le rayon de cratere. Repli sur l ancien critere si le champ manque
+    # (VTU ecrits avant l ajout de tBreak).
+    if "tBreak" in f:
+        sel = (f["tBreak"] >= 0.0) & (f["bonded"] < 0.5)
+    else:
+        sel = (f["damage"] >= 0.999) & (f["bonded"] < 0.5)
     P = pts[con[sel]]
     c = P.mean(axis=1)
     n = np.cross(P[:, 1] - P[:, 0], P[:, 2] - P[:, 0])

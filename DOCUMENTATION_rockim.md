@@ -403,6 +403,162 @@ Repères : `bulkmodel_neohooke_2d` et `zeroload_neohooke_2d` (fast),
 `bulkmodel_neohooke_3d` (full — indispensable, l'exposant de l'écart diffère
 entre dimensions).
 
+### 5.4 quinquies Les conventions lues dans le CODE de Solidity (2026-08-26)
+
+Le solveur d'Imperial College est **public** :
+[`ImperialCollegeLondon/solidity-solver-open`](https://github.com/ImperialCollegeLondon/solidity-solver-open)
+(LGPL-3.0, C, 17 000 lignes, format `.Y3D` — la lignée Munjiza de la thèse de
+Guo et des articles de Yang *et al.*). Les trois clés ci-dessous ne sont plus
+déduites d'un article : elles sont **relevées dans leur source**, fichier et
+ligne cités. Toutes sont opt-in, tous les défauts restent bit-identiques.
+
+| clé | valeurs | défaut |
+|---|---|---|
+| `jointDeltaC` | `exact` \| `guo` \| **`solidity`** | `exact` |
+| `jointFailRule` | `any` \| **`majority`** | `any` |
+| `strainRateDIFArm` | `insertion` \| `envelope` \| **`continuous`** | `insertion` |
+| `gcBirth` | `ramp` \| **`penalty`** | `ramp` |
+| `gcBirthPenMin` / `gcBirthPenMax` | bornes du facteur | 0.01 / 3.0 |
+| `strainRateFilter` | `exponential` \| **`none`** | `exponential` |
+
+**`jointDeltaC = solidity`** — leur code ne fait pas ce qu'écrit la thèse.
+`Y3Dfd.c` l. 1098-1099 (mode I) et 1125-1126 (mode II) :
+
+```c
+op = R2*el*dpeft/dpepe;                 /* ouverture au pic   <-> dnE */
+ot = MAXIM((R2*op),(R3*dpegfn/dpeft));  /* PLAGE d adoucissement      */
+```
+
+et la rupture est à `op + ot`. La convention `guo` (δ_c = 3G_f/f_t depuis zéro,
+son éq. 2.30) oublie **et** l'offset `op` **et** le plancher `2·op`. Ce
+plancher ne mord que si 3G_f/f_t < 2·dnE, c'est-à-dire en maillage **fin**
+devant G_f/f_t — le régime d'un impact, pas celui d'un essai de traction. D'où
+le repère `jointdeltac_solidity_2d` à −2,333 % contre −2,330 % pour `guo` :
+sur un maillage grossier les deux sont indiscernables, et c'est normal.
+Leur propre commentaire porte deux fois `/*need further investigation*/`.
+
+**`jointFailRule = majority`** — `Y3Dfd.c` l. 1175 : `if((nfail>1)&&...)`. Un
+seul point d'intégration au-delà de z ≥ 1 **ne tue pas** la facette ; il en
+faut deux (sur trois en 3D, sur deux en 2D). La règle n'a de sens qu'avec un
+endommagement **par point** : chez eux `z` est une variable locale de la boucle
+d'intégration, donc un point rompu cesse de transmettre pendant que les autres
+tiennent. rockim ne portait qu'un scalaire `J.D` par joint, déjà le *max* des
+points — la clé arme `Joint::Dk[]` et rend chaque point autonome. `J.D` reste
+tenu à jour comme le max, pour toutes les sorties.
+Exige `jointQuadrature = midedge` (les points comptés doivent être les leurs).
+
+**`strainRateDIFArm = continuous`** — leur DIF n'est jamais gelé. `dpeftdif`
+est une variable **locale de la boucle élément**, reprise à chaque pas
+(l. 1448-1456), et le même facteur multiplie la résistance **et** son énergie
+de rupture (f_t avec G_I, c avec G_II). Cela lève le seul point où la
+réplication était réputée impossible : il n'y a pas d'instant de gel à deviner.
+Conséquence d'implémentation : le facteur ne peut pas s'appliquer *en place*
+sur f_t/coh/G_f/G_fII sans se composer indéfiniment — `snapBase()` sauvegarde
+les valeurs de base une fois, et `refreshDif()` reconstruit à chaque pas. Le
+contrôle falsifiant est le repère `dif_continuous_2d` : `difmed = 1,53036`,
+sous le plafond 1,85 de `yang-fig2`. Une composition donnerait un nombre
+astronomique.
+⚠️ Sous cet armement, `edotIns` du résumé porte le taux **final**, pas celui
+d'un instant de gel : il ne se lit pas comme celui des deux autres armements
+(d'où 7,66 /s contre 57,2 pour `dif_intrinseque_2d`, même essai).
+
+**Ce que la source CONFIRME** (rockim était déjà juste, rien à changer) : la
+loi de volume `T = (μ/J)B + [(λ lnJ − μ)/J]I + η·D` (l. 716) ; la viscosité
+`dpeks*D`, donc `bulkViscosity = η/2` puisque rockim écrit 2μD ; la z-curve
+a = 0,63 b = 1,8 c = 6 (l. 1088-1090) ; le couplage elliptique
+`SQRT(tmp1²+tmp2²)` (l. 1136) ; la branche élastique parabolique (2r−r²)
+(l. 1274) et la raideur **double** en compression (l. 1265) ; les 3 points aux
+milieux d'arêtes avec le poids A/6 sur chacun des deux nœuds de l'arête
+(l. 900-917 et 940) ; et l'**absence totale d'amortissement dans
+l'intégrateur** (`Y3Dsd.c`), la viscosité de volume étant leur seule
+dissipation hors joints et frottement.
+
+**Ce que la source montre DÉSACTIVÉ chez eux** : le DIF lui-même
+(`dpeftdif = R1`, soit 1,0) et l'endommagement diffus du volume (`df = R0`,
+avec le `(1−df)` qui ne s'applique **pas** au terme visqueux) — ce dernier
+recoupant ce que dit leur article de 2026 sur le granite de Kuru à propos du
+calcaire et du grès.
+
+**Frottement de contact** — `Y3Did.c` l. 1017-1051 : leur loi est
+*structurellement identique* à celle de rockim, ressort tangentiel à
+glissement **mémorisé** puis retour radial de Coulomb, et non un amortisseur
+en vitesse. Le rapport est `ktss = 2.0/(7.0)*penalty`, soit **k_t/k_n = 2/7**.
+Dans rockim ce rapport vaut `potTangentFactor / potPenaltyFactor` : c'est une
+valeur de config, pas une capacité — aucun code n'a été touché. Leur bloc de
+frottement statique/dynamique à affaiblissement en vitesse existe mais est
+**commenté** ; la loi active est `mu = mud*d_fact`, Coulomb constant.
+
+**`gcBirth = penalty`** — la naissance d'un contact sur un joint rompu,
+`Y3Did.c` l. 915-964. Les deux modes sont des philosophies opposées :
+
+- `ramp` (défaut, historique) : on retranche un relevé de naissance (volume en
+  3D, aire en 2D) qui décroît en `exp(-t/gcBirthTau)`, si bien que la force
+  **part de zéro** et remonte. Sous un indenteur, où les joints meurent *en
+  compression* sous forte charge, c'est une perte de portance à chaque rupture.
+- `penalty` : au pas exact de la naissance ils lisent la force que le joint
+  portait en mourant (`d1ejfc*`, ce que rockim enregistre déjà dans
+  `Joint::fDeath`) et calent la pénalité de **cette paire** pour que la force
+  du contact naissant l'égale — `d1pepe[icoup] = penalty·fn_joint/fn_contact`,
+  bornée à [0,01 ; 3]. La force est **continue**, le facteur persiste ensuite
+  pour la paire, et la raideur tangentielle le suit
+  (`ktss = 2/7·d1pepe[icoup]`). Ils zèrent aussi l'effort tangentiel et le
+  glissement mémorisé au pas de naissance — reproduit.
+
+Exige `contact = potential` (le mécanisme y vit ; sous `contact = penalty`, le
+défaut, la clé serait inerte et le solveur refuse). Exclusive de `gcBirthTau`.
+
+⚠️ **Le relevé de naissance n'était pas qu'une douceur.** L'en-tête de
+`PotHist::aRef` documente sa vraie raison d'être : il empêche une **injection
+d'énergie** sur une paire née en recouvrement (mesure historique : **+936 J/m
+sans relevé**, +179 avec une rampe purement temporelle — d'où l'asymétrie
+d'état retenue). `gcBirth = penalty` le supprime : le bilan d'énergie devient
+donc le contrôle obligatoire, et le solveur l'écrit lui-même — *« en mode
+penalty tout positif est une injection »*. Mesure du 2026-08-26 sur la
+percussion 2D : résidu **−0,9174 J/m** en `ramp` contre **−0,994861** en
+`penalty` — négatif donc dissipatif dans les deux cas, et même légèrement plus
+dissipatif. Aucune injection sur cet essai, mais **c'est à revérifier sur tout
+nouveau cas** : le repère `gcbirth_penalty_percussion_2d` verrouille ce résidu
+précisément pour ça.
+
+⚠️ **Piège de lecture du repère.** En traction pure les joints meurent sans
+charge à relayer (`fDeath = 0`) et le facteur retombe à 1 pour toutes les
+paires : `gcbirth_penalty_2d` ne mesure alors que la *suppression de la rampe*
+(−1,67766 → −1,85267 %). Le rééchelonnement lui-même n'est exercé que sous
+indenteur — d'où `gcbirth_penalty_percussion_2d` : 4 joints morts, **100 % en
+compression**, 651 kN/m relayés, facteur moyen 1,031, travail de contact
+0,213 → 0,274 J/m dont frottement 0,111 → 0,116. Le résumé imprime le facteur
+moyen : **s'il colle à une borne, c'est le clamp — arbitraire chez eux — qui
+décide à la place de la physique**, et il faut l'élargir pour le savoir.
+
+**`strainRateFilter = none`** — le taux qui alimente le DIF. `Y3Dfd.c` l. 1448
+prend le taux de l'élément **tel quel**, sans lissage. rockim filtrait par un
+passe-bas de constante `strainRateTau`, et sa propre raison était explicite :
+« le taux brut par élément est trop bruité pour **figer** un DIF dessus ».
+Cette raison vise le *gel*. Sous `strainRateDIFArm = continuous` le facteur est
+repris à chaque pas — un pic de bruit ne dure qu'un pas au lieu d'être gravé
+dans le joint — et l'argument tombe. **Les deux clés se répondent : c'est
+ensemble qu'elles font leur schéma.** Exclusive de `strainRateTau`, qui serait
+sans effet (refusée plutôt qu'ignorée en silence).
+Mesures : 2D `edotmed` 7,65775 (filtré) → 4,02148 (brut) ; 3D 0,094298 →
+0,0746516. L'écart est exactement ce que le passe-bas retirait.
+
+**`jointResidualMu` est confirmé absent chez eux** : leur `dpefm` vaut `0.0`
+en dur (l. 1091). Un joint rompu ne porte aucun cisaillement ; tout le
+frottement vient du contact. Pour une réplication fidèle, laisser la clé
+désactivée.
+
+Repères — tier fast : `jointdeltac_solidity_2d`, `jointfailrule_majority_2d`,
+`dif_continuous_2d`, `gcbirth_ramp_2d`, `gcbirth_penalty_2d`,
+`srfilter_none_2d` et leurs contrôles à charge nulle. Tier full :
+`jointdeltac_solidity_3d`, `jointfailrule_majority_3d`, `dif_continuous_3d`,
+`gcbirth_penalty_3d`, `srfilter_none_3d`, `zeroload_gcbirth_penalty_3d`, et
+`gcbirth_penalty_percussion_2d` — le seul qui exerce vraiment le
+rééchelonnement.
+
+⚠️ `gcbirth_penalty_3d` ne verrouille **pas** un écart : en traction 3D les
+deux modes donnent le même `err_pct` (−4,75889 %). Il verrouille le *fait* que
+le mécanisme s'arme (118 paires calées). C'est délibéré et noté dans le repère.
+
 ### 5.5 Lois de comportement (`law`, modes fem3d / fdem / fdem3d)
 
 `law = elastic | dpr | saksala | saksala2011 | dpdfh` (défaut : dpr en fem3d ; absent
