@@ -360,13 +360,22 @@ private:
     // jointShearRange = cohesion | coulomb (defaut cohesion, bit-identique).
     // `coulomb` : la PLAGE d'adoucissement de mode II est divisee a chaque pas
     // par la resistance de Mohr-Coulomb a la pression courante
-    // fs = c + tan(phi) |sigma_n| (compression seule), plancher 2 sE — la
-    // convention du code Solidity (Y3Dfd.c l. 1110-1126 : st = max(2 sp,
-    // 3 GfII/dpefs) avec dpefs friction-inclus, recalcule par point et par
-    // pas). Sous fort confinement le glissement critique s'effondre de
-    // 3 GfII/c (~1e2 um aux cartes d'impact) a quelques microns : c'est ce
-    // qui autorise la rupture en cisaillement des joints COMPRIMES (noyau
-    // broye d'indentation). `cohesion` = plage figee 3 GfII/c, l'historique.
+    // fs = c + tan(phi) |sigma_n| (compression seule), plancher 2 sE.
+    // C'est LA FORME PUBLIEE du modele (verifiee sur les pages de la these le
+    // 2026-08-27) : Guo 2014 pose delta_c = 3 Gf/f (eq. 2.30) avec f = "the
+    // shear strength fs" pour le cisaillement (p. 65), fs etant l'enveloppe de
+    // Mohr-Coulomb a coupure de l'eq. 2.24 — dependante de sigma_n — et le
+    // driver d'endommagement (delta_s - delta_sp)/(delta_sc - delta_sp) de
+    // l'eq. 2.33 en herite par la substitution n -> s. Le code Solidity fait
+    // de meme (Y3Dfd.c l. 1110-1126 : st = max(2 sp, 3 GfII/dpefs), dpefs
+    // friction-inclus recalcule par point et par pas), ainsi que le code Y
+    // ancetre et la lignee Y-Geo (AbuAisha et al. 2015, eq. 7.4). La lecture
+    // historique de rockim (3 GfII/c, cohesion seule) etait une erreur de
+    // transcription : en traction elle coincide (f = ft), sous confinement
+    // elle surestime le glissement critique d'un facteur fs/c (~54 a 1 GPa
+    // aux cartes d'impact St Anne) — d'ou l'absence de rupture en
+    // cisaillement des joints COMPRIMES, donc de noyau broye d'indentation.
+    // `cohesion` = la plage figee 3 GfII/c, conservee comme defaut historique.
     bool shearRangeCoulomb_ = false;
 
     // ---- adaptive insertion (insertion = adaptive) --------------------------
