@@ -69,4 +69,4 @@ bench_impact/*.pdf
 bench_impact/*.txt
 
 # repertoire de compilation CMake (README : mkdir build && cd build)
-build/
+build*/
