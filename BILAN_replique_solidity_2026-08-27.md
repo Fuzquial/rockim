@@ -279,3 +279,54 @@ vient du contact. La clé reste désactivée.
    cisaillement, par construction. C'est la forme littérale de leur article,
    c'est une clé de config, et ça vise exactement le déficit.
 3. **Instrumenter les 128 ms/pas** avant toute autre réplique fidèle.
+
+---
+
+## 9. Addendum (2026-08-27, session distante) — le deficit de cisaillement est resolu : c etait la PLAGE de mode II
+
+Le « prochain pas » du §8 est caduc dans sa motivation (jointFrictionScaled
+seul est quasi inerte : la secante origin reste reversible avec ou sans,
+prouve sur le code) mais la piste etait la bonne famille. La cause racine,
+verifiee sur trois sources independantes puis sur les pages de la these :
+
+**rockim transcrivait la plage d adoucissement de mode II en 3 GfII/c
+(cohesion seule, figee a la naissance du joint). La forme publiee divise
+par fs = c + tan(phi)|sigma_n| A LA PRESSION COURANTE** — these Guo 2014 :
+p. 65 (« for the shear stress component tau, it means the shear strength
+fs »), eq. 2.24 (fs Mohr-Coulomb a coupure), eq. 2.30 (delta_c = 3 Gf/f),
+eq. 2.33 (le driver, parametres s par substitution) ; code Solidity
+Y3Dfd.c l. 1110-1126 (dpefs recalcule PAR POINT et PAR PAS — l affectation
+trois lignes au-dessus des l. 1125-1126 citees par le portage du 26/08) ;
+code Y ancetre (~2010) ; Y-Geo imprime (AbuAisha et al. 2015, eq. 7.4).
+AUCUNE source ne divise par la cohesion seule. Sous l insert (sigma_n ~
+0,5-1 GPa) le glissement critique publie vaut 2-7 um, pas 128 : la rupture
+en cisaillement des joints comprimes etait interdite d un facteur ~54,
+uniquement en compression — d ou 40 tests verts (tous en traction) et
+zero noyau broye. Les six conventions du §3 restent justes ; l ecart
+etait le septieme, invisible depuis les articles (aucun n imprime la
+formule de la plage ; GI/GII y sont d ailleurs CALIBRES, §4 du papier —
+une valeur calibree n a de sens que dans la loi ou elle l a ete).
+
+**Correctif** : `jointShearRange = coulomb` (opt-in, defaut cohesion
+bit-identique — verifie octet a octet 2D et 3D sur cette branche), plage
+divisee par fs a chaque pas, plancher 2 sE, clamp a c en traction comme
+leur code. Commits 4cbd74f (2D) / 36369f7 (sources) / 5c2506c (3D) /
+6c51567 (banc), tag de sauvegarde `joint-handoff-pre-coulomb` sur ea86c19.
+
+**Validations du jour** (conteneur 4 coeurs, binaire de cette branche) :
+- `bench_polyaxial/` (NOUVEAU — le repere compressed-shear-to-failure qui
+  manquait a la suite, transpose du §3.5 de la these) : cas c = 0,5 MPa —
+  0 rompu a 2,1 x le seuil MC avec la plage cohesion-seule, 11 893 rompus
+  (100 % cisaillement) avec la plage publiee ;
+- indentation 2D St Anne (schema ADAPTATIF) : cisaillement du noyau x6,2
+  (77 -> 476), champ lointain intact (20 -> 28), F_pic / 1,7, frottement
+  +30 % — le noyau broye apparait, la ou gfShearFactor = 2 le fabrique en
+  sur-broyant tout le champ (x20 au loin, F-p plafonnee des 0,05 mm).
+
+**Le run a lancer** : `impact_imperial_coulomb.cfg` (copie du deck du
+26/08 + 2 cles + predictions inscrites). Verdict A/B a historique egal a
+t_sim ~ 106 us ; criteres et chronologie attendue dans le bandeau du deck.
+Le point du §5 (« conclure maintenant serait conclure sans avoir atteint
+le regime ») reste vrai et devient testable : si le cisaillement est
+toujours nul a 106 us AVEC la plage publiee, c est le correctif qui est
+refute, pas le run.
