@@ -3794,6 +3794,11 @@ void FdemSolver::jointForces() {
                     // traction dpefs = c, leur clamp), reevalue a chaque pas.
                     // Ici : meme convention kI que J.slipF, donc on scale par
                     // c/fs au lieu de recalculer, et le plancher est 2 sE.
+                    // max(0, -pj dn) == mcFrictionTerm en COMPRESSION,
+                    // seul cas ou la garde fs > c tire. Si un jour la garde
+                    // est relachee en traction, reutiliser mcFrictionTerm
+                    // (yangEnv) avec clamp explicite — sinon la convention
+                    // d enveloppe divergerait silencieusement de sE.
                     double fs = J.coh
                               + J.tanPhi * std::max(0.0, -(J.pj * dn));
                     if (fs > J.coh)

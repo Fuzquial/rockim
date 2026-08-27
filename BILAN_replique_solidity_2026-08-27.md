@@ -330,3 +330,15 @@ Le point du §5 (« conclure maintenant serait conclure sans avoir atteint
 le regime ») reste vrai et devient testable : si le cisaillement est
 toujours nul a 106 us AVEC la plage publiee, c est le correctif qui est
 refute, pas le run.
+
+**Revue adverse du portage (agent independant, meme soir) : aucun defaut
+confirme sur 8 points d interaction** (conventions jointDeltaC — le plancher
+`solidity` se replie prouvablement sur leur max(2 sp, 3 GfII/fs) —, DIF
+continu, majority/midedge, bmode, inertie hors origin, RKM_NOTAU, gardes,
+securite numerique). Deux notes a garder : (a) la plage `den` n est pas
+monotone (elle suit la pression) alors que smax l est — un joint charge
+confine peut donc rompre A LA DECHARGE quand la pression tombe ; mecanisme
+preexistant via sE, amplifie par la cle — a garder en tete au depouillement
+des phases d ecaillage/rebond de l impact ; (b) le lecteur de config ignore
+silencieusement une CLE mal orthographiee (generique au code) : verifier la
+banniere `[FDEM3D] jointShearRange = coulomb` dans le log au lancement.

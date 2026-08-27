@@ -2435,6 +2435,11 @@ void Fdem3dSolver::jointForces() {
                     // la plage est 3 GfII/fs avec fs a la pression courante
                     // (clampee a c en traction, comme leur code). Meme kI que
                     // J.slipF, donc on scale par c/fs ; plancher 2 sE.
+                    // max(0, -pj dn) == mcFrictionTerm en COMPRESSION,
+                    // seul cas ou la garde fs > c tire. Si un jour la garde
+                    // est relachee en traction, reutiliser mcFrictionTerm
+                    // (yangEnv) avec clamp explicite — sinon la convention
+                    // d enveloppe divergerait silencieusement de sE.
                     double fs = J.coh
                               + J.tanPhi * std::max(0.0, -(J.pj * dn));
                     if (fs > J.coh)
