@@ -404,6 +404,18 @@ private:
     // (c'est ce que pose configs_yan/article_exact_base.cfg).
     bool shearOrigin_ = false;
 
+    // jointShearRange = cohesion | coulomb (defaut cohesion, bit-identique).
+    // `coulomb` : la PLAGE d'adoucissement de mode II est divisee a chaque pas
+    // par la resistance de Mohr-Coulomb a la pression courante
+    // fs = c + tan(phi) |sigma_n| (compression seule), plancher 2 sE — la
+    // convention du code Solidity (Y3Dfd.c l. 1110-1126 : st = max(2 sp,
+    // 3 GfII/dpefs) avec dpefs friction-inclus, recalcule par point et par
+    // pas). Sous fort confinement le glissement critique s'effondre de
+    // 3 GfII/c (~1e2 um aux cartes d'impact) a quelques microns : c'est ce
+    // qui autorise la rupture en cisaillement des joints COMPRIMES (noyau
+    // broye d'indentation). `cohesion` = plage figee 3 GfII/c, l'historique.
+    bool shearRangeCoulomb_ = false;
+
     // ---- adaptive insertion (insertion = adaptive) --------------------------
     // No cohesive joint exists at t = 0: every interior edge starts BONDED and
     // its co-located node copies move as ONE node (groups below), which is
