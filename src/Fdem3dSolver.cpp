@@ -258,6 +258,26 @@ void Fdem3dSolver::init() {
                                      "(got '" + ju + "')");
         shearOrigin_ = ju == "origin";
     }
+    {
+        std::string sr = cfg_.gets("jointShearRange", "cohesion");
+        if (sr != "cohesion" && sr != "coulomb")
+            throw std::runtime_error("jointShearRange must be cohesion | "
+                                     "coulomb (cohesion = plage 3 GfII/c "
+                                     "figee, defaut historique ; coulomb = "
+                                     "plage divisee par fs = c + tan(phi)"
+                                     "|sigma_n| a la pression courante — la "
+                                     "forme publiee, Guo 2014 eq. 2.24/2.30)");
+        shearRangeCoulomb_ = sr == "coulomb";
+        if (shearRangeCoulomb_ && !shearOrigin_)
+            throw std::runtime_error("jointShearRange = coulomb exige "
+                                     "jointShearUnload = origin (le moteur "
+                                     "(smax - sE)/plage est celui de la "
+                                     "branche origin)");
+        if (shearRangeCoulomb_)
+            std::cout << "[FDEM3D] jointShearRange = coulomb : plage de mode "
+                         "II divisee par fs(sigma_n) a chaque pas (plancher "
+                         "2 sE)\n";
+    }
     if (shearOrigin_) {
         std::cout << "[FDEM3D] shear unloading: origin secant (Yan eq. 18)\n";
         if (!yanFricScaled_)
@@ -1899,7 +1919,18 @@ void Fdem3dSolver::jointForces() {
                              * rockim::mcFrictionTerm(J.pj * dn, J.ft,
                                                       yangEnv_)) / J.pj;
                 if (sE < 0.0) sE = 0.0;
-                rsO = (J.slipF > 0.0 && smx > sE) ? (smx - sE) / J.slipF : 0.0;
+                double den = J.slipF;
+                if (shearRangeCoulomb_) {
+                    // Guo 2014 eq. 2.24 + 2.30 (et Y3Dfd.c l. 1110-1126) :
+                    // la plage est 3 GfII/fs avec fs a la pression courante
+                    // (clampee a c en traction, comme leur code). Meme kI que
+                    // J.slipF, donc on scale par c/fs ; plancher 2 sE.
+                    double fs = J.coh
+                              + J.tanPhi * std::max(0.0, -(J.pj * dn));
+                    if (fs > J.coh)
+                        den = std::max(2.0 * sE, J.slipF * (J.coh / fs));
+                }
+                rsO = (den > 0.0 && smx > sE) ? (smx - sE) / den : 0.0;
                 rsMaxO = std::max(rsMaxO, rsO);
             }
 
