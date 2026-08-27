@@ -291,6 +291,16 @@ private:
     // frottant reversible. Forme litterale = origin + jointFrictionScaled = 1.
     bool shearOrigin_ = false;
 
+    // jointShearRange = cohesion | coulomb (defaut cohesion, bit-identique).
+    // Miroir exact du 2D (FdemSolver.hpp) : la plage d'adoucissement de mode
+    // II est divisee a chaque pas par fs = c + tan(phi) |sigma_n| (compression
+    // seule, plancher 2 sE) — la forme publiee du modele : Guo 2014 p. 65 +
+    // eq. 2.24 (fs Mohr-Coulomb), 2.30 (delta_c = 3 Gf/f) et 2.33 (driver),
+    // et le code Solidity (Y3Dfd.c l. 1110-1126). La forme cohesion-seule
+    // (3 GfII/c) etait une erreur de transcription, active uniquement pour
+    // les joints COMPRIMES — le noyau broye d'indentation.
+    bool shearRangeCoulomb_ = false;
+
     // Work done by the joint dashpot. A dashpot can only DISSIPATE, so this
     // must stay <= 0 — the direct detector of the rectifier/anti-damping
     // failure modes (2D lesson, 2026-08-05). One multiply per point.
