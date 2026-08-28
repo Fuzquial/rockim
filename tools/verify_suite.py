@@ -165,6 +165,12 @@ TESTS = [
                "strainRateDIF = yang-fig2", "pullV = 1.5", "T = 1.2e-5"],
          checks=[("edotmed", 315.75, 1e-2, True),
                  ("difmed", 1.85, 1e-9, True)]),
+# ---- tolerances WP6 re-mesurees sur les deux plateformes (2026-08-28) -----
+# La suite rejouee sous MSVC (machine Fernando) donne ctcpulv = 20778 et
+# npulvel = 481 contre 20774 / 481 sous Linux g++13 : le mecanisme WP6
+# concorde a 0,02 pourcent d une plateforme a l autre, et le comptage
+# d elements pulverises est IDENTIQUE. Les tolerances passent donc de
+# +-50 pourcent (prudence initiale) a +-0,5 pourcent.
     # ---- WP6 : contactResidualMu (spec 005) -------------------------------
     # Jumeau SANS contact (jeu 50 mm >> vT) : la cle posee ne doit RIEN
     # engager — ctcpulv = 0 exact, npulvel = 0 exact, aucun joint rompu.
@@ -186,8 +192,8 @@ TESTS = [
                "frames = 1", "toolGap = 0", "bulkDamage = yang",
                "bulkDamageDelta0 = 1.0e-7", "bulkDamageDeltaF = 2.0e-7",
                "contactResidualMu = 0.2"],
-         checks=[("ctcpulv", 20774, 10387, True),
-                 ("npulvel", 481, 240, True), ("broken", 0, 0, True)]),
+         checks=[("ctcpulv", 20776, 100, True),
+                 ("npulvel", 481, 5, True), ("broken", 0, 0, True)]),
     # --- tier full : bit-repères 2D longs, adaptatif, 3D grille -------------
     # charge nulle AVEC viscosite : le terme dissipatif ne doit rien casser ni
     # rien injecter quand il n y a pas de chargement (patron zeroload).
