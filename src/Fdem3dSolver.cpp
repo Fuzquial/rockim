@@ -547,6 +547,30 @@ void Fdem3dSolver::init() {
                          "d'interpenetration = " << toolSigRelax_ << "\n";
     }
     muC_ = cfg_.getd("contactMu", 0.5);
+    // ---- WP6 : mu de contact residuel post-pulverisation ------------------
+    // Voir le commentaire du membre (Fdem3dSolver.hpp) et le plan
+    // specs/005-impact-insert-yang/WP6_contact_residuel.md.
+    muCRes_ = cfg_.getd("contactResidualMu", -1.0);
+    if (muCRes_ >= 0.0) {
+        if (!bdOn_)
+            throw std::runtime_error(
+                "contactResidualMu exige bulkDamage = yang : sans source "
+                "d endommagement volumique aucun element n est jamais "
+                "pulverise, et la cle serait lue mais INOPERANTE (regle "
+                "E3/E6 : un reglage qui ne fait rien est interdit)");
+        if (muCRes_ > muC_)
+            std::cout << "\n[FDEM3D] *** AVERTISSEMENT *** contactResidualMu"
+                         " = " << muCRes_ << " > contactMu = " << muC_
+                      << " : le frottement AUGMENTE a la pulverisation. "
+                         "C est l inverse du modele de Yang et al. 2026 "
+                         "(0,18 residuel contre 0,6 intact). Voulu ?\n\n";
+        std::cout << "[FDEM3D] contactResidualMu = " << muCRes_
+                  << " : toute interaction de contact (outil ou general) "
+                     "impliquant un element pulverise (bulkDamage : D = "
+                  << bdDmax_ << ") bascule de contactMu = " << muC_
+                  << " a ce mu residuel (sliding friction post-rupture, "
+                     "Yang et al. 2026)\n";
+    }
     xiC_ = cfg_.getd("contactXi", 0.05);
     vReg_ = cfg_.getd("contactVreg", 1e-3);
     kpGC_ = cfg_.getd("gcPenaltyFactor", 0.01) * phases_.maxE() * hmin_;
@@ -3144,7 +3168,7 @@ void Fdem3dSolver::potentialContact() {
                                 // 965), et non la penalite nominale.
                                 Ft -= (birthPenalty_ ? sc * potKt_ : potKt_)
                                     * dt_ * vt;
-                                double cap = muC_ * Fn;
+                                double cap = ctcMu(eLo, eHi) * Fn;  // WP6
                                 double Ftn = Ft.norm();
                                 if (Ftn > cap && Ftn > 0.0)
                                     Ft *= cap / Ftn;
@@ -3440,8 +3464,9 @@ void Fdem3dSolver::generalContact() {
             Eigen::Vector3d vt = vrel - vn * nrm;
             double vtn = vt.norm();
             Eigen::Vector3d ftv = Eigen::Vector3d::Zero();
-            if (vtn > 0)
-                ftv = -muC_ * fn * std::tanh(vtn / vReg_) * vt / vtn;
+            if (vtn > 0)                                       // WP6
+                ftv = -ctcMu(elemOf_[i], bf.elem) * fn
+                    * std::tanh(vtn / vReg_) * vt / vtn;
             Eigen::Vector3d Fc = fn * nrm + ftv;
             double capF = 20.0 * m_[i] / dt_;
             double Fn2 = Fc.norm();
@@ -3501,7 +3526,8 @@ void Fdem3dSolver::toolContact() {
                                v_[i].y() - tool_.v.y(), 0.0);
             double vtn = vt.norm();
             Eigen::Vector3d ftv = Eigen::Vector3d::Zero();
-            if (vtn > 0) ftv = -muC_ * fn * std::tanh(vtn / vReg_) * vt / vtn;
+            if (vtn > 0) ftv = -ctcMu(elemOf_[i]) * fn         // WP6
+                               * std::tanh(vtn / vReg_) * vt / vtn;
             Fc = ftv + Eigen::Vector3d(0.0, 0.0, -fn);
         } else {
             Eigen::Vector3d d = p - tool_.x;
@@ -3516,7 +3542,8 @@ void Fdem3dSolver::toolContact() {
             Eigen::Vector3d vt = vrel - vrel.dot(n) * n;
             double vtn = vt.norm();
             Eigen::Vector3d ftv = Eigen::Vector3d::Zero();
-            if (vtn > 0) ftv = -muC_ * fn * std::tanh(vtn / vReg_) * vt / vtn;
+            if (vtn > 0) ftv = -ctcMu(elemOf_[i]) * fn         // WP6
+                               * std::tanh(vtn / vReg_) * vt / vtn;
             Fc = fn * n + ftv;
         }
         // --- ECRETAGE EN IMPULSION (porte du 2D) : voir Fdem3dSolver.hpp ----
@@ -3575,7 +3602,7 @@ void Fdem3dSolver::toolContact() {
         Eigen::Vector3d rt = Eigen::Vector3d::Zero();
         if (vtn > 1e-14) {
             double rts = m_[i] * vtn;                  // colle exactement
-            double cap = muC_ * rn;
+            double cap = ctcMu(elemOf_[i]) * rn;               // WP6
             if (rts > cap) rts = cap;
             rt = -rts * vt / vtn;
         }
@@ -4488,6 +4515,16 @@ void Fdem3dSolver::finalize() {
               << "\n[FDEM3D] fragments         : " << nFrag_
               << " (detached vol " << detachedVol_ << " m^3)"
               << "\n[FDEM3D] specific energy   : " << Es << " J/m^3\n";
+    if (muCRes_ >= 0.0) {                                        // WP6
+        std::cout << "[FDEM3D] contact residuel  : " << nCtcPulv_
+                  << " evaluations au mu pulverise (" << muCRes_ << ")";
+        if (tCtcPulv0_ >= 0.0)
+            std::cout << ", premier engagement a t = " << tCtcPulv0_ << " s";
+        else
+            std::cout << " — JAMAIS engage (aucun element pulverise n a "
+                         "touche un contact)";
+        std::cout << "\n";
+    }
     brushReport();          // no-op si le tri n'a pas ete arme
 }
 
