@@ -49,6 +49,9 @@ RX = {
     "viscwork":  r"dont visqueux \(2 mu D\) : (-?[\d.eE+-]+) J",
     "edotmed":   r"insertion, mediane ([\d.eE+-]+) /s",
     "difmed":    r"DIF_traction median ([\d.eE+-]+)",
+    # --- WP6 : mu de contact residuel post-pulverisation, 2026-08-28 ------
+    "ctcpulv":    r"contact residuel\s*: (\d+) evaluations",
+    "npulvel":    r"(\d+) elements a D = Dmax",
 }
 
 # ---- définition des tests --------------------------------------------------
@@ -162,6 +165,29 @@ TESTS = [
                "strainRateDIF = yang-fig2", "pullV = 1.5", "T = 1.2e-5"],
          checks=[("edotmed", 315.75, 1e-2, True),
                  ("difmed", 1.85, 1e-9, True)]),
+    # ---- WP6 : contactResidualMu (spec 005) -------------------------------
+    # Jumeau SANS contact (jeu 50 mm >> vT) : la cle posee ne doit RIEN
+    # engager — ctcpulv = 0 exact, npulvel = 0 exact, aucun joint rompu.
+    dict(name="wp6_zeroload_2d", tier="fast", cfg="fdem_percussion.cfg",
+         over=["W = 0.06", "H = 0.05", "nx = 30", "ny = 25", "T = 3.0e-5",
+               "frames = 1", "toolGap = 0.05", "bulkDamage = yang",
+               "bulkDamageDelta0 = 1.0e-7", "bulkDamageDeltaF = 2.0e-7",
+               "contactResidualMu = 0.2"],
+         checks=[("ctcpulv", 0, 0, True), ("npulvel", 0, 0, True),
+                 ("broken", 0, 0, True)]),
+    # Micro-fonctionnel : jeu nul + seuils reduits (delta0 = 0,1 um) pour
+    # pulveriser d emblee sous le disque -> la bascule DOIT s engager.
+    # References du 2026-08-28 (conteneur, gcc) : 20 774 evaluations,
+    # 481 elements pulverises ; tolerances +-50 % (comptages dependants de
+    # la plateforme via l arithmetique flottante, l ordre de grandeur est
+    # le verdict — un zero est le seul vrai FAIL).
+    dict(name="wp6_pulv_2d", tier="fast", cfg="fdem_percussion.cfg",
+         over=["W = 0.06", "H = 0.05", "nx = 30", "ny = 25", "T = 3.0e-5",
+               "frames = 1", "toolGap = 0", "bulkDamage = yang",
+               "bulkDamageDelta0 = 1.0e-7", "bulkDamageDeltaF = 2.0e-7",
+               "contactResidualMu = 0.2"],
+         checks=[("ctcpulv", 20774, 10387, True),
+                 ("npulvel", 481, 240, True), ("broken", 0, 0, True)]),
     # --- tier full : bit-repères 2D longs, adaptatif, 3D grille -------------
     # charge nulle AVEC viscosite : le terme dissipatif ne doit rien casser ni
     # rien injecter quand il n y a pas de chargement (patron zeroload).
