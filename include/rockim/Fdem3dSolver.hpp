@@ -581,6 +581,7 @@ private:
 
     Tool3 tool_;
     double toolKE0_ = 0.0;
+    double toolKEStop_ = -1.0;   // KE a l arret toolStop (cf. miroir 2D)
 
     // confinement triaxial (0 = inactif)
     double confP_ = 0.0, confRamp_ = 0.0;

@@ -114,11 +114,11 @@ void Fdem3dSolver::init() {
         if (!(bdDmax_ > 0.0) || bdDmax_ > 1.0 || !(bdCd_ > 0.0))
             throw std::runtime_error("bulkDamage : bulkDamageDmax dans "
                                      "]0, 1] et bulkDamageCd > 0");
-        if (cfg_.gets("law", "elastic") != "elastic")
-            throw std::runtime_error("bulkDamage = yang exige law = elastic "
-                                     "(la degradation s applique a la "
-                                     "branche co-rotationnelle elastique, "
-                                     "pas a une loi MatLaw)");
+        if (cfg_.has("law"))
+            throw std::runtime_error(
+                "bulkDamage = yang exige l ABSENCE de la cle law : meme "
+                "'law = elastic' construit une MatLaw et court-circuite "
+                "bulkDamage EN SILENCE (garde durcie post-revue 2026-08-28)");
     }
     mtCap_ = cfg_.getd("meanTensionCapFactor", 3.0);
     srTau_ = cfg_.getd("strainRateTau", 1.0e-6);
@@ -199,6 +199,15 @@ void Fdem3dSolver::init() {
                       << mat_.ft << ", c = " << mat_.cohesion << ")\n";
         }
         law_ = MatLaw::make(cfg_.gets("law", "elastic"), mBulk, cfg_, lcMax);
+        // reprise post-revue 2026-08-28 (regle E3/E6) : sous law le
+        // mean-tension cap est desarme (reparation 3) — une cle posee
+        // serait muette. Miroir 2D identique.
+        if (mtCap_ > 0.0 && cfg_.has("meanTensionCapFactor"))
+            std::cout << "\n[FDEM3D] *** AVERTISSEMENT *** "
+                         "meanTensionCapFactor est POSE mais INOPERANT sous "
+                         "law (garde !law_, 2026-08-28) : la loi possede sa "
+                         "contrainte. Retirer la cle, ou poser 0 pour "
+                         "documenter l intention.\n\n";
         // C2 (audit 2026-08-11, corrige 2026-08-15) : le centroide INITIAL de
         // chaque element doit etre renseigne AVANT le premier appel a la loi.
         // dpdfh en tire ses trois seuils de Weibull par hash spatial 64 bits
@@ -344,13 +353,6 @@ void Fdem3dSolver::init() {
     kpGC_ = cfg_.getd("gcPenaltyFactor", 0.01) * phases_.maxE() * hmin_;
     xiGC_ = cfg_.getd("gcXi", 0.8);
     gcRest_ = cfg_.getd("gcRestitution", 0.2);
-    // REPARATION (2026-08-28) : defaut autrefois SILENCIEUX qui ecrase la
-    // detente normale du contact general — contamine toute mesure de
-    // restitution/ejection (revue adverse WP6, point 1 des non-traites).
-    std::cout << "[FDEM3D] gcRestitution = " << gcRest_
-              << (cfg_.has("gcRestitution") ? " (deck)" : " (DEFAUT)")
-              << " : detente normale du contact general a ce facteur — a "
-                 "figer au deck des que e ou l ejection est une metrique\n";
     // contact = penalty (defaut, inchange) | potential — A3 phase 2 : le
     // contact par POTENTIEL de Munjiza en tet-tet, miroir exact du 2D.
     {
@@ -359,6 +361,16 @@ void Fdem3dSolver::init() {
             throw std::runtime_error("contact must be penalty | potential "
                                      "(got '" + cm + "')");
         contactPot_ = cm == "potential";
+        // REPARATION (2026-08-28) : defaut autrefois SILENCIEUX qui ecrase la
+        // detente normale du contact general — contamine toute mesure de
+        // restitution/ejection (revue adverse WP6, point 1 des non-traites).
+        std::cout << "[FDEM3D] gcRestitution = " << gcRest_
+                  << (cfg_.has("gcRestitution") ? " (deck)" : " (DEFAUT)")
+                  << " : detente normale du contact general a ce facteur — a "
+                     "figer au deck des que e ou l ejection est une metrique"
+                  << (contactPot_ ? " (NB : branche penalite seulement — inerte "
+                                    "sous contact = potential)" : "")
+                  << "\n";
     }
     if (contactPot_) {
         potP_ = cfg_.getd("potPenaltyFactor", 1.0) * phases_.maxE();
@@ -1446,7 +1458,11 @@ void Fdem3dSolver::placeTool() {
     if (toolVCap_ > 0.0)
         std::cout << "[FDEM3D] toolImpulseCap = " << toolVCap_
                   << " : |Fc| <= kappa * 2 v_outil * m / dt (borne du choc "
-                     "elastique contre une masse infinie)\n";
+                     "elastique contre une masse infinie)\n"
+                     "[FDEM3D] *** AVERTISSEMENT *** (revue 2026-08-28) : "
+                     "plafond PROPORTIONNEL a |v_outil| — avec un outil "
+                     "LIBRE (percussion), dv/dt <= C v : le REBOND de "
+                     "l outil est structurellement interdit.\n";
     double gap = cfg_.getd("toolGap", 1e-4);
     // toolShape = sphere | flat ('disc' accepted as the 2D synonym) | none.
     // none (V1) : PAS d'outil analytique — l'outil est un corps MAILLE
@@ -1454,6 +1470,13 @@ void Fdem3dSolver::placeTool() {
     // court-circuites DUR (lecon du disque fantome brezilien 2D).
     std::string sh = cfg_.gets("toolShape", "sphere");
     if (sh == "none") {
+        // reprise post-revue 2026-08-28 : le piege du relais mord autant
+        // avec un insert MAILLE — la notice ne doit pas etre sautee.
+        if (scen_ == Scenario::PERCUSSION)   // mpka9c : pas de jointDeath
+            std::cout << "[FDEM3D] jointDeath = separation (defaut) : sous "
+                         "l indenteur un joint ecroui en compression ne "
+                         "meurt jamais, le relais contact roche/roche ne "
+                         "s engage pas. Levier : jointDeath = damage.\n";
         toolNone_ = true;
         tool_.free = false;
         tool_.x = {1e9, 1e9, 1e9};         // hors de portee de tout
@@ -1464,10 +1487,10 @@ void Fdem3dSolver::placeTool() {
         throw std::runtime_error("toolShape must be sphere | flat | none (3D)");
     tool_.flat = sh == "flat" && scen_ == Scenario::PERCUSSION;
     if (scen_ == Scenario::PERCUSSION) {
-        // REPARATION (2026-08-28) : rendre VISIBLE le piege documente en
-        // 2652-2656 — la decision sur le DEFAUT attend le banc (variante C).
-        // (mpka9c : jointDeath n existe pas sur cette branche — seule la
-        // semantique separation existe, la notice est inconditionnelle)
+        // REPARATION (2026-08-28) : rendre VISIBLE le piege documente au
+        // commentaire « le contact ne prend jamais le relais » (bloc
+        // jointDeath — ABSENT de cette branche mpka9c : seule la semantique
+        // separation existe, la notice est inconditionnelle)
         std::cout << "[FDEM3D] jointDeath = separation (defaut) : sous "
                          "l indenteur un joint ecroui en compression ne meurt "
                          "jamais, le relais contact roche/roche ne s engage "
@@ -2908,6 +2931,7 @@ void Fdem3dSolver::toolContact() {
             // poursuivait sa course a vitesse constante, sans contact, a
             // travers la roche. On l arrete VRAIMENT : v = 0, et integrate()
             // (v += F/m dt, F = 0 faute de contact) le maintient immobile.
+            toolKEStop_ = tool_.ke();   // cliche pour la metrique KE loss
             tool_.v.setZero();
             std::cout << "[FDEM3D] OUTIL ARRETE (v = 0) a t = " << t_ << " s. Repos "
                          "jusqu'a l'armement du tri (t = " << brushStart_
@@ -3838,7 +3862,9 @@ void Fdem3dSolver::finalize() {
     std::cout << "[FDEM3D] peak tool force   : " << peakF_ << " N\n"
               << "[FDEM3D] tool work output  : " << work_ << " J";
     if (tool_.free)
-        std::cout << "  (tool KE loss: " << toolKE0_ - tool_.ke() << " J)";
+        std::cout << "  (tool KE loss: "
+                  << toolKE0_ - (toolKEStop_ >= 0.0 ? toolKEStop_ : tool_.ke())
+                  << " J)";
     std::cout << "\n[FDEM3D] broken joints     : " << nBroken_ << " / " << jt_.size()
               << "\n[FDEM3D] fragments         : " << nFrag_
               << " (detached vol " << detachedVol_ << " m^3)"

@@ -65,3 +65,34 @@ défaut : APRÈS le banc C.
 3. Démonstrations d'effet : §1-§3 ci-dessus, chacune avec run avant/après.
 4. Suite fast complète sur le binaire réparé (résultat en annexe du commit).
 5. Revue adverse (2 relecteurs indépendants) sur le diff avant commit.
+
+## 6. Reprises post-revue (même jour — 2 relecteurs adverses indépendants)
+
+La revue a validé les cinq réparations sur le fond et exigé sept reprises,
+toutes appliquées le jour même :
+1. **Métrique « tool KE loss » sous toolStop** : le zeroing détruisait par
+   décret la KE restante — cliché `toolKEStop_` pris avant le setZero, la
+   métrique lit le cliché (2D + 3D).
+2. **Artefact anti-rebond de `toolImpulseCap`** : le plafond ∝ |v_outil|
+   donne dv/dt ≤ C·v — avec un outil LIBRE le rebond est structurellement
+   interdit (défaut 3D préexistant que le 2D rejoint). AVERTISSEMENT
+   bruyant aux deux bannières ; le changement de formule (v de référence
+   constante) reste une décision ouverte.
+3. **Garde `bulkDamage` durcie** : `law = elastic` posé explicitement
+   construisait une MatLaw et court-circuitait la pulvérisation EN SILENCE
+   (le piège E3 exact) — désormais TOUTE clé `law` avec bulkDamage jette.
+4. **Clé `meanTensionCapFactor` posée sous law** : avertissement bruyant
+   (règle E3/E6) — et les 11 decks 3D à `law` du dépôt re-basés par
+   `meanTensionCapFactor = 0` explicite (l'intention ne dépend plus du
+   défaut) : imp3d_tri, v3d_fixed, v3d_adapt, indent3d_ye, indent3d_fin,
+   indent3d_yan, indent3d_grad(+d000,d001), impact3d_dpdfh(+_gros).
+5. **Bannière gcRestitution honnête** : suffixe « inerte sous contact =
+   potential » (gcRest_ n'agit que dans la branche pénalité) — et déplacée
+   APRÈS l'affectation de contactPot_ (bug d'ordre attrapé avant build).
+6. **Notice jointDeath étendue à `toolShape = none`** (insert maillé — le
+   piège mord autant) ; références de lignes remplacées par des ancres
+   textuelles.
+7. **Collatéral R1 déclaré** : `cut2d_panoplie.cfg` et `cut2d_repos.cfg`
+   (shear + toolStop) gèlent désormais aussi la POSITION de l'outil après
+   l'arrêt — les colonnes outil de leur history changent, la roche est
+   inchangée (contact déjà coupé avant la réparation).
