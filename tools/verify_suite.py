@@ -61,6 +61,9 @@ RX = {
     # deadcomp compte les joints morts EN COMPRESSION, c est-a-dire ceux dont
     # la charge normale doit etre reprise par le contact. deadload est cette
     # charge cumulee. Les deux sont des MESURES du relais, pas des verdicts.
+    # --- WP6 : mu de contact residuel post-pulverisation, 2026-08-28 ------
+    "ctcpulv":    r"contact residuel\s*: (\d+) evaluations",
+    "npulvel":    r"(\d+) elements a D = Dmax",
     "dead":       r"relais joint->contact: (\d+) joints morts",
     "deadcomp":   r"dont (\d+) EN COMPRESSION",
     "deadload":   r"relais ([\d.eE+-]+) kN",
@@ -240,6 +243,29 @@ TESTS = [
          over=["verifyFt = false", "pullV = 1e-12", "jointDeath = damage"],
          checks=[("broken", 0, 0, True),
                  ("dampwork", 0.0, 1e-12, True)]),
+    # ---- WP6 : contactResidualMu (spec 005) -------------------------------
+    # Jumeau SANS contact (jeu 50 mm >> vT) : la cle posee ne doit RIEN
+    # engager — ctcpulv = 0 exact, npulvel = 0 exact, aucun joint rompu.
+    dict(name="wp6_zeroload_2d", tier="fast", cfg="fdem_percussion.cfg",
+         over=["W = 0.06", "H = 0.05", "nx = 30", "ny = 25", "T = 3.0e-5",
+               "frames = 1", "toolGap = 0.05", "bulkDamage = yang",
+               "bulkDamageDelta0 = 1.0e-7", "bulkDamageDeltaF = 2.0e-7",
+               "contactResidualMu = 0.2"],
+         checks=[("ctcpulv", 0, 0, True), ("npulvel", 0, 0, True),
+                 ("broken", 0, 0, True)]),
+    # Micro-fonctionnel : jeu nul + seuils reduits (delta0 = 0,1 um) pour
+    # pulveriser d emblee sous le disque -> la bascule DOIT s engager.
+    # References du 2026-08-28 (conteneur, gcc) : 20 774 evaluations,
+    # 481 elements pulverises ; tolerances +-50 % (comptages dependants de
+    # la plateforme via l arithmetique flottante, l ordre de grandeur est
+    # le verdict — un zero est le seul vrai FAIL).
+    dict(name="wp6_pulv_2d", tier="fast", cfg="fdem_percussion.cfg",
+         over=["W = 0.06", "H = 0.05", "nx = 30", "ny = 25", "T = 3.0e-5",
+               "frames = 1", "toolGap = 0", "bulkDamage = yang",
+               "bulkDamageDelta0 = 1.0e-7", "bulkDamageDeltaF = 2.0e-7",
+               "contactResidualMu = 0.2"],
+         checks=[("ctcpulv", 20774, 10387, True),
+                 ("npulvel", 481, 240, True), ("broken", 0, 0, True)]),
     # ---- bulkModel = neohookean : la loi de volume de Guo (eq. 2.6) -------
     # T = (mu/J)(B - I) + (lambda/J) ln(J) I, avec l assemblage EXACT
     # P = J T F^-T = R sigma cof(U). La loi est hyperelastique et redonne
