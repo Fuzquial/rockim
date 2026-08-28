@@ -626,6 +626,29 @@ void FdemSolver::init() {
     }
     relax_ = 1.0;   // set after dt is known (init order): see below
     muC_ = cfg_.getd("contactMu", 0.5);
+    // ---- WP6 : mu de contact residuel post-pulverisation (miroir du 3D,
+    // voir Fdem3dSolver.cpp et specs/005-impact-insert-yang/WP6_...) -------
+    muCRes_ = cfg_.getd("contactResidualMu", -1.0);
+    if (muCRes_ >= 0.0) {
+        if (!bdOn_)
+            throw std::runtime_error(
+                "contactResidualMu exige bulkDamage = yang : sans source "
+                "d endommagement volumique aucun element n est jamais "
+                "pulverise, et la cle serait lue mais INOPERANTE (regle "
+                "E3/E6 : un reglage qui ne fait rien est interdit)");
+        if (muCRes_ > muC_)
+            std::cout << "\n[FDEM] *** AVERTISSEMENT *** contactResidualMu"
+                         " = " << muCRes_ << " > contactMu = " << muC_
+                      << " : le frottement AUGMENTE a la pulverisation. "
+                         "C est l inverse du modele de Yang et al. 2026 "
+                         "(0,18 residuel contre 0,6 intact). Voulu ?\n\n";
+        std::cout << "[FDEM] contactResidualMu = " << muCRes_
+                  << " : toute interaction de contact (outil ou general) "
+                     "impliquant un element pulverise (bulkDamage : D = "
+                  << bdDmax_ << ") bascule de contactMu = " << muC_
+                  << " a ce mu residuel (sliding friction post-rupture, "
+                     "Yang et al. 2026)\n";
+    }
     xiC_ = cfg_.getd("contactXi", 0.05);
     vReg_ = cfg_.getd("contactVreg", 1e-3);
 
@@ -4038,7 +4061,7 @@ void FdemSolver::potentialContact() {
                             Eigen::Vector2d Ft =
                                 H.Ft - H.Ft.dot(nh) * nh;      // rotation
                             Ft -= potKt_ * (vrel.dot(th) * dt_) * th;
-                            double cap = muC_ * Fn;
+                            double cap = ctcMu(eLo, eHi) * Fn;  // WP6
                             double Ftn = Ft.norm();
                             if (Ftn > cap && Ftn > 0.0)
                                 Ft *= cap / Ftn;               // glissement
@@ -4318,7 +4341,8 @@ void FdemSolver::generalContact() {
                     double fn = kpGC_ * pen * (vn < 0.0 ? 1.0 : gcRest_)
                                 - cdmp * vn;
                     if (fn < 0) fn = 0;
-                    double ftg = -muC_ * fn * std::tanh(vrel.dot(e) / vReg_);
+                    double ftg = -ctcMu(elemOf_[i], be.elem)   // WP6
+                                 * fn * std::tanh(vrel.dot(e) / vReg_);
                     Eigen::Vector2d Fc = fn * nrm + ftg * e;
                     // impulse cap: no single general contact may change this
                     // node's velocity by more than vCap in one step (deep
@@ -4413,7 +4437,8 @@ void FdemSolver::toolContact() {
             double c = 2.0 * xiC_ * std::sqrt(kp_ * m_[i]);
             double fn = kp_ * pen - c * vrel.dot(n);
             if (fn < 0) fn = 0;
-            double ftg = -muC_ * fn * std::tanh(vrel.dot(tdir) / vReg_);
+            double ftg = -ctcMu(elemOf_[i]) * fn               // WP6
+                         * std::tanh(vrel.dot(tdir) / vReg_);
             Fc = fn * n + ftg * tdir;
         } else if (tool_.shape == Tool::Shape::FLAT) {
             if (std::abs(p.x() - tool_.x.x()) > 0.5 * tool_.width) return false;
@@ -4422,7 +4447,8 @@ void FdemSolver::toolContact() {
             double c = 2.0 * xiC_ * std::sqrt(kp_ * m_[i]);
             double fn = kp_ * pen + c * (v_[i].y() - tool_.v.y());
             if (fn < 0) fn = 0;
-            double ftg = -muC_ * fn * std::tanh((v_[i].x() - tool_.v.x()) / vReg_);
+            double ftg = -ctcMu(elemOf_[i]) * fn               // WP6
+                         * std::tanh((v_[i].x() - tool_.v.x()) / vReg_);
             Fc = {ftg, -fn};
         } else {
             Eigen::Vector2d d = p - tool_.x;
@@ -4435,7 +4461,8 @@ void FdemSolver::toolContact() {
             double c = 2.0 * xiC_ * std::sqrt(kp_ * m_[i]);
             double fn = kp_ * pen - c * vrel.dot(n);
             if (fn < 0) fn = 0;
-            double ftg = -muC_ * fn * std::tanh(vrel.dot(tdir) / vReg_);
+            double ftg = -ctcMu(elemOf_[i]) * fn               // WP6
+                         * std::tanh(vrel.dot(tdir) / vReg_);
             Fc = fn * n + ftg * tdir;
         }
         // --- A : ECRETAGE EN IMPULSION (voir FdemSolver.hpp) ----------------
@@ -4524,7 +4551,7 @@ void FdemSolver::toolContact() {
         // (5) frottement de Coulomb sur l'IMPULSION
         double vt = vrel.dot(tdir);
         double rt = -m_[i] * vt;
-        double cap = muC_ * rn;
+        double cap = ctcMu(elemOf_[i]) * rn;                   // WP6
         if (rt > cap) rt = cap;
         else if (rt < -cap) rt = -cap;
         // (6) report en force
@@ -4612,6 +4639,8 @@ void FdemSolver::platenForces() {
             double vrel = v_[i].y() - pl->v;
             double fn = kNode * pen - c * vrel;
             if (fn < 0.0) fn = 0.0;                // no adhesion on release
+            // WP6 : volontairement PAS de ctcMu ici — le plateau est une
+            // frontiere de machine, pas un support de fragments.
             double ftg = -muC_ * fn * std::tanh((v_[i].x()) / vReg_);
             Eigen::Vector2d Fc(ftg, pl->sign * fn);   // force ON the node
             f_[i] += Fc;
@@ -6187,6 +6216,16 @@ void FdemSolver::finalize() {
               << "\n[FDEM] fragments         : " << nFrag_
               << " (detached vol " << detachedVol_ << " m^3/m)"
               << "\n[FDEM] specific energy   : " << Es << " J/m^3\n";
+    if (muCRes_ >= 0.0) {                                        // WP6
+        std::cout << "[FDEM] contact residuel  : " << nCtcPulv_
+                  << " evaluations au mu pulverise (" << muCRes_ << ")";
+        if (tCtcPulv0_ >= 0.0)
+            std::cout << ", premier engagement a t = " << tCtcPulv0_ << " s";
+        else
+            std::cout << " — JAMAIS engage (aucun element pulverise n a "
+                         "touche un contact)";
+        std::cout << "\n";
+    }
     brushReport();          // no-op si le balai n'a pas ete arme
 }
 

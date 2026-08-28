@@ -111,3 +111,27 @@ chuter e à haute énergie.
 Code ~0,5-1 j (11 sites + clé + gardes + colonnes) ; preuve bit-identique
 0,5 j ; banc 0,5 j + runs. Le plus gros du chantier « pulvérisation » était
 déjà fait (WP1-WP5) — WP6 est la dernière pièce mécanique.
+
+## 8. ÉTAT — implémenté le 2026-08-28 (session conteneur)
+
+- Code : `ctcMu(eA, eB)` inline dans les deux headers (compteurs atomiques
+  `nCtcPulv_`, `tCtcPulv0_`) ; clé lue après `contactMu` ; les 11 sites
+  patchés (5×3D : paire potentielle, relais pénalité, outil flat/sphère,
+  Signorini ; 6×2D : paire, relais, PDC/flat/disque, Signorini) ; plateaux
+  exclus avec commentaire ; résumé de fin de run dans les deux solveurs
+  (« JAMAIS engagé » explicite quand le compteur reste à 0).
+- **Preuve bit-identique** : binaires ref (HEAD non patché) vs wp6, decks
+  jumeaux 2D et 3D, avec ET sans `bulkDamage = yang`, clé absente —
+  **4 paires de sorties comparées au bit près, toutes IDENTIQUES**
+  (8+8+7+7 fichiers, `cmp`).
+- Gardes : clé sans `bulkDamage` → throw propre, 2D et 3D, message E3/E6.
+  `contactResidualMu > contactMu` → avertissement bruyant (chemin trivial,
+  non couru).
+- **Fonctionnel** (3D, box_st, `toolGap = 0`, seuils réduits δ0 = 0,1 µm
+  pour pulvériser d'emblée, T = 25 µs) : premier contact outil t = 5,54 µs,
+  premier engagement résiduel t = 5,72 µs, 113 559 évaluations, 3 934
+  éléments pulvérisés — causalité contact → pulvérisation → bascule
+  vérifiée. Leçon de banc : sur maillage 2,1 mm la sphère doit descendre
+  ~130 µm avant d'engloutir un nœud (t_contact ≈ gap/v + r_l²/(2Rv)).
+- Reste : repère de suite (zeroload jumeau + micro-fonctionnel), banc §4,
+  campagne §5 (deck impact_pulv_coulomb + contactResidualMu = 0.18).

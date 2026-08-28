@@ -886,6 +886,26 @@ private:
     double bdD0_ = 1.4e-5, bdDf_ = 4.0e-4, bdDmax_ = 0.9, bdCd_ = 1.0;
     double bdWork_ = 0.0;
     long nPulv_ = 0;
+    // WP6 : mu de contact residuel post-pulverisation — miroir 2D exact du
+    // 3D (voir le commentaire complet dans Fdem3dSolver.hpp). Sites 2D :
+    // contact general (potentiel + relais penalite) et outil (PDC, flat,
+    // disque, Signorini). HORS perimetre : les plateaux (machine).
+    // muCRes_ < 0 = cle absente = comportement historique, bit-identique.
+    double muCRes_ = -1.0;
+    unsigned long long nCtcPulv_ = 0;
+    double tCtcPulv0_ = -1.0;
+    inline double ctcMu(int eA, int eB = -1) {
+        if (muCRes_ < 0.0) return muC_;
+        bool p = (eA >= 0 && el_[eA].bdD >= bdDmax_)
+              || (eB >= 0 && el_[eB].bdD >= bdDmax_);
+        if (!p) return muC_;
+#ifdef _OPENMP
+#pragma omp atomic
+#endif
+        ++nCtcPulv_;
+        if (tCtcPulv0_ < 0.0) tCtcPulv0_ = t_;
+        return muCRes_;
+    }
     double jointWork_ = 0.0;   // tractions des joints (visqueux INCLUS)
     double cundWork_ = 0.0;    // damping local de Cundall (<= 0)
     double lysWork_ = 0.0;     // frontieres absorbantes (ressort+amortisseur)

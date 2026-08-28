@@ -420,6 +420,39 @@ private:
     // dissipation d endommagement volumique, DEJA comptee dans elWork_.
     bool bdOn_ = false;
     double bdD0_ = 1.4e-5, bdDf_ = 4.0e-4, bdDmax_ = 0.9, bdCd_ = 1.0;
+    // WP6 (spec 005, plan WP6_contact_residuel.md, 2026-08-28) : mu de
+    // contact RESIDUEL post-pulverisation — l ingredient "mobilite" du
+    // modele de Yang et al. 2026 (sliding friction 0,18 sur le granite,
+    // contre tan(phi) = 1,85 intact). Quand une interaction de contact
+    // implique un element PULVERISE (bulkDamage : D arrive a Dmax), son mu
+    // passe de contactMu a cette valeur — bascule BINAIRE au franchissement
+    // de Dmax, comme le relais joint mort -> contact, car le papier
+    // l applique au materiau ROMPU (une rampe en D degraderait la force de
+    // penetration en pleine charge, delta_0 = 0,014 mm etant franchi
+    // presque immediatement sous l insert). Sites : contact OUTIL (les
+    // decisifs — il n existe pas de joint outil-roche, et sous l insert en
+    // jointDeath = separation le relais contact ne s engage jamais) ET
+    // contact general (ejection des debris). HORS perimetre : les plateaux
+    // de compression (frontiere de machine, pas un support de fragments).
+    // muCRes_ < 0 = cle absente = comportement historique, bit-identique.
+    double muCRes_ = -1.0;
+    unsigned long long nCtcPulv_ = 0;   // evaluations au mu residuel
+    double tCtcPulv0_ = -1.0;           // premier engagement (s)
+    // mu effectif d une interaction impliquant les elements eA (et eB si
+    // >= 0). Compteurs mis a jour au premier engagement et a chaque
+    // evaluation residuelle (atomic : appele depuis les boucles OMP).
+    inline double ctcMu(int eA, int eB = -1) {
+        if (muCRes_ < 0.0) return muC_;
+        bool p = (eA >= 0 && el_[eA].bdD >= bdDmax_)
+              || (eB >= 0 && el_[eB].bdD >= bdDmax_);
+        if (!p) return muC_;
+#ifdef _OPENMP
+#pragma omp atomic
+#endif
+        ++nCtcPulv_;
+        if (tCtcPulv0_ < 0.0) tCtcPulv0_ = t_;   // course benigne : ~meme t
+        return muCRes_;
+    }
     double bdWork_ = 0.0;
     long nPulv_ = 0;                       // elements a D = Dmax (lecture)
 
