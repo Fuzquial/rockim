@@ -44,3 +44,31 @@ Critere de PASS propose pour la suite : t1_coulomb rompt > 5 000 joints en
 mode cisaillement dominant ET t1_cohesion (controle) n'en rompt aucun ; t3 :
 pic macro dans [15 ; 18] MPa pour les deux lois. A affiner en repere
 chiffre (err_pct) lors de l'integration au tier fast.
+
+## 2026-08-28 — rejeu au binaire repare + integration a la suite
+
+Rejoue avec le binaire HEAD (WP6 + les 5 reparations, build conteneur gcc,
+OMP=4) — la ligne de verdict tient :
+
+| deck | loi | rompus / 68 040 | mode | pic macro |
+|---|---|---|---|---|
+| t1 | coulomb | 11 773 | 99,94 % cisaillement (7 tractions) | 23,34 MPa |
+| t1 | cohesion | **0** | — | **33,18 MPa** |
+| t3 | coulomb | 7 821 | 100 % cisaillement | 16,68 MPa |
+| t3 | cohesion | 5 154 | 100 % cisaillement | 17,33 MPa |
+
+Ecarts vs 27/08 : ~1 % sur les comptages (OMP=2 vs 4 — chaos FP d'une
+rupture massive), < 0,3 % sur les pics. Budgets d'energie fermes (residu
+<= 0,04 % de l'echelle sur les 4 runs), dashpot dissipatif partout.
+
+Integre a `tools/verify_suite.py` le 2026-08-28 :
+* `polyaxial_t1_coulomb` + `polyaxial_t1_cohesion` en tier **full** — la
+  paire verdict (> 5 000 rompus cisaillement dominant vs ZERO rompu a
+  2,1 x le seuil de Mohr-Coulomb). Le controle cohesion s'obtient par
+  override `jointShearRange = cohesion` (la derniere cle gagne).
+* `polyaxial_t3_coulomb` + `polyaxial_t3_cohesion` en tier **all** — la
+  confirmation (pics des deux lois dans [15 ; 18] MPa).
+* Fenetres larges sur les comptages (le nombre de threads les fait bouger
+  de ~1 %), invariants exacts (0 rompu) et dominance de mode en verdicts.
+  Les 14 controles reverifies mecaniquement contre les logs des runs des
+  27 et 28/08 : tous dans les fenetres.

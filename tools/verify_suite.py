@@ -343,6 +343,46 @@ TESTS = [
                "meshFile = " + os.path.join(ROOT, "meshes", "box3d_h45.msh"),
                "pullV = 1e-12", "T = 1e-4"],
          checks=[("broken", 0, 0, True), ("dampwork", 0.0, 1e-12, True)]),
+    # ---- bench_polyaxial : le repere COMPRESSED-SHEAR-TO-FAILURE ----------
+    # (Guo 2014 §3.5 en triaxial equivalent, cf. bench_polyaxial/LISEZMOI.md).
+    # LE regime que la suite n'a jamais charge : un joint COMPRIME mene a la
+    # rupture en cisaillement — son absence a laisse la plage de mode II
+    # cohesion-seule passer 40 tests verts pendant des mois. Mesures :
+    #   2026-08-27 (48fd6ba, OMP=2) : t1 coulomb 11 893 / cohesion 0 ;
+    #                                 t3 coulomb 7 824 / cohesion 5 104
+    #   2026-08-28 (HEAD,    OMP=4) : t1 coulomb 11 773 / cohesion 0 ;
+    #                                 t3 coulomb 7 821 / cohesion 5 154
+    # Les comptages bougent de ~1 % avec le nombre de threads (chaos FP d'une
+    # rupture massive) : fenetres LARGES, le verdict est porte par les
+    # invariants — t1/cohesion casse ZERO joint a 33 MPa = 2,1 x son seuil de
+    # Mohr-Coulomb (« plus la cohesion est faible, plus la roche est
+    # incassable »), t1/coulomb en casse > 5 000, quasi tous en cisaillement.
+    # t1 = paire verdict, tier full (~2 x 5-25 min selon threads) ; t3 =
+    # confirmation (pics des DEUX lois dans [15 ; 18] MPa), tier all.
+    dict(name="polyaxial_t1_coulomb", tier="full",
+         cfg=os.path.join(ROOT, "bench_polyaxial", "polyaxial_guo_t1.cfg"),
+         checks=[("broken", 11800, 6800, True),     # > 5 000 : la loi agit
+                 ("shear_pct", 99.9, 5.0, True),    # cisaillement dominant
+                 ("peak_mpa", 23.3, 2.5, True),
+                 ("dampwork", 0.0, 1e-12, True)]),
+    dict(name="polyaxial_t1_cohesion", tier="full",
+         cfg=os.path.join(ROOT, "bench_polyaxial", "polyaxial_guo_t1.cfg"),
+         over=["jointShearRange = cohesion"],       # la derniere cle gagne
+         checks=[("broken", 0, 0, True),            # l'invariant du repere
+                 ("peak_mpa", 33.15, 3.0, True),
+                 ("dampwork", 0.0, 1e-12, True)]),
+    dict(name="polyaxial_t3_coulomb", tier="all",
+         cfg=os.path.join(ROOT, "bench_polyaxial", "polyaxial_guo_t3.cfg"),
+         checks=[("broken", 7820, 2800, True),
+                 ("shear_pct", 100.0, 5.0, True),
+                 ("peak_mpa", 16.7, 1.5, True),
+                 ("dampwork", 0.0, 1e-12, True)]),
+    dict(name="polyaxial_t3_cohesion", tier="all",
+         cfg=os.path.join(ROOT, "bench_polyaxial", "polyaxial_guo_t3.cfg"),
+         over=["jointShearRange = cohesion"],
+         checks=[("broken", 5130, 2600, True),
+                 ("peak_mpa", 17.3, 1.5, True),
+                 ("dampwork", 0.0, 1e-12, True)]),
     # --- tier all : Voronoï 3D + charge nulle 3D Voronoï (~40 min) ----------
     dict(name="fdem3d_voronoi_tension", tier="all", cfg="verify_fdem3d_voronoi_tension.cfg",
          over=["jointXi = 0"],
