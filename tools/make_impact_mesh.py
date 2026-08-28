@@ -43,6 +43,11 @@ SR = float(sys.argv[4]) if len(sys.argv) > 4 else s
 # de pulverisation ou seul le chargement de la roche compte, le corps
 # bit+insert etant lance directement a la vitesse d indentation mesuree.
 LEGER = len(sys.argv) > 5 and sys.argv[5] == "leger"
+# mode "roche" (5e argument, 2026-08-28) : la ROCHE SEULE — l'outil est alors
+# l'hemisphere ANALYTIQUE du solveur (toolShape = sphere, toolRadius 8,51 mm,
+# toolMass, impactSpeed) : aucun element de carbure, donc le dt est commande
+# par la roche. GAPR et les tailles acier deviennent sans objet.
+ROCHE = len(sys.argv) > 5 and sys.argv[5] == "roche"
 
 GAP = 2.0e-4                 # jeu piston/bit [m]
 R_ROCK, H_ROCK = 0.125, 0.150
@@ -63,16 +68,17 @@ occ = gmsh.model.occ
 
 rock = occ.addCylinder(0, 0, -H_ROCK, 0, 0, H_ROCK, R_ROCK)
 zc = GAPR + R_INS                      # centre de l'hemisphere (pointe a GAPR)
-sph = occ.addSphere(0, 0, zc, R_INS)
-shank = occ.addCylinder(0, 0, zc, 0, 0, GAPR + H_INS - zc, R_SHANK)
-ins = occ.fuse([(3, sph)], [(3, shank)])[0]
+if not ROCHE:
+    sph = occ.addSphere(0, 0, zc, R_INS)
+    shank = occ.addCylinder(0, 0, zc, 0, 0, GAPR + H_INS - zc, R_SHANK)
+    ins = occ.fuse([(3, sph)], [(3, shank)])[0]
 zb0 = GAPR + H_INS                     # bas du bit = haut de l'insert
-bit = occ.addCylinder(0, 0, zb0, 0, 0, L_BIT, R_BIT)
+bit = occ.addCylinder(0, 0, zb0, 0, 0, L_BIT, R_BIT) if not ROCHE else None
 zp0 = zb0 + L_BIT + GAP
 pis = None
 clip = None
 zpl = Z_CLIP + H_CLIP + 5.0e-5
-if not LEGER:
+if not LEGER and not ROCHE:
     pis = occ.addCylinder(0, 0, zp0, 0, 0, L_PIS, R_PIS)
     clip_o = occ.addCylinder(0, 0, Z_CLIP, 0, 0, H_CLIP, R_CLIP)
     clip_i = occ.addCylinder(0, 0, Z_CLIP, 0, 0, H_CLIP, R_BIT)
@@ -82,7 +88,8 @@ if not LEGER:
     plate = occ.cut([(3, box)], [(3, hole)])[0]
 
 # conformite insert/bit ET bit/circlip (faces partagees) ; le reste au contact
-all3 = occ.fragment(ins + (clip or []), [(3, bit)])[0]
+if not ROCHE:
+    all3 = occ.fragment(ins + (clip or []), [(3, bit)])[0]
 occ.synchronize()
 
 vols = gmsh.model.getEntities(3)
@@ -100,7 +107,8 @@ for dim, tag in vols:
 for nm, tags in names.items():
     p = gmsh.model.addPhysicalGroup(3, tags)
     gmsh.model.setPhysicalName(3, p, nm)
-want = ({"rock", "insert", "bit"} if LEGER
+want = ({"rock"} if ROCHE
+        else {"rock", "insert", "bit"} if LEGER
         else {"rock", "insert", "bit", "piston", "circlip", "plate"})
 assert set(names) == want, names
 
@@ -137,9 +145,10 @@ def set_pts(tags, size):
     gmsh.model.mesh.setSize([p for p in pts if p[0] == 0], size)
 
 set_pts(names["rock"], 0.010 * SR)
-set_pts(names["bit"], 0.003 * s)
-set_pts(names["insert"], 0.0007 * s)
-if not LEGER:
+if not ROCHE:
+    set_pts(names["bit"], 0.003 * s)
+    set_pts(names["insert"], 0.0007 * s)
+if not LEGER and not ROCHE:
     set_pts(names["piston"], 0.005 * s)
     set_pts(names["circlip"], 0.0015 * s)
     set_pts(names["plate"], 0.004 * s)
