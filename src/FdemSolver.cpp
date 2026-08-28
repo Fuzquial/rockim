@@ -2169,8 +2169,9 @@ void FdemSolver::placeTool() {
                       << " : |Fc| <= kappa * 2 v_outil * m / dt par noeud "
                          "(percussion — actif depuis le 2026-08-28)\n";
         // (5) meme visibilite du piege jointDeath que le 3D
-        if (!deathOnDamage_)
-            std::cout << "[FDEM] jointDeath = separation (defaut) : sous "
+        // (mpka9c : jointDeath n existe pas sur cette branche — seule la
+        // semantique separation existe, la notice est inconditionnelle)
+        std::cout << "[FDEM] jointDeath = separation (defaut) : sous "
                          "l indenteur un joint ecroui en compression ne meurt "
                          "jamais, le relais contact roche/roche ne s engage "
                          "pas. Levier : jointDeath = damage.\n";

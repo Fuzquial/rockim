@@ -1466,8 +1466,9 @@ void Fdem3dSolver::placeTool() {
     if (scen_ == Scenario::PERCUSSION) {
         // REPARATION (2026-08-28) : rendre VISIBLE le piege documente en
         // 2652-2656 — la decision sur le DEFAUT attend le banc (variante C).
-        if (!deathOnDamage_)
-            std::cout << "[FDEM3D] jointDeath = separation (defaut) : sous "
+        // (mpka9c : jointDeath n existe pas sur cette branche — seule la
+        // semantique separation existe, la notice est inconditionnelle)
+        std::cout << "[FDEM3D] jointDeath = separation (defaut) : sous "
                          "l indenteur un joint ecroui en compression ne meurt "
                          "jamais, le relais contact roche/roche ne s engage "
                          "pas (contactResidualMu n y a aucun acces). Levier : "
