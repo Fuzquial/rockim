@@ -981,6 +981,9 @@ private:
 
     Tool tool_;
     double toolKE0_ = 0.0;
+    // reprise post-revue 2026-08-28 : KE de l outil A L INSTANT de l arret
+    // toolStop (le zeroing detruirait la metrique tool KE loss sinon)
+    double toolKEStop_ = -1.0;
 
     // UCS / triaxial loaded through PLATENS instead of clamped node rows.
     // Clamping a node row imposes v = 0 over zero thickness, which creates a
