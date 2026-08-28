@@ -576,6 +576,13 @@ void Fdem3dSolver::init() {
     kpGC_ = cfg_.getd("gcPenaltyFactor", 0.01) * phases_.maxE() * hmin_;
     xiGC_ = cfg_.getd("gcXi", 0.8);
     gcRest_ = cfg_.getd("gcRestitution", 0.2);
+    // REPARATION (2026-08-28) : defaut autrefois SILENCIEUX qui ecrase la
+    // detente normale du contact general — contamine toute mesure de
+    // restitution/ejection (revue adverse WP6, point 1 des non-traites).
+    std::cout << "[FDEM3D] gcRestitution = " << gcRest_
+              << (cfg_.has("gcRestitution") ? " (deck)" : " (DEFAUT)")
+              << " : detente normale du contact general a ce facteur — a "
+                 "figer au deck des que e ou l ejection est une metrique\n";
     // contact = penalty (defaut, inchange) | potential — A3 phase 2 : le
     // contact par POTENTIEL de Munjiza en tet-tet, miroir exact du 2D.
     {
@@ -1833,6 +1840,14 @@ void Fdem3dSolver::placeTool() {
         throw std::runtime_error("toolShape must be sphere | flat | none (3D)");
     tool_.flat = sh == "flat" && scen_ == Scenario::PERCUSSION;
     if (scen_ == Scenario::PERCUSSION) {
+        // REPARATION (2026-08-28) : rendre VISIBLE le piege documente en
+        // 2652-2656 — la decision sur le DEFAUT attend le banc (variante C).
+        if (!deathOnDamage_)
+            std::cout << "[FDEM3D] jointDeath = separation (defaut) : sous "
+                         "l indenteur un joint ecroui en compression ne meurt "
+                         "jamais, le relais contact roche/roche ne s engage "
+                         "pas (contactResidualMu n y a aucun acces). Levier : "
+                         "jointDeath = damage — cf. bench_pulverisation C.\n";
         tool_.free = true;
         double zTip = tool_.flat ? H_ + gap : H_ + tool_.radius + gap;
         tool_.x = {cfg_.getd("toolX", 0.5 * W_), cfg_.getd("toolY", 0.5 * D_),
@@ -2215,7 +2230,10 @@ void Fdem3dSolver::elementForces() {
             dev *= crushCapP_[e.phase] / e.svm;
             e.svm = crushCapP_[e.phase];
         }
-        if (mtCap_ > 0.0 && pm > mtCap_ * ftP_[e.phase])
+        // REPARATION (2026-08-28) : garde !law_ ajoutee, symetrie avec le
+        // 2D (FdemSolver:~3329) — une loi MatLaw possede sa contrainte, le
+        // cap elastique ne doit pas l ecreter par-dessus (double comptage).
+        if (!law_ && mtCap_ > 0.0 && pm > mtCap_ * ftP_[e.phase])
             pm = mtCap_ * ftP_[e.phase];              // mean-tension cap
         sig = dev + pm * Eigen::Matrix3d::Identity();
         // ---- WP1 : pulverisation (Yang et al. 2026, eq. 3-4) ------------
@@ -3504,7 +3522,13 @@ void Fdem3dSolver::toolContact() {
     if (toolStop_ > 0.0 && t_ >= toolStop_) {
         if (!toolStopped_) {
             toolStopped_ = true;
-            std::cout << "[FDEM3D] OUTIL ARRETE a t = " << t_ << " s. Repos "
+            // REPARATION (2026-08-28, decision F. Uzquiano) : le message
+            // disait ARRETE mais la vitesse n etait jamais annulee — l outil
+            // poursuivait sa course a vitesse constante, sans contact, a
+            // travers la roche. On l arrete VRAIMENT : v = 0, et integrate()
+            // (v += F/m dt, F = 0 faute de contact) le maintient immobile.
+            tool_.v.setZero();
+            std::cout << "[FDEM3D] OUTIL ARRETE (v = 0) a t = " << t_ << " s. Repos "
                          "jusqu'a l'armement du tri (t = " << brushStart_
                       << " s), soit " << (brushStart_ - t_) << " s.\n";
         }

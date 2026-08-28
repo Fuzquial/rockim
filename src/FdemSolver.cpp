@@ -787,6 +787,11 @@ void FdemSolver::init() {
     kpGC_ = cfg_.getd("gcPenaltyFactor", 0.01) * phases_.maxE() * thk_;
     xiGC_ = cfg_.getd("gcXi", 0.8);
     gcRest_ = cfg_.getd("gcRestitution", 0.2);
+    // REPARATION (2026-08-28) : defaut bruyant desormais — miroir du 3D.
+    std::cout << "[FDEM] gcRestitution = " << gcRest_
+              << (cfg_.has("gcRestitution") ? " (deck)" : " (DEFAUT)")
+              << " : detente normale du contact general a ce facteur — a "
+                 "figer au deck des que e ou l ejection est une metrique\n";
     // A' : voir FdemSolver.hpp pour la justification. Opt-in, defaut legacy =
     // bit-identique.
     gcEager_ = cfg_.gets("gcSurfaceRefresh", "legacy") == "eager";
@@ -2518,6 +2523,22 @@ void FdemSolver::placeTool() {
                   << " m, masse " << tool_.mass << " kg/m, vitesse d'impact "
                   << vImp << " m/s, jeu initial " << gap << " m (contact a t = "
                   << gap / vImp << " s)\n";
+        // REPARATION (2026-08-28, decision F. Uzquiano) : la cle n etait lue
+        // que dans la branche PDC du scenario shear — en percussion elle
+        // etait ignoree EN SILENCE (imp2d_panoplie posait 1.0 en croyant
+        // l armer : son controle ne controlait rien). L ecretage lui-meme
+        // (site nodeFc) existait deja ; seul le READ manquait.
+        toolVCap_ = cfg_.getd("toolImpulseCap", 0.0);
+        if (toolVCap_ > 0.0)
+            std::cout << "[FDEM] toolImpulseCap = " << toolVCap_
+                      << " : |Fc| <= kappa * 2 v_outil * m / dt par noeud "
+                         "(percussion — actif depuis le 2026-08-28)\n";
+        // (5) meme visibilite du piege jointDeath que le 3D
+        if (!deathOnDamage_)
+            std::cout << "[FDEM] jointDeath = separation (defaut) : sous "
+                         "l indenteur un joint ecroui en compression ne meurt "
+                         "jamais, le relais contact roche/roche ne s engage "
+                         "pas. Levier : jointDeath = damage.\n";
     } else {                                           // SHEAR: lateral cut
         tool_.motion = Tool::Motion::PRESCRIBED;
         double depth = cfg_.getd("cutDepth", 0.004);
@@ -4964,7 +4985,9 @@ void FdemSolver::toolContact() {
     if (toolStop_ > 0.0 && t_ >= toolStop_) {
         if (!toolStopped_) {
             toolStopped_ = true;
-            std::cout << "[FDEM] OUTIL ARRETE a t = " << t_ << " s. Repos "
+            // REPARATION (2026-08-28) : arret REEL — voir le miroir 3D.
+            tool_.v.setZero();
+            std::cout << "[FDEM] OUTIL ARRETE (v = 0) a t = " << t_ << " s. Repos "
                          "jusqu'a l'armement du balai (t = " << brushStart_
                       << " s), soit " << (brushStart_ - t_) << " s pour que "
                          "l'amortissement eteigne les vitesses residuelles.\n";
