@@ -132,6 +132,113 @@ les articles d'impact ni dans la thèse.
 
 ---
 
+## 3ter. LA SOURCE PRIMAIRE EST TROUVÉE — le frottement d'Imperial est publié
+
+*Ajout du 2026-08-29, dernier de la session. L'hypothèse formulée au §3bis
+(lecture 2) est CONFIRMÉE.*
+
+### La référence
+
+> **Xiang, J., Munjiza, A., Latham, J.-P., Guises, R. (2009)**, « **On the
+> validation of DEM and FEM/DEM models in 2D and 3D** », *Engineering
+> Computations: International Journal for Computer-Aided Engineering and
+> Software*, **26**(6), 673-687. Emerald. **DOI 10.1108/02644400910975469**.
+
+Affiliations p. 673 : Xiang, Latham, Guises — Department of Earth Science and
+Engineering, **Imperial College London** ; Munjiza — Department of Engineering,
+**Queen Mary, University of London**.
+
+### La phrase qui referme la chaîne d'attribution
+
+**[LU]** p. 677, verbatim :
+
+> « **In this paper, we develop further the FEM/DEM method by taking account of
+> the sliding friction force.** The well-known classic Coulomb-type friction is
+> implemented and described as follows, »
+
+C'est **mot pour mot** la phrase que le chapitre DEM7 recopie en l'attribuant à
+« Xiang et al (2009) ». **L'attribution visait bien cet article-ci**, et non
+l'IJNME 79 éliminé au §3bis. La chaîne est close :
+
+    Guo 2014, these §2.3.4  : « implemented [...] by Dr Jiansheng Xiang », sans detail
+    Xiang, Latham & Farsi 2017 : recopie les equations, attribue a « Xiang et al (2009) »
+    Xiang, Munjiza, Latham & Guises 2009, Eng. Comput. 26(6) : LA PUBLICATION D'ORIGINE
+
+### Les équations, dans leur forme d'origine
+
+**[LU]** p. 677, équations (8) et (9) :
+
+    f_t = k_t delta_t - eta v_t                            (8)
+    si |f_t| > mu |f_n| :   f_t = mu f_n                   (9)
+
+Légende verbatim : « where **η is the coefficient of viscous dissipation**, f_t
+is the **tangential elastic contact force** and v_t is the **tangential relative
+velocity** » ; « where µ is the **coefficient of sliding friction** ».
+
+> **⚠️ Divergence de signe entre les deux publications.** L'article de 2009 écrit
+> `f_t = +k_t δ_t − η v_t` ; le chapitre de 2017, qui le recopie, écrit
+> `f_t = −k_t δ_t − η v_t`. **Les mêmes auteurs, deux signes.** Seule la forme de
+> 2009 est cohérente avec sa propre équation (9), qui pose `f_t = µ f_n` sans
+> signe négatif. **[INFÉRÉ]** La convention de 2009 est la bonne, celle de 2017
+> ajoute un signe pour orienter la force contre le glissement — ce qui est
+> physiquement équivalent mais formellement différent. **Toute transcription doit
+> choisir explicitement et le dire.**
+
+### Et le côté DEM (particules sphériques), pour mémoire
+
+**[LU]** p. 675, éq. (3b) — modèle ressort-amortisseur-patin de Cundall & Strack :
+
+    f_t,ij = min{ k_t delta_t,ij - eta_t v_t,ij ,  mu |f_n,ij| t_ij }
+
+Même loi, écrite en une seule ligne par un `min`. « η_n et η_t sont les
+coefficients d'amortissement visqueux de contact **normal et tangentiel** ».
+
+### CE QUI RESTE NON PUBLIÉ, définitivement
+
+**k_t et η n'ont toujours AUCUNE valeur publiée.** Huit sources dépouillées, la
+publication d'origine comprise : la **forme** est publiée, les **valeurs** ne le
+sont pas. **La recherche s'arrête ici** — c'est un résultat, pas un échec :
+
+> **Le `k_t = 2/7` de rockim ne peut être ni conforme ni divergent : il n'existe
+> aucun nombre publié auquel le comparer. C'est un choix propre à rockim, à
+> documenter et à justifier en son nom.** Position parfaitement tenable dans un
+> manuscrit, et désormais adossée à une bibliographie exhaustive qui l'établit.
+
+### DEUX CADEAUX que cet article fait à rockim
+
+**1. Un banc de vérification analytique du frottement, prêt à l'emploi.**
+
+**[LU]** §3, p. 677 — « Verification for FEM/DEM ». Un rectangle lancé sur un
+plan horizontal avec une vitesse initiale, dont la distance d'arrêt vaut
+
+    L = v_i^2 / (2 mu g)                                   (10)
+
+Configuration publiée : côté **l = 0,05 m**, masse volumique **2650 kg/m³**,
+coefficient de frottement **µ = 0,5**, module d'Young **E = 1,0×10⁹ Pa**, deux
+pas de temps **Δt = 1,0×10⁻⁷ s** et **1,0×10⁻⁸ s**.
+
+**C'est un contrôle de non-régression que rockim peut ajouter tel quel à
+`tools/verify_suite.py`** : solution analytique fermée, configuration complète,
+et il teste exactement le chemin tangentiel. **Recommandation : l'ajouter.**
+
+**2. Un avertissement de stabilité qu'on ne devinerait pas.**
+
+**[LU]** p. 677, verbatim :
+
+> « with the larger of the two time steps, **the errors become significant**.
+> However, using the larger time step, the calculation of FEM/DEM **with zero
+> friction is fairly stable**. This **somewhat alarming conclusion** suggests
+> that **in order to reduce the numerical error for calculation of tangential
+> forces, the smaller time step is required**. »
+
+**Le calcul des forces tangentielles exige un pas de temps plus petit que le cas
+sans frottement.** Les auteurs le qualifient eux-mêmes d'« alarmant ». Aucune
+autre source du corpus ne le dit, et c'est directement actionnable : le budget de
+pas de temps de rockim (`FdemSolver.cpp:3105-3112`) compte la pénalité de joint
+et la parabole — **compte-t-il le chemin tangentiel ?** À vérifier au lot 4.
+
+---
+
 ## 3bis. L'ARTICLE DE 2009 EST ÉLIMINÉ — et l'attribution du chapitre est cassée
 
 *Ajout du 2026-08-29, après lecture du PDF fourni par F. Uzquiano.*
@@ -177,7 +284,7 @@ Sa référence **[5]** est bien cet article. **Il ne décrit aucun frottement.**
    **validation** est un endroit plausible pour décrire une implémentation de
    frottement.
 
-**PROCHAINE PIÈCE À DEMANDER : *Engineering Computations* 26(6), 673-687.**
+**~~PROCHAINE PIÈCE À DEMANDER~~ : *Engineering Computations* 26(6), 673-687. — OBTENUE ET DÉPOUILLÉE, voir §3ter ci-dessus. L'hypothèse était juste.**
 C'est la dernière hypothèse identifiée. Si elle ne donne rien non plus, la
 conclusion est ferme : **k_t et η n'ont jamais été publiés**, et le chapitre DEM7
 reste la seule source au monde pour la FORME de leur loi tangentielle.
