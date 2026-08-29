@@ -390,6 +390,50 @@ roche : c'est un bouton de compensation de l'angularité des tétraèdres.** Ils
 l'écrivent. Et la valeur de ce bouton a été divisée par deux entre deux articles
 sur la même roche, quand le modèle d'endommagement est arrivé.
 
+### DEUX NUANCES apportées par la contre-vérification (2026-08-29, soir)
+
+**1. Le µ bas n'est pas SEULEMENT un correctif de maillage — c'est aussi un
+contraste voulu.** **[LU]** D3 p. 10 (imprimée 6104), verbatim :
+
+> « The **abrupt change in the friction coefficient from intact internal to crack
+> wall sliding (i.e. from 1.96 to 0.39)** leads to a **fast energy accumulation**
+> as would be required to **initiate radial cracks**. The lower sliding friction
+> coefficient also **facilitates the movement of fragments**, allowing rapid
+> energy release. »
+
+Le paragraphe ci-dessus était donc trop catégorique. Le coefficient joue **deux
+rôles à la fois** : compenser l'angularité des tétraèdres (§9, cité plus haut)
+**et** créer un saut 1,96 → 0,39 entre frottement interne de la roche intacte et
+glissement sur lèvre de fissure, saut qui **concentre l'énergie nécessaire à
+l'amorçage des radiales**. Le second rôle est physique, pas numérique. Cela ne
+change rien à la non-transférabilité — au contraire, un contraste dépend des
+**deux** valeurs, donc de la roche.
+
+**2. Dans D3, l'effet de vitesse est absorbé dans G_I et G_II, PAS appliqué par
+le DIF.** **[LU]** D3 p. 4 (imprimée 6098), verbatim :
+
+> « the loading rate effect is also taken into consideration. **The energy release
+> rates, G_I and G_II, were artificially increased to consider the loading rate
+> effect through the validation process**, ensuring good agreement with the
+> experimental results. In previous work, this approach has also been
+> successfully applied to simulate dynamic Brazilian splitting tests and dynamic
+> three-point bending experiments (Farsi, 2017), and rock blasting (Yang et al.,
+> 2017). »
+
+**Conséquence directe sur le tableau ci-dessus.** Les G_I = 20 et G_II = 1500 de
+D3 ne sont **pas** des propriétés quasi-statiques : ce sont des valeurs
+**gonflées par l'effet de vitesse**, calibrées. Celles de l'article de 2026
+(G_I = 50, G_II = 1000) accompagnent un DIF appliqué **explicitement** à G_I et
+G_II. **Les deux jeux ne désignent donc pas la même grandeur** — même symbole,
+deux sens.
+
+**[INFÉRÉ]** L'écart entre les deux calibrations du granite Kuru n'est donc pas
+seulement une recalibration : c'est en partie un **changement de convention**,
+l'effet de vitesse passant d'un pré-gonflement des énergies à une loi DIF
+explicite. Je ne prétends pas expliquer le sens de l'écart (G_I monte de 20 à 50,
+ce qui n'est pas la direction attendue d'un dégonflement) — seulement établir que
+**comparer ces deux tableaux ligne à ligne n'a pas de sens.**
+
 > **Conséquence, et elle est lourde.** Reprendre un coefficient de frottement
 > d'Imperial, c'est reprendre une compensation calibrée pour **leur** maillage,
 > **leur** géométrie d'élément et **leur** version du modèle. Ce n'est
