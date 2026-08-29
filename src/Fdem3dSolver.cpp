@@ -3281,7 +3281,11 @@ void Fdem3dSolver::potentialContact() {
                                     lastTouch_[EB.n[k]] = stepCount_;
                             }
                         // ---- frottement incremental (eq. 4-5) ------------
-                        if (muC_ > 0.0 && potKt_ > 0.0) {
+                        // porte du frottement : muC_ GLOBAL ne suffit pas des lors que
+                        // contactMu.<phase> existe — un deck posant contactMu = 0 et
+                        // contactMu.rock = 0,18 verrait sinon tout le frottement de
+                        // cette branche saute EN SILENCE (E3/E6).
+                        if ((muC_ > 0.0 || muPerPhase_) && potKt_ > 0.0) {
                             double Fn = R.F.norm();
                             if (Fn > 1e-300) {
                                 Eigen::Vector3d vA =
