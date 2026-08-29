@@ -263,7 +263,14 @@ au lot 4.
 | 3 | 3 | 147 896 | 2,24 |
 | 4 | 4 | 134 193 | 2,06 |
 
-**Diviser par deux la maille la plus fine multiplie le coût par ≈ 14.** Le
+**Passer du maillage de production (1/2 mm, 5,00 h) au plus fin testé (0,5/0,5 mm,
+70,78 h) coûte un facteur 14,2** — mais ce passage divise par deux **les deux**
+tailles, fine et grossière, pas seulement la fine. *(Formulation corrigée le
+2026-08-29 : la rédaction initiale — « diviser par deux la maille la plus fine
+multiplie le coût par ≈ 14 » — attribuait à la seule maille fine un facteur qui
+vient des deux. Le tableau ne contient aucun couple ne différant que par la
+maille fine, donc l'effet propre de celle-ci n'est pas mesurable sur ces
+données.)* Le
 maillage de production (1/2 mm) est le troisième : **230 788 éléments, 5 h**.
 
 **[LU]** D1 p. 40 impute la lourdeur au couple maillage fixe + code série :
