@@ -1,5 +1,7 @@
-# FICHE — Yang, Xiang, Wang, Naderi, Aising, Ugarte, Latham, IJRMMS 206 (2026)
-# 106660 : pulverisation du granite Kuru Grey sous impact percussif
+# FICHE — Yang X., Xiang J., Naderi S., Wang Y., Aising J., Ugarte I., Latham J.-P.
+# « High-fidelity modelling of fragmentation and pulverisation in hard granite
+# under percussion loading: a FDEM-based approach », IJRMMS 206 (2026) 106660.
+# (Titre et ordre des auteurs verifies sur l'article le 2026-08-29, lot 2b.)
 # Lue le 2026-08-29 sur le PDF fourni par F. Uzquiano. Source PRIMAIRE.
 
 ## 1. La question qui bloquait : delta_m est-il une longueur ou une deformation ?
@@ -115,6 +117,13 @@ l'article, pour SA roche.
 > Ce dossier N'EST PAS le code d'Imperial et son facteur d'endommagement est
 > cable a zero : la phrase « le code Solidity le realise par ... » est donc
 > une INFERENCE d'architecture, pas un fait etabli sur Imperial. Voir
+> **[MISE A JOUR DU 2026-08-29, LOT 2b] L'ARTICLE EST DESORMAIS DEPOUILLE SUR CE
+> POINT : le mot « penalty » n'apparait PAS UNE SEULE FOIS dans les 14 pages.
+> Le seul couplage (1-D) publie porte sur la CONTRAINTE D'ELEMENT (eq. 3). La
+> penalite de contact n'est jamais dite degradee. La derniere phrase de ce §5 —
+> « rockim n'a que la moitie tangentielle » — est donc SANS OBJET : il n'y a pas
+> de moitie normale documentee chez Imperial.**
+> [Fiche du lot 2b](2026-08-29_lot2b_couplage_endommagement_contact.md) §3.
 > [CORRECTION 2](../BILAN_interference_2026-08-29.md) et
 > [la fiche du lot 1](2026-08-29_lot1_bibliographie_imperial.md) §7. Le reste
 > de cette fiche porte sur l'ARTICLE (source primaire) et tient sans reserve.
