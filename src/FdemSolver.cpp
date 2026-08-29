@@ -4134,7 +4134,11 @@ void FdemSolver::potentialContact() {
                     // direction normale est celle de la resultante du
                     // potentiel ; l'historique est tourne dans le plan
                     // tangent courant a chaque pas.
-                    if (muC_ > 0.0 && potKt_ > 0.0) {
+                    // porte du frottement : muC_ GLOBAL ne suffit pas des lors que
+                    // contactMu.<phase> existe — un deck posant contactMu = 0 et
+                    // contactMu.rock = 0,18 verrait sinon tout le frottement de
+                    // cette branche saute EN SILENCE (E3/E6).
+                    if ((muC_ > 0.0 || muPerPhase_) && potKt_ > 0.0) {
                         double Fn = R.F.norm();
                         if (Fn > 1e-300) {
                             Eigen::Vector2d vA =
@@ -4735,8 +4739,10 @@ void FdemSolver::platenForces() {
             double vrel = v_[i].y() - pl->v;
             double fn = kNode * pen - c * vrel;
             if (fn < 0.0) fn = 0.0;                // no adhesion on release
-            // WP6 : volontairement PAS de ctcMu ici — le plateau est une
-            // frontiere de machine, pas un support de fragments.
+            // WP6/WP7 : volontairement PAS de ctcMu ici — le plateau est
+            // une frontiere de machine, pas un support de fragments. Il
+            // garde donc contactMu GLOBAL, sans frottement par phase ni
+            // couplage (1-D).
             double ftg = -muC_ * fn * std::tanh((v_[i].x()) / vReg_);
             Eigen::Vector2d Fc(ftg, pl->sign * fn);   // force ON the node
             f_[i] += Fc;
