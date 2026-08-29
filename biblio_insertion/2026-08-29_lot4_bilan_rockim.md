@@ -397,7 +397,7 @@ mourant (`FdemSolver.cpp:4606-4632`). Il exige `contact = potential`
 | **A9** | Détection de contact par événement (R4 du lot 3) | moyen | **10-15 % du CPU seulement** — le poste dominant est ailleurs | non |
 | **A10** | Rendre optionnel le `min(élastique, z·ft)` | faible | partage traction/cisaillement sous l'insert | non |
 | **A11** | **Porter `potKt_` dans le budget de pas de temps du 3D** (une ligne, miroir de `FdemSolver.cpp:3134`) | **faible** | supprime une marge de stabilité illusoire dès que le frottement travaille — les auteurs de la source qualifient eux-mêmes le point d'« alarmant » | non |
-| **A12** | Ajouter le banc analytique du rectangle glissant à `verify_suite.py` | **faible** | premier contrôle du chemin tangentiel de CONTACT, à solution fermée | non |
+| **A12** | Ajouter le banc analytique du rectangle glissant | ~~faible~~ **MOYEN à ÉLEVÉ** — rockim n'a aucun scénario capable de l'exprimer, voir `chantier_imperial_2026-08-29/A12_banc_frottement.md` | premier contrôle du chemin tangentiel de CONTACT, à solution fermée | non |
 
 **A1 et A2 d'abord, et seulement elles, avant tout autre chantier.** Ce sont les
 deux seuls blocages ; le reste est du raffinement ou de l'hygiène.

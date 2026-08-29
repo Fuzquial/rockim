@@ -28,7 +28,7 @@ d'une capacité inerte — et un **risque** silencieux est pire encore.
 | fiche | action | état |
 |---|---|---|
 | [`A11_dt_tangentiel.md`](A11_dt_tangentiel.md) | porter la raideur tangentielle du contact dans le budget de pas de temps du 3D | **FAIT** |
-| `A12_banc_frottement.md` | banc analytique du rectangle glissant dans `verify_suite.py` | à faire |
+| [`A12_banc_frottement.md`](A12_banc_frottement.md) | banc analytique du rectangle glissant | **SPÉCIFIÉ, non implémenté** — estimation d'effort corrigée, trois voies chiffrées, décision au commanditaire |
 | `A03_resourcer_attributions.md` | re-sourcer les 117 attributions à un code qui n'est pas celui d'Imperial | à faire |
 | `A01_gcbirth_penalty.md` | essai `gcBirth = penalty` sur l'impact 3D | à faire |
 | `A02_longueur_h.md` | aligner la longueur de référence h sur celle d'Imperial | **suspendu** — attend la confirmation du contre-audit sur le facteur 2,4495 |
