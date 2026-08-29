@@ -132,21 +132,90 @@ les articles d'impact ni dans la thèse.
 
 ---
 
+## 3bis. L'ARTICLE DE 2009 EST ÉLIMINÉ — et l'attribution du chapitre est cassée
+
+*Ajout du 2026-08-29, après lecture du PDF fourni par F. Uzquiano.*
+
+**[LU]** Xiang, J., Munjiza, A., Latham, J.-P. (2009), « Finite strain, finite
+rotation quadratic tetrahedral element for the combined finite-discrete element
+method », *IJNME* **79**(8), 946-978, a été dépouillé intégralement (33 pages).
+
+**Il ne contient PAS l'algorithme de frottement.** Recherche exhaustive sur le
+texte extrait :
+
+| terme | occurrences |
+|---|---|
+| `friction` | **0** |
+| `tangential` | **0** |
+| `sliding` | **0** |
+| `Coulomb` | **0** |
+| `stick` | **0** |
+
+Les deux seules occurrences de `penalty` sont : une phrase d'introduction, p. 947
+— « Once elements in contact are detected, a **penalty function method is
+employed to calculate the normal contact force** when two particles are in
+contact [16] » — et l'entrée [16] de la bibliographie, qui est Munjiza & Andrews
+(2000). L'article porte **exclusivement sur l'élément tétraédrique quadratique**
+et sur le *locking* du tétraèdre linéaire.
+
+### L'attribution du chapitre DEM7 ne tient pas
+
+Le chapitre écrit « **Xiang et al (2009)** developed further the FEMDEM method by
+taking account of the sliding friction force », puis donne les équations (4)-(5).
+Sa référence **[5]** est bien cet article. **Il ne décrit aucun frottement.**
+
+**[INFÉRÉ]** Deux lectures possibles :
+
+1. l'attribution est **approximative** — les auteurs renvoient à l'article de
+   référence de leur élément 3D plutôt qu'à la publication du frottement, qui
+   n'existerait pas ;
+2. « Xiang et al (2009) » désigne en réalité la référence **[4]** du même
+   chapitre : **Xiang, J., Munjiza, A., Latham, J.-P., Guises, R., « On the
+   validation of DEM and FEM/DEM models in 2D and 3D », *Engineering
+   Computations*, **26**(6), 673-687**. Le chapitre la date de 2008, mais le
+   volume 26 n° 6 paraît en **2009** — d'où l'ambiguïté. Un article de
+   **validation** est un endroit plausible pour décrire une implémentation de
+   frottement.
+
+**PROCHAINE PIÈCE À DEMANDER : *Engineering Computations* 26(6), 673-687.**
+C'est la dernière hypothèse identifiée. Si elle ne donne rien non plus, la
+conclusion est ferme : **k_t et η n'ont jamais été publiés**, et le chapitre DEM7
+reste la seule source au monde pour la FORME de leur loi tangentielle.
+
+### Un homonyme de plus, à ne pas confondre
+
+**[LU]** L'article de 2009 publie en revanche une valeur de viscosité :
+p. 969, cas de vérification du cube « jelly-like » — ρ = 1000 kg/m³,
+λ = 10,8 kPa, µ = 7,22 kPa, et « a **viscosity constant responsible for damping**
+of **1,0×10⁴ Pa·s** ».
+
+**Ce η n'est PAS celui du frottement.** C'est le η **constitutif** du modèle
+néo-hookéen (`T = … + ηD`, éq. 1 du manuscrit UCL), une viscosité de volume ; le
+η de l'équation (4) du chapitre DEM7 est un **amortisseur tangentiel de
+contact**. Deux objets, même lettre — comme les deux `D` du [lot 2b](2026-08-29_lot2b_couplage_endommagement_contact.md) §1.
+
+Et la valeur 1,0×10⁴ Pa·s vaut pour un matériau de gelée à µ = 7,22 kPa :
+**elle n'est transférable à aucune roche.** Elle ferme la question « existe-t-il
+une valeur publiée de η constitutif ? » — oui, une, sans usage pour nous.
+
+---
+
 ## 4. CE QUI RESTE NON PUBLIÉ
 
 **[ABSENT]** Même dans ce chapitre :
 
 | grandeur | statut |
 |---|---|
-| **la valeur de k_t**, ou sa relation à la pénalité normale | **non donnée.** C'est le paramètre que rockim fixe à 2/7. Aucune source en main ne dit ce que fait Imperial |
-| **la valeur de η** (dissipation visqueuse tangentielle) | **non donnée** |
+| **la valeur de k_t**, ou sa relation à la pénalité normale | **non donnée.** C'est le paramètre que rockim fixe à 2/7. **Sept sources muettes**, l'IJNME 79 (2009) compris — voir §3bis |
+| **la valeur de η** (dissipation visqueuse tangentielle) | **non donnée.** Ne pas confondre avec le η CONSTITUTIF, dont une valeur est publiée (1,0×10⁴ Pa·s, sur une gelée) — §3bis |
 | la **règle pour une paire de matériaux différents** | **toujours absente.** Ici tous les corps sont du même matériau : la question ne se pose pas, ce qui explique peut-être qu'elle ne soit jamais traitée |
 | l'existence d'un **état de glissement mémorisé** (stick/slip avec historique de δ_t) | **non dit.** L'équation (4) suppose un δ_t, donc un état, mais sa remise à zéro au décollement n'est pas décrite |
 
-**Recommandation** : le prochain et dernier candidat pour k_t et η est
-**Xiang, Munjiza & Latham (2009), IJNME 79(8), 946-978**. C'est la source
-d'origine désignée par ce chapitre. Si elle ne les donne pas, on déclare le
-paramètre non publié et le `2/7` de rockim devient un choix documenté en propre.
+**Recommandation, révisée le 2026-08-29** : l'IJNME 79 (2009) est **ÉLIMINÉ**
+(§3bis). Le dernier candidat est **Xiang, Munjiza, Latham & Guises,
+*Engineering Computations* **26**(6), 673-687**. S'il ne donne rien, on déclare
+k_t et η **non publiés** et le `2/7` de rockim devient un choix documenté en
+propre — position parfaitement tenable dans un manuscrit.
 
 ---
 
