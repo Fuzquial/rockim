@@ -101,6 +101,15 @@ l'article, pour SA roche.
 
 ## 5. Ce que le modele de pulverisation vise, en leurs termes
 
+> **AVERTISSEMENT AJOUTE LE 2026-08-29 (LOT 1).** Le dernier paragraphe de ce
+> §5 attribue a Solidity un couplage lu dans `/home/user/solidity` (Y3Did.c).
+> Ce dossier N'EST PAS le code d'Imperial et son facteur d'endommagement est
+> cable a zero : la phrase « le code Solidity le realise par ... » est donc
+> une INFERENCE d'architecture, pas un fait etabli sur Imperial. Voir
+> [CORRECTION 2](../BILAN_interference_2026-08-29.md) et
+> [la fiche du lot 1](2026-08-29_lot1_bibliographie_imperial.md) §7. Le reste
+> de cette fiche porte sur l'ARTICLE (source primaire) et tient sans reserve.
+
 p. 4 : « severe local stiffness degradation, LOSS OF LOAD-BEARING CAPACITY,
 and fragment-support reduction beneath the insert » ; « By applying larger
 deformations to elements at the impact centre and REDUCING SLIDING FRICTION,
