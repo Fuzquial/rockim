@@ -224,3 +224,55 @@ l autre schema.
   aussi la lecture de la sur-pulverisation. A trancher sur l article.
 * Le carre 2x2 n est ferme a AUCUN instant ou la pulverisation travaille : il
   manque un run ADAPTATIF a penalite 20 au-dela de 12 us.
+
+---
+
+# CORRECTION 2 (29/08, nuit) — CE QUE `/home/user/solidity` EST VRAIMENT
+
+**AVERTISSEMENT POUR TOUTE SESSION FUTURE.** Le dossier `/home/user/solidity`
+n'est PAS le code qui a produit les articles de Yang, Xiang et Latham. F.
+Uzquiano l'a signale, et le code le confirme.
+
+PREUVE, `src/Y3Dfd.c` l. 749-760, fonction `CauchyTet4` :
+
+    /*calculate damage factor */
+    df=R0;
+    *deldam=df;
+    ...
+    T[i][j]=(R1-df)*(dpemu/detf)*B[i][j]+dpeks*D[i][j];
+
+Le facteur d'endommagement est **cable a zero**. Les parametres `d1pem0`,
+`d1pemf`, `d1pedm` sont bien lus au deck (`Y3Drd.c` l. 1171) et transportes
+jusqu'a `CauchyTet4` (`Y3Dfd.c` l. 848), mais **le calcul de D a partir de
+delta_m — l'equation (4) de l'article — est ABSENT**. Par consequent
+`d1df[ielem]` vaut identiquement 0, donc `d_fact = 1`, donc le couplage
+`penalty *= d_fact` et `mu = mud*d_fact` (`Y3Did.c` l. 995, 1044, 1263-1265)
+est **INERTE dans ce code**.
+
+## Ce qui TOMBE de la CORRECTION 1
+
+La formule « l ingredient qu ils ont et que rockim n a pas, je l ai LU dans
+leur source » est trop forte. J ai lu une FORME (l endroit ou le couplage
+s appliquerait) et j en ai conclu une IMPLEMENTATION. Ce n est pas la meme
+chose, et la distinction est exactement celle que ce depot s impose partout
+ailleurs entre ce qui est ETABLI et ce qui est INFERE.
+
+## Ce qui TIENT malgre tout
+
+* La **forme** du couplage est reelle et informative : que `T` porte
+  `(1-df)` et que `penalty`/`mu` portent `d_fact` dit ou le couplage se
+  branche dans une architecture FDEM de cette famille. C est une piste
+  d implementation, PAS une preuve de ce que fait Imperial.
+* L **article** (IJRMMS 206, 2026), lui, est une source primaire et il decrit
+  explicitement « severe local stiffness degradation, LOSS OF LOAD-BEARING
+  CAPACITY, and fragment-support reduction beneath the insert » (p. 4). WP7
+  reste donc motive — mais par l ARTICLE, pas par ce code.
+* Les valeurs de la **Table 1** viennent de l article : elles sont solides.
+* Les faits de deck (`I1PEJP`, l absence d insertion adaptative) decrivent CE
+  code, et ne peuvent plus etre attribues a Imperial sans autre source.
+
+## Consequence
+
+Determiner ce qui manque a rockim exige desormais un travail de SOURCES :
+articles, theses, codes publies, et non la lecture d un depot local. C est
+l objet de [MISSION_etat_de_l_art_2026-08-29.md](MISSION_etat_de_l_art_2026-08-29.md).
