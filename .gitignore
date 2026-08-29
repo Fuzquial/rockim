@@ -17,6 +17,12 @@ calibration_redbohus/runs/
 # --- maillages GENERES : reproduits par tools/make_unstructured_mesh.py,
 #     dont la ligne de commande figure en tete de chaque config ---
 meshes/*.msh
+# ... y compris les maillages CANDIDATS produits a la racine pendant une
+# etude de resolution (2026-08-29) : ils pesent plusieurs Mo et se
+# regenerent par la ligne de commande consignee au bilan de l etude.
+/*.msh
+# --- journaux de travail deposes a la racine par un depouillement ---
+/log_*.txt
 
 # --- produits de compilation ---
 *.obj
