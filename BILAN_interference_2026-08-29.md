@@ -134,3 +134,93 @@ volontairement en insertion ADAPTATIVE, pour ne changer qu une famille de
 variables a la fois.
 
 Decks : `J1_intrinseque.cfg`, `J2_coulombseul.cfg` (scratchpad du 29/08).
+
+---
+
+# CORRECTION DU 29/08 (soir) — le code d'Imperial est sur la machine
+
+Le doctorant a demande : « comment font-ils, eux, avec l intrinseque a
+Imperial ? ». La reponse a ete cherchee DANS LEUR SOURCE, presente en
+`/home/user/solidity`. Elle invalide une partie de ce qui precede. Les
+sections 1 a 9 sont conservees telles quelles (on ne reecrit pas
+l historique) ; ce qui suit les corrige.
+
+## C1. Ce qu on lit chez eux, verifie de premiere main
+
+* **Solidity est INTEGRALEMENT intrinseque** : zero occurrence de `adaptive`
+  ou `extrinsic` dans les 15 448 lignes de `src/`. Leurs joints sont donc
+  aussi libres de casser des t = 0 que les notres, et la loi de Yang y vit.
+  « Des joints cohesifs partout » NE PEUT PAS etre la cause de notre
+  probleme : c est la seule variable sur laquelle les deux codes sont
+  identiques.
+* **Perimetre des joints** : `I1PEJP  3 0 0 0` (`examples/BST.Y3D`
+  l. 117001-117002) — joints dans le PREMIER corps seulement, la roche.
+  L acier et le carbure sont des continua sans un seul joint. rockim en pose
+  34 507, soit toute face interne des TROIS corps : on amollit l outil et on
+  paie le pas de temps du carbure pour rien.
+* **Raideur de joint** : `Spring_Stiffness = 900e9 Pa` (`mat.txt` l. 10),
+  soit 15 E sur leur granite a 60 GPa — et NON les 52,6 E que
+  `DOCUMENTATION_rockim.md` §5.4 avait derives. Le « 3 000 GPa » de cette
+  derivation est `D1PEPE`, la penalite d ELEMENT/CONTACT, identique pour le
+  granite, l acier et le carbure : elle ne peut pas valoir alpha x E.
+* **L INGREDIENT QU ILS ONT ET QUE ROCKIM N A PAS** (`src/Y3Did.c`
+  l. 1263-1265, lu verbatim) :
+      d_fact = MINIM((R1-d1df[ielem]),(R1-d1df[jelem]));
+      if (d_fact < 0.041) d_fact = d_fact/1000.0;
+      penalty = penalty*d_fact;
+  et `mu = mud*d_fact` (l. 995 et 1044). Chez eux la PENALITE DE CONTACT et
+  le FROTTEMENT sont multiplies par (1-D) EN CONTINU des que D > 0, avec un
+  effondrement par 1000 au-dela de D = 0,959. C est l effondrement de
+  PORTANCE. Chez rockim, `ctcMu` est un echelon binaire a D >= Dmax
+  (Fdem3dSolver.hpp l. 497-508) et **la penalite de contact n est jamais
+  touchee par D**. WP6 n implemente donc que la moitie tangentielle du
+  couplage, et en tout-ou-rien. C est la piste identifiee apres le banc A/B
+  du 28/08 (« le canal manquant de l effondrement de portance ») : elle est
+  desormais confirmee sur leur source.
+* Ils **calibrent avec la complaisance dedans** : E = 60 GPa au deck, aucun
+  relevement pour compenser les joints intrinseques.
+
+## C2. Trois resultats du present bilan sont RETIRES
+
+1. **La clause causale du §8(a) est FAUSSE.** « Des joints libres de casser
+   relachent la deformation deviatorique AVANT qu elle n atteigne le seuil »
+   est contredit par la colonne `bdWork` des history.csv, que personne
+   n avait ouverte : a 12 us l intrinseque a deja 6,2e-4 J de pulverisation
+   quand l adaptatif est a ZERO ; il MENE la course pendant quatre
+   microsecondes, puis GELE (1,37e-2 J a 20 us comme a 30 us) pendant que
+   l adaptatif file a 0,760 J. Ce n est pas un non-franchissement, c est un
+   emballement ARRETE. La loi est auto-entretenue (`sig *= Cd(1-D)`) : le
+   premier mecanisme qui prend verrouille l autre.
+2. **Le « facteur 30 » sur le poste pulverisation est trompeur** : il
+   contient 2,4 de pur ecart d energie absorbee (12,87 J contre 5,36 J a
+   80 us). Normalise par le budget element il vaut x13,3.
+3. **Les « 44,3 % contre 28,6 % » melangent deux causes.** A PENALITE EGALE,
+   l ecart de schema ne vaut que **+1,5 point** (28,6 % -> 30,1 %) ; les
+   ~14 points restants sont de la PENALITE. Mesure a temps egal (30 us),
+   normalisee par le budget element : adaptatif pf4 = 29,60 % ; intrinseque
+   pf20 = 3,27 % ; intrinseque pf4 = 0,082 %. Levier schema x9,1 ; levier
+   penalite x39,7, soit **4,4 fois plus fort**. Le confondant n etait pas
+   secondaire, il etait DOMINANT.
+
+## C3. Un defaut de constitution mis au jour
+
+`insertionPenaltyFactor` n est lue NULLE PART sous `insertion = intrinsic`
+(l. 1399 et l. 536 sont toutes deux gardees par `adaptive_`), et la penalite
+reellement appliquee — `jointPenaltyFactor`, defaut 20 — n est JAMAIS
+imprimee. Le deck J1 posait `insertionPenaltyFactor = 4` : la cle etait
+MORTE et le run a tourne a 20 E/h sans une ligne de journal. C est exactement
+la faute que le depot s interdit (« une capacite active et muette est
+indiscernable d une capacite inerte »). CORRECTIF : sortir l impression de la
+penalite du bloc `if (adaptive_)` et avertir quand un deck ecrit la cle de
+l autre schema.
+
+## C4. Ce qui reste ouvert
+
+* La base unitaire de `delta_m` : leur deck donne `D1PEM0 = 5,0e-3` et
+  `D1PEMF = 1,0`, impossibles en METRES sur un tetraedre de 1 mm, plausibles
+  comme DEFORMATIONS. rockim en fait une longueur (`dm = hEl x
+  sqrt(2/3)||dev eps||`, l. 2274). Si c est une deformation, le facteur `hEl`
+  est de trop et la loi devient objective au maillage — ce qui changerait
+  aussi la lecture de la sur-pulverisation. A trancher sur l article.
+* Le carre 2x2 n est ferme a AUCUN instant ou la pulverisation travaille : il
+  manque un run ADAPTATIF a penalite 20 au-dela de 12 us.
