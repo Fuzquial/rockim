@@ -413,6 +413,18 @@ facteur ≈ 2 sans changer le champ de fissuration dans la roche.
 
 ### R2 — Porter la pénalité de joint à ≈ 50 E et la mesurer. **À faire, en premier.**
 
+> **⚠️ CETTE RECOMMANDATION EST FAUSSE. Voir [lot 4](2026-08-29_lot4_bilan_rockim.md) §4.**
+> Deux erreurs. (1) Le dépôt avait déjà établi que sous la convention parabolique
+> de Guo l'équivalent de leur p₀ = 3000 GPa vaut **p₀/(2E) = 26,32**, et le deck
+> de réplique y est déjà — le « 20 » comparé ici est le DÉFAUT, pas la valeur de
+> réplique. Monter à 50 aurait été deux fois trop raide. (2) L'équivalence 26,32
+> annule h des deux côtés, ce qu'elle n'a pas le droit de faire : rockim mesure h
+> comme le **diamètre inscrit** (6V/A) et Imperial comme la **longueur moyenne
+> des arêtes**, soit un rapport 2,4495. L'équivalence correcte est
+> **26,32 × 0,4082 = 10,74**. Il faut donc **descendre** la pénalité, ou changer
+> la mesure de h. Le texte ci-dessous est conservé tel quel — on ne réécrit pas
+> l'historique.
+
 *Ce que fait Imperial* : **3000 GPa pour E = 57 GPa** sur St Anne (lot 2a §3),
 soit 52,6 E — bien au-dessus de leur propre recommandation E-10E, qui vaut pour
 le quasi-statique.
@@ -434,6 +446,12 @@ Ce n'est pas interdit — mais ce n'est plus une réplication, et le coût est s
 commune mesure avec R1 et R2. **À écarter du chemin critique.**
 
 ### R4 — Reprendre leur détection de contact paresseuse. **À évaluer.**
+
+> **⚠️ À RELIRE AVEC UN CHIFFRE QUE LE DÉPÔT AVAIT DÉJÀ.** `DOCUMENTATION_rockim.md:183`
+> mesure que sur la percussion longue le poste dominant est l'intégration exacte
+> des 33 M de clips AVEC force (≈ 2/3 du run) ; les clips vides ne pèsent que
+> ~12 %. R4 attaquerait donc **10-15 % du mur, pas un facteur 7**. C'est une
+> optimisation légitime, pas la clé du CPU. Voir [lot 4](2026-08-29_lot4_bilan_rockim.md) §2.3.
 
 *Ce que fait Imperial* : aucun couple de contact dans la région continue ; ils
 naissent à la rupture d'un joint, par groupes autour de ses six nœuds
