@@ -304,6 +304,30 @@ void Fdem3dSolver::init() {
                   << " bonded faces, activation penalty "
                   << cfg_.getd("insertionPenaltyFactor", 4.0) << " E/h\n";
     }
+    // La penalite de joint est lue a DEUX endroits selon le schema (l. ~1399) :
+    // insertionPenaltyFactor en adaptatif, jointPenaltyFactor en intrinseque.
+    // Seule la premiere s annoncait, si bien qu un deck bascule en intrinseque
+    // changeait de raideur EN SILENCE — mesure le 29/08 : 4 E/h demandes au
+    // deck, 20 E/h appliques, et un ecart x39,7 sur la pulverisation attribue
+    // a tort au schema d insertion. Une capacite active et muette est
+    // indiscernable d une capacite inerte : elle doit parler.
+    if (!adaptive_) {
+        std::cout << "[FDEM3D] insertion intrinseque : penalite de joint "
+                  << cfg_.getd("jointPenaltyFactor", 20.0)
+                  << " E/h (jointPenaltyFactor"
+                  << (cfg_.has("jointPenaltyFactor") ? " au deck" : " DEFAUT")
+                  << ")\n";
+        if (cfg_.has("insertionPenaltyFactor"))
+            std::cout << "[FDEM3D]   AVERTISSEMENT : le deck pose aussi "
+                         "insertionPenaltyFactor = "
+                      << cfg_.getd("insertionPenaltyFactor", 4.0)
+                      << ", cle propre au schema ADAPTATIF et donc INERTE ici. "
+                         "La raideur appliquee est celle annoncee ci-dessus.\n";
+    } else if (cfg_.has("jointPenaltyFactor")) {
+        std::cout << "[FDEM3D]   AVERTISSEMENT : jointPenaltyFactor est pose "
+                     "au deck mais le schema est ADAPTATIF : cette cle est "
+                     "INERTE, la penalite active est insertionPenaltyFactor.\n";
+    }
     xiJ_ = cfg_.getd("jointXi", 0.05);
 
     kp_ = phases_.maxE() * hmin_;                      // tool contact [N/m]
