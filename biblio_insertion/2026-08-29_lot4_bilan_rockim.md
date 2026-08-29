@@ -24,6 +24,21 @@ Le §9 dit ce qui reste à faire.
 
 ## 1. LE RÉSULTAT PRINCIPAL — et ce n'était pas la question posée
 
+> **⚠️ LA PRÉMISSE DE TOUT CE §1 EST FAUSSE. Lire d'abord
+> `chantier_imperial_2026-08-29/A03_resourcer_attributions.md`.**
+> `solidity-solver-open` **EST** le code d'Imperial : dépôt public
+> `ImperialCollegeLondon/solidity-solver-open`, **LGPL-3.0**, C, 17 000 lignes,
+> cloné et lu le 2026-08-26 — provenance documentée en **quatre endroits** du
+> dépôt (`CR_solidity_2026-08-27.md:19`, `BILAN_replique_solidity_2026-08-27.md:11`,
+> `DOCUMENTATION_rockim.md:409`, `tools/verify_suite.py:443`). La CORRECTION 2 du
+> 29/08 avait sur-corrigé, et le brief de mission a repris sa formulation.
+> **Ce qui reste vrai** : ce code n'est pas la version qui a produit l'article de
+> 2026 (son facteur d'endommagement est à zéro), donc y lire une forme et en
+> conclure une implémentation de l'article reste une faute — mais pour cette
+> raison-là, pas parce que ce serait le code de quelqu'un d'autre.
+> **Le comptage des 117 tient ; les verdicts de la table de rachat ci-dessous,
+> non.** L'action A3 est suspendue et redéfinie dans la fiche du chantier.
+
 Le brief demandait ce qui manque à rockim. **La réponse la plus importante est
 que rockim porte, dans son propre code source, 117 attributions à un code qui
 n'est pas celui d'Imperial.**
