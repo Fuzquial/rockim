@@ -237,6 +237,18 @@ de tout le bilan, et il est à l'avantage du dépôt.
 | **k_t dans le budget de pas de temps — 2D** | **PRÉSENT** | `FdemSolver.cpp:3134` : `if (contactPot_) kContact = max(kContact, max(potP_, potKt_));` | aucun | non |
 | **k_t dans le budget de pas de temps — 3D** | **ABSENT** | `Fdem3dSolver.cpp:2115-2122` : `dtMin = min(dtMin, 2·sqrt(m/(K + nExtra·kp_)))`. **`potKt_` n'y entre pas**, et `kContact` n'existe pas dans ce fichier | faible | non |
 
+> **⚠️ CORRIGÉ ET MESURÉ LE 2026-08-29 (chantier A11).** Le manque est réel et il
+> est corrigé (`chantier_imperial_2026-08-29/A11_dt_tangentiel.md`), mais
+> **l'affirmation ci-dessous est exagérée**. Effet mesuré sur le pas de temps à
+> `potTangentFactor = 1,4286`, la valeur des decks d'impact : **−2,21 %** en
+> insertion intrinsèque, **−4,66 %** en adaptative. Ce n'est pas un précipice :
+> le budget nodal est dominé par la raideur des ressorts de joint, devant
+> laquelle le terme de contact pèse peu. Le correctif se justifie par la parité
+> 2D/3D et par la source, **pas par une urgence** — aucun run n'explosait à cause
+> de ça. Un piège d'unités a été trouvé au passage : en 3D `potP_` est en **Pa**
+> et `potKt_` en **N/m**, si bien que recopier le `max(potP_, potKt_)` du 2D
+> aurait divisé le pas par ≈ 32 en silence.
+
 > **C'est la question que la source primaire du frottement a fait naître, et la
 > réponse est mauvaise.** Xiang, Munjiza, Latham & Guises (2009) p. 677
 > avertissent que « in order to reduce the numerical error for calculation of

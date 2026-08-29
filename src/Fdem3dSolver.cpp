@@ -469,6 +469,25 @@ void Fdem3dSolver::init() {
         potKt_ = cfg_.getd("potTangentFactor", 1.0) * phases_.maxE() * hmin_;
         std::cout << "[FDEM3D] contact: Munjiza potential (eq. 2-5, tet-tet)"
                      ", p = " << potP_ << " Pa, kt = " << potKt_ << " N/m\n";
+        // dtBudgetTangential : voir computeStableDt() pour le raisonnement
+        // complet et la source. Defaut off = bit-identique.
+        {
+            std::string dbt = cfg_.gets("dtBudgetTangential", "off");
+            if (dbt != "on" && dbt != "off")
+                throw std::runtime_error(
+                    "dtBudgetTangential must be on | off (off = defaut, "
+                    "bit-identique : la raideur tangentielle du contact "
+                    "n entre PAS dans le budget de pas de temps ; on = elle y "
+                    "entre, comme le fait deja le solveur 2D. Xiang, Munjiza, "
+                    "Latham & Guises, Eng. Comput. 26(6) (2009) 673-687, "
+                    "p. 677)");
+            dtTangential_ = dbt == "on";
+            if (dtTangential_)
+                std::cout << "[FDEM3D] dtBudgetTangential = on : la raideur "
+                             "tangentielle potKt_ entre dans le budget de pas "
+                             "de temps (parite avec le solveur 2D ; Xiang "
+                             "et al., Eng. Comput. 26(6) 2009, p. 677)\n";
+        }
     }
     // gcActivation = full (defaut, inchange) | adaptive — miroir exact du 2D
     // (FdemSolver.hpp) : seules les faces qui PEUVENT toucher sont balayees.
@@ -1731,13 +1750,66 @@ void Fdem3dSolver::computeStableDt() {
         for (int q = 0; q < 3; ++q) { K[J.a[q]] += k; K[J.b[q]] += k; }
     }
     double nExtra = cfg_.getd("extraContacts", 2.0);
+    // A1 : en Signorini l'outil n'a plus de raideur (condition sur la
+    // VITESSE) — kp_ sort du budget. Gain structurel : le pas cesse de
+    // dependre d'une penalite arbitraire.
+    double kContact = toolSig_ ? 0.0 : kp_;
+    // ---- dtBudgetTangential : la raideur TANGENTIELLE du contact ----------
+    // Xiang, Munjiza, Latham & Guises, « On the validation of DEM and FEM/DEM
+    // models in 2D and 3D », Eng. Comput. 26(6) (2009) 673-687, p. 677 —
+    // publication d ORIGINE de leur loi de frottement (leurs eq. 8-9) — porte
+    // un avertissement que ses propres auteurs qualifient d alarmant :
+    //   « with the larger of the two time steps, the errors become
+    //     significant. However, using the larger time step, the calculation of
+    //     FEM/DEM WITH ZERO FRICTION is fairly stable. This somewhat alarming
+    //     conclusion suggests that in order to reduce the numerical error for
+    //     calculation of TANGENTIAL FORCES, the smaller time step is
+    //     required. »
+    // Le budget ci-dessus ne connait que kp_. Le 2D, lui, prend deja
+    // max(potP_, potKt_) (FdemSolver.cpp, computeStableDt) : la parite est
+    // rompue, et elle l est du cote qui porte l impact.
+    //
+    // ATTENTION AUX UNITES — le max du 2D N EST PAS transposable tel quel.
+    // En 2D potP_ et potKt_ sont tous deux des N/m (tous deux multiplies par
+    // thk_). En 3D potP_ vaut potPenaltyFactor * maxE et reste en Pa
+    // (l. 696), tandis que potKt_ vaut potTangentFactor * maxE * hmin_ et est
+    // en N/m (l. 701). Recopier max(potP_, potKt_) comparerait des pascals a
+    // des newtons par metre : sur un maillage a hmin_ = 1 mm le max
+    // choisirait potP_, mille fois trop grand, et diviserait le pas de temps
+    // par ~32 SANS ERREUR VISIBLE. Seul potKt_ entre ici, et il a bien les
+    // memes unites que kp_ et que K[i].
+    //
+    // DEFAUT `off` : bit-identique. A potTangentFactor = 1 (le defaut) on a
+    // exactement potKt_ == kp_ (l. 565 et 701, meme produit maxE * hmin_) et
+    // le max ne changerait rien de toute facon ; la cle n a d effet que la ou
+    // un deck a DELIBEREMENT releve potTangentFactor — les decks d impact le
+    // posent a 1,4286 — ou sous outil de Signorini, ou kp_ sort du budget et
+    // ou le contact par potentiel reste pourtant une raideur reelle.
+    // Le risque, lui, ne doit pas etre muet : sous `off`, si la configuration
+    // est justement une de celles-la, on AVERTIT. Une capacite active et
+    // muette est indiscernable d une capacite inerte — un risque silencieux
+    // est pire encore.
+    if (contactPot_) {
+        if (dtTangential_) {
+            kContact = std::max(kContact, potKt_);
+        } else if (potKt_ > kContact) {
+            std::cout << "[FDEM3D] AVERTISSEMENT : la raideur tangentielle du "
+                         "contact (potKt_ = " << potKt_ << " N/m) DEPASSE la "
+                         "raideur budgetee pour le pas de temps ("
+                      << kContact << " N/m) d un facteur "
+                      << (kContact > 0.0 ? potKt_ / kContact : 0.0)
+                      << ".\n[FDEM3D]   Elle n entre PAS dans le budget : "
+                         "dtBudgetTangential = off (defaut, bit-identique). "
+                         "Xiang et al. (2009) p. 677 avertissent que le calcul "
+                         "des forces tangentielles exige un pas PLUS PETIT que "
+                         "le cas sans frottement.\n[FDEM3D]   Poser "
+                         "dtBudgetTangential = on pour l y faire entrer.\n";
+        }
+    }
     double dtMin = 1e30;
     for (std::size_t i = 0; i < X0_.size(); ++i)
-        // A1 : en Signorini l'outil n'a plus de raideur (condition sur la
-        // VITESSE) — kp_ sort du budget. Gain structurel : le pas cesse de
-        // dependre d'une penalite arbitraire.
-        dtMin = std::min(dtMin, 2.0 * std::sqrt(m_[i] / (K[i]
-                    + (toolSig_ ? 0.0 : nExtra * kp_))));
+        dtMin = std::min(dtMin,
+                         2.0 * std::sqrt(m_[i] / (K[i] + nExtra * kContact)));
     // CFL from the TRUE minimum inscribed diameter, not the nominal grid
     // pitch. The Kuhn split makes tets thin BY CONSTRUCTION (median 6V/A is
     // ~0.4x the cell edge, jitter takes the worst to ~0.2x), so the nominal
