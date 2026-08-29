@@ -202,6 +202,13 @@ joint vivant est là.
 
 ### 5.3 Le problème d'intégrité
 
+> **⚠️ PRÉMISSE FAUSSE — voir `chantier_imperial_2026-08-29/A03_resourcer_attributions.md`.**
+> `solidity-solver-open` est le dépôt public d'Imperial College London (LGPL-3.0),
+> cloné et lu le 2026-08-26, provenance documentée en quatre endroits du dépôt.
+> Ce n'est pas « un code qui n'est pas le leur ». Ce qui reste vrai : ce n'est pas
+> la version qui a produit l'article de 2026. Le paragraphe ci-dessous est
+> conservé tel quel et doit être réécrit sur la prémisse corrigée.
+
 **117 attributions à `Solidity` / `Y3D*.c` subsistent dans le code, les en-têtes,
 la suite de vérification et les decks.** La CORRECTION 2 avait purgé les bilans,
 pas le code. Deux clés promettent une réplication qu'elles ne font pas :
