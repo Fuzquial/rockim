@@ -134,7 +134,11 @@ Statuts : **PRÉSENT** conforme · **PARTIEL** incomplet ou autrement ·
 | **déclenchement conditionnel** (cisaillement sous compression) | **ABSENT** | rockim relève **toute** naissance, y compris en traction franche où il n'y a rien à relayer. Les deux ingrédients existent pourtant : `J.bmode` (`FdemSolver.cpp:4170`) et le signe de `J.fDeath` — mais `bmode` est déclaré **sortie seule** (`FdemSolver.hpp:203`) | faible | non |
 | durée comptée en pas | **PARTIEL** | `gcBirthTau = 1e-6 s` (`FdemSolver.cpp:1020`) ; au dt de 1,93e-9 s cela couvre **≈ 518 pas**, ~50× le ntotal ≈ 10 d'Imperial — et **aucune ligne du dépôt ne justifie ni ne balaie cette valeur** | faible | non |
 
-### 2.5 Les sept autres éléments — **[1re LECTURE]**
+### 2.5 Les sept autres éléments — ~~[1re LECTURE]~~ **SUPERSÉDÉ par le §2.6**
+
+*Ce tableau était une première lecture. Le §2.6, ajouté le 2026-08-29 au soir, le
+remplace : les sept éléments y sont repris avec numéros de ligne vérifiés.*
+
 
 | élément | constat | à reprendre |
 |---|---|---|
@@ -145,6 +149,105 @@ Statuts : **PRÉSENT** conforme · **PARTIEL** incomplet ou autrement ·
 | **périmètre des joints** | 34 507 joints sur les trois corps contre la roche seule chez Imperial (lot 3 §3) | **vérifier s'il existe déjà un filtre par phase** — si oui, R1 coûte une clé de deck |
 | **bilan d'énergie** | rockim mesure et **imprime** le résidu ; Imperial l'obtient **par soustraction** et le dit | chiffrer précisément, c'est une avance de premier ordre |
 | **fragments** | à vérifier | existence d'une identification par connectivité et d'un post-traitement de retrait |
+
+### 2.6 LES SEPT ÉLÉMENTS REPRIS À LA MAIN — vérifiés ligne à ligne
+
+*Le workflow d'audit ayant échoué deux fois sur une limite de session, ces sept
+éléments ont été lus directement. Chaque ligne a été ouverte et relue.*
+
+#### Frottement tangentiel
+
+| point | statut | preuve | effort | blocage |
+|---|---|---|---|---|
+| ressort tangentiel + plafond de Coulomb | **PRÉSENT** | `Fdem3dSolver.cpp:3310-3315` : `Ft -= potKt_ * dt_ * vt;` puis `cap = ctcMu(eLo,eHi)*Fn; if (Ftn > cap) Ft *= cap/Ftn;`. C'est la forme intégrale de `f_t = −k_t δ_t` avec écrêtage de Coulomb — l'éq. 8-9 d'Imperial | aucun | non |
+| **terme visqueux tangentiel `− η v_t`** | **ABSENT** | rockim n'a que le ressort. `potXi_` (`FdemSolver.cpp:836`) est une fraction d'amortissement critique du contact **NORMAL**, et **2D seulement**. Rien de tangentiel | faible | non |
+| **convention de signe** | **PARTIEL** | rockim prend `−k_t δ_t` — la convention du **chapitre de 2017**, pas celle de l'article de **2009** qui écrit `+k_t δ_t` (lot 2c §3ter). Le choix n'est **documenté nulle part** | faible | non |
+| **règle de paire** | **DIVERGENT non sourçable** | `Fdem3dSolver.hpp:524-529` : `if (muPerPhase_) { m = min(muPhase_[A], muPhase_[B]); }` — **le plus faible gouverne**, commenté « Solidity Y3Did.c l. 1292 ». **Imperial ne publie aucune règle** (six sources) | aucun | non |
+
+> **JE CORRIGE UNE ERREUR QUE J'AI RÉPÉTÉE TOUTE LA SESSION.** J'ai écrit à
+> plusieurs reprises « le `k_t = 2/7` de rockim ». **C'est inexact.** La raideur
+> tangentielle de rockim vaut `potKt_ = potTangentFactor × E × h`, avec
+> **`potTangentFactor` = 1,0 par défaut** (`Fdem3dSolver.cpp:701`,
+> `FdemSolver.cpp:835`). Le 2/7 n'est pas dans le code : c'est le **rapport
+> k_t/k_n imposé par les decks d'impact** — `potTangentFactor = 1.4286 = 5,0 × 2/7`
+> (`impact_imperial.cfg:377-379`) — et sa seule source est le commentaire
+> `ktss = 2.0/(7.0)*d1pepe[icoup]`, qui cite le code non-Imperial.
+> **À ajouter à la table de rachat du §1.1, colonne NON RACHETABLE** : ni
+> l'article de 2009 ni le chapitre de 2017 ne donnent de valeur de k_t.
+
+| point | statut | preuve | effort | blocage |
+|---|---|---|---|---|
+| **banc analytique du frottement** (rectangle glissant, `L = v²/2µg`) | **ABSENT** | `tools/verify_suite.py` a bien des contrôles de frottement (`jointdeath_friction_2d`, `jointResidualMu`, `jointFrictionScaled`) mais **tous portent sur le frottement de JOINT**, aucun sur le chemin **tangentiel de contact**. Le banc publié (lot 2c §3ter) est à solution analytique fermée | faible | non |
+
+#### DIF — **le point le plus propre du dépôt**
+
+| point | statut | preuve |
+|---|---|---|
+| lois et bornes | **PRÉSENT** | `YangDif.hpp:45-58`, exposant de traction **paramétré**, parité 2D/3D par construction |
+| **points d'application** | **PRÉSENT, strictement conforme** | `Fdem3dSolver.cpp:1779-1789`, `stampDif` : `J.ft *= dT; J.Gf *= dT; J.coh *= dC; J.GfII *= dC;` — **exactement** la règle d'Imperial (traction → f_t et G_I ; compression → cohésion et G_II), et le **frottement interne n'est pas touché** |
+| rafraîchissement continu | **PRÉSENT** | `refreshDif` (`:1796-1806`) repart des valeurs de base (`snapBase`) : jamais de composition, le facteur peut redescendre |
+
+**Rien à faire. C'est conforme, testé et documenté au-delà de la source.**
+
+#### Pulvérisation et couplage
+
+| point | statut | preuve | effort | blocage |
+|---|---|---|---|---|
+| δ_m dimensionnellement correct | **PRÉSENT** | `Fdem3dSolver.cpp:2362` : `dm = hEl_[eI] * sqrt(2.0/3.0) * ed.norm()` — une **longueur**, conforme à δ_m d'Imperial | aucun | non |
+| **couplage D → frottement** | **DIVERGENT non sourçable** | `Fdem3dSolver.hpp:530-545`, sous `cplMode_` : `dr = min(1−D_A, 1−D_B)` **et `if (dr < 0.041) dr *= 1e-3`**. rockim reproduit le nombre magique 0,041 **et** l'effondrement par 1000 du code non-Imperial. **Aucune publication d'Imperial ne décrit ce mécanisme** (lot 2b) | — | non |
+| couplage D → pénalité de contact | **présent en opt-in**, même statut | `jointContactPenalty = adaptive` | — | non |
+
+> Le couplage est **continu**, pas en tout-ou-rien — ma première lecture du lot 4
+> le supposait binaire. Il est plus proche de la forme du code non-Imperial que
+> je ne le pensais, ce qui **aggrave** le problème d'attribution du §1.1 au lieu
+> de l'atténuer : ce n'est pas une inspiration lointaine, c'est une
+> transcription, constante magique comprise.
+
+#### Bilan d'énergie — **rockim est très au-dessus**
+
+| point | statut | preuve |
+|---|---|---|
+| postes ventilés et imprimés | **PRÉSENT** | `Fdem3dSolver.cpp:4411-4429` : KE initiale → KE bloc, poste éléments, dont **visqueux (2µD)** et dont **pulvérisation (bulkDamage)**, avec le nombre d'éléments pulvérisés |
+| **résidu mesuré ET run interrompu** | **PRÉSENT, sans équivalent** | `Fdem3dSolver.cpp:2262-2276` : `resid = (ke − keInit_) − sumW` ; si le résidu dépasse `budgetAbortPct` de l'échelle, le run **s'arrête** en imprimant le **nœud le plus rapide et sa position** |
+
+**Imperial obtient amortissement et erreur PAR SOUSTRACTION (A952 p. 3). rockim
+mesure le résidu et refuse de continuer s'il dérive.** C'est l'écart le plus net
+de tout le bilan, et il est à l'avantage du dépôt.
+
+#### Insertion et périmètre
+
+| point | statut | preuve | effort | blocage |
+|---|---|---|---|---|
+| deux schémas (intrinsèque, adaptatif) | **PRÉSENT + capacité en plus** | Imperial n'a que l'intrinsèque | aucun | non |
+| **filtre de joints par phase ou par corps** | **ABSENT** | recherche : `jointPhase`, `jointsIn`, `noJoint`, `jointBodies`, `jointMaterial`, `skipJoint` → **aucune occurrence** dans `src`, `include` ni les decks | **MOYEN** | non |
+
+> **CORRECTION DE MON PLAN.** L'étape 5 du lot 5 (« restreindre les joints à la
+> roche ») supposait « 0,5 à 1 j, faible **si un filtre par phase existe** ».
+> **Il n'existe pas.** L'effort est **MOYEN** : il faut ajouter le filtre à la
+> pose des joints, dans les deux solveurs, avec sa clé, sa bannière et son
+> contrôle de non-régression.
+
+#### Maillage, pas de temps, garde-fous
+
+| point | statut | preuve | effort | blocage |
+|---|---|---|---|---|
+| garde-fou crack-band | **PRÉSENT, sans équivalent publié** | `MatLaw.cpp:1300-1313` : lève si `Gf/(lcMax·ft) − 0,5·ft/E ≤ 0,05·ft/E`, en nommant `E·Gf/ft²` dans le message | aucun | non |
+| borne CFL sur le **vrai** diamètre inscrit | **PRÉSENT** | `Fdem3dSolver.cpp:2131-2133`, avec l'histoire du bug du 2026-08-07 en commentaire (2,4 MJ d'énergie de bloc pour 16 J incidents) | aucun | non |
+| borne diffusive du terme visqueux, **élément par élément** | **PRÉSENT** | `Fdem3dSolver.cpp:2134-2146` | aucun | non |
+| **k_t dans le budget de pas de temps — 2D** | **PRÉSENT** | `FdemSolver.cpp:3134` : `if (contactPot_) kContact = max(kContact, max(potP_, potKt_));` | aucun | non |
+| **k_t dans le budget de pas de temps — 3D** | **ABSENT** | `Fdem3dSolver.cpp:2115-2122` : `dtMin = min(dtMin, 2·sqrt(m/(K + nExtra·kp_)))`. **`potKt_` n'y entre pas**, et `kContact` n'existe pas dans ce fichier | faible | non |
+
+> **C'est la question que la source primaire du frottement a fait naître, et la
+> réponse est mauvaise.** Xiang, Munjiza, Latham & Guises (2009) p. 677
+> avertissent que « in order to reduce the numerical error for calculation of
+> **tangential forces, the smaller time step is required** », alors que le même
+> calcul **sans frottement** est stable au pas plus grand. Le 2D compte `potKt_`
+> dans son budget ; **le 3D ne le compte pas** — et c'est le 3D qui porte
+> l'impact. Conséquence : dès que le frottement travaille sous l'insert, la
+> marge de stabilité n'est pas celle qu'on croit. **Le correctif est une ligne**,
+> le miroir exacte de `FdemSolver.cpp:3134`.
+
+---
 
 ---
 
@@ -276,11 +379,13 @@ mourant (`FdemSolver.cpp:4606-4632`). Il exige `contact = potential`
 | **A3** | Re-sourcer les 117 attributions, renommer les clés non rachetables | faible | intégrité du manuscrit | non, mais **indéfendable en l'état** |
 | **A4** | Imprimer la pénalité en 2D et la raideur `pj` réelle (min/moy/max) | faible | rend visible ce qui gouverne dt et la complaisance | non |
 | **A5** | Valider `jointPenaltyFactor` (> 0) | faible | supprime un NaN silencieux | non |
-| **A6** | Restreindre les joints à la roche (R1 du lot 3) | faible si un filtre par phase existe | raideur d'outil, pas de temps | non |
+| **A6** | Restreindre les joints à la roche (R1 du lot 3) | **moyen** — aucun filtre par phase n'existe (§2.6) | raideur d'outil, pas de temps | non |
 | **A7** | Armer la naissance de contact sur `bmode` et le signe de `fDeath` | faible | supprime le relevé en traction franche, où il n'est qu'une perte de portance | non |
 | **A8** | Balayer `gcBirthTau` (518 pas contre ~10 chez eux) | faible | valeur aujourd'hui non justifiée | non |
 | **A9** | Détection de contact par événement (R4 du lot 3) | moyen | **10-15 % du CPU seulement** — le poste dominant est ailleurs | non |
 | **A10** | Rendre optionnel le `min(élastique, z·ft)` | faible | partage traction/cisaillement sous l'insert | non |
+| **A11** | **Porter `potKt_` dans le budget de pas de temps du 3D** (une ligne, miroir de `FdemSolver.cpp:3134`) | **faible** | supprime une marge de stabilité illusoire dès que le frottement travaille — les auteurs de la source qualifient eux-mêmes le point d'« alarmant » | non |
+| **A12** | Ajouter le banc analytique du rectangle glissant à `verify_suite.py` | **faible** | premier contrôle du chemin tangentiel de CONTACT, à solution fermée | non |
 
 **A1 et A2 d'abord, et seulement elles, avant tout autre chantier.** Ce sont les
 deux seuls blocages ; le reste est du raffinement ou de l'hygiène.
