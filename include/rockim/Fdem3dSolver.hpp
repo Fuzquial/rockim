@@ -758,6 +758,12 @@ private:
     // par un joint vivant, releve de naissance par VOLUME (le pen0_ du
     // potentiel — voir la lecon 2D : une rampe temporelle INJECTE).
     bool contactPot_ = false;
+    // dtBudgetTangential : la raideur tangentielle du contact par potentiel
+    // entre-t-elle dans le budget de pas de temps ? Defaut false =
+    // bit-identique. Xiang, Munjiza, Latham & Guises, Eng. Comput. 26(6)
+    // (2009) 673-687, p. 677 : le calcul des forces TANGENTIELLES exige un pas
+    // plus petit que le cas sans frottement. Voir computeStableDt().
+    bool dtTangential_ = false;
     double potP_ = 0.0;                    // penalite normale [Pa]
     double potKt_ = 0.0;                   // raideur tangentielle [N/m]
     struct PotHist {

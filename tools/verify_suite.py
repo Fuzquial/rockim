@@ -45,6 +45,15 @@ RX = {
     "pot3_ke":   r"pot3_ke_rel = ([\d.eE+-]+)",
     "pot3_mom":  r"pot3_mom_rel = ([\d.eE+-]+)",
     "szfac":     r"facteur mean/min/max = ([\d.eE+-]+)",
+    # --- pas de temps stable, ajoute 2026-08-29 (chantier A11) -------------
+    # Le budget de pas de temps du 3D ignorait la raideur TANGENTIELLE du
+    # contact par potentiel, alors que le 2D la prend depuis longtemps. Xiang,
+    # Munjiza, Latham & Guises, Eng. Comput. 26(6) (2009) 673-687, p. 677 :
+    # « in order to reduce the numerical error for calculation of TANGENTIAL
+    # FORCES, the smaller time step is required ». La cle dtBudgetTangential
+    # l y fait entrer ; ces deux controles verrouillent SON EFFET et son
+    # innocuite au defaut.
+    "dt":        r"dt = ([\d.eE+-]+) s",
     # --- viscosite de Yan (eq. 6) et DIF de Yang (eq. 2-3), ajoutes 2026-08-18
     "viscwork":  r"dont visqueux \(2 mu D\) : (-?[\d.eE+-]+) J",
     "edotmed":   r"insertion, mediane ([\d.eE+-]+) /s",
@@ -370,6 +379,32 @@ TESTS = [
          over=["bulkViscosityXi = 2.0", "bulkViscosityGraded = 1"],
          checks=[("viscwork", 0.00316169, 1e-8, True),
                  ("broken", 200, 0, True)]),
+    # ---- chantier A11 : dtBudgetTangential, 2026-08-29 --------------------
+    # Le 3D ignorait potKt_ dans son budget de pas de temps ; le 2D le prend.
+    # SOURCE : Xiang, Munjiza, Latham & Guises, « On the validation of DEM and
+    # FEM/DEM models in 2D and 3D », Eng. Comput. 26(6) (2009) 673-687, p. 677
+    # — publication d ORIGINE de leur loi de frottement (eq. 8-9) : « in order
+    # to reduce the numerical error for calculation of TANGENTIAL FORCES, the
+    # smaller time step is required », alors que le meme calcul SANS frottement
+    # est stable au pas plus grand. Les auteurs qualifient eux-memes le point
+    # d alarmant.
+    # PIEGE D UNITES verrouille ici : en 3D potP_ est en Pa et potKt_ en N/m
+    # (Fdem3dSolver.cpp, l. 696 et 701). Recopier le max(potP_, potKt_) du 2D
+    # aurait choisi potP_, mille fois trop grand a hmin = 1 mm, et divise le
+    # pas par ~32 sans erreur visible. Seul potKt_ entre.
+    # Les deux controles ci-dessous sont un couple : le premier prouve que le
+    # DEFAUT est bit-identique, le second que la cle FAIT quelque chose. L un
+    # sans l autre ne prouverait rien.
+    dict(name="dtbudget_tangential_defaut_3d", tier="fast",
+         cfg="verify_fdem3d_tension.cfg",
+         over=["T = 1e-9", "contact = potential", "potTangentFactor = 1.4286",
+               "dtBudgetTangential = off"],
+         checks=[("dt", 1.30191e-08, 1e-5, True)]),
+    dict(name="dtbudget_tangential_on_3d", tier="fast",
+         cfg="verify_fdem3d_tension.cfg",
+         over=["T = 1e-9", "contact = potential", "potTangentFactor = 1.4286",
+               "dtBudgetTangential = on"],
+         checks=[("dt", 1.27315e-08, 1e-5, True)]),
     # DIF 3D : la mesure du taux passe par maxAbsEigSym3 (forme fermee de
     # Smith 1961) la ou le 2D ecrit un cercle de Mohr a la main. Ce test est
     # le seul qui exerce ce chemin ; sans lui une erreur de spectre 3x3 serait
