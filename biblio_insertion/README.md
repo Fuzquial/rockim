@@ -17,6 +17,12 @@ chaque volet, elle n'est pas décorative.
 
 ## Volet Imperial College / Solidity (mission état de l'art, 2026-08-29)
 
+**Livrable final : [`SYNTHESE_etat_de_l_art_2026-08-29.md`](../SYNTHESE_etat_de_l_art_2026-08-29.md)**
+— présente les quatre lots, distingue établi / inféré / ouvert, et se termine par
+un plan de travail en huit étapes, chacune avec son critère de réussite mesurable
+et une liste de ce qu'il ne faut PAS faire.
+
+
 | fichier | contenu |
 |---|---|
 | `2026-08-29_lot1_bibliographie_imperial.md` | **LOT 1** — bibliographie annotée du FDEM d'Imperial (Y → VGW/VGeST → Solidity) : 20 pièces, généalogie du code, statut d'accès de chacune, **liste de téléchargement ordonnée par valeur**, trous identifiés, et demandes d'extraits de la thèse de Guo. ⚠️ Aucune source n'y est lue en plein texte : le conteneur de la session n'avait pas d'accès sortant au-delà du moteur de recherche. Étiquettes [MÉTA]/[RÉSUMÉ]/[INFÉRÉ]/[SUPPOSÉ] portées partout. |
