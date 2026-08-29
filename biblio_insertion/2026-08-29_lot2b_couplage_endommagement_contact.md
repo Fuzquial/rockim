@@ -206,6 +206,37 @@ Donc : le DIF touche **quatre** paramètres de joint (c, G_II, f_t, G_I) et
 
 ### La coquille
 
+> **CRÉDIT — LE DÉPÔT L'AVAIT TROUVÉE AVANT MOI, ET MIEUX.**
+> `include/rockim/YangDif.hpp` porte, en en-tête, l'analyse complète de cette
+> coquille, faite le **2026-08-18**, donc **onze jours avant cette fiche et sans
+> disposer de l'article de 2026**. Elle va plus loin que mon contrôle :
+> * elle vérifie les **DEUX** raccords, pas seulement le haut : avec 0,07 la loi
+>   vaut 1,1245 en 5e-6 /s (elle devrait valoir 1) et 1,5160 en 1e2 /s (elle
+>   devrait valoir 1,85) — « elle ne se raccorde a aucune de ses bornes » ;
+> * elle **relève l'exposant sur la figure 2(b) de l'article** et trouve
+>   **0,1707**, qui raccorde EXACTEMENT les deux bornes (1,0010 et 1,8499) —
+>   « deux raccords simultanes avec un seul parametre : ce n est pas une
+>   coincidence » ;
+> * elle confirme que l'éq. 2 (compression) est bien à 0,07 par sa figure 2(a) ;
+> * elle **mesure une conséquence physique** que je n'avais pas vue : le saut de
+>   22 % en 1e2 /s est un **attracteur** en insertion extrinsèque — un joint qui
+>   franchit le seuil voit sa résistance bondir et cesse de s'insérer, si bien
+>   que la population insérée s'empile juste sous 1e2. Mesure du 2026-08-18 :
+>   médiane 99,36 /s (max 99,9988) avec l'exposant littéral, contre 40,22 /s
+>   avec 0,1707 ;
+> * elle **verrouille les deux variantes** par les contrôles `dif_yang_litteral_2d`,
+>   `dif_yang_fig2_2d`, `dif_yang_fig2_plateau_2d` et `dif_yang_fig2_3d` de
+>   `tools/verify_suite.py`.
+>
+> **Et l'article de 2026 valide cette inférence** : il imprime 0,17 là où le
+> dépôt avait dérivé 0,1707 à partir de la seule figure. C'est une prédiction du
+> dépôt confirmée par une source publiée un an plus tard. **Cela vaut d'être
+> écrit dans le manuscrit.**
+>
+> Ce que cette fiche-ci ajoute, et rien de plus : la **confirmation sur source
+> primaire** que l'exposant imprimé en 2026 est bien 0,17, ce qui clôt le doute.
+
+
 **[LU]** L'article de 2025 (*IJRMMS* **191**, 106125, p. 3, éq. 3) imprime le
 **même** DIF en traction avec l'exposant **0,07** au lieu de **0,17**.
 
