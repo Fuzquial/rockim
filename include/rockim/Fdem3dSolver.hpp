@@ -491,14 +491,67 @@ private:
     double muCRes_ = -1.0;
     unsigned long long nCtcPulv_ = 0;   // evaluations au mu residuel
     double tCtcPulv0_ = -1.0;           // premier engagement (s)
+    // ---- frottement PAR PHASE (Table 1 de Yang et al. 2026 : le
+    // coefficient glissant est une propriete MATERIAU — 0,18 granite,
+    // 0,6 carbure, 0,6 acier). Cle : contactMu.<nom de phase>. Regle de
+    // paire = le MINIMUM des deux (Solidity Y3Did.c l. 1292 :
+    // if(d1pefr[iprop]>d1pefr[jprop]) iprop=jprop). Vide = contactMu
+    // global partout, bit-identique.
+    std::vector<double> muPhase_;
+    bool muPerPhase_ = false;
+    // ---- couplage CONTINU endommagement -> contact (Solidity Y3Did.c :
+    // d_fact = min(1-D_i, 1-D_j), effondrement /1000 sous 0,041 l. 1264,
+    // penalty *= d_fact l. 1265, mu = mud*d_fact l. 995 et 1044).
+    // contactDamageCoupling = solidity ; 0 = off = bit-identique. La
+    // raideur NORMALE et le frottement suivent (1-D) des que D > 0 —
+    // c est l effondrement de portance que WP6 (echelon binaire sur le
+    // seul mu) ne fournissait pas.
+    int cplMode_ = 0;
+    unsigned long long nCplEval_ = 0;   // evaluations avec d_fact < 1
+    unsigned long long nCplColl_ = 0;   // effondrements (d_fact < 0,041)
+    double tCpl0_ = -1.0;               // premier engagement (s)
+    inline double cplDf(int eA, int eB) const {
+        double d = 1.0;
+        if (eA >= 0) d = std::min(d, 1.0 - el_[eA].bdD);
+        if (eB >= 0) d = std::min(d, 1.0 - el_[eB].bdD);
+        return (d < 0.041) ? d * 1e-3 : d;   // Y3Did.c l. 1264
+    }
     // mu effectif d une interaction impliquant les elements eA (et eB si
     // >= 0). Compteurs mis a jour au premier engagement et a chaque
-    // evaluation residuelle (atomic : appele depuis les boucles OMP).
+    // evaluation degradee (atomic : appele depuis les boucles OMP).
     inline double ctcMu(int eA, int eB = -1) {
-        if (muCRes_ < 0.0) return muC_;
+        double mu = muC_;
+        if (muPerPhase_) {               // le plus FAIBLE gouverne la paire
+            double m = 1e300;
+            if (eA >= 0) m = std::min(m, muPhase_[el_[eA].phase]);
+            if (eB >= 0) m = std::min(m, muPhase_[el_[eB].phase]);
+            if (m < 1e299) mu = m;
+        }
+        if (cplMode_) {
+            double dr = 1.0;
+            if (eA >= 0) dr = std::min(dr, 1.0 - el_[eA].bdD);
+            if (eB >= 0) dr = std::min(dr, 1.0 - el_[eB].bdD);
+            if (dr < 1.0) {
+#ifdef _OPENMP
+#pragma omp atomic
+#endif
+                ++nCplEval_;
+                if (dr < 0.041) {
+#ifdef _OPENMP
+#pragma omp atomic
+#endif
+                    ++nCplColl_;
+                    dr *= 1e-3;
+                }
+                if (tCpl0_ < 0.0) tCpl0_ = t_;   // course benigne
+                mu *= dr;
+            }
+            return mu;
+        }
+        if (muCRes_ < 0.0) return mu;
         bool p = (eA >= 0 && el_[eA].bdD >= bdDmax_)
               || (eB >= 0 && el_[eB].bdD >= bdDmax_);
-        if (!p) return muC_;
+        if (!p) return mu;
 #ifdef _OPENMP
 #pragma omp atomic
 #endif

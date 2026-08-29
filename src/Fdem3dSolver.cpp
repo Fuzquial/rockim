@@ -604,6 +604,70 @@ void Fdem3dSolver::init() {
                   << " a ce mu residuel (sliding friction post-rupture, "
                      "Yang et al. 2026)\n";
     }
+    // ---- frottement PAR PHASE (Table 1 de Yang et al. 2026) ---------------
+    // contactMu.<nom de phase> : le coefficient glissant devient une
+    // propriete MATERIAU. Regle de paire = MINIMUM des deux (Solidity
+    // Y3Did.c l. 1292). Sans cle : contactMu global partout, bit-identique.
+    {
+        muPhase_.assign(std::max(1, phases_.n()), muC_);
+        int nposes = 0;
+        for (int ph = 0; ph < phases_.n(); ++ph) {
+            const std::string k = "contactMu." + phases_.name[ph];
+            if (cfg_.has(k)) { muPhase_[ph] = cfg_.getd(k, muC_); ++nposes; }
+        }
+        muPerPhase_ = nposes > 0;
+        if (muPerPhase_) {
+            if (phases_.n() < 2)
+                throw std::runtime_error(
+                    "contactMu.<phase> exige des phases nommees (cle "
+                    "'phases') : sans elles la cle serait lue mais "
+                    "INOPERANTE (E3/E6)");
+            std::cout << "[FDEM3D] frottement de contact PAR PHASE "
+                         "(Table 1 Yang et al. 2026) :";
+            for (int ph = 0; ph < phases_.n(); ++ph)
+                std::cout << "  " << phases_.name[ph] << " = " << muPhase_[ph]
+                          << (cfg_.has("contactMu." + phases_.name[ph])
+                              ? "" : " (global)");
+            std::cout << " — regle de paire : le plus FAIBLE gouverne "
+                         "(Solidity Y3Did.c l. 1292)\n";
+        }
+    }
+    // ---- couplage CONTINU endommagement -> contact (Solidity) -------------
+    // contactDamageCoupling = solidity : raideur normale ET frottement du
+    // contact multiplies par d_fact = min(1-D_i, 1-D_j), effondrement /1000
+    // sous 0,041 (Y3Did.c l. 995, 1044, 1263-1265). C est l effondrement de
+    // PORTANCE vise par le papier (« loss of load-bearing capacity ») que
+    // WP6 — echelon binaire sur le seul mu — ne fournissait pas.
+    {
+        std::string cdc = cfg_.gets("contactDamageCoupling", "off");
+        if (cdc != "off" && cdc != "solidity")
+            throw std::runtime_error(
+                "contactDamageCoupling doit valoir off | solidity");
+        cplMode_ = (cdc == "solidity") ? 1 : 0;
+        if (cplMode_) {
+            if (!bdOn_)
+                throw std::runtime_error(
+                    "contactDamageCoupling exige bulkDamage = yang : sans "
+                    "endommagement volumique d_fact vaut 1 partout et la "
+                    "cle serait lue mais INOPERANTE (E3/E6)");
+            if (muCRes_ >= 0.0)
+                throw std::runtime_error(
+                    "contactDamageCoupling et contactResidualMu sont "
+                    "EXCLUSIFS : les deux pilotent le frottement depuis D "
+                    "(le couplage continu contient et remplace l echelon "
+                    "binaire de WP6). Retirer l une des deux cles.");
+            std::cout << "[FDEM3D] contactDamageCoupling = solidity : "
+                         "raideur normale et frottement du contact "
+                         "multiplies par d_fact = min(1-D_i, 1-D_j), "
+                         "effondrement /1000 sous 0,041 (Y3Did.c l. 995, "
+                         "1044, 1263-1265). Toute force normale de contact "
+                         "impliquant un element endommage est multipliee "
+                         "par d_fact (contact general, relais, outil) ; "
+                         "exception : Signorini, frottement seulement — "
+                         "son normal est une CONTRAINTE, pas une "
+                         "penalite.\n";
+        }
+    }
     xiC_ = cfg_.getd("contactXi", 0.05);
     vReg_ = cfg_.getd("contactVreg", 1e-3);
     kpGC_ = cfg_.getd("gcPenaltyFactor", 0.01) * phases_.maxE() * hmin_;
@@ -3176,6 +3240,12 @@ void Fdem3dSolver::potentialContact() {
                             else H.vRef *= relax_;
                             sc = std::max(0.0, 1.0 - H.vRef / R.vol);
                         }
+                        // couplage (1-D) : la raideur NORMALE de la
+                        // paire suit l endommagement (penalty *= d_fact,
+                        // Y3Did.c l. 1265). Le frottement suit via ctcMu :
+                        // d_fact au carre sur Ft, comme chez eux (leur cap
+                        // mu*fn porte d_fact des deux cotes).
+                        if (cplMode_) sc *= cplDf(eLo, eHi);
                         R.F *= sc;
                         for (int k = 0; k < 4; ++k) {
                             R.fA[k] *= sc;
@@ -3528,6 +3598,7 @@ void Fdem3dSolver::generalContact() {
             double cdmp = 2.0 * xiGC_ * std::sqrt(kpGC_ * m_[i]);
             double fn = kpGC_ * pen * (vn < 0.0 ? 1.0 : gcRest_) - cdmp * vn;
             if (fn < 0) fn = 0;
+            if (cplMode_) fn *= cplDf(elemOf_[i], bf.elem);   // (1-D)
             Eigen::Vector3d vt = vrel - vn * nrm;
             double vtn = vt.norm();
             Eigen::Vector3d ftv = Eigen::Vector3d::Zero();
@@ -3596,6 +3667,7 @@ void Fdem3dSolver::toolContact() {
             double c = 2.0 * xiC_ * std::sqrt(kp_ * m_[i]);
             double fn = kp_ * pen + c * (v_[i].z() - tool_.v.z());
             if (fn < 0) fn = 0;
+            if (cplMode_) fn *= cplDf(elemOf_[i], -1);        // (1-D)
             Eigen::Vector3d vt(v_[i].x() - tool_.v.x(),
                                v_[i].y() - tool_.v.y(), 0.0);
             double vtn = vt.norm();
@@ -3613,6 +3685,7 @@ void Fdem3dSolver::toolContact() {
             double c = 2.0 * xiC_ * std::sqrt(kp_ * m_[i]);
             double fn = kp_ * pen - c * vrel.dot(n);
             if (fn < 0) fn = 0;
+            if (cplMode_) fn *= cplDf(elemOf_[i], -1);        // (1-D)
             Eigen::Vector3d vt = vrel - vrel.dot(n) * n;
             double vtn = vt.norm();
             Eigen::Vector3d ftv = Eigen::Vector3d::Zero();
@@ -4598,6 +4671,17 @@ void Fdem3dSolver::finalize() {
             std::cout << ", premier engagement a t = " << tCtcPulv0_ << " s";
         else
             std::cout << " — JAMAIS engage (aucun element pulverise n a "
+                         "touche un contact)";
+        std::cout << "\n";
+    }
+    if (cplMode_) {                                              // couplage
+        std::cout << "[FDEM3D] couplage (1-D)    : " << nCplEval_
+                  << " evaluations degradees, dont " << nCplColl_
+                  << " effondrements (d_fact < 0,041 -> /1000)";
+        if (tCpl0_ >= 0.0)
+            std::cout << ", premier engagement a t = " << tCpl0_ << " s";
+        else
+            std::cout << " — JAMAIS engage (aucun element endommage n a "
                          "touche un contact)";
         std::cout << "\n";
     }
