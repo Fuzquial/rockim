@@ -18,7 +18,19 @@ intégralement sur PDF fourni par Fernando.* **[V]** = lu dans ce PDF ;
   tangential contact force f_tan is greater than μN. » AUCUN détail
   d'algorithme tangentiel : pas de ressort k_t, pas de 2/7, pas de
   régularisation. L'implémentation est attribuée à Xiang, non publiée ici.
-  **Conséquence** : la vérification du relais joint→contact et du
+  > **MISE A JOUR DU 2026-08-29 (LOT 2c) — LE TROU EST COMBLE, ET AILLEURS.**
+> L'algorithme tangentiel EST publie, non pas dans la these ni dans les articles
+> d'impact, mais dans Xiang, Latham & Farsi (2017), « Algorithms and Capabilities
+> of Solidity », eq. (4)-(5) p. 4 : f_t = -k_t delta_t - eta v_t en regime
+> adherent, bascule a f_t = -mu f_n des que f_t depasse mu f_n. Il y a donc bien
+> un RESSORT TANGENTIEL et un amortisseur visqueux, comme dans rockim. Le
+> chapitre attribue l'implementation a « Xiang et al (2009) », ce qui boucle avec
+> l'attribution a Xiang de la these. La conclusion ci-dessous — « la source de
+> verite est le code Solidity lui-meme » — est donc CADUQUE : la source de verite
+> est une publication. Voir
+> [la fiche du lot 2c](2026-08-29_lot2c_frottement_tangentiel.md).
+
+**Conséquence** : la vérification du relais joint→contact et du
   k_t = 2/7 de rockim ne peut PAS se faire contre la thèse — la source de
   vérité est le code Solidity lui-même (Y3Dfd.c, déjà cloné dans le
   conteneur le 2026-08-27). Inutile de chercher d'autres pages de thèse
