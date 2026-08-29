@@ -15,6 +15,14 @@ chaque volet, elle n'est pas décorative.
 | `biblio_fdem.md` | les codes FDEM : Munjiza 2004 (intrinsèque), MultiFracS, Y-Geo/Irazu, Fukuda, HOSS ; comparaisons publiées intrinsèque vs extrinsèque |
 | `biblio_roches.md` | applications roches : Tang/RFPA (l'hétérogénéité de Weibull nécessaire à la localisation), Lisjak EDZ, BPM, GBM, tunnels profonds |
 
+## Volet Imperial College / Solidity (mission état de l'art, 2026-08-29)
+
+| fichier | contenu |
+|---|---|
+| `2026-08-29_lot1_bibliographie_imperial.md` | **LOT 1** — bibliographie annotée du FDEM d'Imperial (Y → VGW/VGeST → Solidity) : 20 pièces, généalogie du code, statut d'accès de chacune, **liste de téléchargement ordonnée par valeur**, trous identifiés, et demandes d'extraits de la thèse de Guo. ⚠️ Aucune source n'y est lue en plein texte : le conteneur de la session n'avait pas d'accès sortant au-delà du moteur de recherche. Étiquettes [MÉTA]/[RÉSUMÉ]/[INFÉRÉ]/[SUPPOSÉ] portées partout. |
+| `yang2026_pulverisation.md` | l'article IJRMMS 206 (2026) dépouillé sur PDF — source primaire. §5 porte depuis le 29/08 un avertissement : son dernier paragraphe attribuait à Solidity un couplage lu dans `/home/user/solidity`. |
+| `guo2014_*.md` | quatre sections de la thèse de Guo (Imperial 2014), lues sur PDF : maillage §2.4, contact et intégration §2.3.4-5, couplage fluide ch. 5, Dolosse ch. 6 |
+
 Conclusions opérationnelles : voir [BILAN_insertion_adaptative.md](../BILAN_insertion_adaptative.md)
 §2 (ce que dit la littérature) et §7 (idées écartées avec la raison).
 
