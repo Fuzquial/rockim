@@ -74,4 +74,63 @@ le mode — mais de changer le schema d'insertion, ou de rendre au critere
 d'insertion la contrainte NON amortie. Les deux se testent a bas cout sur ce
 meme jumeau de 80 us avant d'engager le moindre gros run.
 
+## 7. RESULTATS FINAUX (runs termines, T = 80 us)
+
+| | adaptatif + bulkDamage | adaptatif SANS bulkDamage | INTRINSEQUE + bulkDamage |
+|---|---|---|---|
+| joints rompus | 605 | 1 498 | **2 240** |
+| cisaillement | 28,6 % | 27,5 % | **44,3 %** |
+| poste joints (fissuration) | 0,654 J | — | **2,373 J** |
+| poste elements | 11,59 J | — | 5,38 J |
+| pulverisation | 3,26 J, **25** elements a Dmax | — | 0,114 J, **0** element |
+| frottement de contact | 0,510 J | — | 8,645 J |
+| contact residuel (WP6) | engage a 42,1 us | — | **JAMAIS engage** |
+| energie absorbee par le bloc | 12,87 J | — | 5,36 J |
+| vz du bit a 80 us | -8,29 m/s | — | -8,90 m/s |
+
+Le confondant redoute est LEVE par la banniere du solveur : `strainRateDIFArm
+= envelope` gele le DIF au franchissement de l enveloppe, c est-a-dire sur LE
+MEME critere que l insertion adaptative (contrainte moyenne des deux tetras
+contre ft dynamique et Mohr-Coulomb). Les deux schemas partagent le critere et
+ne different que par sa consequence : l un cree le joint, l autre s y contente
+de geler le DIF. Le passage a l intrinseque n a donc pas change la resistance.
+
+## 8. LES DEUX DECOUVERTES DU RUN INTRINSEQUE
+
+**(a) bulkDamage et l insertion intrinseque s excluent mutuellement.** Sous
+l intrinseque la pulverisation devient INERTE : 0,114 J contre 3,26 J, et
+ZERO element a Dmax contre 25. Consequence en cascade : `contactResidualMu`
+n a JAMAIS ete engage — la banniere de fin l ecrit noir sur blanc, « aucun
+element pulverise n a touche un contact ». Le mecanisme n est pas celui qu on
+croyait : le critere de pulverisation s ecrit dm = hEl x eps_dev (l. 2274), et
+quand les joints peuvent casser librement des t = 0, la deformation
+deviatorique est RELACHEE PAR LA FISSURATION et n atteint jamais le seuil.
+Les deux modeles ne se genent pas seulement, ils se disputent la meme energie
+de deformation : celui qui agit le premier interdit l autre. Le partage
+energetique le montre — le poste joints passe de 0,65 a 2,37 J (x3,6) pendant
+que le poste elements tombe de 11,59 a 5,38 J. Regime fragile contre regime
+de deformation volumique.
+NB : Yang et al. font tourner les deux ensemble. L ecart doit donc venir de la
+calibration (delta0 = 1,4e-5 m est une valeur GRANITE appliquee au calcaire,
+et dm depend de la taille d element) ou de leur loi de joint. A instruire.
+
+**(b) L intrinseque aggrave l injection par la branche NORMALE du contact.**
+`contact = -2,471 J (dont frottement 8,645 J)` : la part normale a donc INJECTE
+11,1 J, soit 20 % de KE0 — contre 3,66 J (6,9 %) sur P1. L explication est
+mecanique : quatre fois plus de joints rompus font quatre fois plus de
+surfaces libres, donc de paires de contact qui NAISSENT, et le facteur de
+naissance par defaut (`gcBirth = ramp`, rampe par volume) rend la force
+normale dependante du chemin. C est un argument fort, et desormais chiffre,
+pour poser `gcBirth = penalty` AVANT d adopter l intrinseque.
+
+## 9. CE QU IL FAUT EN RETENIR
+
+L insertion intrinseque restaure le cisaillement (44,3 % contre 28,6 %) mais,
+en l etat, elle eteint la pulverisation et fait exploser l injection de
+contact. Elle n est donc PAS adoptable telle quelle : il faut d abord
+`gcBirth = penalty`, puis re-instruire la calibration de bulkDamage pour le
+calcaire. Le run des nombres et le run du facies lances le 29/08 restent
+volontairement en insertion ADAPTATIVE, pour ne changer qu une famille de
+variables a la fois.
+
 Decks : `J1_intrinseque.cfg`, `J2_coulombseul.cfg` (scratchpad du 29/08).
