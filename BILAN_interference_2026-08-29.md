@@ -147,6 +147,16 @@ l historique) ; ce qui suit les corrige.
 
 ## C1. Ce qu on lit chez eux, verifie de premiere main
 
+> **AVERTISSEMENT AJOUTE LE 2026-08-29 (LOT 2a).** Tout ce §C1 repose sur la
+> lecture de `/home/user/solidity`, dont la CORRECTION 2 ci-dessous etablit que
+> ce n'est PAS le code d'Imperial. Un point precis est desormais REFUTE sur
+> source primaire : la puce « Raideur de joint », qui declarait fausse la
+> derivation a 52,6 E de DOCUMENTATION_rockim.md §5.4. Imperial publie
+> **Penalty Number = 3000 GPa pour St Anne, dont E = 57 GPa**, soit **52,6 E**
+> (ARMA 24-0952, Table 1 p. 4). **La derivation d'origine etait juste ; c'est
+> cette correction-ci qui etait fausse.** Voir
+> [la fiche du lot 2a](biblio_insertion/2026-08-29_lot2a_parametres_stanne.md) §3.
+
 * **Solidity est INTEGRALEMENT intrinseque** : zero occurrence de `adaptive`
   ou `extrinsic` dans les 15 448 lignes de `src/`. Leurs joints sont donc
   aussi libres de casser des t = 0 que les notres, et la loi de Yang y vit.

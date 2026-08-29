@@ -20,6 +20,7 @@ chaque volet, elle n'est pas décorative.
 | fichier | contenu |
 |---|---|
 | `2026-08-29_lot1_bibliographie_imperial.md` | **LOT 1** — bibliographie annotée du FDEM d'Imperial (Y → VGW/VGeST → Solidity) : 20 pièces, généalogie du code, statut d'accès de chacune, **liste de téléchargement ordonnée par valeur**, trous identifiés, et demandes d'extraits de la thèse de Guo. ⚠️ Aucune source n'y est lue en plein texte : le conteneur de la session n'avait pas d'accès sortant au-delà du moteur de recherche. Étiquettes [MÉTA]/[RÉSUMÉ]/[INFÉRÉ]/[SUPPOSÉ] portées partout. |
+| `2026-08-29_lot2a_parametres_stanne.md` | **LOT 2a** — les paramètres de St Anne sur sources primaires (ARMA 24-0952 + IJRMMS 191), le bilan d'énergie chiffré, et **DEUX CORRECTIONS** : le frottement 0,18 ne vaut que pour le granite (St Anne est à 0,6, comme le deck) ; la pénalité de 3000 GPa = 52,6 E est réelle, la « correction » du 29/08 qui la réfutait était fausse. |
 | `yang2026_pulverisation.md` | l'article IJRMMS 206 (2026) dépouillé sur PDF — source primaire. §5 porte depuis le 29/08 un avertissement : son dernier paragraphe attribuait à Solidity un couplage lu dans `/home/user/solidity`. |
 | `guo2014_*.md` | quatre sections de la thèse de Guo (Imperial 2014), lues sur PDF : maillage §2.4, contact et intégration §2.3.4-5, couplage fluide ch. 5, Dolosse ch. 6 |
 

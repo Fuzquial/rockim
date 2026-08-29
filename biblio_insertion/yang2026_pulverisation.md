@@ -53,6 +53,15 @@ donc JUSTE.
 
 ## 3. LE POINT LE PLUS IMPORTANT — 0,18 est le frottement de la ROCHE
 
+> **AVERTISSEMENT AJOUTE LE 2026-08-29 (LOT 2a) — VALABLE POUR LE GRANITE SEUL.**
+> Le 0,18 est le frottement du granite Kuru Grey, et de lui seul. Sur le calcaire
+> St Anne, Imperial publie **0,6** — deux fois, independamment : IJRMMS 191 (2025)
+> Table 4 p. 6, et ARMA 24-0952 Table 1 p. 4. L'acier et le carbure y sont aussi a
+> 0,6. Le dernier paragraphe de ce §3, qui conclut que le deck de rockim est
+> « 3,3 fois trop eleve », NE VAUT PAS pour St Anne : sur la roche de la these,
+> `contactMu = 0.6` est exactement la valeur d'Imperial. Voir
+> [la fiche du lot 2a](2026-08-29_lot2a_parametres_stanne.md) §2.
+
 Table 1 range le coefficient de frottement glissant comme une propriete
 MATERIAU : 0,18 pour le granite, 0,6 pour le carbure et 0,6 pour l'acier.
 Le texte precise (p. 6) : « The sliding friction coefficient is treated as an
