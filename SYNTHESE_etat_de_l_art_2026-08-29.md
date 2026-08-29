@@ -326,7 +326,13 @@ cas sans frottement — « somewhat alarming », écrivent-ils.
 > baisse dès que `potTangentFactor` monte. S'il ne bouge pas, le correctif n'est
 > pas branché.
 
-### Étape 10 — Ajouter le banc analytique du frottement · **0,5 j**
+### Étape 10 — Ajouter le banc analytique du frottement · ~~0,5 j~~ **1-2 j**
+
+> **⚠️ ESTIMATION CORRIGÉE LE 2026-08-29.** rockim n'a **aucun scénario** capable
+> d'exprimer ce banc (`percussion | shear | tension | brazilian | shpb`), ni de
+> clé de vitesse initiale de corps. Un scénario neuf touche **43 points de
+> branchement dans 17 fonctions**. Trois voies chiffrées, et une recommandation,
+> dans `chantier_imperial_2026-08-29/A12_banc_frottement.md`.
 
 Rectangle lancé sur un plan, `L = v_i²/(2µg)`, configuration publiée complète
 (lot 2c §3ter). `verify_suite.py` n'a **aucun** contrôle du chemin tangentiel de
