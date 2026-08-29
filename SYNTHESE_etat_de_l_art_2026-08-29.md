@@ -32,11 +32,12 @@ tranché par les sources.
 
 Le dépouillement a été **contre-vérifié de façon adversariale** : un second
 lecteur, ignorant du premier, retournait à la page et cherchait la
-surinterprétation. **287 verdicts rendus : 258 confirmés, 29 surinterprétations,
-2 faux.** Les 31 défauts ont été corrigés avant d'entrer ici. Les taux ne sont
-pas décoratifs : ils disent qu'environ **une affirmation sur dix** d'une première
-lecture allait plus loin que sa citation. C'est la mesure du piège que la
-CORRECTION 2 avait identifié.
+surinterprétation. **673 verdicts rendus : 614 confirmés (91,2 %), 54 surinterprétations,
+3 faux, 2 introuvables.** Les 59 défauts ont été corrigés avant d'entrer ici.
+Les taux ne sont pas décoratifs : ils disent qu'environ **une affirmation sur
+onze** d'une première lecture allait plus loin que sa citation. C'est la mesure
+du piège que la CORRECTION 2 avait identifié. *(Chiffres définitifs : le
+dépouillement a terminé à 28 agents sur 28, sans erreur.)*
 
 ### 0.3 Ce que ce document ne couvre pas
 
@@ -102,11 +103,22 @@ that leverages a hybrid FDEM method ».
    pour St Anne et Rhune, « previous validated FDEM studies were able to
    reproduce the main fragmentation characteristics **without introducing the
    additional damage model or modified sliding friction treatment** ».
-3. **Leur coefficient de frottement glissant est un bouton de compensation
-   numérique**, pas une propriété physique. JR p. 5 : « Since FDEM simulations
-   rely on mesh boundaries for cracking, the generated rock fragments **always
-   have sharp edges** […] **it is necessary to reduce the sliding friction
-   coefficient** ».
+3. **Leur coefficient de frottement glissant joue DEUX rôles, dont un numérique.**
+   JR p. 5 : « Since FDEM simulations rely on mesh boundaries for cracking, the
+   generated rock fragments **always have sharp edges** […] **it is necessary to
+   reduce the sliding friction coefficient** » — c'est la compensation de
+   l'angularité des tétraèdres. Mais JR p. 10 ajoute un rôle **physique** :
+   « The **abrupt change in the friction coefficient from intact internal to crack
+   wall sliding (i.e. from 1.96 to 0.39)** leads to a **fast energy accumulation**
+   as would be required to **initiate radial cracks**. » Le **contraste** entre
+   frottement interne et glissement est un moteur d'amorçage. Dans les deux cas,
+   la valeur reste non transférable — un contraste dépend des deux termes.
+4. **Dans JR, l'effet de vitesse est absorbé dans G_I et G_II**, pas appliqué par
+   le DIF : « The energy release rates, G_I and G_II, were **artificially
+   increased** to consider the loading rate effect through the validation
+   process » (p. 4). **Leurs G ne sont donc pas des propriétés quasi-statiques**,
+   et ne se comparent pas à ceux d'IJ206, qui accompagnent un DIF explicite. Même
+   symbole, deux sens.
 
 ### 2.2 Et la preuve de la troisième : le même granite, calibré deux fois
 
