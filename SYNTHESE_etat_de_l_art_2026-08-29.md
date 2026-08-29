@@ -277,10 +277,13 @@ qu'il est superflu sur le calcaire (§2.1). Frottement à **0,6**, pas 0,18.
 > pas nécessairement un échec, c'est peut-être un maillage moins anguleux. À
 > discuter, pas à corriger d'office.
 
-### Étape 5 — Restreindre les joints à la roche · **0,5 à 1 j** · raffinement
+### Étape 5 — Restreindre les joints à la roche · **2 j** · raffinement
 
-Vérifier d'abord s'il existe déjà un filtre par phase — si oui, c'est une clé de
-deck.
+**Aucun filtre par phase n'existe** (vérifié : `jointPhase`, `jointsIn`,
+`noJoint`, `jointBodies`, `skipJoint` → zéro occurrence). Il faut l'écrire, dans
+les deux solveurs, avec sa clé, sa bannière et son contrôle de non-régression.
+*(Estimation révisée le 2026-08-29 : elle était de 0,5 à 1 j, sous l'hypothèse
+qu'un filtre existait.)*
 
 > **Critère** : nombre de joints divisé par ≈ 2 ; **vitesse de rebond du taillant
 > rapprochée de la mesure** ; champ de fissuration dans la roche **inchangé** à
@@ -312,6 +315,27 @@ ligne du dépôt ne justifie cette valeur.
 > **Critère** : une courbe résidu d'énergie contre τ, et une valeur choisie sur
 > elle plutôt que par défaut.
 
+### Étape 9 — Porter k_t dans le budget de pas de temps du 3D · **0,5 j**
+
+Le 2D compte `potKt_` (`FdemSolver.cpp:3134`) ; **le 3D ne le compte pas**
+(`Fdem3dSolver.cpp:2115-2122`). Or Xiang, Munjiza, Latham & Guises (2009) p. 677
+avertissent que le calcul des forces tangentielles exige un pas plus petit que le
+cas sans frottement — « somewhat alarming », écrivent-ils.
+
+> **Critère** : à jeu de paramètres constant, le `dt` annoncé par le solveur 3D
+> baisse dès que `potTangentFactor` monte. S'il ne bouge pas, le correctif n'est
+> pas branché.
+
+### Étape 10 — Ajouter le banc analytique du frottement · **0,5 j**
+
+Rectangle lancé sur un plan, `L = v_i²/(2µg)`, configuration publiée complète
+(lot 2c §3ter). `verify_suite.py` n'a **aucun** contrôle du chemin tangentiel de
+contact — ses contrôles de frottement portent tous sur le joint.
+
+> **Critère** : distance d'arrêt simulée à moins de 1 % de `v²/(2µg)` au pas fin,
+> et l'écart doit **croître** au pas grossier — c'est le comportement que les
+> auteurs rapportent, et le reproduire valide le chemin en plus de la valeur.
+
 ### Ce qu'il ne faut PAS faire
 
 * **Ne pas implémenter de maillage adaptatif.** Imperial n'en a pas et le range
@@ -321,6 +345,9 @@ ligne du dépôt ne justifie cette valeur.
 * **Ne pas passer `contactMu` à 0,18 sur St Anne.** Imperial y met **0,6**.
 * **Ne pas attendre grand-chose de la détection par événement** : le dépôt a
   mesuré que le poste dominant est ailleurs (10-15 % du mur, pas un facteur 7).
+* **Ne pas chercher à aligner `k_t` sur Imperial** : aucun nombre n'est publié
+  (huit sources). Le rapport `k_t/k_n = 2/7` des decks vient du code
+  non-Imperial et doit être requalifié, pas corrigé.
 * **Ne pas activer la pulvérisation sur un cas St Anne.** Si elle change les
   résultats, c'est un artefact.
 
