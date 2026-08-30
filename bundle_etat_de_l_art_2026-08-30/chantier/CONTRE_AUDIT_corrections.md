@@ -365,6 +365,17 @@ d'ailleurs déjà écrite au [lot 2b](../fiches/2026-08-29_lot2b_couplage_endomm
 (l. 217) : **1,0010**. L'artefact cité comme preuve portait donc un chiffre erroné.
 **Corrigé dans l'en-tête le 2026-08-30**, avec la note de correction datée.
 
+> **Preuve de non-régression.** La correction ne touche que le **commentaire**
+> d'en-tête de `include/rockim/YangDif.hpp` : aucune expression, aucune borne,
+> aucun exposant n'est modifié. Reconstruction complète puis suite de
+> non-régression au tier par défaut : **`[suite] TOUT PASSE (44/44)`** — dont les
+> quatre repères qui verrouillent précisément cette loi
+> (`dif_continuous_2d` : `edotmed = 7,65306`, `difmed = 1,5303` ;
+> `zeroload_dif_continuous_2d` ; `srfilter_none_2d` : `edotmed = 4,01048`,
+> `difmed = 1,4697` ; `zeroload_srfilter_none_2d`), et les deux repères d'A11
+> (`dtbudget_tangential_defaut_3d` : `dt = 1,30191e-08` ;
+> `dtbudget_tangential_on_3d` : `dt = 1,27315e-08`), tous à leur référence exacte.
+
 > **La formulation qui résiste à un rapporteur** — à utiliser telle quelle :
 >
 > « La loi de DIF en traction publiée en 2025 avec l'exposant 0,07 ne se raccorde
