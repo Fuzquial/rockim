@@ -240,6 +240,15 @@ quand une clé serait inerte.
 
 ## 6. LE PLAN DE TRAVAIL
 
+> # ⚠️ CE PLAN EST REMPLACÉ
+> Le contre-audit du lot 4 le note **2 sur 17**. Trois de ses actions sont
+> **dangereuses ou impossibles**, ses deux « blocages » **n'en sont pas**, et le
+> critère de l'étape 2 est **algébriquement tautologique** — il ne peut pas
+> échouer. **Le plan applicable est au §6 de**
+> [`chantier_imperial_2026-08-29/CONTRE_AUDIT_corrections.md`](chantier_imperial_2026-08-29/CONTRE_AUDIT_corrections.md).
+> Ce qui suit est conservé pour l'historique et **ne doit pas être exécuté**.
+
+
 *Ordonné par ce qui débloque. Chaque étape porte son critère de réussite
 mesurable — si le critère n'est pas atteint, l'étape a échoué et il faut le dire.*
 
