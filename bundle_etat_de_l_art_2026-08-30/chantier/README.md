@@ -33,6 +33,7 @@ porte les corrections et **le plan applicable**. Il prime sur le lot 4 et sur le
 | fiche | action | état |
 |---|---|---|
 | [`A11_dt_tangentiel.md`](A11_dt_tangentiel.md) | porter la raideur tangentielle du contact dans le budget de pas de temps du 3D | **FAIT** |
+| [`B08_ratcheting_percussion_3d.md`](B08_ratcheting_percussion_3d.md) | **porter le diagnostic de *diffuse ratcheting* sur la percussion 3D** — il n'existait qu'en 2D et sur l'essai brésilien | **FAIT** — × 3,24 de joints ratchetant en insertion intrinsèque, pic d'effort inférieur de 8,1 %, **0 joint rompu** de part et d'autre. Et un avertissement mesuré : la jauge ne se compare pas d'une pénalité à l'autre |
 | [`B10_bilan_energie_forces_volumiques.md`](B10_bilan_energie_forces_volumiques.md) | **fermer le bilan d'énergie** : le septième poste d'ARMA (l'énergie gravitaire) n'existait pas, et le travail du tri était hors bilan — clé `energyBodyForces`, **2D et 3D** | **FAIT** — le résidu B4 **était** le travail non compté de la pesanteur, à 0,02 % près, et le garde-fou `budgetAbortPct` **coupait un run sain** à cause de lui |
 | [`A12_banc_frottement.md`](A12_banc_frottement.md) | banc analytique du rectangle glissant | **SPÉCIFIÉ, non implémenté** — estimation d'effort corrigée, trois voies chiffrées, décision au commanditaire |
 | [`A03_resourcer_attributions.md`](A03_resourcer_attributions.md) | re-sourcer les attributions | **SUSPENDU** — la prémisse était fausse : `solidity-solver-open` EST le code public d'Imperial (LGPL-3.0). Action redéfinie en A3.1-A3.3 |

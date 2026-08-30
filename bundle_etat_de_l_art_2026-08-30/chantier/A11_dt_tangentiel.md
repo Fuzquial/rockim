@@ -138,7 +138,7 @@ inchangé.
   tant qu'ils ne posent pas la clé.
 * Il **ne dit pas quelle valeur de `potTangentFactor` est juste.** Le rapport
   `k_t/k_n = 2/7` des decks d'impact vient d'un code qui n'est pas celui
-  d'Imperial, et **aucune valeur de k_t n'est publiée**, sur huit sources
+  d'Imperial, et **aucune valeur de k_t n'est publiée**, sur **8 sources**, liste nominative au [lot 2c §4](../fiches/2026-08-29_lot2c_frottement_tangentiel.md) (B9)
   ([lot 2c](../fiches/2026-08-29_lot2c_frottement_tangentiel.md) §3ter).
   C'est l'objet de l'action A3, pas de celle-ci.
 * Il **ne traite pas `potP_`**, dont la place éventuelle dans un budget de

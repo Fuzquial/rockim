@@ -428,7 +428,7 @@ contact — ses contrôles de frottement portent tous sur le joint.
 * **Ne pas attendre grand-chose de la détection par événement** : le dépôt a
   mesuré que le poste dominant est ailleurs (10-15 % du mur, pas un facteur 7).
 * **Ne pas chercher à aligner `k_t` sur Imperial** : aucun nombre n'est publié
-  (huit sources). Le rapport `k_t/k_n = 2/7` des decks vient du code
+  (**8 sources**, liste nominative arrêtée le 2026-08-30 au [lot 2c §4](fiches/2026-08-29_lot2c_frottement_tangentiel.md) — B9). Le rapport `k_t/k_n = 2/7` des decks vient du code
   non-Imperial et doit être requalifié, pas corrigé.
 * **Ne pas activer la pulvérisation sur un cas St Anne.** Si elle change les
   résultats, c'est un artefact.

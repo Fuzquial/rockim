@@ -67,7 +67,10 @@ identiques : il n'y aurait rien à dédoubler avant que le critère ne se décle
 **L'insertion est donc intrinsèque, à 100 % du domaine fracturable, dès le
 maillage.**
 
-**[ABSENT — recherche exhaustive sur cinq sources]** Les mots `extrinsic`,
+**[ABSENT — recherche exhaustive sur cinq sources]** *(⚠️ **cinq**, et non huit :
+c'est le corpus d'IMPACT, une autre question que celle du frottement — pour
+laquelle le décompte est figé à **8 sources nommées**, [lot 2c §4](2026-08-29_lot2c_frottement_tangentiel.md).
+Les deux nombres sont justes et ne se mélangent pas.)* Les mots `extrinsic`,
 `adaptive insertion`, `on-the-fly`, `activated joint`, `insertion criterion` :
 **zéro occurrence**. Imperial ne discute même pas l'alternative. Le débat
 intrinsèque/extrinsèque qui occupe la littérature Camacho-Ortiz-Pandolfi
