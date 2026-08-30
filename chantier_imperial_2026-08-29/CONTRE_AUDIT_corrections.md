@@ -249,6 +249,7 @@ rapport gain/risque.
 | **B7** ✅ **FAIT le 2026-08-30** | **Corriger le §3** : entrées **7 et 10 RETIRÉES** (toutes deux inertes sur le banc de réplique — `bulkModel = neohookean` pour l'une, `contact = potential` pour l'autre), **1, 3, 6, 8, 9, 12 et 13 requalifiées**, « résultats scientifiques » ramenés de **quatre à un** (+ une reformulation publiable) | faible | ✅ chaque entrée survivante porte une preuve revérifiée par moi contre le dépôt, commande donnée |
 | **B8** | **Porter le diagnostic *diffuse ratcheting* sur la percussion 3D** (§9, M-8). Il n'existe aujourd'hui qu'en **2D** et **sur l'essai brésilien** — c'est-à-dire nulle part sur le cas comparé à Imperial | faible (le code 2D existe : `gDfrac_`, `gDmean_` à transposer) | la part de joints au-dessus de D = 0,01 au pic **imprimée** sur `impact_imperial.cfg`, et **son écart entre insertion intrinsèque et adaptative**. C'est la jauge qui manque à B1 et B5 |
 | **B9** | **Figer le compte des sources muettes sur une liste NOMINATIVE** (§9, M-11). Aujourd'hui **4, 5, 6, 7 et 8** circulent dans trois documents pour deux affirmations voisines | très faible | **un seul nombre par affirmation**, chaque source nommée dans une table du lot 2c, reprise partout ailleurs par renvoi |
+| **B10** ✅ **FAIT le 2026-08-30** | **Fermer le bilan d'énergie** : le **septième poste** d'ARMA 24-0952 (éq. 3-7), l'énergie gravitaire, n'existait pas — et le travail du tri des fragments était hors bilan. Clé `energyBodyForces = off \| on`, **2D et 3D**, mesure inconditionnelle, entrée dans `sumW` opt-in. Fiche [`B10_bilan_energie_forces_volumiques.md`](B10_bilan_energie_forces_volumiques.md) | faible | ✅ **le résidu B4 ÉTAIT le travail non compté de la pesanteur, à 0,02 % près** (1,05718e-06 contre 1,05738e-06 J) ; compté, il tombe d'un facteur **5 250**. Et le garde-fou `budgetAbortPct` **coupait un run sain** à cause de lui — démontré, puis levé. Quatre repères, dont deux qui verrouillent le déclenchement et son absence |
 
 **Ce qu'il ne faut PAS faire**, mis à jour :
 
@@ -421,12 +422,20 @@ Trois erreurs dans une seule phrase :
 **Corollaire, et il retourne le reproche fait au brief** : le « 42 » du brief
 n'était pas une erreur — c'était **exactement le tier par défaut de l'époque**.
 
-> **Formulation à utiliser** : « 97 contrôles de non-régression, dont **44 au tier
-> rapide par défaut**, 89 au tier `full`, 97 au tier `all` ; **217 assertions**
-> chiffrées au total. »
+> **Formulation à utiliser** (en datant toujours le chiffre) : « **101 contrôles
+> de non-régression au 2026-08-30**, dont **44 au tier rapide par défaut**, 91 au
+> tier `full`, 101 au tier `all` ; **225 assertions** chiffrées au total. »
 
 Citer « 98 » au manuscrit, c'est publier un nombre que personne ne pourra
 reproduire.
+
+> **Et ce nombre BOUGE — c'est la vraie leçon.** Il valait 95 avant A11, 97
+> après, et **101** depuis B10 (44 `fast`, 47 `full`, 10 `all`) le 2026-08-30.
+> Une suite vivante voit son décompte changer à chaque chantier. **Tout chiffre
+> de ce genre doit donc porter sa date** — « 101 contrôles au 2026-08-30 » — ou,
+> mieux, être **recompté à la publication** par le dépouillement AST donné
+> ci-dessus. C'est ce qui distingue un nombre vérifiable d'un nombre périmé, et
+> c'est précisément l'erreur que le « 98 » a commise.
 
 #### M-3 (§1 du lot 4) — « 117 attributions » → **le nombre est faux sous TOUTES les conventions de comptage.**
 
@@ -513,6 +522,33 @@ qu'un run est long ou quasi statique.
 Dès que le tri anti-gravité des fragments est armé, **son travail tombe
 entièrement dans le résidu** — et `budgetAbortPct` peut couper un run **sain** sur
 un artefact purement numérique.
+
+> ### ⚠️ MESURÉ le 2026-08-30 — ma magnitude « invisible » était la bonne réponse
+> ### à la mauvaise question
+>
+> Le poste gravitaire **existe désormais** (`energyBodyForces`, fiche
+> [`B10_bilan_energie_forces_volumiques.md`](B10_bilan_energie_forces_volumiques.md)), et la mesure renverse la
+> conclusion ci-dessus. Sur `configs/fdem3d_percussion.cfg`, `gravity = 9.81` :
+>
+> | T | travail de la pesanteur | résidu B4 au défaut | résidu, poste compté |
+> |---|---|---|---|
+> | 2·10⁻⁵ s | 1,05738·10⁻⁶ J | **1,05718·10⁻⁶ J** | −2,015·10⁻¹⁰ J |
+> | 2·10⁻⁶ s | 1,71228·10⁻¹⁰ J | **1,71064·10⁻¹⁰ J** (116 %, `[CHECK]`) | −1,645·10⁻¹³ J |
+>
+> **Le résidu ÉTAIT le travail non compté de la pesanteur**, à 0,02 % près. La
+> pesanteur est négligeable devant l'énergie **injectée** — c'est ce que je
+> mesurais — et **dominante** devant l'énergie **non expliquée**, qui est
+> justement ce que le verdict juge.
+>
+> **Et le garde-fou coupe un run sain à cause de ça, mesuré** : à `T = 9·10⁻⁶ s`
+> avec `budgetAbortPct = 2`, le défaut **ABORTE** à t = 8,344·10⁻⁶ s sur un
+> résidu de **175 % de l'échelle** qui vaut, à 0,3 % près, le travail de la
+> pesanteur (2,37808·10⁻⁹ J) — sur un run à **zéro joint rompu**, hotspot à
+> `|v| = 7,95·10⁻⁵ m/s. Clé armée, le run va au bout, résidu 0,25 %, `[OK]`.
+>
+> Le second trou (`brushWork_`) est traité par la même clé. **La décision d'armer
+> `budgetAbortPct` sur les decks de réplique devient sûre**, ce qu'elle n'était
+> pas tant que le bilan était incomplet.
 
 #### M-8 (§3, entrée 9 du lot 4) — le diagnostic « diffuse ratcheting » → **il ne s'imprime que sur l'essai BRÉSILIEN, et en 2D.**
 
@@ -681,7 +717,14 @@ Et **deux corrections de deck** que je n'applique pas sans votre accord, parce
 qu'elles changent ce que les runs produisent :
 
 * poser `budgetAbortPct` sur `impact_imperial.cfg` et `impact_imperial_coulomb.cfg`
-  (M-6) — sinon l'avantage revendiqué n'est pas armé là où on le revendique ;
-* décider si `brushWork_` doit entrer dans `sumW` (M-7) — en l'état, le tri
-  anti-gravité des fragments verse son travail dans le résidu, et un garde-fou
-  d'énergie peut couper un run sain.
+  (M-6) — sinon l'avantage revendiqué n'est pas armé là où on le revendique.
+  ⚠️ **Ce geste n'était PAS sûr et l'est devenu** : il exige `energyBodyForces = on`,
+  sans quoi le garde-fou coupe un run sain sur le poste gravitaire manquant
+  (mesuré, B10 §1.0 bis). **À poser ensemble, jamais l'un sans l'autre.**
+* ~~décider si `brushWork_` doit entrer dans `sumW`~~ (M-7) — **tranché et fait**
+  le 2026-08-30 : il y entre sous `energyBodyForces = on`, avec la pesanteur, et
+  reste hors bilan au défaut. La raison écrite dans `FdemSolver.hpp` (« ne pas
+  fabriquer une pompe logée dans un canal comptabilisé ») était bonne mais ne
+  protégeait pas de ce qu'elle craignait : hors de `sumW`, ce travail tombe
+  **entièrement** dans le résidu. **Le mesurer et le montrer protège ; le cacher,
+  non.**

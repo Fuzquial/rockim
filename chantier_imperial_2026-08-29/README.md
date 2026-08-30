@@ -33,6 +33,7 @@ porte les corrections et **le plan applicable**. Il prime sur le lot 4 et sur le
 | fiche | action | état |
 |---|---|---|
 | [`A11_dt_tangentiel.md`](A11_dt_tangentiel.md) | porter la raideur tangentielle du contact dans le budget de pas de temps du 3D | **FAIT** |
+| [`B10_bilan_energie_forces_volumiques.md`](B10_bilan_energie_forces_volumiques.md) | **fermer le bilan d'énergie** : le septième poste d'ARMA (l'énergie gravitaire) n'existait pas, et le travail du tri était hors bilan — clé `energyBodyForces`, **2D et 3D** | **FAIT** — le résidu B4 **était** le travail non compté de la pesanteur, à 0,02 % près, et le garde-fou `budgetAbortPct` **coupait un run sain** à cause de lui |
 | [`A12_banc_frottement.md`](A12_banc_frottement.md) | banc analytique du rectangle glissant | **SPÉCIFIÉ, non implémenté** — estimation d'effort corrigée, trois voies chiffrées, décision au commanditaire |
 | [`A03_resourcer_attributions.md`](A03_resourcer_attributions.md) | re-sourcer les attributions | **SUSPENDU** — la prémisse était fausse : `solidity-solver-open` EST le code public d'Imperial (LGPL-3.0). Action redéfinie en A3.1-A3.3 |
 | `A01_gcbirth_penalty.md` | essai `gcBirth = penalty` sur l'impact 3D | à faire |
@@ -41,5 +42,5 @@ porte les corrections et **le plan applicable**. Il prime sur le lot 4 et sur le
 ## Ce que ce chantier ne touche pas
 
 Aucun défaut existant n'est modifié. Aucun deck existant n'est modifié sans que
-la fiche correspondante le dise. La suite des 97 contrôles reste valable telle
+la fiche correspondante le dise. La suite des 101 contrôles reste valable telle
 quelle : les contrôles ajoutés ici s'y ajoutent, ils n'en remplacent aucun.

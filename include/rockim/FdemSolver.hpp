@@ -817,7 +817,14 @@ private:
     bool brushZeroV_ = false;              // remplacer v au lieu d'ajouter
     bool brushArmed_ = false;
     double brushT0_ = 0.0;                 // instant reel de l'armement
-    double brushWork_ = 0.0;               // poste d'energie SEPARE
+    double brushWork_ = 0.0;               // poste SEPARE (cf. energyBodyForces)
+    // ---- energyBodyForces : MIROIR EXACT du 3D (Fdem3dSolver.hpp) ---------
+    // Le raisonnement complet y est ecrit une seule fois ; ici, la parite.
+    // Une divergence 2D/3D sur ce point serait MUETTE et fausserait toute
+    // comparaison dimensionnelle du bilan d'energie — le mode de panne que la
+    // regle de parite du depot existe pour eviter.
+    double gravWork_ = 0.0;                // travail de la PESANTEUR (B4)
+    bool   eBody_ = false;                 // energyBodyForces = on
     std::vector<char> brushCand_;          // par ELEMENT : candidat au retrait
     std::vector<int> brushFrag_;           // fragId_ fige a l'armement
     int brushNFrag_ = 0;

@@ -736,6 +736,42 @@ rapide). Un run qui diverge laisse son autopsie au lieu de mégajoules de
 débris. Typique : `budgetAbortPct = 5` en production, off pour les études
 de diagnostic (E0) où l'on VEUT voir la divergence se développer.
 
+> ⚠️ **À NE PAS ARMER SANS `energyBodyForces = on`** (mesuré le 2026-08-30).
+> Le résidu que ce moniteur juge **ne contenait pas** le travail des forces
+> volumiques : ni la pesanteur (aucun compteur n'existait) ni le tri des
+> fragments (`brushWork_`, tenu hors bilan à dessein). Résultat mesuré sur
+> `configs/fdem3d_percussion.cfg` + `gravity = 9.81` + `budgetAbortPct = 2` :
+> **le moniteur ABORTE à t = 8,344·10⁻⁶ s** sur un résidu de **175 % de
+> l'échelle** qui vaut, à 0,3 % près, le seul travail de la pesanteur — sur un
+> run à **zéro joint rompu**. Avec `energyBodyForces = on`, même run, **aucun
+> déclenchement**, résidu 0,25 %, `[OK]`. Repères `ebody_abort_defaut_3d` et
+> `ebody_abort_on_3d` (tier `all`).
+
+**Forces volumiques dans le bilan (`energyBodyForces`, 2026-08-30, 2D et 3D)** —
+`off` (défaut) \| `on`. **La MESURE est inconditionnelle** : le travail de la
+pesanteur (`gravWork_`, compteur créé à cette date — c'est le **septième poste**
+du bilan d'ARMA 24-0952 éq. 3-7, le seul que rockim n'avait pas) et celui du tri
+des fragments sont toujours calculés et **imprimés** au résumé, ligne
+`forces vol.` ; ils ne touchent aucune force, donc la physique est
+bit-identique dans les deux réglages. **Seule leur entrée dans `sumW` est
+opt-in.** `off` : ils **tombent dans le résidu**, et le résumé le dit en toutes
+lettres. `on` : ils entrent dans `sumW` **et dans l'échelle**, donc dans le
+verdict `[OK|CHECK]` **et dans `budgetAbortPct`** — bilan à sept postes.
+Mesures : résidu 1,05718e-06 → −2,015e-10 J (facteur **5 250**) sur la percussion
+3D à T = 2e-5 ; 1,71064e-10 → −1,645e-13 J (facteur **1 040**) à T = 2e-6, où le
+défaut affiche `[CHECK]` **à 116 % de l'échelle sur un run parfaitement sain**.
+Repères `ebody_defaut_3d` / `ebody_on_3d` (tier `full`). Fiche :
+[`chantier_imperial_2026-08-29/B10_bilan_energie_forces_volumiques.md`](chantier_imperial_2026-08-29/B10_bilan_energie_forces_volumiques.md).
+
+> ⚠️ **Clé muette enregistrée en chemin** : en **3D**, `gravity` n'est lu que
+> dans `placeTool()`, dont la première ligne est
+> `if (scen_ == Scenario::TENSION) return;`. **Un deck de traction 3D qui pose
+> `gravity` ne reçoit aucune pesanteur.** Le comportement n'a pas été changé —
+> le corriger changerait la physique d'un deck existant — mais il n'est plus
+> silencieux : un `AVERTISSEMENT` explicite est imprimé. Le solveur **2D**, lui,
+> lit `gravity` dans `init()`, sans garde de scénario : **rupture de parité
+> 2D/3D**, la sixième du registre.
+
 **SHPB (`scenario = shpb`, fdem 2D)** — `shpbIncidentLength` (2.0),
 `shpbTransmitLength` (1.5), `shpbBarDiameter` (0.05), `shpbDiscDiameter` (0.05),
 `shpbGap` (0), `shpbBarElemSize` (5e-3), `shpbDiscElemSize` (7.5e-4),

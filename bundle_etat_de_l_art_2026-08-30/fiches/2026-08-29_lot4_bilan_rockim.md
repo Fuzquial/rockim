@@ -500,7 +500,7 @@ tout le manuscrit :**
 
 | # | l'avantage, **requalifié** | statut |
 |---|---|---|
-| **1** | **97 contrôles de non-régression, dont 44 au tier rapide par défaut**, 89 au tier `full`, 97 au tier `all` ; **217 assertions** chiffrées. ~~« 98, pas 42 »~~ : 98 n'est le total de rien, la ventilation 42/45/8 était périmée **et** somme à 95, et **les tiers s'emboîtent au lieu de s'additionner** (`tools/verify_suite.py:894`). Le « 42 » du brief était **exactement le tier par défaut de l'époque**. ~~« Imperial ne publie aucune suite »~~ → **« aucune suite de non-régression n'est décrite dans leurs publications »**. | **TENU, requalifié** |
+| **1** | **101 contrôles de non-régression au 2026-08-30, dont 44 au tier rapide par défaut**, 91 au tier `full`, 101 au tier `all` ; **225 assertions** chiffrées. ⚠️ **Ce nombre bouge à chaque chantier** (95 avant A11, 97 après, 101 depuis B10) : le citer sans sa date, c'est refaire l'erreur du « 98 ». ~~« 98, pas 42 »~~ : 98 n'est le total de rien, la ventilation 42/45/8 était périmée **et** somme à 95, et **les tiers s'emboîtent au lieu de s'additionner** (`tools/verify_suite.py:894`). Le « 42 » du brief était **exactement le tier par défaut de l'époque**. ~~« Imperial ne publie aucune suite »~~ → **« aucune suite de non-régression n'est décrite dans leurs publications »**. | **TENU, requalifié** |
 | **2** | **Un bilan d'énergie fermé et imprimé**, là où Imperial obtient amortissement et erreur numérique **par soustraction** et l'écrit (ARMA 24-0952 p. 3). ⚠️ **Deux réserves, §3.2.** | **TENU, avec réserves** |
 | **3** | **Le refus plutôt que le silence.** `jointElastic = parabolic` lève si `jointSoftening` n'est ni `yan` ni `munjiza` (`src/FdemSolver.cpp:196-205`), avec en commentaire *« une capacite active et muette est indiscernable d une capacite inerte »*. ~~« Aucun code publié ne fait ça »~~ → **« cette discipline n'est décrite dans aucune publication d'Imperial »** ; et je n'ai pas dépouillé leur code sur ce point, donc je ne peux rien dire de ce qu'il fait. | **TENU, requalifié** |
 | **4** | **Des avertissements croisés** quand un deck pose la clé de l'autre schéma d'insertion (`src/Fdem3dSolver.cpp:552-561`). | **TENU** |
@@ -546,6 +546,60 @@ qu'un run est long ou quasi statique.
 des fragments est armé, **son travail tombe entièrement dans le résidu** — et un
 garde-fou `budgetAbortPct` peut alors couper un run **sain** sur un artefact
 purement numérique.
+
+> ### ⚠️ MESURÉ le 2026-08-30 — ma magnitude « invisible » était la bonne réponse
+> ### à la mauvaise question
+>
+> Le poste gravitaire **existe désormais** (`energyBodyForces`, fiche
+> [`B10_bilan_energie_forces_volumiques.md`](../chantier/B10_bilan_energie_forces_volumiques.md)), et la mesure renverse la
+> conclusion ci-dessus. Sur `configs/fdem3d_percussion.cfg`, `gravity = 9.81` :
+>
+> | T | travail de la pesanteur | résidu B4 au défaut | résidu, poste compté |
+> |---|---|---|---|
+> | 2·10⁻⁵ s | 1,05738·10⁻⁶ J | **1,05718·10⁻⁶ J** | −2,015·10⁻¹⁰ J |
+> | 2·10⁻⁶ s | 1,71228·10⁻¹⁰ J | **1,71064·10⁻¹⁰ J** (116 %, `[CHECK]`) | −1,645·10⁻¹³ J |
+>
+> **Le résidu ÉTAIT le travail non compté de la pesanteur**, à 0,02 % près. La
+> pesanteur est négligeable devant l'énergie **injectée** — c'est ce que je
+> mesurais — et **dominante** devant l'énergie **non expliquée**, qui est
+> justement ce que le verdict juge.
+>
+> **Et le garde-fou coupe un run sain à cause de ça, mesuré** : à `T = 9·10⁻⁶ s`
+> avec `budgetAbortPct = 2`, le défaut **ABORTE** à t = 8,344·10⁻⁶ s sur un
+> résidu de **175 % de l'échelle** qui vaut, à 0,3 % près, le travail de la
+> pesanteur (2,37808·10⁻⁹ J) — sur un run à **zéro joint rompu**, hotspot à
+> `|v| = 7,95·10⁻⁵ m/s. Clé armée, le run va au bout, résidu 0,25 %, `[OK]`.
+>
+> Le second trou (`brushWork_`) est traité par la même clé. **La décision d'armer
+> `budgetAbortPct` sur les decks de réplique devient sûre**, ce qu'elle n'était
+> pas tant que le bilan était incomplet.
+
+> ### ⚠️ MESURÉ le 2026-08-30 — et ma magnitude « invisible » était la bonne
+> ### réponse à la mauvaise question
+>
+> Le poste gravitaire **existe désormais** (`energyBodyForces`, fiche
+> [`B10_bilan_energie_forces_volumiques.md`](../chantier/B10_bilan_energie_forces_volumiques.md)), et la mesure renverse la
+> conclusion ci-dessus. Sur `configs/fdem3d_percussion.cfg` avec `gravity = 9.81` :
+>
+> | T | travail de la pesanteur | résidu B4 au défaut | résidu, poste compté |
+> |---|---|---|---|
+> | 2·10⁻⁵ s | 1,05738·10⁻⁶ J | **1,05718·10⁻⁶ J** | −2,015·10⁻¹⁰ J |
+> | 2·10⁻⁶ s | 1,71228·10⁻¹⁰ J | **1,71064·10⁻¹⁰ J** (116 %, `[CHECK]`) | −1,645·10⁻¹³ J |
+>
+> **Le résidu ÉTAIT le travail non compté de la pesanteur**, à 0,02 % près.
+> La pesanteur est négligeable devant l'énergie **injectée** — c'est ce que je
+> mesurais — et **dominante** devant l'énergie **non expliquée**, qui est
+> justement ce que le verdict juge.
+>
+> **Et le garde-fou coupe un run sain à cause de ça, mesuré** : à `T = 9·10⁻⁶ s`
+> avec `budgetAbortPct = 2`, le défaut **ABORTE** à t = 8,344·10⁻⁶ s sur un
+> résidu de **175 % de l'échelle** qui vaut, à 0,3 % près, le travail de la
+> pesanteur (2,37808·10⁻⁹ J) — sur un run à **zéro joint rompu**. Clé armée, le
+> run va au bout, résidu 0,25 %, `[OK]`.
+>
+> Le second trou (`brushWork_`) est traité par la même clé. **La décision
+> d'armer `budgetAbortPct` sur les decks de réplique devient sûre**, ce qu'elle
+> n'était pas tant que le bilan était incomplet.
 
 ### 3.3 Le compte honnête des « résultats scientifiques »
 
