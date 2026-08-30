@@ -81,3 +81,12 @@ build*/
 #   tar czf bundle_etat_de_l_art_<date>.tar.gz bundle_etat_de_l_art_<date>/
 # Le DOSSIER, lui, est versionne — c'est lui la source.
 bundle_etat_de_l_art_*.tar.gz
+
+# Sorties de run laissees a la racine. Le .gitignore couvrait les .vtu mais PAS
+# les .csv : deux commits du 2026-08-29 (53a4371, c75e9b5) ont ainsi avale des
+# frames.csv / history.csv d'essais via « git add -A ». Corrige ici.
+/out/
+/T=*/
+frames.csv
+history.csv
+fdem3d_final_elements.csv
