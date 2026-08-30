@@ -405,6 +405,45 @@ entre dimensions).
 
 ### 5.4 quinquies Les conventions lues dans le CODE de Solidity (2026-08-26)
 
+> ⚠️ **AVERTISSEMENT DE LECTURE — porté le 2026-08-30, après contre-audit.**
+> *À lire avant d'utiliser une seule des clés de cette section, et avant de citer
+> une seule de ses lignes de code dans un manuscrit.*
+>
+> **1. La source est bien celle d'Imperial** — dépôt public
+> `ImperialCollegeLondon/solidity-solver-open`, LGPL-3.0, lu le **2026-08-26**.
+> Ce point a été contesté en interne pendant trois jours puis rétabli : voir
+> [`chantier_imperial_2026-08-29/A03_resourcer_attributions.md`](chantier_imperial_2026-08-29/A03_resourcer_attributions.md)
+> §2. Les noms de valeur `solidity` sont donc **exacts** et ne seront pas renommés.
+>
+> **2. Mais ce n'est PAS la version qui a produit l'article de 2026.** Le facteur
+> d'endommagement d'élément y est câblé à zéro (`Y3Dfd.c` l. 749-751, `df = R0`)
+> et le DIF y est neutre (`dpeftdif = R1`), alors que l'article publie les
+> équations (3)-(4) d'un modèle d'endommagement. La lecture la plus simple :
+> **version ouverte en retard sur la version interne** — banal pour un code de
+> recherche. **Conséquence de méthode : lire une FORME ici et en conclure une
+> implémentation de ce que décrit l'article de 2026 est une faute.** Ce n'est pas
+> « le code de quelqu'un d'autre » — c'est bien le leur, même lignée, mêmes
+> auteurs — c'est *une autre version*.
+>
+> **3. Trois statuts, et non deux.** Pour chaque convention ci-dessous, ne pas
+> confondre : ce que disent les **articles publiés** ; ce que fait le **code
+> public** ; ce que fait la **version interne** (inconnue, non consultable). Les
+> relevés de cette section sont **tous du deuxième type**, sauf là où une source
+> d'article est explicitement nommée (`jointFailRule`, `gcBirth` — voir ci-dessous).
+>
+> **4. Les citations `Y3D*.c l. NNNN` de cette section ne sont pas reproductibles
+> telles quelles.** Le dépôt est activement maintenu (dernier push relevé le
+> 2026-03-31) : **les numéros de ligne bougent.** Ils valent pour l'état lu le
+> **2026-08-26** et n'ont pas été ré-ancrés sur un commit. Un rapporteur qui
+> reclone aujourd'hui ne retrouvera pas nécessairement ces lignes. **Avant toute
+> citation dans le manuscrit, ré-ancrer sur un commit** (action A3.1 de la fiche
+> ci-dessus, non faite).
+>
+> **5. Ce que cet avertissement NE remet PAS en cause** : les mesures. Tous les
+> repères de non-régression cités en fin de section ont été exécutés et leurs
+> valeurs sont celles imprimées. La réserve porte sur l'**attribution** et sur la
+> **portée** de ce qu'on peut en conclure, pas sur les nombres.
+
 Le solveur d'Imperial College est **public** :
 [`ImperialCollegeLondon/solidity-solver-open`](https://github.com/ImperialCollegeLondon/solidity-solver-open)
 (LGPL-3.0, C, 17 000 lignes, format `.Y3D` — la lignée Munjiza de la thèse de
@@ -446,6 +485,14 @@ tiennent. rockim ne portait qu'un scalaire `J.D` par joint, déjà le *max* des
 points — la clé arme `Joint::Dk[]` et rend chaque point autonome. `J.D` reste
 tenu à jour comme le max, pour toutes les sorties.
 Exige `jointQuadrature = midedge` (les points comptés doivent être les leurs).
+
+> ✅ **Deuxième source, d'article celle-là** (ajoutée le 2026-08-30). Cette
+> convention n'est pas seulement lue dans le code : le manuscrit UCL
+> (`Manuscript_UCL_deposit.pdf`, **p. 14**) écrit qu'une facette est déclarée
+> rompue quand « *at least two integration points have zero stress components* ».
+> `nfail > 1` dans le code et « at least two » dans le texte concordent. C'est la
+> seule clé de cette section qui possède **deux sources indépendantes** ;
+> les autres n'ont que le code.
 
 **`strainRateDIFArm = continuous`** — leur DIF n'est jamais gelé. `dpeftdif`
 est une variable **locale de la boucle élément**, reprise à chaque pas
@@ -495,6 +542,16 @@ frottement statique/dynamique à affaiblissement en vitesse existe mais est
   3D, aire en 2D) qui décroît en `exp(-t/gcBirthTau)`, si bien que la force
   **part de zéro** et remonte. Sous un indenteur, où les joints meurent *en
   compression* sous forte charge, c'est une perte de portance à chaque rupture.
+  **Le problème ET une rampe sont publiés** (relevé le 2026-08-30) :
+  `Manuscript_UCL_deposit.pdf` **p. 17** décrit exactement la difficulté — « *when
+  a shear fracture under normal compression is formed, the overlap between
+  tetrahedral elements due to compression will generate an initial non-zero
+  contact force f_contact^initial, which can cause instability problems* » — et
+  publie son remède, **éq. (18)** : `f_contact = (n_c/n_total)·f_contact^initial`,
+  avec « *n_total is the total time-steps for n_c (usually 10)* ». Leur rampe est
+  donc **linéaire sur ~10 pas**, là où `gcBirthTau` pose une décroissance
+  **exponentielle** : les deux ne se comparent pas terme à terme (voir la réserve
+  d'échelle plus bas).
 - `penalty` : au pas exact de la naissance ils lisent la force que le joint
   portait en mourant (`d1ejfc*`, ce que rockim enregistre déjà dans
   `Joint::fDeath`) et calent la pénalité de **cette paire** pour que la force
@@ -506,6 +563,21 @@ frottement statique/dynamique à affaiblissement en vitesse existe mais est
 
 Exige `contact = potential` (le mécanisme y vit ; sous `contact = penalty`, le
 défaut, la clé serait inerte et le solveur refuse). Exclusive de `gcBirthTau`.
+
+> ⚠️ **Réserve d'échelle sur `gcBirthTau` (2026-08-30, contre-audit).** Comparer
+> `gcBirthTau = 1e-6 s` aux « ~10 pas » de leur éq. (18) demande deux précautions.
+> (a) **Leur rampe est linéaire, la nôtre exponentielle** : `relax_ = exp(-dt/τ)`
+> n'a pas de « longueur », seulement une constante de temps ; le rapport n'a de
+> sens qu'à un facteur près. (b) Le nombre de pas dépend du `dt` du run, et un
+> chiffre de **~50×** a circulé en interne : il est **faux**, il importait le `dt`
+> d'un run de gradient St Anne (1,93e-9 s) dans une ligne qui parle d'impact 3D.
+> Sur les seuls `dt` 3D mesurés et publiés par le dépôt — **1,30e-8 s** (insertion
+> intrinsèque) et **1,93e-8 s** (adaptative),
+> [`chantier_imperial_2026-08-29/A11_dt_tangentiel.md`](chantier_imperial_2026-08-29/A11_dt_tangentiel.md)
+> §5-6 — cela fait **77 et 52 pas**, soit un facteur **5 à 8**, pas 50. (c) Enfin
+> `gcBirthTau` est **inerte** sous `gcBirth = penalty` : `relax_` n'est lu que dans
+> la branche `else` de la naissance, et le solveur refuse même de poser les deux
+> clés ensemble. Un balayage de τ ne renseigne donc **que** le mode `ramp`.
 
 ⚠️ **Le relevé de naissance n'était pas qu'une douceur.** L'en-tête de
 `PotHist::aRef` documente sa vraie raison d'être : il empêche une **injection
