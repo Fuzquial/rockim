@@ -174,6 +174,7 @@ pré-fissurée par un petit α (1e-3), jamais 0.
 | `yanA`/`yanB`/`yanC` (0.63/1.8/6.0) | constantes de f(D) |
 | `yanQuadN` (4096) | points de Simpson pour ∫f(D)dD (= 0.386307 aux défauts) |
 | `jointFrictionScaled` (0) | 1 = le terme de Coulomb est aussi multiplié par f(D) (éq. 10 littérale — un joint broyé perd alors tout frottement résiduel) |
+| **`jointResidualMu`** (< 0 = non posée) | **Le coefficient de frottement RÉSIDUEL du joint rompu.** Le coefficient glisse du **pic** `tan(frictionDeg)` vers ce résiduel par la **même f(D)** que la cohésion : μ_eff = μ_res + (tanφ − μ_res)·f(D). rockim gardait jusqu'ici le frottement de **pic à vie**, ce qui verrouille une zone broyée sous forte compression. C'est la distinction que fait **Y-Geo** (AbuAisha et al. 2015, éq. 7.5 : un angle de frottement de **fracture** φ_f distinct de l'angle interne du pic) et que **Solidity** obtient autrement, en remettant le joint rompu au contact et à son glissement — **0,6** pour le calcaire, **0,18** pour le granite de Kuru, contre un frottement de pic de **1,85** : un facteur **10,3** entre pic et résiduel, et le papier granite dit explicitement que ce coefficient bas est ce qui permet aux fragments d'être éjectés et de cesser de porter le taillant. **`jointResidualMu` GÉNÉRALISE `jointFrictionScaled`** — μ_res = tan(frictionDeg) redonne le défaut, μ_res = 0 redonne `jointFrictionScaled = 1` — les deux clés sont donc **exclusives** (le run s'arrête si les deux sont posées). Les deux égalités sont **exactes**, vérifiées et verrouillées par `residualmu_equiv_defaut_2d` et `residualmu_equiv_scaled_2d` |
 | **`jointShearUnload`** (plastic) | plastic \| **origin** = décharge ET recharge en cisaillement sur la **sécante à l'origine** passant par (s_max, τ_env(s_max)), éq. 18 de Yan et al. — symétrique exact de l'éq. 17 du mode I. `plastic` (défaut, inchangé) est une plasticité à retour radial : la décharge suit la sécante de pénalité et le glissement plastique est conservé. Les deux **coïncident en charge monotone** (le glissement au pic est le s_p = (c + tanφ·\|σ_n\|)/p de Munjiza, donc l'endommagement de mode II démarre au même instant) et ne diffèrent qu'à la décharge. ⚠️ l'éq. 18 place **tout** le cap dans la sécante, frottement de Coulomb compris : avec `jointFrictionScaled = 0` le glissement frottant devient réversible (aucune boucle d'hystérésis). **Forme littérale de l'article = `origin` + `jointFrictionScaled = 1`** |
 | **`insertion`** (intrinsic) | intrinsic \| **adaptive** = insertion dynamique extrinsèque (Yan et al. 2023) : aucun joint à t = 0, liaison cinématique exacte, activation quand σ_n ≥ ft ou \|τ\| ≥ c − σ_n·tanφ, continuité de contrainte à l'insertion. Gains mesurés : dt ×2, mur ×2.2–2.7, complaisance nulle |
 | **`gcActivation`** (full) | full \| **adaptive** = activation adaptative des faces de contact (Fukuda et al.) : `act_` ne contient que les faces qui **peuvent** toucher, au lieu de tout l'extérieur balayé à chaque pas. Trois règles, activation **monotone** : (C) peau endommagée — l'élément porte un joint cassé/mort, plus un anneau par sommet ; (A) autre corps à moins de `gcActMargin` cellules (composantes connexes par union-find sur les joints porteurs, recalculées quand nBroken change) — c'est ce qui arme le SHPB multi-corps dès t = 0 ; (B) voisinage d'une face ayant déjà **porté** une force (une face qui racle propage, une face inerte non). Balayage cadencé par v_max, borné par `gcActEvery`. Les faces libérées par joints morts entrent au **même pas** qu'en mode full (cache). **Mesuré : percussion 3D ×2,32 bit-identique** (1130 → 488 s, 4 % des faces activées), percussion 2D bit-identique, UCS −15 % aux mêmes chiffres, SHPB identique sur 83 % du run puis enveloppe chaotique (contrôle : full sous OMP=2 diverge 8× plus tôt). Approximation assumée (la même que Fukuda) : un continuum **intact** ne se replie pas sur lui-même |
@@ -199,6 +200,436 @@ pré-fissurée par un petit α (1e-3), jamais 0.
 | `trackGroups` (—) | 3D, mesh = file : colonnes `z_<nom>,vz_<nom>` (centroïde massique, vitesse moyenne) par corps listé — vitesses d'indentation et de rebond du bit (spec 005). S'ajoute au `trackGroup` singulier existant |
 | `gauge.<nom>` (—) | 3D : `"z0 z1"` — colonne `szz_<nom>`, σ_zz moyenné en volume dans la tranche [z0,z1] du corps (la jauge à mi-bit de leur fig. 8) ; tranche figée en configuration de référence |
 | `jointSoftening = munjiza` | **alias** de `yan` : la f(D) de Yan et al. 2023 EST la z-curve de Munjiza 2004 (a = 0,63, b = 1,8, c = 6, ∫f dD = 0,386307), celle de Y-Geo et de Solidity (Yang et al.). Avec `jointShearUnload = origin`, le moteur √(rn²+rs²) de cette branche est l'ellipse mode I-II exacte de leur éq. 3 — le modèle cohésif de l'article est donc INTÉGRALEMENT disponible, insertion adaptative comprise |
+| **`jointDeath`** (separation) | **QUAND le joint passe la main à l'algorithme de contact.** `separation` (défaut, historique) : le joint ne meurt qu'une fois franchement ouvert (`dnMax > 3·dnF`) ; un joint broyé qui glisse en compression reste **vivant** et sert de contact frottant de ses propres lèvres. `damage` : il meurt dès que **D ≥ 1**, quel que soit le signe de l'ouverture — la règle de **Guo (thèse Imperial 2014, §2.3.3)** : « the stress-displacement relation is not applied to this failed joint element anymore ; instead, the interaction between the fracture walls will be counted as contact forces that are calculated by the contact algorithm ». C'est ce relais qui, chez eux, achemine les 32 J de frottement entre fragments (65 % du budget d'impact, ARMA 2024). Sorties : ligne `relais joint->contact` au résumé — joints morts, part morte **en compression**, et charge normale lâchée au relais |
+
+**Ce que le relais change, mesuré** (UCS `configs_yan/ucs_adap.cfg`, 2026-08-25,
+`separation` → `damage`) :
+
+| poste | separation | damage | |
+|---|---|---|---|
+| joints morts | 143 | 270 | |
+| dont **en compression** | 11 (7,7 %) | 162 (60 %) | |
+| charge lâchée au relais | 110 kN/m | 4 169 kN/m | ×38 |
+| travail de contact | 0,765 J/m | **24,68 J/m** | **×32** |
+| dont **frottement** | 0,0725 J/m | **2,160 J/m** | **×30** |
+| UCS | 51,0395 MPa | 51,0395 MPa | inchangé |
+| part de cisaillement | 48,6 % | 60,7 % | |
+| résidu du bilan | −2,64e−12 J/m | −2,30e−12 J/m | OK |
+
+Le relais achemine donc bel et bien la dissipation vers le contact — c'est le
+mécanisme qui manquait — **sans dégrader le bilan d'énergie**. Et cet UCS tourne
+à `contactMu = 0,1` seulement ; l'impact est à 0,6.
+
+⚠️ **La crainte historique est levée, mais elle était fondée.** Le commentaire
+du site de mort disait : *« killing it by slip hands interpenetrated faces to
+the general contact, whose penalty then releases ½ k pen² of energy created from
+nothing »*. C'était vrai avant la **relève de naissance `pen0_`** ajoutée au
+chantier A3 ; le résidu mesuré ci-dessus montre qu'elle la neutralise.
+
+⚠️ **Réserve ouverte.** Les 4 169 kN/m lâchés ne créent pas d'énergie mais
+**disparaissent du chemin d'effort** le temps que `pen0_` décroisse
+(`gcBirthTau`). Sans conséquence sur l'UCS, dont le pic précède le relais. À
+mesurer sur l'impact, où le chemin d'effort sous l'insert est justement l'enjeu :
+si le déficit s'y voit, il faudra une **continuité de traction** au relais,
+miroir du `dn0` de l'insertion adaptative.
+
+⚠️ **Constat sur le mode `separation` lui-même.** Il ne garantit PAS l'absence de
+mort en compression : 11 joints sur 143 y meurent comprimés, parce que `dnMax`
+est le **maximum sur les points d'intégration** — une interface en flexion,
+béante d'un côté et comprimée de l'autre, franchit `dnMax > 3·dnF` avec une
+résultante normale encore compressive.
+
+### 5.4 bis Effets de vitesse : viscosité de volume et DIF
+
+*Section ajoutée le 2026-08-25. Ces clés existaient depuis le 2026-08-18 et
+n'avaient jamais été documentées — dette du principe VII soldée à l'occasion du
+chantier « DIF intrinsèque ». Le code fait foi ; chaque ligne ci-dessous a été
+relue dans `src/FdemSolver.cpp` et `src/Fdem3dSolver.cpp`.*
+
+**Viscosité de volume** — une contrainte visqueuse newtonienne **2 μ D** (D = taux
+de déformation co-rotée) est ajoutée au tenseur de Cauchy de chaque élément.
+C'est le terme de l'éq. 6 de Yan et al. 2023, et c'est aussi le `η·D` de
+l'éq. 2.6 de la thèse de Guo (Imperial College, 2014) dont le code Solidity de
+Yang et al. est issu. ⚠️ **Attention à la convention du facteur 2** : rockim
+applique `2 μ D` là où Guo écrit `η D`, donc **η = 2 μ**. Pour reproduire un η
+publié, poser `bulkViscosity = η/2`.
+
+| clé (défaut) | rôle | portée |
+|---|---|---|
+| `bulkViscosity` (0 = off) | μ **littéral** [Pa·s], le même pour tous les éléments. Exclusive avec `bulkViscosityXi` (le run s'arrête si les deux sont posées) | fdem, fdem3d |
+| `bulkViscosityXi` (0 = off) | μ **calculé du maillage** : μ = ξ·h·√(E ρ) par élément. ξ = **2,0 vaut le critique de Munjiza** 2h√(Eρ) — c'est la valeur de la Table 1 de Yan et al. Le résumé imprime « soit 0,5·ξ × le critique » | fdem, fdem3d |
+| `bulkViscosityGraded` (0) | 1 = μ **gradué** par élément (chaque tétra son h) ; 0 = μ **global**, pris à la médiane. Sur un maillage gradué, μ global fait payer le pas de temps du plus fin tétra partout — mais c'est la forme d'un η constant publié | fdem, fdem3d |
+| `viscousInInsertion` (1) | 1 = le terme visqueux entre dans la contrainte d'essai du **critère d'insertion** ; 0 = le critère ne voit que la contrainte élastique. Argument du 0 : sinon le taux agit deux fois, comme contrainte d'essai ET comme seuil via le DIF. ⚠️ **clé 3D seulement** | fdem3d |
+
+Le pas de temps porte une borne **diffusive** ρh²/4μ en plus de la borne
+élastique : monter μ coûte du dt. Le travail visqueux est compté dans
+`viscWork_`, **ventilé à l'intérieur du poste « éléments »** du bilan B4 (ce
+n'est pas un poste de plus) et imprimé au résumé de fin de run avec son verdict
+de signe. ⚠️ Il n'a **pas de colonne dans `history.csv`** : sur un run tué avant
+la fin, la part visqueuse est irrécupérable.
+
+**DIF (Dynamic Increase Factor)** — les résistances de joint sont multipliées par
+un facteur fonction du taux de déformation, éq. 2 et 3 de Yang et al. 2025.
+`DIF_traction` multiplie `ft` **et** `Gf` ; `DIF_compression` multiplie `cohesion`
+**et** `GfII` — comme eux. Comme ft et Gf reçoivent le même facteur, la
+**longueur de la branche adoucissante** kI·Gf/ft est invariante : seule la limite
+élastique dnE = ft/pj bouge.
+
+| clé (défaut) | rôle | portée |
+|---|---|---|
+| `strainRateDIF` (off) | off \| `yang` = leur éq. 3 **littérale**, exposant 0,07 \| `yang-fig2` = exposant **0,1707** déduit de leur figure 2b. ⚠️ L'exposant 0,07 imprimé ne raccorde pas la loi à ses bornes : elle saute de 1,516 à 1,85 en ε̇ = 10² /s, et en insertion extrinsèque ce saut est un **attracteur** (la population insérée s'empile juste sous 10² /s — mesuré : médiane 99,36 /s contre 40,22 avec `yang-fig2`). Trois repères de la suite verrouillent ce comportement | fdem, fdem3d |
+| `strainRateTau` (1e-6 s) | constante de temps du **filtre exponentiel** du taux par élément (ε̇ = max des valeurs propres absolues de D co-rotée). Doit être > 0 si le DIF est actif | fdem, fdem3d |
+| **`strainRateDIFArm`** (insertion) | **QUAND** le facteur est figé. `insertion` (défaut, comportement historique) : à l'instant de l'insertion — **exige `insertion = adaptive`**. `envelope` (2026-08-25) : au moment où le joint **quitte sa branche élastique**, c'est-à-dire là où il commence à s'endommager — **exige `insertion = intrinsic`**. Les deux sont l'analogue l'un de l'autre : en adaptatif le joint NAÎT au pic de l'enveloppe (continuité de contrainte, `dn0`), naissance et amorçage coïncident donc par construction ; en intrinsèque le joint est déjà là et seul l'amorçage subsiste. La table de validation refuse explicitement les deux croisements (`envelope` + adaptatif appliquerait le facteur deux fois ; `insertion` + intrinsèque est l'erreur historique, dont le message oriente désormais vers `envelope`) | fdem, fdem3d |
+
+**Pourquoi l'armement intrinsèque ne peut PAS réutiliser le critère en
+contrainte d'élément** (mesuré le 2026-08-25, gardé ici pour que le piège ne
+soit pas retenté) : la première version armait sur le critère de
+`insertionSweep()` — la contrainte moyenne des deux éléments contre l'enveloppe
+de Mohr-Coulomb, exactement le critère de l'insertion adaptative. Elle ne
+s'arme **jamais** : 0 joint gelé sur 6840, et 100 % des joints sollicités
+s'endommagent sans DIF. La raison est structurelle et non un réglage : en
+schéma intrinsèque le joint est le maillon faible et **écrête la contrainte que
+ce critère surveille**, si bien que la moyenne des deux éléments n'atteint
+jamais ft. Le critère partagé avec l'adaptatif est donc inutilisable en
+intrinsèque, et l'armement porte sur la cinématique propre du joint.
+
+Sorties : le résumé imprime `DIF intrinseque (armement a l enveloppe): N / M
+joints geles ; K joints endommages SANS DIF`. **K est le contrôle falsifiable
+de l'armement** — il vaut 0 par construction, et une valeur non nulle signale
+que le critère d'armement a dérivé par rapport à la loi de joint. Repères
+`dif_intrinseque_2d` (fast) et `dif_intrinseque_3d` (full), plus le contrôle à
+charge nulle `zeroload_dif_intrinseque_2d` (aucun joint armé sous charge nulle).
+
+**Enveloppe de cisaillement du joint**
+
+| clé (défaut) | rôle | portée |
+|---|---|---|
+| `jointShearEnvelope` (yan) | `yan` = son éq. 8, le terme de frottement tombe à **zéro dès que la contrainte normale est en traction** ; `yang` = l'**éq. 1 de Yang et al.**, il décroît jusqu'au cut-off en ft : fs = c − tanφ·min(σn, ft). Les deux **coïncident exactement en compression** et ne diffèrent qu'en traction, où la forme de Yang AFFAIBLIT le cisaillement (−34 % au cut-off sur le banc de percussion). C'est ce qui gouverne le partage traction/cisaillement dans les zones tendues, donc le faciès radial. **La forme de l'article est `yang`** | fdem, fdem3d |
+| `meanTensionCapFactor` (0 = off) | plafond sur la contrainte moyenne de l'élément, en multiples de `ft`. Garde-fou rockim, sans équivalent dans la littérature de référence : laisser éteint pour toute réplique | fdem, fdem3d |
+
+### 5.4 quater Loi de joint : les deux dernières conventions de Guo
+
+*Ajouté le 2026-08-25. Avec `jointShearEnvelope = yang`, `jointSoftening = yan`,
+`jointShearUnload = origin` et une pénalité de 26,32 E/h, ces deux clés
+achèvent le portage de la loi de joint de Solidity.*
+
+| clé (défaut) | rôle | portée |
+|---|---|---|
+| **`jointElastic`** (linear) | `parabolic` = **Guo éq. 2.31** : la branche élastique vaut σ = ft·(2r − r²) avec r = δn/δnE, au lieu de la droite σ = pj·δn. Elle arrive au pic avec une **tangente nulle** — transition douce vers l'adoucissement, là où rockim a un coude — et part de l'origine avec la pente **2·pj**, des deux côtés de δn = 0 (la loi est C¹ à l'origine, la branche de compression devenant σ = 2·pj·δn, première ligne de son éq. 2.31). ⚠️ **Exige `jointSoftening = yan` ou `munjiza`** : la parabole va avec la z-curve et n'est implémentée que sur ce chemin. La combinaison est **refusée** plutôt que laissée sans effet | fdem, fdem3d |
+| **`jointDeltaC`** (exact) | `guo` = **Guo éq. 2.30** : δc = 3·Gf/f mesuré **depuis zéro**, au lieu de δnE + Gf/(ft·∫f dD). Il approxime l'intégrale de la z-curve par 1/3 là où elle vaut **0,386307** : son modèle dissipe donc **1,159 fois son Gf nominal**. C'est SA convention, et ses Gf publiés ont été calibrés avec — il faut la reproduire pour retrouver ses chiffres | fdem, fdem3d |
+
+**D'où vient le 26,32.** Leur « Penalty Number » de 3 000 GPa n'est qualifié
+nulle part dans l'ARMA. Il est tranché par la citation que fait Guo à propos
+de la pénalité : **Turon, Dávila, Camanho & Costa (2007)**, *Eng. Fract.
+Mech.* 74:1665-1682 — le papier du rapport classique des modèles de zone
+cohésive, **K = α·E/t avec α ≈ 50**. Or 3 000 / 57 = **52,6**. C'est donc la
+pénalité des éléments **cohésifs**, rapportée au module de la **roche**, posée
+par la règle de Turon — ni le contact, ni le carbure. Guo eq. 2.25 posant
+δnp = 2·ft·h/p0, la raideur vaut p0/(2h) et l'équivalent rockim est
+p0/(2E) = 26,32, le facteur 2 venant de **sa** convention.
+⚠️ À noter : l'éq. 2.28 de Guo recommande E ≤ p0 ≤ 10E, ce qui **contredit**
+le α ≈ 50 de Turon qu'il cite deux phrases plus haut. Les auteurs de l'article
+ont suivi Turon, pas la thèse.
+
+**Pourquoi la parabole rend la pénalité cohérente.** L'équivalence de pénalité
+(§5.4, `jointPenaltyFactor` ≈ 26,32 pour leur p0 = 3 000 GPa) a été établie en
+faisant coïncider **l'ouverture au pic** δnE = δnp. Avec la branche linéaire,
+cela laisse la **raideur initiale** à la moitié de la leur. Avec la parabole, la
+pente à l'origine vaut 2·ft/δnE : les deux quantités coïncident alors
+**simultanément**. Les deux clés vont donc ensemble.
+
+Mesures sur `verify_fdem_tension.cfg`, sous `jointSoftening = yan` :
+
+| | err_pct | casses |
+|---|---|---|
+| yan seul | −1,70281 % | 24 |
+| + `jointElastic = parabolic` | −2,49639 % | 24 |
+| + `jointDeltaC = guo` | −2,33108 % | 24 |
+
+Le **nombre de fissures ne bouge pas** : ces conventions déplacent la
+complaisance et l'énergie dissipée par fissure, pas le compte.
+
+⚠️ **Reste non porté : la quadrature.** Guo intègre le joint sur trois points
+aux **milieux d'arêtes** (sa Table 2.2, poids 1/3) ; rockim intègre aux
+**nœuds**. Les deux sont des règles à trois points de poids égaux, exactes pour
+une variation linéaire ; elles ne diffèrent que sur la part non linéaire, donc
+dans l'adoucissement. Non implémenté : cela demande de redéfinir les points
+d'intégration, et l'état par point (`omax`, `smax`, `slip`) avec eux.
+
+### 5.4 ter La loi de VOLUME : `bulkModel`
+
+*Ajouté le 2026-08-25 — point 4 du tableau de comparaison à Yang et al.*
+
+| clé (défaut) | rôle | portée |
+|---|---|---|
+| **`bulkModel`** (corotational) | `corotational` (défaut, historique) : décomposition polaire, déformation de **Biot** ε = sym(RᵀF) − I, σ = λ tr(ε) I + 2μ ε, assemblage P = R·σ. Exact en grandes **rotations**, valable en petites **déformations** seulement. `neohookean` : la loi de **Guo** (thèse Imperial 2014, **éq. 2.6**), celle du code **Solidity** de Yang et al. — `T = (μ/J)(B − I) + (λ/J)·ln(J)·I` avec B = FFᵀ et J = det F — assortie de l'assemblage **exact** P = J·T·F⁻ᵀ. Incompatible avec `law` (qui remplace déjà toute la loi de volume) | fdem, fdem3d |
+
+**C'est un portage, pas une invention.** La formule est citée verbatim de la thèse
+qui décrit leur code. La loi est **hyperélastique** — elle dérive de
+W(F) = (μ/2)(tr B − 3) − μ·ln J + (λ/2)(ln J)², le néo-hookéen compressible de
+Simo-Hughes — donc conservative, et la configuration initiale y est **naturelle**
+(W(I) = 0, dW/dF(I) = 0).
+
+**Elle redonne l'élasticité linéaire au premier ordre**, avec les *mêmes* λ et μ.
+C'est un remplacement continu, pas un modèle concurrent. Écart vérifié
+analytiquement hors solveur, en déformation uniaxiale :
+
+| ε | −0,40 | −0,30 | −0,10 | +0,01 | +1e−4 |
+|---|---|---|---|---|---|
+| écart néo-hookéen / linéaire | **+59,8 %** | +37,6 % | +9,4 % | −0,82 % | −0,008 % |
+
+Le signe compte : **en compression la loi se raidit**. Le terme (λ/J)·ln J diverge
+quand J → 0, donc le matériau oppose une barrière infinie à l'écrasement et
+l'élément ne peut plus s'inverser — ce que la loi linéaire ne fait pas, et c'est
+la raison d'être du `crushCap`, garde-fou qui n'existe dans aucun code de
+référence. Sous l'insert, det F tombe à **0,5–0,7** : c'est précisément là que
+les deux lois cessent d'être interchangeables.
+
+**L'assemblage vient avec, et c'est le point 5 du tableau.** La forme
+co-rotationnelle assemble une contrainte de Cauchy sur une aire de **référence** :
+il lui manque exactement le transport d'aire de Nanson, cof(U) = J·U⁻¹. Le
+facteur d'écart est **J^(−2/3) en 3D** — soit +40,6 % sur la force interne à
+det F = 0,6 — mais **J^(−1/2) en déformation plane**. ⚠️ Ne jamais écrire cet
+exposant en dur : rockim passe par la forme générique `P = J·R·σ·U⁻¹`, correcte
+dans les deux dimensions. Le signe de det F est conservé partout dans le chemin
+des forces (en prendre la valeur absolue retournerait la force d'un élément
+inversé et l'enfoncerait davantage) ; à det F ≤ 0 le solveur retombe sur
+l'assemblage co-rotationnel.
+
+En déformation plane, J = det(F₂ₓ₂) exactement et **T_zz = (λ/J)·ln J**, purement
+volumique — et non la relation de Poisson ν(σ_xx + σ_yy) de la branche linéaire.
+
+Repères : `bulkmodel_neohooke_2d` et `zeroload_neohooke_2d` (fast),
+`bulkmodel_neohooke_3d` (full — indispensable, l'exposant de l'écart diffère
+entre dimensions).
+
+### 5.4 quinquies Les conventions lues dans le CODE de Solidity (2026-08-26)
+
+> ⚠️ **AVERTISSEMENT DE LECTURE — porté le 2026-08-30, après contre-audit.**
+> *À lire avant d'utiliser une seule des clés de cette section, et avant de citer
+> une seule de ses lignes de code dans un manuscrit.*
+>
+> **1. La source est bien celle d'Imperial** — dépôt public
+> `ImperialCollegeLondon/solidity-solver-open`, LGPL-3.0, lu le **2026-08-26**.
+> Ce point a été contesté en interne pendant trois jours puis rétabli : voir
+> [`chantier_imperial_2026-08-29/A03_resourcer_attributions.md`](chantier_imperial_2026-08-29/A03_resourcer_attributions.md)
+> §2. Les noms de valeur `solidity` sont donc **exacts** et ne seront pas renommés.
+>
+> **2. Mais ce n'est PAS la version qui a produit l'article de 2026.** Le facteur
+> d'endommagement d'élément y est câblé à zéro (`Y3Dfd.c` l. 749-751, `df = R0`)
+> et le DIF y est neutre (`dpeftdif = R1`), alors que l'article publie les
+> équations (3)-(4) d'un modèle d'endommagement. La lecture la plus simple :
+> **version ouverte en retard sur la version interne** — banal pour un code de
+> recherche. **Conséquence de méthode : lire une FORME ici et en conclure une
+> implémentation de ce que décrit l'article de 2026 est une faute.** Ce n'est pas
+> « le code de quelqu'un d'autre » — c'est bien le leur, même lignée, mêmes
+> auteurs — c'est *une autre version*.
+>
+> **3. Trois statuts, et non deux.** Pour chaque convention ci-dessous, ne pas
+> confondre : ce que disent les **articles publiés** ; ce que fait le **code
+> public** ; ce que fait la **version interne** (inconnue, non consultable). Les
+> relevés de cette section sont **tous du deuxième type**, sauf là où une source
+> d'article est explicitement nommée (`jointFailRule`, `gcBirth` — voir ci-dessous).
+>
+> **4. Les citations `Y3D*.c l. NNNN` de cette section ne sont pas reproductibles
+> telles quelles.** Le dépôt est activement maintenu (dernier push relevé le
+> 2026-03-31) : **les numéros de ligne bougent.** Ils valent pour l'état lu le
+> **2026-08-26** et n'ont pas été ré-ancrés sur un commit. Un rapporteur qui
+> reclone aujourd'hui ne retrouvera pas nécessairement ces lignes. **Avant toute
+> citation dans le manuscrit, ré-ancrer sur un commit** (action A3.1 de la fiche
+> ci-dessus, non faite).
+>
+> **5. Ce que cet avertissement NE remet PAS en cause** : les mesures. Tous les
+> repères de non-régression cités en fin de section ont été exécutés et leurs
+> valeurs sont celles imprimées. La réserve porte sur l'**attribution** et sur la
+> **portée** de ce qu'on peut en conclure, pas sur les nombres.
+
+Le solveur d'Imperial College est **public** :
+[`ImperialCollegeLondon/solidity-solver-open`](https://github.com/ImperialCollegeLondon/solidity-solver-open)
+(LGPL-3.0, C, 17 000 lignes, format `.Y3D` — la lignée Munjiza de la thèse de
+Guo et des articles de Yang *et al.*). Les trois clés ci-dessous ne sont plus
+déduites d'un article : elles sont **relevées dans leur source**, fichier et
+ligne cités. Toutes sont opt-in, tous les défauts restent bit-identiques.
+
+| clé | valeurs | défaut |
+|---|---|---|
+| `jointDeltaC` | `exact` \| `guo` \| **`solidity`** | `exact` |
+| `jointFailRule` | `any` \| **`majority`** | `any` |
+| `strainRateDIFArm` | `insertion` \| `envelope` \| **`continuous`** | `insertion` |
+| `gcBirth` | `ramp` \| **`penalty`** | `ramp` |
+| `gcBirthPenMin` / `gcBirthPenMax` | bornes du facteur | 0.01 / 3.0 |
+| `strainRateFilter` | `exponential` \| **`none`** | `exponential` |
+
+**`jointDeltaC = solidity`** — leur code ne fait pas ce qu'écrit la thèse.
+`Y3Dfd.c` l. 1098-1099 (mode I) et 1125-1126 (mode II) :
+
+```c
+op = R2*el*dpeft/dpepe;                 /* ouverture au pic   <-> dnE */
+ot = MAXIM((R2*op),(R3*dpegfn/dpeft));  /* PLAGE d adoucissement      */
+```
+
+et la rupture est à `op + ot`. La convention `guo` (δ_c = 3G_f/f_t depuis zéro,
+son éq. 2.30) oublie **et** l'offset `op` **et** le plancher `2·op`. Ce
+plancher ne mord que si 3G_f/f_t < 2·dnE, c'est-à-dire en maillage **fin**
+devant G_f/f_t — le régime d'un impact, pas celui d'un essai de traction. D'où
+le repère `jointdeltac_solidity_2d` à −2,333 % contre −2,330 % pour `guo` :
+sur un maillage grossier les deux sont indiscernables, et c'est normal.
+Leur propre commentaire porte deux fois `/*need further investigation*/`.
+
+**`jointFailRule = majority`** — `Y3Dfd.c` l. 1175 : `if((nfail>1)&&...)`. Un
+seul point d'intégration au-delà de z ≥ 1 **ne tue pas** la facette ; il en
+faut deux (sur trois en 3D, sur deux en 2D). La règle n'a de sens qu'avec un
+endommagement **par point** : chez eux `z` est une variable locale de la boucle
+d'intégration, donc un point rompu cesse de transmettre pendant que les autres
+tiennent. rockim ne portait qu'un scalaire `J.D` par joint, déjà le *max* des
+points — la clé arme `Joint::Dk[]` et rend chaque point autonome. `J.D` reste
+tenu à jour comme le max, pour toutes les sorties.
+Exige `jointQuadrature = midedge` (les points comptés doivent être les leurs).
+
+> ✅ **Deuxième source, d'article celle-là** (ajoutée le 2026-08-30). Cette
+> convention n'est pas seulement lue dans le code : le manuscrit UCL
+> (`Manuscript_UCL_deposit.pdf`, **p. 14**) écrit qu'une facette est déclarée
+> rompue quand « *at least two integration points have zero stress components* ».
+> `nfail > 1` dans le code et « at least two » dans le texte concordent. C'est la
+> seule clé de cette section qui possède **deux sources indépendantes** ;
+> les autres n'ont que le code.
+
+**`strainRateDIFArm = continuous`** — leur DIF n'est jamais gelé. `dpeftdif`
+est une variable **locale de la boucle élément**, reprise à chaque pas
+(l. 1448-1456), et le même facteur multiplie la résistance **et** son énergie
+de rupture (f_t avec G_I, c avec G_II). Cela lève le seul point où la
+réplication était réputée impossible : il n'y a pas d'instant de gel à deviner.
+Conséquence d'implémentation : le facteur ne peut pas s'appliquer *en place*
+sur f_t/coh/G_f/G_fII sans se composer indéfiniment — `snapBase()` sauvegarde
+les valeurs de base une fois, et `refreshDif()` reconstruit à chaque pas. Le
+contrôle falsifiant est le repère `dif_continuous_2d` : `difmed = 1,53036`,
+sous le plafond 1,85 de `yang-fig2`. Une composition donnerait un nombre
+astronomique.
+⚠️ Sous cet armement, `edotIns` du résumé porte le taux **final**, pas celui
+d'un instant de gel : il ne se lit pas comme celui des deux autres armements
+(d'où 7,66 /s contre 57,2 pour `dif_intrinseque_2d`, même essai).
+
+**Ce que la source CONFIRME** (rockim était déjà juste, rien à changer) : la
+loi de volume `T = (μ/J)B + [(λ lnJ − μ)/J]I + η·D` (l. 716) ; la viscosité
+`dpeks*D`, donc `bulkViscosity = η/2` puisque rockim écrit 2μD ; la z-curve
+a = 0,63 b = 1,8 c = 6 (l. 1088-1090) ; le couplage elliptique
+`SQRT(tmp1²+tmp2²)` (l. 1136) ; la branche élastique parabolique (2r−r²)
+(l. 1274) et la raideur **double** en compression (l. 1265) ; les 3 points aux
+milieux d'arêtes avec le poids A/6 sur chacun des deux nœuds de l'arête
+(l. 900-917 et 940) ; et l'**absence totale d'amortissement dans
+l'intégrateur** (`Y3Dsd.c`), la viscosité de volume étant leur seule
+dissipation hors joints et frottement.
+
+**Ce que la source montre DÉSACTIVÉ chez eux** : le DIF lui-même
+(`dpeftdif = R1`, soit 1,0) et l'endommagement diffus du volume (`df = R0`,
+avec le `(1−df)` qui ne s'applique **pas** au terme visqueux) — ce dernier
+recoupant ce que dit leur article de 2026 sur le granite de Kuru à propos du
+calcaire et du grès.
+
+**Frottement de contact** — `Y3Did.c` l. 1017-1051 : leur loi est
+*structurellement identique* à celle de rockim, ressort tangentiel à
+glissement **mémorisé** puis retour radial de Coulomb, et non un amortisseur
+en vitesse. Le rapport est `ktss = 2.0/(7.0)*penalty`, soit **k_t/k_n = 2/7**.
+Dans rockim ce rapport vaut `potTangentFactor / potPenaltyFactor` : c'est une
+valeur de config, pas une capacité — aucun code n'a été touché. Leur bloc de
+frottement statique/dynamique à affaiblissement en vitesse existe mais est
+**commenté** ; la loi active est `mu = mud*d_fact`, Coulomb constant.
+
+**`gcBirth = penalty`** — la naissance d'un contact sur un joint rompu,
+`Y3Did.c` l. 915-964. Les deux modes sont des philosophies opposées :
+
+- `ramp` (défaut, historique) : on retranche un relevé de naissance (volume en
+  3D, aire en 2D) qui décroît en `exp(-t/gcBirthTau)`, si bien que la force
+  **part de zéro** et remonte. Sous un indenteur, où les joints meurent *en
+  compression* sous forte charge, c'est une perte de portance à chaque rupture.
+  **Le problème ET une rampe sont publiés** (relevé le 2026-08-30) :
+  `Manuscript_UCL_deposit.pdf` **p. 17** décrit exactement la difficulté — « *when
+  a shear fracture under normal compression is formed, the overlap between
+  tetrahedral elements due to compression will generate an initial non-zero
+  contact force f_contact^initial, which can cause instability problems* » — et
+  publie son remède, **éq. (18)** : `f_contact = (n_c/n_total)·f_contact^initial`,
+  avec « *n_total is the total time-steps for n_c (usually 10)* ». Leur rampe est
+  donc **linéaire sur ~10 pas**, là où `gcBirthTau` pose une décroissance
+  **exponentielle** : les deux ne se comparent pas terme à terme (voir la réserve
+  d'échelle plus bas).
+- `penalty` : au pas exact de la naissance ils lisent la force que le joint
+  portait en mourant (`d1ejfc*`, ce que rockim enregistre déjà dans
+  `Joint::fDeath`) et calent la pénalité de **cette paire** pour que la force
+  du contact naissant l'égale — `d1pepe[icoup] = penalty·fn_joint/fn_contact`,
+  bornée à [0,01 ; 3]. La force est **continue**, le facteur persiste ensuite
+  pour la paire, et la raideur tangentielle le suit
+  (`ktss = 2/7·d1pepe[icoup]`). Ils zèrent aussi l'effort tangentiel et le
+  glissement mémorisé au pas de naissance — reproduit.
+
+Exige `contact = potential` (le mécanisme y vit ; sous `contact = penalty`, le
+défaut, la clé serait inerte et le solveur refuse). Exclusive de `gcBirthTau`.
+
+> ⚠️ **Réserve d'échelle sur `gcBirthTau` (2026-08-30, contre-audit).** Comparer
+> `gcBirthTau = 1e-6 s` aux « ~10 pas » de leur éq. (18) demande deux précautions.
+> (a) **Leur rampe est linéaire, la nôtre exponentielle** : `relax_ = exp(-dt/τ)`
+> n'a pas de « longueur », seulement une constante de temps ; le rapport n'a de
+> sens qu'à un facteur près. (b) Le nombre de pas dépend du `dt` du run, et un
+> chiffre de **~50×** a circulé en interne : il est **faux**, il importait le `dt`
+> d'un run de gradient St Anne (1,93e-9 s) dans une ligne qui parle d'impact 3D.
+> Sur les seuls `dt` 3D mesurés et publiés par le dépôt — **1,30e-8 s** (insertion
+> intrinsèque) et **1,93e-8 s** (adaptative),
+> [`chantier_imperial_2026-08-29/A11_dt_tangentiel.md`](chantier_imperial_2026-08-29/A11_dt_tangentiel.md)
+> §5-6 — cela fait **77 et 52 pas**, soit un facteur **5 à 8**, pas 50. (c) Enfin
+> `gcBirthTau` est **inerte** sous `gcBirth = penalty` : `relax_` n'est lu que dans
+> la branche `else` de la naissance, et le solveur refuse même de poser les deux
+> clés ensemble. Un balayage de τ ne renseigne donc **que** le mode `ramp`.
+
+⚠️ **Le relevé de naissance n'était pas qu'une douceur.** L'en-tête de
+`PotHist::aRef` documente sa vraie raison d'être : il empêche une **injection
+d'énergie** sur une paire née en recouvrement (mesure historique : **+936 J/m
+sans relevé**, +179 avec une rampe purement temporelle — d'où l'asymétrie
+d'état retenue). `gcBirth = penalty` le supprime : le bilan d'énergie devient
+donc le contrôle obligatoire, et le solveur l'écrit lui-même — *« en mode
+penalty tout positif est une injection »*. Mesure du 2026-08-26 sur la
+percussion 2D : résidu **−0,9174 J/m** en `ramp` contre **−0,994861** en
+`penalty` — négatif donc dissipatif dans les deux cas, et même légèrement plus
+dissipatif. Aucune injection sur cet essai, mais **c'est à revérifier sur tout
+nouveau cas** : le repère `gcbirth_penalty_percussion_2d` verrouille ce résidu
+précisément pour ça.
+
+⚠️ **Piège de lecture du repère.** En traction pure les joints meurent sans
+charge à relayer (`fDeath = 0`) et le facteur retombe à 1 pour toutes les
+paires : `gcbirth_penalty_2d` ne mesure alors que la *suppression de la rampe*
+(−1,67766 → −1,85267 %). Le rééchelonnement lui-même n'est exercé que sous
+indenteur — d'où `gcbirth_penalty_percussion_2d` : 4 joints morts, **100 % en
+compression**, 651 kN/m relayés, facteur moyen 1,031, travail de contact
+0,213 → 0,274 J/m dont frottement 0,111 → 0,116. Le résumé imprime le facteur
+moyen : **s'il colle à une borne, c'est le clamp — arbitraire chez eux — qui
+décide à la place de la physique**, et il faut l'élargir pour le savoir.
+
+**`strainRateFilter = none`** — le taux qui alimente le DIF. `Y3Dfd.c` l. 1448
+prend le taux de l'élément **tel quel**, sans lissage. rockim filtrait par un
+passe-bas de constante `strainRateTau`, et sa propre raison était explicite :
+« le taux brut par élément est trop bruité pour **figer** un DIF dessus ».
+Cette raison vise le *gel*. Sous `strainRateDIFArm = continuous` le facteur est
+repris à chaque pas — un pic de bruit ne dure qu'un pas au lieu d'être gravé
+dans le joint — et l'argument tombe. **Les deux clés se répondent : c'est
+ensemble qu'elles font leur schéma.** Exclusive de `strainRateTau`, qui serait
+sans effet (refusée plutôt qu'ignorée en silence).
+Mesures : 2D `edotmed` 7,65775 (filtré) → 4,02148 (brut) ; 3D 0,094298 →
+0,0746516. L'écart est exactement ce que le passe-bas retirait.
+
+**`jointResidualMu` est confirmé absent chez eux** : leur `dpefm` vaut `0.0`
+en dur (l. 1091). Un joint rompu ne porte aucun cisaillement ; tout le
+frottement vient du contact. Pour une réplication fidèle, laisser la clé
+désactivée.
+
+Repères — tier fast : `jointdeltac_solidity_2d`, `jointfailrule_majority_2d`,
+`dif_continuous_2d`, `gcbirth_ramp_2d`, `gcbirth_penalty_2d`,
+`srfilter_none_2d` et leurs contrôles à charge nulle. Tier full :
+`jointdeltac_solidity_3d`, `jointfailrule_majority_3d`, `dif_continuous_3d`,
+`gcbirth_penalty_3d`, `srfilter_none_3d`, `zeroload_gcbirth_penalty_3d`, et
+`gcbirth_penalty_percussion_2d` — le seul qui exerce vraiment le
+rééchelonnement.
+
+⚠️ `gcbirth_penalty_3d` ne verrouille **pas** un écart : en traction 3D les
+deux modes donnent le même `err_pct` (−4,75889 %). Il verrouille le *fait* que
+le mécanisme s'arme (118 paires calées). C'est délibéré et noté dans le repère.
 
 ### 5.5 Lois de comportement (`law`, modes fem3d / fdem / fdem3d)
 
