@@ -62,6 +62,23 @@ Ce qui reste vrai, et qui est l'avertissement utile : **ce n'est pas la version
 qui a produit l'article de 2026** — son facteur d'endommagement y est câblé à
 zéro. Détail dans [`chantier/A03_resourcer_attributions.md`](chantier/A03_resourcer_attributions.md).
 
+**3. Le dossier a été corrigé APRÈS le contre-audit, pas seulement annoté.**
+Les **§1 et §3 du lot 4** ont été **récrits** le 2026-08-30 (leurs versions
+d'origine sont conservées intégralement aux §1bis et §3bis), et **les 34 verdicts
+« moyenne » ont été dépouillés un par un** — §9 du contre-audit. Onze d'entre eux
+changeaient une affirmation citable : le nombre d'attributions (**79 lignes**, pas
+117), le nombre de contrôles (**101 au 2026-08-30**, et il bouge à chaque
+chantier), et le statut de la dérivation de l'exposant 0,1707, qui est une
+**inférence indépendante** et non une « prédiction ».
+
+**4. Un défaut de fond a été trouvé et corrigé dans le code, pas seulement décrit.**
+Le **septième poste** du bilan d'énergie d'ARMA 24-0952 (éq. 3-7) — l'énergie
+gravitaire — **n'existait pas** dans rockim. Mesuré : sur le banc de percussion 3D,
+**le résidu du bilan ÉTAIT le travail non compté de la pesanteur, à 0,02 % près**,
+et le garde-fou d'énergie **coupait un run parfaitement sain** à cause de lui.
+Corrigé, opt-in, mesuré, verrouillé :
+[`chantier/B10_bilan_energie_forces_volumiques.md`](chantier/B10_bilan_energie_forces_volumiques.md).
+
 ---
 
 ## Ce que le dossier établit — en dix lignes

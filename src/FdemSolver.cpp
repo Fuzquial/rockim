@@ -350,6 +350,28 @@ void FdemSolver::init() {
     // Body force. Absent (or 0) leaves every existing model bit-identical:
     // bodyForces() returns immediately and no other code path is touched.
     gravity_ = cfg_.getd("gravity", 0.0);
+    {   // energyBodyForces : miroir 2D. Raisonnement dans Fdem3dSolver.hpp.
+        std::string ebf = cfg_.gets("energyBodyForces", "off");
+        if (ebf != "on" && ebf != "off")
+            throw std::runtime_error(
+                "energyBodyForces must be on | off (off = defaut, "
+                "bit-identique : le travail de la PESANTEUR et celui du balai "
+                "de tri sont mesures et imprimes, mais n entrent pas dans "
+                "sumW — ils tombent donc dans le residu B4 ; on = ils y "
+                "entrent, et pesent sur le verdict [OK|CHECK] et sur "
+                "budgetAbortPct. ARMA 24-0952 eq. 3-7)");
+        eBody_ = ebf == "on";
+        if (eBody_)
+            std::cout << "[FDEM] energyBodyForces = on : le travail de la "
+                         "pesanteur et celui du balai ENTRENT dans le bilan "
+                         "B4 (sumW et echelle), donc dans le verdict et dans "
+                         "budgetAbortPct.\n";
+        else if (gravity_ > 0.0)
+            std::cout << "[FDEM] energyBodyForces = off (defaut) : gravity = "
+                      << gravity_ << " m/s2 est pose, et le travail de la "
+                         "pesanteur N ENTRE PAS dans sumW — il tombera dans "
+                         "le residu B4. Le resume chiffre ce qu il y verse.\n";
+    }
     if (gravity_ < 0.0)
         throw std::runtime_error("gravity is a magnitude in m/s^2 (it acts along -y): use a positive value");
 
@@ -3579,14 +3601,22 @@ void FdemSolver::elementForces() {
 // ---------------------------------------------------------------------------
 void FdemSolver::bodyForces() {
     if (gravity_ > 0.0) {
+        // V2/B4 : travail de la PESANTEUR — miroir exact du 3D. F . v au
+        // moment de l'application, donc positif quand elle injecte de la KE.
+        // La reduction ne change AUCUNE force : elle lit v_ et ecrit un scalaire.
+        double gw = 0.0;
 #ifdef _OPENMP
-#pragma omp parallel for schedule(static)
+#pragma omp parallel for schedule(static) reduction(+ : gw)
 #endif
         for (int eI = 0; eI < (int)el_.size(); ++eI) {
             const Elem& e = el_[eI];
             double w = rhoP_[e.phase] * e.A0 * thk_ * gravity_ / 3.0;
-            for (int a = 0; a < 3; ++a) f_[e.n[a]].y() -= w;
+            for (int a = 0; a < 3; ++a) {
+                f_[e.n[a]].y() -= w;
+                gw -= w * v_[e.n[a]].y();
+            }
         }
+        gravWork_ += gw * dt_;
     }
     // ---- balai numerique : anti-gravite sur les SEULS candidats -----------
     // Serie et non parallele : le travail s'accumule dans un scalaire, et la
@@ -3604,7 +3634,7 @@ void FdemSolver::bodyForces() {
             bw += F.dot(v_[e.n[a]]) * dt_;
         }
     }
-    brushWork_ += bw;                      // POSTE SEPARE, jamais dans sumW
+    brushWork_ += bw;                      // poste SEPARE (cf. energyBodyForces)
 }
 
 // ---------------------------------------------------------------------------
@@ -3728,7 +3758,9 @@ void FdemSolver::brushReport() {
               << (vTot > 0 ? 100.0 * (vTot - vLibre) / vTot : 0.0)
               << " % de SUREVALUATION\n"
               << "[FDEM]   travail du balai : " << brushWork_
-              << " J/m (hors bilan B4)\n";
+              << (eBody_ ? " J/m (DANS le bilan B4 : energyBodyForces = on)"
+                         : " J/m (hors bilan B4 : energyBodyForces = off)")
+              << "\n";
 }
 
 // ---------------------------------------------------------------------------
@@ -5373,6 +5405,10 @@ void FdemSolver::checkEnergyAbort() {
                  + std::abs(lysWork_) + std::abs(toolWork_)
                  + std::abs(bcWork_) + std::abs(confWork_)
                  + std::abs(hydroWork_);
+    if (eBody_) {                          // forces volumiques dans le bilan
+        sumW  += gravWork_ + brushWork_;
+        gross += std::abs(gravWork_) + std::abs(brushWork_);
+    }
     double scale = std::max({keInit_, ke, gross, 1e-30});
     if (scale < 1e-12) return;             // charge nulle : pas de verdict
     double resid = (ke - keInit_) - sumW;
@@ -6537,6 +6573,7 @@ void FdemSolver::finalize() {
         }
         double sumW = elWork_ + jointWork_ + gcWork_ + cundWork_ + lysWork_
                     + toolWork_ + bcWork_ + confWork_ + hydroWork_ + biasW_;
+        if (eBody_) sumW += gravWork_ + brushWork_;
         double dKE = keBlock - keInit_;
         double resid = dKE - sumW;
         // echelle du verdict : le flux BRUT echange (la somme signee est ~0
@@ -6548,6 +6585,7 @@ void FdemSolver::finalize() {
                      + std::abs(lysWork_) + std::abs(toolWork_)
                      + std::abs(bcWork_) + std::abs(confWork_)
                      + std::abs(hydroWork_);
+        if (eBody_) gross += std::abs(gravWork_) + std::abs(brushWork_);
         double scale = std::max({keInit_, keBlock, gross, 1e-30});
         bool zeroCase = scale < 1e-12;     // charge nulle : verdict en absolu
         std::cout << "[FDEM] energy budget (V2/B4): KE " << keInit_ << " -> "
@@ -6583,6 +6621,14 @@ void FdemSolver::finalize() {
         if (confP_ > 0.0)                  // sortie inchangee si pas confine
             std::cout << "[FDEM]   confinement  : " << confWork_
                       << " J/m (pression suiveuse -> solide)\n";
+        if (gravity_ > 0.0 || brushArmed_)
+            std::cout << "[FDEM]   forces vol.  : pesanteur " << gravWork_
+                      << " J/m, balai de tri " << brushWork_ << " J/m  ["
+                      << (eBody_
+                          ? "DANS le bilan (energyBodyForces = on)"
+                          : "HORS bilan (defaut) : ces J tombent dans le "
+                            "residu ci-dessous")
+                      << "]\n";
         std::cout << "[FDEM]   integration  : +" << biasW_
                   << " J/m (correction leapfrog f^2 dt^2/2m)\n"
                   << "[FDEM]   residu       : " << resid << " J/m ("

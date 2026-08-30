@@ -81,6 +81,11 @@ RX = {
     # l energie d impact (32,0 J sur 49,3, ARMA 2024), et il ne peut se remplir
     # que si les joints rompus passent la main au contact.
     "gcfric":     r"dont frottement (-?[\d.eE+-]+) J",
+    # B10 (2026-08-30) : le travail des forces VOLUMIQUES. gravwork est le
+    # septieme poste du bilan d ARMA 24-0952 (eq. 3-7), absent de rockim
+    # jusqu ici ; abort compte les declenchements du garde-fou d energie.
+    "gravwork":   r"forces vol\.  : pesanteur (-?[\d.eE+-]+) J",
+    "abort":      r"ENERGY ABORT \(budgetAbortPct = ([\d.eE+-]+)\)",
     # --- gcBirth = penalty : le facteur de naissance, 2026-08-26 -----------
     # C est LA mesure qui dit si le re-echelonnement a seulement pu s exercer :
     # il ne vaut 1 que si AUCUN joint mort ne portait de charge (rupture en
@@ -405,6 +410,54 @@ TESTS = [
          over=["T = 1e-9", "contact = potential", "potTangentFactor = 1.4286",
                "dtBudgetTangential = on"],
          checks=[("dt", 1.27315e-08, 1e-5, True)]),
+    # ---- B10 : les forces VOLUMIQUES dans le bilan d energie (2026-08-30) --
+    # Le poste GRAVITAIRE n existait pas, alors qu ARMA 24-0952 le pose en
+    # eq. 3-7 et que gravity = 9.81 est dans 20 des 22 decks d impact. Ce n
+    # etait pas un detail de comptabilite : sur ce banc le residu B4 EST le
+    # travail non compte de la pesanteur, a 0,3 % pres, et le garde-fou
+    # budgetAbortPct COUPE un run parfaitement sain a cause de lui.
+    #
+    # Les trois controles forment un tout : le premier verrouille le defaut
+    # (bit-identique, y compris le fait qu il soit FAUX), le deuxieme prouve
+    # que la cle corrige le residu, le troisieme que le garde-fou cesse de
+    # declencher a tort. Aucun ne prouve seul quoi que ce soit.
+    dict(name="ebody_defaut_3d", tier="full",
+         cfg="fdem3d_percussion.cfg",
+         over=["T = 2e-6", "gravity = 9.81", "energyBodyForces = off"],
+         # residu = 1.71064e-10 J, soit 116 % de l echelle -> verdict [CHECK]
+         # sur un run OU RIEN N EST CASSE. Le poste manquant fait tout le residu.
+         checks=[("gravwork", 1.71228e-10, 1e-3, True),
+                 ("budget", 1.71064e-10, 1e-3, True)]),
+    dict(name="ebody_on_3d", tier="full",
+         cfg="fdem3d_percussion.cfg",
+         over=["T = 2e-6", "gravity = 9.81", "energyBodyForces = on"],
+         # meme run, poste compte : le residu tombe de 1,71e-10 a -1,64e-13,
+         # soit un facteur 1040. La MESURE est identique (meme gravwork) : la
+         # cle ne change que la comptabilite, jamais une force.
+         checks=[("gravwork", 1.71228e-10, 1e-3, True),
+                 ("budget", -1.64459e-13, 5e-2, True)]),
+    # Le garde-fou. A T = 9e-6 le run atteint 1105 pas, donc UN passage du
+    # moniteur (il tourne tous les 1024 pas) : au defaut il ABORTE a
+    # t = 8.34411e-06 s sur un residu de 175 % de l echelle qui est
+    # integralement le travail de la pesanteur (2.37808e-09 J mesure contre
+    # 2.36997e-09 J de residu). Cle armee, il ne declenche pas.
+    dict(name="ebody_abort_defaut_3d", tier="all",
+         cfg="fdem3d_percussion.cfg",
+         over=["T = 9e-6", "gravity = 9.81", "budgetAbortPct = 2",
+               "energyBodyForces = off"],
+         checks=[("abort", 2.0, 1e-9, True),
+                 ("gravwork", 2.37808e-09, 1e-3, True)]),
+    dict(name="ebody_abort_on_3d", tier="all",
+         cfg="fdem3d_percussion.cfg",
+         over=["T = 9e-6", "gravity = 9.81", "budgetAbortPct = 2",
+               "energyBodyForces = on"],
+         # ABSENCE de declenchement : la metrique abort ne doit RIEN trouver.
+         # gravwork vaut ICI 2.70127e-09 et non 2.37808e-09 : le run temoin
+         # va jusqu au bout (t = 9e-6 s) tandis que le precedent est COUPE a
+         # t = 8.34411e-06 s. L ecart entre les deux references EST la preuve
+         # que le garde-fou a interrompu l un des deux.
+         checks=[("absent:abort", None, 0, True),
+                 ("gravwork", 2.70127e-09, 1e-3, True)]),
     # DIF 3D : la mesure du taux passe par maxAbsEigSym3 (forme fermee de
     # Smith 1961) la ou le 2D ecrit un cercle de Mohr a la main. Ce test est
     # le seul qui exerce ce chemin ; sans lui une erreur de spectre 3x3 serait
@@ -923,6 +976,20 @@ def run_one(exe, t, outroot, env, timeout):
         return dict(name=t["name"], ok=False, dt=dt,
                     detail=[f"exit {p.returncode}: {text.strip().splitlines()[-1] if text.strip() else '?'}"])
     for (kind, ref, tol, required) in t["checks"]:
+        # "absent:<metrique>" — l ABSENCE est le resultat. Ajoute le 2026-08-30
+        # (B10) : sans ce mecanisme, un controle non obligatoire dont la
+        # metrique manque est simplement « tolere », donc il PASSE que le
+        # phenomene se produise ou non — il ne prouve rien. Verifier qu un
+        # garde-fou ne se declenche PAS demande d exiger le vide.
+        if kind.startswith("absent:"):
+            base = kind[len("absent:"):]
+            hits = re.findall(RX[base], text)
+            if hits:
+                ok = False
+                detail.append(f"{base} : ATTENDU ABSENT, trouve {hits[-1]}")
+            else:
+                detail.append(f"{base} : absent, comme attendu")
+            continue
         if kind == "pass_tag":
             n_fail = text.count("[FAIL]")
             if n_fail or "[PASS]" not in text:

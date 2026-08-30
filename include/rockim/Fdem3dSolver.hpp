@@ -422,7 +422,37 @@ private:
     bool brushZeroV_ = false;
     bool brushArmed_ = false;
     double brushT0_ = 0.0;
-    double brushWork_ = 0.0;               // poste SEPARE
+    double brushWork_ = 0.0;               // poste SEPARE (cf. energyBodyForces)
+    // ---- energyBodyForces : les deux forces VOLUMIQUES dans le bilan B4 ----
+    // Contre-audit du 2026-08-30. Le theoreme travail-energie ne distingue pas
+    // une force « physique » d'une force « numerique » : TOUTE force appliquee
+    // aux noeuds fait un travail, et ce travail est soit dans sumW, soit dans
+    // le RESIDU. Deux y manquaient :
+    //   * la PESANTEUR. Aucun compteur n'existait, alors que gravity = 9.81 est
+    //     pose dans 20 des 22 decks de bench_impact/configs, et qu'ARMA 24-0952
+    //     pose explicitement l'energie potentielle gravitaire dans ses eq. 3-7.
+    //     C'est le SEPTIEME poste de leur bilan, et le seul que rockim n'avait
+    //     pas. Magnitude sur un impact : deplacements micrometriques sur 600 us,
+    //     donc ~1e-4 J contre ~49 J injectes — INVISIBLE. Le defaut est
+    //     STRUCTUREL, pas numerique : il devient reel des qu'un run est long ou
+    //     quasi statique.
+    //   * le TRI des fragments (brushWork_), tenu hors bilan a dessein — la
+    //     raison ecrite plus haut (« ne pas fabriquer une pompe logee dans un
+    //     canal comptabilise ») est bonne, mais elle ne protege pas de ce
+    //     qu'elle craint : hors de sumW, ce travail tombe entierement dans le
+    //     residu, ou budgetAbortPct peut couper un run SAIN sur un artefact
+    //     purement numerique. Le mesurer et le montrer protege ; le cacher, non.
+    //
+    // Le compromis retenu : la MESURE est inconditionnelle et IMPRIMEE (elle ne
+    // touche aucune force, donc la physique reste bit-identique dans les deux
+    // cas) ; seule l'ENTREE DANS sumW est opt-in.
+    //   off (defaut, bit-identique) : sumW inchange, et le resume DIT en toutes
+    //                                 lettres combien de J tombent dans le residu.
+    //   on                          : gravWork_ et brushWork_ entrent dans sumW
+    //                                 et dans l'echelle, donc dans le verdict
+    //                                 [OK|CHECK] et dans budgetAbortPct.
+    double gravWork_ = 0.0;                // travail de la PESANTEUR (B4)
+    bool   eBody_ = false;                 // energyBodyForces = on
     std::vector<char> brushCand_;
     std::vector<int> brushFrag_;
     int brushNFrag_ = 0;

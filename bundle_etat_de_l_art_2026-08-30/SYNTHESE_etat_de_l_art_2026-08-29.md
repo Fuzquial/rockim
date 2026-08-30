@@ -263,8 +263,9 @@ qui résiste :
   `bulkModel = neohookean` : **il ne se déclenche jamais sur le banc d'impact**.
   *(entrée 7)*
 
-Plus une **suite de non-régression de 97 contrôles** — dont **44 au tier rapide
-par défaut**, 89 au tier `full`, 97 au tier `all`, et **217 assertions** ; les
+Plus une **suite de non-régression de 101 contrôles au 2026-08-30** — dont **44
+au tier rapide par défaut**, 91 au tier `full`, 101 au tier `all`, et **225
+assertions** ; le chiffre **bouge à chaque chantier**, il ne se cite pas sans sa date ; les
 tiers **s'emboîtent au lieu de s'additionner**, et le « 42 » du brief était
 exactement le tier par défaut de l'époque, donc pas une erreur. Plus un **bilan
 d'énergie** dont la **mesure** du résidu est inconditionnelle là où le leur est un

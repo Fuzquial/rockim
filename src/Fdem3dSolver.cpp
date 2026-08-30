@@ -217,6 +217,54 @@ void Fdem3dSolver::init() {
                          "premier ordre ; elle en diverge la ou det F s ecarte "
                          "de 1, c est-a-dire sous l insert.\n";
     }
+    // La cle est lue ICI, et non dans placeTool(), qui commence par
+    // « if (scen_ == TENSION) return; » : une cle validee dans une branche
+    // que le scenario n atteint pas est une cle SILENCIEUSEMENT ignoree,
+    // et une faute de frappe y passerait inapercue.
+    {   // energyBodyForces : voir Fdem3dSolver.hpp pour le raisonnement complet
+        std::string ebf = cfg_.gets("energyBodyForces", "off");
+        if (ebf != "on" && ebf != "off")
+            throw std::runtime_error(
+                "energyBodyForces must be on | off (off = defaut, "
+                "bit-identique : le travail de la PESANTEUR et celui du TRI "
+                "des fragments sont mesures et imprimes, mais n entrent pas "
+                "dans sumW — ils tombent donc dans le residu B4 ; on = ils y "
+                "entrent, et pesent donc sur le verdict [OK|CHECK] et sur "
+                "budgetAbortPct. ARMA 24-0952 eq. 3-7 pose l energie "
+                "potentielle gravitaire comme septieme poste)");
+        eBody_ = ebf == "on";
+        if (eBody_)
+            std::cout << "[FDEM3D] energyBodyForces = on : le travail de la "
+                         "pesanteur et celui du tri des fragments ENTRENT dans "
+                         "le bilan B4 (sumW et echelle), donc dans le verdict "
+                         "et dans budgetAbortPct. Bilan a sept postes, celui "
+                         "d ARMA 24-0952 eq. 3-7.\n";
+        else if (cfg_.getd("gravity", 0.0) > 0.0)
+            std::cout << "[FDEM3D] energyBodyForces = off (defaut) : gravity = "
+                      << cfg_.getd("gravity", 0.0)
+                      << " m/s2 est pose, et le travail de la "
+                         "pesanteur N ENTRE PAS dans sumW — il tombera dans le "
+                         "residu B4. Le resume chiffre ce qu il y verse.\n";
+        // ET UNE CLE MUETTE TROUVEE EN CHEMIN (2026-08-30). En 3D `gravity`
+        // (le test lit la cle du deck, non scen_, qui n est assigne que plus
+        //  bas dans init())
+        // n est lu QUE dans placeTool(), qui commence par
+        // « if (scen_ == TENSION) return; ». Un deck de traction qui pose
+        // gravity ne recoit donc AUCUNE pesanteur, et rien ne le lui disait.
+        // Le comportement n est pas change — le corriger changerait la
+        // physique d un deck existant — mais il cesse d etre silencieux.
+        // (Le solveur 2D, lui, lit `gravity` dans init() : pas de garde de
+        // scenario. C est une rupture de parite 2D/3D, ici enregistree.)
+        if (cfg_.gets("scenario", "percussion") == "tension"
+            && cfg_.getd("gravity", 0.0) > 0.0)
+            std::cout << "[FDEM3D] AVERTISSEMENT : gravity = "
+                      << cfg_.getd("gravity", 0.0)
+                      << " est pose, mais le scenario est TENSION et le 3D ne "
+                         "lit `gravity` que dans placeTool(), qui sort avant "
+                         "sur ce scenario. LA PESANTEUR EST INERTE ICI. "
+                         "(Le solveur 2D, lui, l applique : rupture de parite "
+                         "2D/3D, enregistree le 2026-08-30.)\n";
+    }
     // ---- jointDeath : quand le joint passe la main au contact (2026-08-25) -
     // Voir le header. ADDITION (principes I et VIII) : le defaut `separation`
     // est le comportement historique mot pour mot.
@@ -2329,6 +2377,10 @@ void Fdem3dSolver::checkEnergyAbort() {
                  + std::abs(gcWork_) + std::abs(cundWork_)
                  + std::abs(lysWork_) + std::abs(toolWork_)
                  + std::abs(bcWork_) + std::abs(confWork_);
+    if (eBody_) {                          // forces volumiques dans le bilan
+        sumW  += gravWork_ + brushWork_;
+        gross += std::abs(gravWork_) + std::abs(brushWork_);
+    }
     double scale = std::max({keInit_, ke, gross, 1e-30});
     if (scale < 1e-12) return;             // charge nulle : pas de verdict
     double resid = (ke - keInit_) - sumW;
@@ -4037,14 +4089,23 @@ void Fdem3dSolver::integrate() {
 // ---------------------------------------------------------------------------
 void Fdem3dSolver::bodyForces() {
     if (gravity_ > 0.0) {
+        // V2/B4 : le travail de la PESANTEUR. Meme convention que tous les
+        // autres compteurs — F . v au moment de l'application (leapfrog), donc
+        // positif quand la pesanteur INJECTE de l'energie cinetique. La
+        // reduction ne change AUCUNE force : elle lit v_ et ecrit un scalaire.
+        double gw = 0.0;
 #ifdef _OPENMP
-#pragma omp parallel for schedule(static)
+#pragma omp parallel for schedule(static) reduction(+ : gw)
 #endif
         for (int eI = 0; eI < (int)el_.size(); ++eI) {
             const Elem& e = el_[eI];
             double w = phases_.mat[e.phase].rho * e.V0 * gravity_ / 4.0;
-            for (int a = 0; a < 4; ++a) f_[e.n[a]].z() -= w;
+            for (int a = 0; a < 4; ++a) {
+                f_[e.n[a]].z() -= w;
+                gw -= w * v_[e.n[a]].z();
+            }
         }
+        gravWork_ += gw * dt_;
     }
     // anti-gravite sur les SEULS candidats. Serie : le travail s'accumule dans
     // un scalaire, et la phase de tri est courte devant le run.
@@ -4060,7 +4121,7 @@ void Fdem3dSolver::bodyForces() {
             bw += F.dot(v_[e.n[a]]) * dt_;
         }
     }
-    brushWork_ += bw;                      // POSTE SEPARE, jamais dans sumW
+    brushWork_ += bw;                      // poste SEPARE (cf. energyBodyForces)
 }
 
 // ---------------------------------------------------------------------------
@@ -4152,7 +4213,9 @@ void Fdem3dSolver::brushReport() {
               << (vTot > 0 ? 100.0 * (vTot - vLibre) / vTot : 0.0)
               << " % de SUREVALUATION\n"
               << "[FDEM3D]   travail du tri : " << brushWork_
-              << " J (hors bilan B4)\n";
+              << (eBody_ ? " J (DANS le bilan B4 : energyBodyForces = on)"
+                         : " J (hors bilan B4 : energyBodyForces = off)")
+              << "\n";
 }
 
 void Fdem3dSolver::computeFragments() {
@@ -4466,6 +4529,7 @@ void Fdem3dSolver::finalize() {
                     uSpr += 0.5 * kAbs_[i](a) * u_[i](a) * u_[i](a);
         double sumW = elWork_ + jointWork_ + gcWork_ + cundWork_ + lysWork_
                     + toolWork_ + bcWork_ + confWork_ + biasW_;
+        if (eBody_) sumW += gravWork_ + brushWork_;
         double dKE = keBlock - keInit_;
         double resid = dKE - sumW;
         // echelle du verdict : le flux BRUT echange (la somme signee est ~0
@@ -4476,6 +4540,7 @@ void Fdem3dSolver::finalize() {
                      + std::abs(gcWork_) + std::abs(cundWork_)
                      + std::abs(lysWork_) + std::abs(toolWork_)
                      + std::abs(bcWork_) + std::abs(confWork_);
+        if (eBody_) gross += std::abs(gravWork_) + std::abs(brushWork_);
         double scale = std::max({keInit_, keBlock, gross, 1e-30});
         // a charge nulle l'echelle est elle-meme un zero machine : le ratio
         // de deux zeros n'a pas de sens, le verdict se rend sur l'absolu
@@ -4514,6 +4579,14 @@ void Fdem3dSolver::finalize() {
         if (confP_ > 0.0)                  // sortie inchangee si pas confine
             std::cout << "[FDEM3D]   confinement  : " << confWork_
                       << " J (pression suiveuse -> solide)\n";
+        if (gravity_ > 0.0 || brushArmed_)
+            std::cout << "[FDEM3D]   forces vol.  : pesanteur " << gravWork_
+                      << " J, tri des fragments " << brushWork_ << " J  ["
+                      << (eBody_
+                          ? "DANS le bilan (energyBodyForces = on)"
+                          : "HORS bilan (defaut) : ces J tombent dans le "
+                            "residu ci-dessous")
+                      << "]\n";
         std::cout << "[FDEM3D]   integration  : +" << biasW_
                   << " J (correction leapfrog f^2 dt^2/2m)\n"
                   << "[FDEM3D]   residu       : " << resid << " J ("
