@@ -1,6 +1,23 @@
 // ---------------------------------------------------------------------------
 // FdemSolver — 2D combined finite-discrete element method (Munjiza-style).
 // See the header for the model overview; comments here carry the derivations.
+//
+// ---------------------------------------------------------------------------
+// PROVENANCE DES CITATIONS « Y3D*.c l. NNNN » DE CE FICHIER — lire d abord
+//   ../SOURCES_SOLIDITY.md  (a la racine du depot, note B4a du 2026-08-30)
+//
+// Elles renvoient au code d Imperial College London,
+// github.com/ImperialCollegeLondon/solidity-solver-open, LGPL-3.0, LU LE
+// 2026-08-26. Trois choses a savoir avant d en citer une :
+//   1. c est BIEN leur code — le contraire a ete affirme puis rectifie ;
+//   2. ce n est PAS la version qui a produit l article de 2026 (facteur
+//      d endommagement cable a zero, DIF neutre) : y lire une FORME et en
+//      conclure une implementation de l article est une faute ;
+//   3. LES NUMEROS DE LIGNE NE SONT PAS ANCRES SUR UN COMMIT. Le depot est
+//      maintenu, donc ils bougent. Ils valent pour le 2026-08-26.
+// Les 72 citations du depot ne visent que 13 endroits distincts : la table
+// des 13, avec leur statut (article / code public / version interne), est
+// dans SOURCES_SOLIDITY.md §3.
 // ---------------------------------------------------------------------------
 #include "rockim/FdemSolver.hpp"
 

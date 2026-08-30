@@ -243,7 +243,8 @@ rapport gain/risque.
 | **B1** | **Poser `jointPenaltyFactor ≈ 9,6`** au deck de réplique (voie deck d'A2), en documentant que c'est 26,32 corrigé du rapport de longueurs **et que le rapport réel est ≥ 2,4495** | **1 ligne de deck** | le partage d'énergie et la courbe force-pénétration doivent **bouger** ; s'ils ne bougent pas, la pénalité n'était pas le levier qu'on croyait et il faut le dire |
 | **B2** | **Retirer du plan A6 tel qu'il était écrit**, et re-spécifier : outil **rigide** via `toolSig_` (qui existe), ou soudure des nœuds de la phase outil | re-spéc. d'abord | avec l'outil rigide, la vitesse de rebond doit se rapprocher de la mesure **sans** que le champ de fissuration dans la roche change |
 | **B3** ✅ **FAIT le 2026-08-30** | **Corriger le §1 du lot 4** : chiffre **79** (et non 78 — voir §9 M-3, la différence est la citation de `specs/…/WP7`), commande `grep -rEc`, périmètre étendu à `configs/`, `build_sol.cmd`, `specs/` ; et **porter l'avertissement sur `DOCUMENTATION_rockim.md` §5.4 quinquies**, la pièce la plus lue | faible | ✅ `grep -rEc "Y3D[a-z]*\.c"` sur le périmètre déclaré donne **79**, le nombre imprimé au §1 récrit. Bandeau porté, plus deux sources d'article ajoutées (A3.3) |
-| **B4** | **A3 redéfini** (A3.1-A3.3 de la fiche A03) : citations **complètes** (dépôt, licence, commit, fichier, ligne), **trois** statuts au lieu de deux, sources d'article ajoutées là où elles existent. **Ne rien renommer, ne rien effacer.** | moyen | aucune citation `Y3D*.c` nue ne subsiste ; **la mention LGPL de `verify_suite.py` est toujours là** |
+| **B4a** ✅ **FAIT le 2026-08-30** | **La provenance, une fois pour toutes** : note canonique [`SOURCES_SOLIDITY.md`](../SOURCES_SOLIDITY.md) — dépôt, licence, date de lecture, les **trois statuts**, et la **table des 13 références** auxquelles se réduisent les 72 citations. Les quatre fichiers de code y pointent depuis leur tête. **Rien renommé, rien effacé.** | faible (13 entrées, pas 72) | ✅ toute citation `Y3D*.c` du dépôt a désormais **un seul endroit où renvoyer** ; bilan des statuts : 2 rachetées par un article, 1 partiellement, 4 relevées dans un mécanisme **inerte** chez eux, 6 conventions de code sans contrepartie publiée — **aucune « sans source »** |
+| **B4b** ⛔ **EXIGE LE CLONE** | **Vérifier les 13 et relever le commit.** Impossible depuis ce conteneur : `solidity-solver-open` n'y est pas et il n'y a pas d'accès sortant | 10 min **avec le clone** | les 13 lignes imprimées par le script de [`SOURCES_SOLIDITY.md`](../SOURCES_SOLIDITY.md) §4 correspondent à la colonne « ce que rockim en dit » ; le SHA du commit remplace le « NON RELEVÉ » du §1 |
 | **B5** | **Essai `gcBirth = penalty`** sur l'impact 3D — **après B1**, pour ne pas refaire un run de ~40 h | 1 run | l'injection de la branche normale doit passer **sous 1 % de KE₀** (référence : **3,66 J / 6,9 %**, pas 11,1 J). **Une hausse est un résultat valide** et doit être publiée telle quelle |
 | **B6** | **Balayer `gcBirthPenMin` / `gcBirthPenMax`**, dont le deck dit les bornes arbitraires — **et non `gcBirthTau`**, que le deck refuse | faible | le facteur moyen de calage ne colle à aucune borne ; s'il y colle, c'est le clamp qui décide à la place de la physique |
 | **B7** ✅ **FAIT le 2026-08-30** | **Corriger le §3** : entrées **7 et 10 RETIRÉES** (toutes deux inertes sur le banc de réplique — `bulkModel = neohookean` pour l'une, `contact = potential` pour l'autre), **1, 3, 6, 8, 9, 12 et 13 requalifiées**, « résultats scientifiques » ramenés de **quatre à un** (+ une reformulation publiable) | faible | ✅ chaque entrée survivante porte une preuve revérifiée par moi contre le dépôt, commande donnée |
@@ -423,15 +424,16 @@ Trois erreurs dans une seule phrase :
 **Corollaire, et il retourne le reproche fait au brief** : le « 42 » du brief
 n'était pas une erreur — c'était **exactement le tier par défaut de l'époque**.
 
-> **Formulation à utiliser** (en datant toujours le chiffre) : « **101 contrôles
-> de non-régression au 2026-08-30**, dont **44 au tier rapide par défaut**, 91 au
-> tier `full`, 101 au tier `all` ; **225 assertions** chiffrées au total. »
+> **Formulation à utiliser** (en datant toujours le chiffre) : « **104 contrôles
+> de non-régression au 2026-08-30**, dont **44 au tier rapide par défaut**, 93 au
+> tier `full`, 104 au tier `all` ; **237 assertions** chiffrées au total. »
 
 Citer « 98 » au manuscrit, c'est publier un nombre que personne ne pourra
 reproduire.
 
 > **Et ce nombre BOUGE — c'est la vraie leçon.** Il valait 95 avant A11, 97
-> après, et **101** depuis B10 (44 `fast`, 47 `full`, 10 `all`) le 2026-08-30.
+> après, **101** après B10, et **104** après B8 (44 `fast`, 49 `full`, 11 `all`)
+> le 2026-08-30 — trois valeurs dans la même journée.
 > Une suite vivante voit son décompte changer à chaque chantier. **Tout chiffre
 > de ce genre doit donc porter sa date** — « 101 contrôles au 2026-08-30 » — ou,
 > mieux, être **recompté à la publication** par le dépouillement AST donné
