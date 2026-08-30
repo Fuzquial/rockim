@@ -696,6 +696,34 @@ mourant (`FdemSolver.cpp:4606-4632`). Il exige `contact = potential`
 
 ## 6. PLAN D'ACTION ORDONNÉ
 
+> # ⚠️ CE PLAN EST REMPLACÉ — NE PAS L'EXÉCUTER
+> **Le contre-audit le note 2 sur 17** — la pire section du document, et la seule
+> qui n'était adossée à aucune source, ni article ni ligne de code. **Le plan
+> applicable est le §6 de**
+> [`../chantier_imperial_2026-08-29/CONTRE_AUDIT_corrections.md`](../chantier/CONTRE_AUDIT_corrections.md)
+> (actions **B1 à B9**). Ce qui suit est conservé pour l'historique.
+>
+> **Trois actions sont dangereuses ou impossibles telles qu'écrites** :
+> * **A6** « restreindre les joints à la roche » — **désassemble l'outil** ; et son
+>   effort est mal jugé dans l'autre sens : `groupBond` et son branchement existent
+>   déjà (`src/Fdem3dSolver.cpp:1159-1180` et `:1436-1452`), la plomberie est une
+>   clé sœur, c'est la **sémantique** (figer plutôt que supprimer) qui coûte ;
+> * **A8** « balayer `gcBirthTau` » — **le solveur refuse la clé** en même temps que
+>   `gcBirth = penalty`, que le deck de réplique pose déjà : `τ` y est **inerte**.
+>   Et le « 518 pas contre ~10 » était faux (le `dt` venait d'un autre run) : c'est
+>   **77 et 52 pas**, soit **5 à 8×** ;
+> * **A11** « miroir de `FdemSolver.cpp:3134` » — appliquée littéralement, cette
+>   consigne **diviserait le pas de temps par ≈ 32** (piège d'unités : en 3D `potP_`
+>   est en Pa, `potKt_` en N/m). L'action a été faite correctement le 2026-08-29,
+>   fiche [`A11_dt_tangentiel.md`](../chantier/A11_dt_tangentiel.md) ;
+>   son gain réel est **−2,2 %** et **−4,7 %**, pas la suppression d'un précipice —
+>   et le frottement, **quand il travaille**, sature au cap de Coulomb et n'apporte
+>   plus aucune raideur, donc c'est précisément le régime où l'omission ne mord pas.
+>
+> **Et les deux « blocages » (A1, A2) n'en sont pas** : la colonne « bloque la
+> réplication ? » est fausse deux fois (contre-audit §1). Les estimations d'effort
+> d'A1, A2, A3 et A12 sont toutes irréalistes (§9, M-16 à M-21).
+
 | # | action | effort | gain mesurable | bloque la réplication ? |
 |---|---|---|---|---|
 | **A1** | Tester `gcBirth = penalty` sur l'impact 3D | faible | l'injection de 11,1 J par la branche normale doit tomber ; sans ça le partage 2,6/64,9 % est hors d'atteinte | **OUI** |

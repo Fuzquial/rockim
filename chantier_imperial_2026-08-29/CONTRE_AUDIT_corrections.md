@@ -23,7 +23,7 @@ conservés — on ne réécrit pas l'historique.*
 
 **6 critiques, 32 hautes, 34 moyennes.** Les critiques et les hautes sont traitées
 aux §1-§8 ci-dessous ; **les 34 moyennes ont été dépouillées une par une le
-2026-08-30 et sont au [§9](#9-les-34-verdicts--moyenne--dépouillés-un-par-un-le-2026-08-30)** —
+2026-08-30 et sont au [§9](#9-les-34-verdicts--moyenne---dépouillés-un-par-un-le-2026-08-30)** —
 onze d'entre elles changent une affirmation que l'on réutiliserait au manuscrit.
 Le dépouillement des sources, lui, était à **91 %**
 (614/673). L'écart n'est pas du bruit, et son motif est net :
