@@ -39,6 +39,44 @@ porte les corrections et **le plan applicable**. Il prime sur le lot 4 et sur le
 | `A01_gcbirth_penalty.md` | essai `gcBirth = penalty` sur l'impact 3D | à faire |
 | `A02_longueur_h.md` | aligner la longueur de référence h sur celle d'Imperial | **suspendu** — attend la confirmation du contre-audit sur le facteur 2,4495 |
 
+## ⚠️ Incident du 2026-08-30 — une branche miroir laissée non compilable
+
+*Consigné ici parce que le mode de panne est générique et se reproduira.*
+
+**Ce qui s'est passé.** Le dépôt porte trois branches qui doivent rester
+synchronisées. Deux avancent ensemble (`claude/fdem-imperial-research-9xfhly`
+et `joint-handoff`) ; la troisième, `claude/rockim-recent-mpka9c`, est un
+**miroir plus étroit** et reçoit les mêmes changements par `git cherry-pick`.
+Trois conflits sont survenus le 2026-08-30 et ont été résolus par
+`git checkout --theirs`, après avoir **vérifié à chaque fois que la version
+retenue était un sur-ensemble du FICHIER en conflit**.
+
+**La vérification était juste pour le fichier, et sans valeur pour l'arbre.**
+Elle a posé un `src/Fdem3dSolver.cpp` de 4 995 lignes à côté d'un
+`include/rockim/Fdem3dSolver.hpp` resté 160 lignes plus court, qui ne déclare
+pas les membres que ce `.cpp` utilise. **La branche n'a plus compilé pendant
+trois commits** — neuf erreurs `was not declared in this scope` — sans que rien
+ne le signale, parce que **aucun `cherry-pick` n'avait été suivi d'une
+compilation**.
+
+**La règle qui en découle, et elle est courte :**
+
+> **Un `cherry-pick` entre branches divergentes se vérifie en COMPILANT, pas en
+> comparant des lignes triées.** Comparer les fichiers dit ce qu'un fichier
+> contient ; seule la compilation dit si l'arbre tient debout. Et quand la
+> résolution consiste à imposer une version, la question n'est pas « ce fichier
+> est-il complet ? » mais « **quels AUTRES fichiers ce fichier suppose-t-il ?** »
+
+**La réparation, et comment elle a été contrôlée** (commit `ed31047`) :
+`src/`, `include/` et `tools/verify_suite.py` alignés sur la branche de travail,
+après avoir établi qu'aucune capacité du miroir n'était perdue — **0 clé de deck
+et 0 fonction membre** présentes avant et absentes après, sur **les deux**
+solveurs (175 → 190 clés en 2D, 126 → 141 en 3D ; 57 → 61 et 37 → 41 fonctions).
+Puis, depuis un **checkout propre** de la branche réparée : `cmake` + `ninja`
+sans erreur, les 13 decks référencés par la suite tous présents et **identiques**
+à ceux de la branche de travail, maillages identiques, et la suite au tier par
+défaut rejouée sur ce binaire-là.
+
 ## Ce que ce chantier ne touche pas
 
 Aucun défaut existant n'est modifié. Aucun deck existant n'est modifié sans que
