@@ -108,6 +108,11 @@ private:
                                            // activateJoint() (0 en intrinseque),
                                            // seulement reprojetee dans le plan.
         bool dead = false;
+        // Force NORMALE nette que le joint transmettait a l instant EXACT de
+        // sa mort, en N (negatif = compression). Sortie de mesure seulement :
+        // c est la charge que le relais au contact doit reprendre. Voir
+        // jointDeath dans le header ci-dessous.
+        double fDeath = 0.0;
         double tBreak = -1.0;
         int type = 0;
         double pj = 0.0;                    // penalty per area [Pa/m]
@@ -119,6 +124,10 @@ private:
         // Sortie seulement : les facteurs ont deja ete appliques a ft, coh,
         // Gf et GfII lors de activateJoint().
         double difT = 1.0, difC = 1.0, edotIns = 0.0;
+        // En schema INTRINSEQUE (difIntrinsic_), le meme gel a lieu au
+        // franchissement de l enveloppe et non a l insertion : ce drapeau
+        // garantit qu il n a lieu QU UNE FOIS. Inerte en adaptatif.
+        bool difStamped = false;
         double tanPhi = 0.0;                // friction
         double stat = 1.0;                  // Weibull strength factor (output)
         // ---- adaptive insertion (Yan et al. 2023, ported from FdemSolver) --
@@ -142,6 +151,24 @@ private:
         int bmode = 0;
         double rnB = 0.0, rsB = 0.0;
         double failMode = -1.0;
+        // ---- jointFailRule = majority (Solidity Y3Dfd.c, Sigma_tau) -------
+        // Solidity ne porte PAS un endommagement par joint : chaque point
+        // d integration a son propre z, sa propre traction, et le joint ne
+        // meurt qu une fois DEUX points sur trois arrives a z >= 1
+        //   (`if((nfail>1)&&(i1elpr[ielem]>=0))`, ligne 1175).
+        // Dk[k] est ce z par point. Inerte sous `any` (defaut), ou seul le
+        // scalaire partage J.D pilote la loi — comportement historique.
+        std::array<double, 3> Dk{{0.0, 0.0, 0.0}};
+        // ---- strainRateDIFArm = continuous (Solidity, meme fichier) -------
+        // Leur DIF est un multiplicateur RECALCULE a chaque pas dans la
+        // boucle element (`dpeftdif` lignes 1448-1456), jamais fige. On ne
+        // peut donc pas l appliquer en place sur ft/coh/Gf/GfII sans le
+        // composer a l infini : on garde ici les valeurs de BASE, intactes,
+        // et la loi reconstruit ft = ftB*DIF a chaque pas.
+        // Renseignes une seule fois par assignJointProps/applyJointStatistics
+        // (via snapBase()), inertes sous `insertion` et `envelope`.
+        double ftB = 0.0, cohB = 0.0, GfB = 0.0, GfIIB = 0.0;
+        bool baseSnapped = false;
     };
 
     struct BFace {                          // active contact face
@@ -180,6 +207,18 @@ private:
     void insertionSweep();
     void activateJoint(int jI, double sig, const Eigen::Vector3d& tauV,
                        double fsNow);
+    // ---- DIF de Yang : application des facteurs a UN joint ---------------
+    // Extrait de activateJoint() le 2026-08-25 pour etre partage avec le gel
+    // a l AMORCAGE du schema intrinseque (difIntrinsic_). Arithmetique
+    // inchangee : les reperes dif_yang_* de la suite verrouillent la
+    // bit-identite du chemin adaptatif.
+    void stampDif(Joint& J, double er);
+    // dnE / dnF / slipF depuis les resistances COURANTES du joint — un seul
+    // site, partage par assignJointProps, applyJointStatistics, stampDif et
+    // refreshDif (voir jointDeltaC).
+    void setJointLengths(Joint& J);
+    void snapBase(Joint& J);              // proprietes de base, une fois
+    void refreshDif(Joint& J, double er); // strainRateDIFArm = continuous
     void placeTool();
     void setupBoundaries();
     // triaxial 3D : pression suiveuse sur les faces exterieures LATERALES
@@ -223,6 +262,20 @@ private:
     //     dnF - dnE = Gf / (ft yanI_),  slipF = GfII / (c yanI_).
     bool yanSoft_ = false;
     bool yanFricScaled_ = false;
+    // ---- jointResidualMu : le frottement RESIDUEL du joint rompu ---------
+    // Coefficient de frottement vers lequel le joint GLISSE quand il
+    // s endommage, par la meme f(D) que la cohesion : mu_eff = muRes +
+    // (tan(frictionDeg) - muRes) f(D). A D = 0 c est le frottement de PIC, a
+    // D = 1 c est muRes. C est la distinction de Y-Geo (AbuAisha et al. 2015,
+    // eq. 7.5 : angle de frottement de FRACTURE phi_f distinct de l angle
+    // interne), et l equivalent de ce que Solidity obtient en remettant le
+    // joint rompu au contact et a son glissement (0,6 calcaire / 0,18
+    // granite). rockim gardait jusqu ici le frottement de PIC a vie.
+    // < 0 = non pose = comportement historique, bit-identique.
+    // Generalise jointFrictionScaled : muRes = tan(frictionDeg) reproduit le
+    // defaut, muRes = 0 reproduit jointFrictionScaled = 1. Les deux cles ne
+    // peuvent donc pas etre posees ensemble (erreur de config).
+    double muRes_ = -1.0;
     yan::Params yanP_;
     double yanI_ = 1.0;                    // int_0^1 f(D) dD
 
@@ -560,6 +613,108 @@ private:
     bool difOn_ = false;
     double difExpT_ = 0.07;                // 0,07 litteral | 0,1707 fig. 2b
     double srTau_ = 0.0, srRelax_ = 0.0;   // filtre du taux
+    // ---- DIF en schema INTRINSEQUE : le gel a l AMORCAGE (2026-08-25) -----
+    // Vrai quand strainRateDIF est arme ET insertion = intrinsic. Le meme
+    // balayage d enveloppe que l insertion adaptative est alors execute, mais
+    // au franchissement il ne CREE pas le joint (il existe deja) : il se
+    // contente d y STAMPER le DIF. Les deux schemas partagent donc le critere
+    // exact, et ne different que par sa consequence — c est le temoin
+    // recherche pour la comparaison a Yang et al. (joints intrinseques AVEC
+    // DIF). Combinaison auparavant REFUSEE par une exception : aucune config
+    // valide ne change de comportement (principe I).
+    // ---- bulkModel : la loi de VOLUME (2026-08-25) ------------------------
+    // `corotational` (defaut, historique) : decomposition polaire, deformation
+    // de Biot, sigma = lambda tr(eps) I + 2 mu eps, assemblage P = R sigma.
+    // Exact en grandes ROTATIONS, valable en petites DEFORMATIONS seulement.
+    // `neohookean` : la loi de Guo (these Imperial 2014, eq. 2.6),
+    //   T = (mu/J)(B - I) + (lambda/J) ln(J) I,
+    // celle du code Solidity de Yang et al., avec l assemblage EXACT
+    // P = J T F^-T. Elle redonne l elasticite lineaire au premier ordre et
+    // n en diverge qu aux grandes deformations — sous l insert det F tombe a
+    // 0,5-0,7. Le terme (lambda/J) ln J diverge quand J -> 0 : le materiau se
+    // raidit sans borne a l ecrasement et l element ne peut plus s inverser,
+    // ce que la loi lineaire ne fait pas (d ou le crushCap, garde-fou qui n
+    // existe chez personne d autre).
+    // ---- Loi de joint : les deux dernieres conventions de Guo -------------
+    // jointElastic = linear (defaut) | parabolic : la branche elastique du
+    // joint. Guo eq. 2.31 la pose PARABOLIQUE, sigma = ft(2r - r^2) avec
+    // r = dn/dnE, ce qui donne une tangente NULLE au pic (transition douce
+    // vers l adoucissement) et une pente initiale 2 pj, valable des DEUX
+    // cotes de dn = 0 (loi C1 a l origine). rockim posait une droite de
+    // pente pj, avec un coude au pic.
+    // ---- jointQuadrature : les points d integration du joint -------------
+    // `vertex` (defaut) : aux NOEUDS. C est la regle de Newton-Cotes nodale,
+    // celle des elements cohesifs d Abaqus, retenue contre les oscillations
+    // parasites du champ de traction a forte penalite (Schellekens & de
+    // Borst). `midedge` : aux MILIEUX D ARETES, poids 1/3 — la regle de Guo
+    // (Table 2.2), exacte a l ordre 2 au lieu de 1.
+    // Les deux coincident EXACTEMENT en chargement uniforme ; elles different
+    // de 50 a 200 % la ou l ouverture a un gradient a travers la facette,
+    // c est-a-dire au front de fissure. Ce n est donc PAS un raffinement de
+    // second ordre : c est un effet nul la ou on le mesure d habitude et fort
+    // la ou la fissure se decide.
+    bool midEdge_ = false;
+    bool paraElastic_ = false;
+    // jointDeltaC = exact (defaut) | guo : l ouverture critique. Guo
+    // eq. 2.30 pose delta_c = 3 Gf/f mesure depuis ZERO, en approchant
+    // l integrale de la z-curve par 1/3 la ou elle vaut 0,386307. Son
+    // modele dissipe donc 3/0,386307 = 1,159 fois son Gf nominal. C est
+    // SA convention, et ses Gf publies ont ete calibres avec : il faut la
+    // reproduire pour retrouver ses chiffres.
+    bool guoDeltaC_ = false;
+    // jointDeltaC = solidity : ce que fait REELLEMENT leur code, qui n est
+    // pas ce qu ecrit la these. Y3Dfd.c lignes 1098-1099 et 1125-1126 :
+    //     op = 2 el ft / p0                   (l ouverture au pic)
+    //     ot = MAXIM(2 op, 3 Gf/ft)           (la PLAGE d adoucissement)
+    // la rupture est donc a op + ot, pas a 3 Gf/ft : la convention `guo`
+    // oublie et l offset op et le plancher 2 op. Le plancher mord quand le
+    // maillage est fin devant Gf/ft — exactement le regime d un impact.
+    // Leur propre commentaire dit `/*need further investigation*/`, deux fois.
+    bool solidityDeltaC_ = false;
+    bool neoHooke_ = false;
+    bool difIntrinsic_ = false;
+    // strainRateDIFArm = continuous : le DIF recalcule a CHAQUE pas depuis
+    // les proprietes de base (ftB, cohB, GfB, GfIIB), comme leur dpeftdif.
+    // Exclusif de `insertion` et `envelope`, qui figent le facteur une fois.
+    bool difContinuous_ = false;
+    // jointFailRule = majority : le joint ne meurt qu une fois PLUS D UN
+    // point d integration a D >= 1 (leur `nfail>1`) — 2 sur 3 en 3D, 2 sur 2
+    // en 2D. Implique un endommagement PAR POINT (Joint::Dk), car la regle
+    // n a pas de sens sur un scalaire partage qui est deja le max des points.
+    bool majorityFail_ = false;
+    // ---- gcBirth : la naissance d un contact sur un joint qui vient de mourir
+    // `ramp` (defaut, historique) : la force part de ZERO et monte sur
+    // gcBirthTau (on retranche un volume de reference qui decroit). Sur
+    // l impact, ou les joints meurent EN COMPRESSION sous forte charge, c est
+    // une perte de portance momentanee.
+    // `penalty` : leur solution (Y3Did.c l. 915-964). Au pas exact de la
+    // naissance ils lisent la force du joint mourant et RE-ECHELONNENT la
+    // penalite de la paire, d1pepe = penalty*fn_joint/fn_contact, bornee a
+    // [0,01 ; 3], de sorte que la force est CONTINUE. Le facteur persiste
+    // ensuite pour la paire, et la raideur tangentielle le suit.
+    bool birthPenalty_ = false;
+    double birthPenMin_ = 0.01, birthPenMax_ = 3.0;   // leurs deux bornes
+    long nBirthScaled_ = 0;                           // mesure : paires calees
+    double birthScaleSum_ = 0.0;                      // ... et facteur moyen
+    // ---- strainRateFilter : le taux qui alimente le DIF ------------------
+    // `exponential` (defaut, historique) : passe-bas du premier ordre de
+    // constante strainRateTau, parce que le taux brut par element est bruite.
+    // `none` : le taux BRUT, ce que fait leur code — dpeftdif est calcule sur
+    // le taux de l element tel quel, sans lissage (Y3Dfd.c l. 1448).
+    bool srFilterOff_ = false;
+    long nDifStamped_ = 0;                 // joints ayant recu le gel
+    long nDifLate_ = 0;                    // dont DEJA endommages au gel
+    // ---- jointDeath : QUAND le joint passe la main au contact -------------
+    // `separation` (defaut, historique) : le joint ne meurt qu une fois
+    // FRANCHEMENT ouvert (dnMax > 3 dnF). En compression il ne meurt donc
+    // JAMAIS, et l algorithme de contact — qui porte le glissement contactMu,
+    // le 0,6 de leur Table 4 — ne prend jamais le relais sous l insert.
+    // `damage` : le joint meurt des que D >= 1, quel que soit le signe de
+    // l ouverture. C est la regle de Guo (these Imperial 2014, §2.3.3) : « the
+    // stress-displacement relation is not applied to this failed joint element
+    // anymore ; instead, the interaction between the fracture walls will be
+    // counted as contact forces that are calculated by the contact algorithm ».
+    bool deathOnDamage_ = false;
 
     double kp_ = 0.0, muC_ = 0.5, xiC_ = 0.05, vReg_ = 1e-3;
     double kpGC_ = 0.0, xiGC_ = 0.8, gcRest_ = 0.2, gcWork_ = 0.0, relax_ = 1.0;
@@ -649,6 +804,11 @@ private:
                                            // peut preexister via le cache
                                            // d'axe separateur)
         int sepAxis = -1;                  // plan separateur en cache (Baraff)
+        // ---- gcBirth = penalty (Solidity Y3Did.c l. 915-964) --------------
+        // Facteur de penalite PROPRE A CETTE PAIRE, fige au pas de naissance
+        // pour que la force du contact naissant egale celle du joint mourant.
+        // C est leur d1pepe[icoup]. < 0 = pas encore ne. Inerte sous `ramp`.
+        double penScale = -1.0;
     };
     std::unordered_map<uint64_t, PotHist> potFt_;
     std::unordered_map<uint64_t, int> jointOfPair_;
