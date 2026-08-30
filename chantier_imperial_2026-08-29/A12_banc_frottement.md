@@ -70,7 +70,7 @@ Le coût réel d'un scénario `slide` :
     historyHeader, historyRow, finalize, finished, buildFromTriangles, ...
 
 **Estimation honnête : 1 à 2 jours**, et surtout **un risque de régression réel**
-sur une suite de 98 contrôles — pour héberger un seul banc. C'est disproportionné,
+sur une suite de 97 contrôles — pour héberger un seul banc. C'est disproportionné,
 et c'est contraire à la discipline du dépôt, qui veut des changements minimaux,
 opt-in et bit-identiques.
 
@@ -78,7 +78,7 @@ opt-in et bit-identiques.
 
 | voie | ce que c'est | coût | risque | ce qu'on obtient |
 |---|---|---|---|---|
-| **V1 — scénario `slide`** | un scénario neuf dans le solveur de production | 1-2 j | **élevé** : 43 points de branchement, suite à 98 contrôles | le banc publié **à l'identique**, citable dans le manuscrit |
+| **V1 — scénario `slide`** | un scénario neuf dans le solveur de production | 1-2 j | **élevé** : 43 points de branchement, suite à 97 contrôles | le banc publié **à l'identique**, citable dans le manuscrit |
 | **V2 — pilote autonome** | un `tools/slide_point.cpp` sur le modèle de `tools/yan_point.cpp` | 0,5-1 j **+ refactor** | moyen | un test du chemin tangentiel, **mais pas le banc publié** |
 | **V3 — ne rien faire** | consigner le manque | 0 | — | le trou reste, et il est nommé |
 

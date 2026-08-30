@@ -41,5 +41,5 @@ porte les corrections et **le plan applicable**. Il prime sur le lot 4 et sur le
 ## Ce que ce chantier ne touche pas
 
 Aucun défaut existant n'est modifié. Aucun deck existant n'est modifié sans que
-la fiche correspondante le dise. La suite des 98 contrôles reste valable telle
+la fiche correspondante le dise. La suite des 97 contrôles reste valable telle
 quelle : les contrôles ajoutés ici s'y ajoutent, ils n'en remplacent aucun.

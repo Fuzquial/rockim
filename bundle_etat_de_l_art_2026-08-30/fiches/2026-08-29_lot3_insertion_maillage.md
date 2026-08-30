@@ -335,7 +335,7 @@ pas h**. Mais la branche **pré-pic ne l'est pas** : `δ_np = 2 f_t h / p₀`
 4. **Aucune des trois sources** n'emploie les mots `objectivity`,
    `regularisation`, `characteristic length` ou `process zone length`. **Il
    n'existe dans ce corpus aucun critère chiffré comparable au `dx < ℓc/2` que la
-   branche CONTINUUM de la thèse s'impose** (cf. [CONTINUUM.md](le dépôt de la thèse) §4).
+   branche CONTINUUM de la thèse s'impose** (cf. `phd/CONTINUUM.md` §4, dans le dépôt de la thèse `Fuzquial/phd_geothermie`).
 5. **Aucune quantification** de la dépendance au maillage du **nombre de
    fragments** ni de l'**énergie dissipée**, alors que D2 admet qu'un fragment
    « may be a single tetrahedral element » — grandeur structurellement liée à la

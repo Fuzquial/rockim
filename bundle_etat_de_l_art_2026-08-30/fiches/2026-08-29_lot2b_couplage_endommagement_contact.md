@@ -229,9 +229,26 @@ Donc : le DIF touche **quatre** paramètres de joint (c, G_II, f_t, G_I) et
 >   `tools/verify_suite.py`.
 >
 > **Et l'article de 2026 valide cette inférence** : il imprime 0,17 là où le
-> dépôt avait dérivé 0,1707 à partir de la seule figure. C'est une prédiction du
-> dépôt confirmée par une source publiée un an plus tard. **Cela vaut d'être
+> dépôt avait dérivé 0,1707 à partir de la seule figure. ~~C'est une prédiction du
+> dépôt confirmée par une source publiée un an plus tard.~~ **Cela vaut d'être
 > écrit dans le manuscrit.**
+>
+> > ⚠️ **CORRIGÉ le 2026-08-30 (contre-audit, §9 M-1).** La phrase barrée
+> > ci-dessus est **fausse sur deux points**. (1) **« un an plus tard » vaut pour
+> > l'article de 2025, pas pour celui de 2026** : le confirmateur est *IJRMMS*
+> > **206** (2026) 106660, soit la **même année** que la dérivation (2026-08-18) —
+> > et rien dans le dépôt n'établit qu'il n'était pas **déjà paru** à cette date.
+> > (2) **Le mot « prédiction » n'est donc pas soutenable.** À écrire comme une
+> > **INFÉRENCE INDÉPENDANTE** — ce qu'elle est, et ce qui suffit largement : la
+> > loi littérale à 0,07 ne raccorde **aucune** de ses deux bornes (1,1245 au lieu
+> > de 1 en bas ; 1,5160 au lieu de 1,85 en haut, **22 % de discontinuité**),
+> > 0,1707 raccorde **les deux** (**1,0010** et 1,8500), et l'article de 2026
+> > imprime 0,17. C'est une démonstration de **cohérence interne**, testable —
+> > plus solide, devant un rapporteur, qu'une antériorité indéfendable.
+> >
+> > *(Et le **vrai** apport n'est pas l'exposant : c'est l'**attracteur** mesuré
+> > ci-dessus — médiane 99,36 /s contre 40,22 /s — qu'aucune publication ne
+> > décrit.)*
 >
 > Ce que cette fiche-ci ajoute, et rien de plus : la **confirmation sur source
 > primaire** que l'exposant imprimé en 2026 est bien 0,17, ce qui clôt le doute.
