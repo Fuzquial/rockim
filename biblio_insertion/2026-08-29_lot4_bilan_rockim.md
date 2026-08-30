@@ -46,7 +46,8 @@ exhaustive. **Les contre-audits n'ont pas tourné du tout.**
 Conséquence de méthode : les statuts des quatre éléments audités portent des
 numéros de ligne vérifiés et sont contradictoires ; **les autres sont des
 constats de première lecture, à reprendre**. Ils sont marqués **[1re LECTURE]**.
-Le §9 dit ce qui reste à faire.
+Le ~~§9~~ **§7** dit ce qui reste à faire *(ce document n'a que sept sections ;
+renvoi corrigé le 2026-08-30)*.
 
 ---
 
@@ -56,8 +57,9 @@ Le §9 dit ce qui reste à faire.
 > conservée **intégralement** au [§1bis](#1bis-la-version-dorigine-du-2026-08-29-conservée)
 > — on ne réécrit pas l'historique, mais on ne laisse pas non plus un lecteur
 > pressé tomber d'abord sur un texte faux. **Ce qui a changé** : la prémisse
-> (§1.0), le nombre (§1.1), la commande (§1.1), le périmètre (§1.1), sept des huit
-> verdicts de la table de rachat (§1.2) et l'estimation d'effort (§1.3).
+> (§1.0), le nombre, la commande et le périmètre (§1.1), la nature même du défaut
+> (§1.2), sept des huit verdicts de la table de rachat (§1.3) et l'estimation
+> d'effort (§1.4).
 
 ### 1.0 La prémisse d'origine était fausse, et il faut le dire avant tout le reste
 
@@ -531,7 +533,7 @@ Elles ne l'annulent pas, elles la bornent — et la deuxième est opérationnell
 **(b) Le poste GRAVITAIRE n'existe pas — et c'est celui qu'ARMA distingue.**
 `src/Fdem3dSolver.cpp:4038` `bodyForces()` applique la pesanteur **sans aucun
 compteur de travail**, et il n'existe aucun `gravWork_` dans l'en-tête. Or
-`gravity = 9.81` est posé dans onze decks, `impact_imperial.cfg` compris, et
+`gravity = 9.81` est posé dans **20 des 22 decks**, `impact_imperial.cfg` compris, et
 ARMA 24-0952 pose explicitement l'énergie potentielle gravitaire dans ses éq. 3-7.
 
 *Magnitude honnête* : sur 600 µs d'impact les déplacements sont micrométriques,

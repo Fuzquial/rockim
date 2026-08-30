@@ -488,8 +488,8 @@ produit — à décider par vous.)*
 Six des sept postes attendus sont là et vérifiés. Le septième, non :
 `src/Fdem3dSolver.cpp:4038` `bodyForces()` applique la pesanteur **sans aucun
 compteur de travail**, et `grep gravWork include/rockim/Fdem3dSolver.hpp` → **0**.
-Or `gravity = 9.81` est posé dans `impact_imperial.cfg`, `impact_kuru9.cfg`,
-`impact_kuru11.cfg` et huit autres decks. Et ARMA 24-0952 pose explicitement
+Or `gravity = 9.81` est posé dans **20 des 22 decks** de `bench_impact/configs`,
+`impact_imperial.cfg` compris (recompté : `grep -l "^gravity" bench_impact/configs/*.cfg | wc -l`). Et ARMA 24-0952 pose explicitement
 l'énergie **potentielle gravitaire** dans ses éq. 3-7.
 
 **Magnitude honnête** : sur 600 µs d'impact les déplacements sont en micromètres,
