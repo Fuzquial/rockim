@@ -452,6 +452,74 @@ private:
     //                                 et dans l'echelle, donc dans le verdict
     //                                 [OK|CHECK] et dans budgetAbortPct.
     double gravWork_ = 0.0;                // travail de la PESANTEUR (B4)
+    // ---- B8 : diagnostic de l ENDOMMAGEMENT SOUS-CRITIQUE ----------------
+    // Le « diffuse ratcheting » de la penalite intrinseque : la part des
+    // joints qui portent deja un D > 0,01 alors qu AUCUN n a rompu. C est la
+    // signature de la penalite intrinseque — chaque joint cede un peu, la
+    // structure perd de la raideur, et la resistance apparente baisse sans
+    // qu une seule fissure soit apparue.
+    //
+    // POURQUOI IL ARRIVE ICI. Le diagnostic existait depuis 2026-08-25, mais
+    // en 2D SEULEMENT et enferme dans `if (scen_ == BRAZILIAN)` — donc sur un
+    // essai de CALIBRATION, et pas du tout sur la percussion, c est-a-dire pas
+    // sur le cas compare a Imperial. Le contre-audit du 2026-08-30 l a releve :
+    // on mesurait l injection d energie de l insertion intrinseque sans pouvoir
+    // dire quelle fraction des joints ratchetait. C est la jauge qui manquait.
+    //
+    // QUAND LE RELEVE EST FIGE. Percussion : au PIC d effort d outil, l instant
+    // ou la structure est la plus chargee — analogue exact du pic brésilien.
+    // Traction / cisaillement (pas d outil) : au dernier pas ou nBroken_ == 0,
+    // soit juste avant la premiere fissure, comme en 2D.
+    // Les valeurs de FIN de run sont imprimees en plus : en percussion le pic
+    // precede le gros de la fissuration, et l ecart entre les deux se lit.
+    //
+    // Cout mesure : voir chantier_imperial_2026-08-29/B08_*.md. Le releve ne
+    // touche AUCUNE force ; il lit J.D et ecrit trois scalaires.
+    //
+    // ============ AVERTISSEMENT DE LECTURE, MESURE LE 2026-08-30 ============
+    // CE CHIFFRE NE SE COMPARE PAS D UNE PENALITE A L AUTRE.
+    // D est un deplacement NORMALISE : dnE = ft h / (pf E) retrecit quand pf
+    // monte (Fdem3dSolver.cpp:1588 et :1813), si bien que la MEME ouverture
+    // physique se lit comme PLUS d endommagement. Mesure sur
+    // configs/fdem3d_percussion.cfg, T = 2e-5, insertion intrinseque :
+    //
+    //   pf =  20  ->  0,1571 % des joints > D=0,01 ; D moyen 8,099e-4
+    //   pf =  60  ->  0,1929 %                     ; D moyen 1,187e-3
+    //   pf = 180  ->  0,2100 %                     ; D moyen 1,334e-3
+    //   (OMP_NUM_THREADS = 1, convention de la suite ; a 4 fils la tendance
+    //    est la meme, +36 % au lieu de +34 %)
+    //
+    // La jauge MONTE de 34 % (et le D moyen de 65 %) pour un pf multiplie par
+    // NEUF, alors que le pic d effort d outil reste PLAT a 1,2 % pres
+    // (8729 / 8557 / 8629 N). J avais fait l hypothese inverse — « raidir la
+    // penalite doit reduire le ratcheting » — et la mesure la REFUTE.
+    //
+    // CE QUI, LUI, SE COMPARE : deux runs a MEME penalite, schema d insertion
+    // different. Meme deck, pf = 20 :
+    //   intrinseque -> 0,1571 % , D moyen 8,099e-4 , pic 8729 N
+    //   adaptative  -> 0,0486 % , D moyen 2,498e-4 , pic 9495 N
+    // soit x3,24 de joints ratchetant ET un pic INFERIEUR de 8,1 %, sans
+    // qu AUCUN joint n ait rompu (0/70000 des deux cotes). Les deux grandeurs
+    // bougent ENSEMBLE d un schema a l autre, et SEPAREMENT d une penalite a
+    // l autre : c est ce qui distingue l effet de schema de l artefact de
+    // normalisation.
+    //
+    // ET LA JAUGE EST PLUS ROBUSTE QUE LE PIC. Le meme run a 1 et 4 fils donne
+    // 8729 contre 8566 N de pic (1,9 % d ecart, REPRODUCTIBLE : peakF_ est un
+    // max sur un signal oscillant, la moindre divergence de sommation change
+    // quel maximum local est attrape), mais seulement 0,157143 contre
+    // 0,155714 % de jauge (0,9 %) et 0,23 % sur le D moyen. Des deux
+    // observables, c est la jauge qu il faut citer.
+    //
+    // CONSEQUENCE POUR B1 (poser jointPenaltyFactor ~ 9,6 au deck de replique) :
+    // comparer gDfrac_ avant/apres ce changement N A AUCUN SENS. Le pic
+    // d effort et le partage d energie, eux, se comparent.
+    // =======================================================================
+    double gDfrac_ = 0.0, gDmean_ = 0.0;   // au pic (ou avant 1re rupture)
+    double gDpeakRef_ = -1.0;              // effort d outil du dernier releve
+    bool   gDlatched_ = false;             // un releve a-t-il eu lieu ?
+    long   gDscans_ = 0;                   // combien de balayages (cout)
+    void scanSubCriticalDamage();
     bool   eBody_ = false;                 // energyBodyForces = on
     std::vector<char> brushCand_;
     std::vector<int> brushFrag_;

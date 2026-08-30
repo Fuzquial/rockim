@@ -86,6 +86,13 @@ RX = {
     # jusqu ici ; abort compte les declenchements du garde-fou d energie.
     "gravwork":   r"forces vol\.  : pesanteur (-?[\d.eE+-]+) J",
     "abort":      r"ENERGY ABORT \(budgetAbortPct = ([\d.eE+-]+)\)",
+    # B8 (2026-08-30) : le « diffuse ratcheting » de la penalite intrinseque —
+    # part des joints portant deja D > 0,01 au pic, alors qu AUCUN n a rompu.
+    # ATTENTION : ce chiffre ne se compare PAS d une penalite a l autre (D est
+    # un deplacement normalise par dnE = ft h/(pf E)). Voir Fdem3dSolver.hpp.
+    "dfrac":      r"sub-critical damage au pic : ([\d.eE+-]+) %",
+    "dmean":      r"au-dessus de D = 0.01, D moyen ([\d.eE+-]+) \(diffuse",
+    "peakf":      r"peak tool force   : ([\d.eE+-]+) N",
     # --- gcBirth = penalty : le facteur de naissance, 2026-08-26 -----------
     # C est LA mesure qui dit si le re-echelonnement a seulement pu s exercer :
     # il ne vaut 1 que si AUCUN joint mort ne portait de charge (rupture en
@@ -410,6 +417,51 @@ TESTS = [
          over=["T = 1e-9", "contact = potential", "potTangentFactor = 1.4286",
                "dtBudgetTangential = on"],
          checks=[("dt", 1.27315e-08, 1e-5, True)]),
+    # ---- B8 : le « diffuse ratcheting » porte sur la PERCUSSION 3D --------
+    # Le diagnostic n existait qu en 2D et sur l essai BRESILIEN, c est-a-dire
+    # nulle part sur le cas compare a Imperial. C est la jauge qui manquait a
+    # B1 et B5 : sans elle on mesure l injection d energie de l insertion
+    # intrinseque sans pouvoir dire quelle fraction des joints ratchette.
+    #
+    # TOLERANCES LARGES, ET LA RAISON EST MESUREE. Ces trois reperes tournent a
+    # OMP_NUM_THREADS = 1 comme toute la suite, mais le meme run a 4 fils donne
+    # un pic d effort de 8566 N contre 8729 — 1,9 % d ecart, REPRODUCTIBLE.
+    # peakF_ est un MAX sur un signal oscillant : la moindre divergence de
+    # sommation change quel maximum local est attrape. Les jauges de D, elles,
+    # ne bougent que de 0,9 % (dfrac) et 0,23 % (dmean) — la mesure de
+    # ratcheting est PLUS ROBUSTE que le pic d effort, ce qui n etait pas
+    # attendu. Les tolerances sont posees au-dessus de ce bruit de fil, sinon
+    # ces reperes echoueraient sur une machine a autre nombre de coeurs.
+    #
+    # LE COUPLE EST LE TEST. Meme deck, meme penalite, seul le SCHEMA change :
+    # l intrinseque montre x3,2 de joints ratchetant ET un pic d effort
+    # INFERIEUR de 8,8 %, sans qu aucun joint n ait rompu (0/70000 des deux
+    # cotes). Un seul des deux ne prouverait rien.
+    dict(name="ratchet_intrinseque_3d", tier="full",
+         cfg="fdem3d_percussion.cfg", over=["T = 2e-5"],
+         checks=[("dfrac", 0.157143, 3e-3, True),
+                 ("dmean", 8.0993e-4, 5e-6, True),
+                 ("peakf", 8728.85, 200.0, True),
+                 ("broken", 0.0, 0, True)]),
+    dict(name="ratchet_adaptatif_3d", tier="full",
+         cfg="fdem3d_percussion.cfg",
+         over=["T = 2e-5", "insertion = adaptive"],
+         checks=[("dfrac", 0.0485714, 3e-3, True),
+                 ("dmean", 2.4981e-4, 5e-6, True),
+                 ("peakf", 9495.44, 200.0, True),
+                 ("broken", 0.0, 0, True)]),
+    # Le repere qui verrouille l AVERTISSEMENT, et non la capacite : a schema
+    # constant, RAIDIR la penalite d un facteur 9 fait MONTER la jauge de 36 %
+    # pendant que le pic reste plat a 0,9 % pres. C est la preuve que le
+    # chiffre ne se compare pas d une penalite a l autre — mon hypothese
+    # inverse a ete refutee par cette mesure, et ce test la garde refutee.
+    dict(name="ratchet_penalite_artefact_3d", tier="all",
+         cfg="fdem3d_percussion.cfg",
+         over=["T = 2e-5", "jointPenaltyFactor = 180"],
+         checks=[("dfrac", 0.21, 3e-3, True),
+                 ("dmean", 1.3338e-3, 5e-6, True),
+                 ("peakf", 8629.0, 200.0, True),
+                 ("broken", 0.0, 0, True)]),
     # ---- B10 : les forces VOLUMIQUES dans le bilan d energie (2026-08-30) --
     # Le poste GRAVITAIRE n existait pas, alors qu ARMA 24-0952 le pose en
     # eq. 3-7 et que gravity = 9.81 est dans 20 des 22 decks d impact. Ce n

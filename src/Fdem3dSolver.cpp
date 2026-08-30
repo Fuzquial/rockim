@@ -2327,9 +2327,22 @@ void Fdem3dSolver::step() {
             && sigNow < (1.0 - stopDrop_) * sigmaPeak_)
             peakStop_ = true;
     } else {
-        peakF_ = std::max(peakF_, tool_.F.norm());
+        double fNow = tool_.F.norm();
+        // B8 : figer le releve au PIC d'effort d'outil. Le pic est monotone,
+        // donc le nombre de balayages est borne par le nombre de pas ou
+        // l'effort progresse — quelques centaines sur une percussion, et le
+        // compteur gDscans_ le dit au resume pour que le cout soit lisible.
+        if (fNow > peakF_) {
+            peakF_ = fNow;
+            if (peakF_ > gDpeakRef_) { gDpeakRef_ = peakF_; scanSubCriticalDamage(); }
+        }
         work_ += -tool_.F.dot(tool_.v) * dt_;
     }
+    // B8, scenarios SANS outil (traction, cisaillement) : miroir exact du 2D —
+    // on fige tant qu'aucun joint n'a rompu, si bien que le dernier releve est
+    // celui du pas precedant la premiere fissure.
+    if (scen_ == Scenario::TENSION || scen_ == Scenario::SHEAR)
+        if (nBroken_ == 0) scanSubCriticalDamage();
 
     integrate();
     t_ += dt_;
@@ -2349,6 +2362,30 @@ void Fdem3dSolver::step() {
             throw std::runtime_error("FDEM3D instability (NaN)");
         checkEnergyAbort();                // opt-in (budgetAbortPct), E2
     }
+}
+
+// ---------------------------------------------------------------------------
+// B8 (2026-08-30) : endommagement SOUS-CRITIQUE — le « diffuse ratcheting »
+// de la penalite intrinseque. Voir Fdem3dSolver.hpp pour le raisonnement.
+//
+// Ce releve ne touche AUCUNE force : il lit J.D et ecrit trois scalaires.
+// Le seuil 0,01 est celui du 2D (FdemSolver.cpp), tenu EN DUR des deux cotes
+// pour que les deux chiffres soient comparables — un seuil configurable
+// rendrait la comparaison dimensionnelle muette, exactement le mode de panne
+// que la regle de parite du depot existe pour eviter.
+// ---------------------------------------------------------------------------
+void Fdem3dSolver::scanSubCriticalDamage() {
+    if (jt_.empty()) return;
+    long nD = 0;
+    double sD = 0.0;
+    for (const auto& J : jt_) {
+        sD += J.D;
+        if (J.D > 0.01) ++nD;
+    }
+    gDfrac_ = (double)nD / (double)jt_.size();
+    gDmean_ = sD / (double)jt_.size();
+    gDlatched_ = true;
+    ++gDscans_;
 }
 
 // ---------------------------------------------------------------------------
@@ -4813,6 +4850,27 @@ void Fdem3dSolver::finalize() {
               << "\n[FDEM3D] fragments         : " << nFrag_
               << " (detached vol " << detachedVol_ << " m^3)"
               << "\n[FDEM3D] specific energy   : " << Es << " J/m^3\n";
+    // ---- B8 : endommagement SOUS-CRITIQUE, le « diffuse ratcheting » ------
+    if (gDlatched_) {
+        double eF = 0.0, eM = 0.0;         // et l'etat de FIN, pour comparer
+        if (!jt_.empty()) {
+            long nD = 0; double sD = 0.0;
+            for (const auto& J : jt_) { sD += J.D; if (J.D > 0.01) ++nD; }
+            eF = (double)nD / (double)jt_.size();
+            eM = sD / (double)jt_.size();
+        }
+        std::cout << "[FDEM3D] sub-critical damage au pic : " << 100.0 * gDfrac_
+                  << " % des joints au-dessus de D = 0.01, D moyen " << gDmean_
+                  << " (diffuse ratcheting de la penalite intrinseque — si cela "
+                     "mange la resistance, il faut en suivre le deficit)\n"
+                  << "[FDEM3D]   en fin de run : " << 100.0 * eF
+                  << " % au-dessus de D = 0.01, D moyen " << eM
+                  << " ; " << gDscans_ << " balayages\n";
+        if (!adaptive_)
+            std::cout << "[FDEM3D]   insertion INTRINSEQUE : c est le schema OU "
+                         "ce chiffre mord. Le comparer a un run adaptatif "
+                         "identique est la seule lecture qui tranche.\n";
+    }
     if (muCRes_ >= 0.0) {                                        // WP6
         std::cout << "[FDEM3D] contact residuel  : " << nCtcPulv_
                   << " evaluations au mu pulverise (" << muCRes_ << ")";

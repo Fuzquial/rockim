@@ -311,9 +311,45 @@ une valeur publiée de η constitutif ? » — oui, une, sans usage pour nous.
 
 **[ABSENT]** Même dans ce chapitre :
 
+> ### ⚠️ B9 — LA LISTE NOMINATIVE, arrêtée le 2026-08-30
+> *Le contre-audit (§9, M-11) a relevé que **quatre nombres différents** ont
+> circulé pour deux affirmations voisines : « quatre sources muettes » ici même
+> (§6), « cinq » au lot 4 §1.1, « six » au lot 4 §2.6, « sept » ci-dessous et
+> « huit » ailleurs. **Un décompte qui varie de 4 à 8 ne peut pas aller au
+> manuscrit.** Voici la liste, nommée une fois pour toutes ; partout ailleurs on
+> renvoie ici plutôt que de recompter.*
+>
+> **Les sources dépouillées pour la loi de frottement de contact — les huit :**
+>
+> | # | source | ce qu'elle donne sur le frottement |
+> |---|---|---|
+> | 1 | **Xiang, Munjiza, Latham & Guises**, *Eng. Comput.* **26**(6) (2009) 673-687 | **la loi elle-même**, éq. 8-9 p. 677 : `f_t = k_t δ_t − η v_t`, plafonnée à `µ f_n` |
+> | 2 | **Xiang, Latham & Farsi** (2017), chapitre DEM7 « Algorithms and Capabilities of Solidity » | la loi reprise, éq. 3-5 p. 4 — **convention de signe opposée**, physiquement équivalente |
+> | 3 | **Guo, Xiang, Latham & Izzuddin**, manuscrit UCL | contact et potentiel, éq. 14-18 — **rien sur k_t ni η** |
+> | 4 | **Munjiza** (2004), *The Combined Finite-Discrete Element Method* | le potentiel, la z-curve — **rien sur k_t ni η** |
+> | 5 | **Yang et al.**, *IJRMMS* **191** (2025) 106125 | DIF, fragments — **muette** |
+> | 6 | **Yang et al.**, *IJRMMS* **206** (2026) 106660 | pulvérisation, éq. 3-4 — **muette** |
+> | 7 | **ARMA 24-0952** | bilan d'énergie, éq. 3-7 — **muette** |
+> | 8 | **ARMA 24-0788** | impact — **muette** |
+>
+> **Trois affirmations, trois nombres, et ils ne sont plus à recompter :**
+>
+> | affirmation | nombre | sur quelles sources |
+> |---|---|---|
+> | **la valeur de `k_t`** n'est publiée nulle part | **8 sources**, dont **2 donnent la loi sans sa valeur** | les huit ci-dessus |
+> | **la valeur de `η`** n'est publiée nulle part | **8 sources** | idem |
+> | **la règle de paire** (deux matériaux différents) n'est traitée nulle part | **8 sources** | idem |
+>
+> ⚠️ **Et la règle de paire n'est pas un silence coupable** : dans **tous** leurs
+> essais publiés, les corps en contact sont du **même matériau** — la question ne
+> se pose pas. À écrire ainsi, jamais comme un reproche.
+>
+> *L'IJNME **79**(8) (2009) 946-978 a été **ÉLIMINÉ** du corpus (§3bis) : il ne
+> porte pas cette loi. Il n'entre donc dans aucun des trois décomptes.*
+
 | grandeur | statut |
 |---|---|
-| **la valeur de k_t**, ou sa relation à la pénalité normale | **non donnée.** C'est le paramètre que rockim fixe à 2/7. **Sept sources muettes**, l'IJNME 79 (2009) compris — voir §3bis |
+| **la valeur de k_t**, ou sa relation à la pénalité normale | **non donnée.** C'est le paramètre que rockim fixe à 2/7. ~~Sept sources muettes~~ → **8 sources, liste nominative ci-dessus (B9)**, l'IJNME 79 (2009) exclu — voir §3bis |
 | **la valeur de η** (dissipation visqueuse tangentielle) | **non donnée.** Ne pas confondre avec le η CONSTITUTIF, dont une valeur est publiée (1,0×10⁴ Pa·s, sur une gelée) — §3bis |
 | la **règle pour une paire de matériaux différents** | **toujours absente.** Ici tous les corps sont du même matériau : la question ne se pose pas, ce qui explique peut-être qu'elle ne soit jamais traitée |
 | l'existence d'un **état de glissement mémorisé** (stick/slip avec historique de δ_t) | **non dit.** L'équation (4) suppose un δ_t, donc un état, mais sa remise à zéro au décollement n'est pas décrite |
@@ -389,7 +425,7 @@ Les six éléments que le brief demandait de reconstituer :
 | algorithme de pulvérisation et couplage au contact | **ÉTABLI**, y compris ses limites | Yang et al. 2026, éq. 3-4 p. 4 ; [lot 2b](2026-08-29_lot2b_couplage_endommagement_contact.md) |
 | DIF et son armement | **ÉTABLI**, coquille de 2025 corrigée | Yang et al. 2026, éq. 1-2 p. 3 |
 | contact : potentiel, détection, pénalité, **frottement** | **ÉTABLI** | manuscrit UCL éq. 14-18 ; **ce chapitre, éq. 3-5 p. 4** |
-| règle pour une paire de matériaux différents | **NON PUBLIÉE** | quatre sources muettes |
+| règle pour une paire de matériaux différents | **NON PUBLIÉE — et pour cause : tous leurs corps sont du même matériau** | **8 sources, liste nominative au §4 (B9)** |
 | retrait des fragments et masse détachée | **ÉTABLI** | Yang et al. 2025 *IJRMMS* §2.3 ; Yang et al. 2026 §2.1 |
 | calibrations publiées et transférabilité | **ÉTABLI** | [lot 2a](2026-08-29_lot2a_parametres_stanne.md) |
 

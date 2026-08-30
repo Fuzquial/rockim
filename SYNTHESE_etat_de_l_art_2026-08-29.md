@@ -263,8 +263,8 @@ qui résiste :
   `bulkModel = neohookean` : **il ne se déclenche jamais sur le banc d'impact**.
   *(entrée 7)*
 
-Plus une **suite de non-régression de 101 contrôles au 2026-08-30** — dont **44
-au tier rapide par défaut**, 91 au tier `full`, 101 au tier `all`, et **225
+Plus une **suite de non-régression de 104 contrôles au 2026-08-30** — dont **44
+au tier rapide par défaut**, 93 au tier `full`, 104 au tier `all`, et **237
 assertions** ; le chiffre **bouge à chaque chantier**, il ne se cite pas sans sa date ; les
 tiers **s'emboîtent au lieu de s'additionner**, et le « 42 » du brief était
 exactement le tier par défaut de l'époque, donc pas une erreur. Plus un **bilan
@@ -428,7 +428,7 @@ contact — ses contrôles de frottement portent tous sur le joint.
 * **Ne pas attendre grand-chose de la détection par événement** : le dépôt a
   mesuré que le poste dominant est ailleurs (10-15 % du mur, pas un facteur 7).
 * **Ne pas chercher à aligner `k_t` sur Imperial** : aucun nombre n'est publié
-  (huit sources). Le rapport `k_t/k_n = 2/7` des decks vient du code
+  (**8 sources**, liste nominative arrêtée le 2026-08-30 au [lot 2c §4](biblio_insertion/2026-08-29_lot2c_frottement_tangentiel.md) — B9). Le rapport `k_t/k_n = 2/7` des decks vient du code
   non-Imperial et doit être requalifié, pas corrigé.
 * **Ne pas activer la pulvérisation sur un cas St Anne.** Si elle change les
   résultats, c'est un artefact.

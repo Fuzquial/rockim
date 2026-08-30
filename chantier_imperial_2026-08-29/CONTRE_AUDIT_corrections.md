@@ -248,7 +248,8 @@ rapport gain/risque.
 | **B6** | **Balayer `gcBirthPenMin` / `gcBirthPenMax`**, dont le deck dit les bornes arbitraires — **et non `gcBirthTau`**, que le deck refuse | faible | le facteur moyen de calage ne colle à aucune borne ; s'il y colle, c'est le clamp qui décide à la place de la physique |
 | **B7** ✅ **FAIT le 2026-08-30** | **Corriger le §3** : entrées **7 et 10 RETIRÉES** (toutes deux inertes sur le banc de réplique — `bulkModel = neohookean` pour l'une, `contact = potential` pour l'autre), **1, 3, 6, 8, 9, 12 et 13 requalifiées**, « résultats scientifiques » ramenés de **quatre à un** (+ une reformulation publiable) | faible | ✅ chaque entrée survivante porte une preuve revérifiée par moi contre le dépôt, commande donnée |
 | **B8** | **Porter le diagnostic *diffuse ratcheting* sur la percussion 3D** (§9, M-8). Il n'existe aujourd'hui qu'en **2D** et **sur l'essai brésilien** — c'est-à-dire nulle part sur le cas comparé à Imperial | faible (le code 2D existe : `gDfrac_`, `gDmean_` à transposer) | la part de joints au-dessus de D = 0,01 au pic **imprimée** sur `impact_imperial.cfg`, et **son écart entre insertion intrinsèque et adaptative**. C'est la jauge qui manque à B1 et B5 |
-| **B9** | **Figer le compte des sources muettes sur une liste NOMINATIVE** (§9, M-11). Aujourd'hui **4, 5, 6, 7 et 8** circulent dans trois documents pour deux affirmations voisines | très faible | **un seul nombre par affirmation**, chaque source nommée dans une table du lot 2c, reprise partout ailleurs par renvoi |
+| **B9** ✅ **FAIT le 2026-08-30** | **Figer le compte des sources muettes sur une liste NOMINATIVE** (§9, M-11) | très faible | ✅ **8 sources nommées** dans une table du [lot 2c §4](../biblio_insertion/2026-08-29_lot2c_frottement_tangentiel.md) ; `k_t`, `η` et la règle de paire portent désormais **le même nombre**, et les quatre autres endroits y renvoient au lieu de recompter. L'IJNME 79 est explicitement **exclu**. Le « cinq sources » du lot 3 est conservé et **distingué** : c'est le corpus d'impact, une autre question |
+| **B8** ✅ **FAIT le 2026-08-30** | **Porter le diagnostic *diffuse ratcheting* sur la percussion 3D** | faible | ✅ **× 3,24 de joints ratchetant en insertion intrinsèque contre adaptative** (0,1571 % contre 0,0486 %) **et un pic d'effort inférieur de 8,1 %**, sans qu'aucun joint n'ait rompu de part et d'autre. ⚠️ **Et un avertissement mesuré** : la jauge ne se compare **pas** d'une pénalité à l'autre (+34 % pour un `pf` × 9, pic plat) — donc **elle ne servira pas à juger B1**. Fiche [`B08_ratcheting_percussion_3d.md`](B08_ratcheting_percussion_3d.md) |
 | **B10** ✅ **FAIT le 2026-08-30** | **Fermer le bilan d'énergie** : le **septième poste** d'ARMA 24-0952 (éq. 3-7), l'énergie gravitaire, n'existait pas — et le travail du tri des fragments était hors bilan. Clé `energyBodyForces = off \| on`, **2D et 3D**, mesure inconditionnelle, entrée dans `sumW` opt-in. Fiche [`B10_bilan_energie_forces_volumiques.md`](B10_bilan_energie_forces_volumiques.md) | faible | ✅ **le résidu B4 ÉTAIT le travail non compté de la pesanteur, à 0,02 % près** (1,05718e-06 contre 1,05738e-06 J) ; compté, il tombe d'un facteur **5 250**. Et le garde-fou `budgetAbortPct` **coupait un run sain** à cause de lui — démontré, puis levé. Quatre repères, dont deux qui verrouillent le déclenchement et son absence |
 
 **Ce qu'il ne faut PAS faire**, mis à jour :
@@ -422,15 +423,16 @@ Trois erreurs dans une seule phrase :
 **Corollaire, et il retourne le reproche fait au brief** : le « 42 » du brief
 n'était pas une erreur — c'était **exactement le tier par défaut de l'époque**.
 
-> **Formulation à utiliser** (en datant toujours le chiffre) : « **101 contrôles
-> de non-régression au 2026-08-30**, dont **44 au tier rapide par défaut**, 91 au
-> tier `full`, 101 au tier `all` ; **225 assertions** chiffrées au total. »
+> **Formulation à utiliser** (en datant toujours le chiffre) : « **104 contrôles
+> de non-régression au 2026-08-30**, dont **44 au tier rapide par défaut**, 93 au
+> tier `full`, 104 au tier `all` ; **237 assertions** chiffrées au total. »
 
 Citer « 98 » au manuscrit, c'est publier un nombre que personne ne pourra
 reproduire.
 
 > **Et ce nombre BOUGE — c'est la vraie leçon.** Il valait 95 avant A11, 97
-> après, et **101** depuis B10 (44 `fast`, 47 `full`, 10 `all`) le 2026-08-30.
+> après, **101** après B10, et **104** après B8 (44 `fast`, 49 `full`, 11 `all`)
+> le 2026-08-30 — trois valeurs dans la même journée.
 > Une suite vivante voit son décompte changer à chaque chantier. **Tout chiffre
 > de ce genre doit donc porter sa date** — « 101 contrôles au 2026-08-30 » — ou,
 > mieux, être **recompté à la publication** par le dépouillement AST donné
