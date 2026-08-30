@@ -25,6 +25,11 @@ d'une capacité inerte — et un **risque** silencieux est pire encore.
 
 ## Index
 
+**[`CONTRE_AUDIT_corrections.md`](CONTRE_AUDIT_corrections.md) — à lire en premier.**
+Dix vérificateurs indépendants ont noté le bilan du lot 4 à **52/129**. Ce document
+porte les corrections et **le plan applicable**. Il prime sur le lot 4 et sur le
+§6 de la synthèse.
+
 | fiche | action | état |
 |---|---|---|
 | [`A11_dt_tangentiel.md`](A11_dt_tangentiel.md) | porter la raideur tangentielle du contact dans le budget de pas de temps du 3D | **FAIT** |

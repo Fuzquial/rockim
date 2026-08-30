@@ -1,4 +1,17 @@
 # LOT 4 — Bilan de rockim contre l'état de l'art Imperial
+
+> # ⚠️ CE DOCUMENT EST CORRIGÉ PAR UN CONTRE-AUDIT
+> **129 verdicts, 52 confirmés — 40 %.** Six critiques, trente-deux hautes.
+> Les corrections, et **le plan refait**, sont dans
+> [`chantier_imperial_2026-08-29/CONTRE_AUDIT_corrections.md`](../chantier_imperial_2026-08-29/CONTRE_AUDIT_corrections.md).
+> **En cas de contradiction, c'est ce document-là qui fait foi.**
+> En particulier : **les deux « blocages » tombent**, le chiffre du §1 est **78**
+> et non 117, le §6 contient **trois actions dangereuses ou impossibles**
+> (A6 désassemble l'outil, A8 est refusée par le deck, A11 porte une consigne qui
+> diviserait le pas de temps par 32), et **neuf des treize avantages du §3 sont
+> trop flatteurs**. Le texte ci-dessous est conservé tel quel — on ne réécrit pas
+> l'historique.
+
 # et LE point qui commande tout le reste
 
 *Fiche du 2026-08-29. Livrable 4 du [brief](../MISSION_etat_de_l_art_2026-08-29.md) §5.*
