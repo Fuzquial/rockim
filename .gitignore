@@ -76,3 +76,8 @@ bench_impact/*.txt
 
 # repertoire de compilation CMake (README : mkdir build && cd build)
 build*/
+
+# Archive du bundle d'etat de l'art : artefact DERIVE, reconstructible par
+#   tar czf bundle_etat_de_l_art_<date>.tar.gz bundle_etat_de_l_art_<date>/
+# Le DOSSIER, lui, est versionne — c'est lui la source.
+bundle_etat_de_l_art_*.tar.gz
