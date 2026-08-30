@@ -207,7 +207,18 @@ joint vivant est là.
 > cloné et lu le 2026-08-26, provenance documentée en quatre endroits du dépôt.
 > Ce n'est pas « un code qui n'est pas le leur ». Ce qui reste vrai : ce n'est pas
 > la version qui a produit l'article de 2026. Le paragraphe ci-dessous est
-> conservé tel quel et doit être réécrit sur la prémisse corrigée.
+> conservé tel quel.
+>
+> **RÉÉCRIT le 2026-08-30 — la version corrigée est au
+> [lot 4 §1](biblio_insertion/2026-08-29_lot4_bilan_rockim.md), et voici son résumé :**
+> le nombre n'est pas 117 (qui n'est le total de rien) mais **79 lignes** citant un
+> fichier `Y3D*.c`, dont **72** avec un numéro de ligne, sur le périmètre étendu
+> `src include tools bench_impact/configs specs configs build_sol.cmd` ; la commande
+> exige **`grep -rEc`** (sans `-E` elle ne rend **rien**) ; et **sept des huit
+> verdicts de la table de rachat ont changé** — il n'y a plus **aucune** attribution
+> « non rachetable » au sens de *sans source*. Le vrai défaut n'est pas
+> l'attribution, c'est la **reproductibilité** : ces citations n'ont ni dépôt, ni
+> licence, ni **commit**, et le dépôt d'Imperial est activement maintenu.
 
 **117 attributions à `Solidity` / `Y3D*.c` subsistent dans le code, les en-têtes,
 la suite de vérification et les decks.** La CORRECTION 2 avait purgé les bilans,
@@ -217,6 +228,52 @@ pas le code. Deux clés promettent une réplication qu'elles ne font pas :
 pénalité ne sont publiés nulle part.** Table de rachat au lot 4 §1.1.
 
 ### 5.4 Ce que rockim a et qu'Imperial n'a pas
+
+> **⚠️ RÉCRIT le 2026-08-30.** Le contre-audit a jugé **neuf des treize entrées
+> trop flatteuses**. La version d'origine de ce §5.4 est conservée en fin de
+> section ; ce qui suit la remplace. **Le compte des « résultats scientifiques »
+> passe de quatre à un**, plus une reformulation publiable. *Deux règles de
+> rédaction en sortent, et elles valent pour tout le manuscrit :* (1) **« Imperial
+> ne publie pas X » est presque toujours faux** — leur solveur est public ;
+> l'énoncé correct est « X n'est décrit dans aucune **publication** d'Imperial » ;
+> (2) **une capacité qui n'est pas ARMÉE sur le banc dont on parle ne compte pas
+> comme un avantage sur ce banc** — trois entrées sur treize échouaient sur ce
+> seul test.
+
+Treize entrées au lot 4 §3, dont **deux retirées** et six requalifiées. Le compte
+qui résiste :
+
+* **de plein droit — la séparation mesurée** du levier pénalité et du levier
+  schéma d'insertion : à pénalité égale, l'écart de schéma ne vaut que
+  **+1,5 point**. Aucune publication ne fait cette étude. *(entrée 11)*
+* **publiable après reformulation — l'exposant 0,1707**, présenté comme
+  **inférence indépendante** et non comme prédiction : l'exposant littéral 0,07
+  publié en 2025 ne raccorde **aucune** de ses deux bornes (1,1245 au lieu de 1 ;
+  1,5160 au lieu du plateau 1,85, soit **22 % de discontinuité**), 0,1707 raccorde
+  **les deux** (1,0010 et 1,8500), et l'article de 2026 imprime **0,17**. ⚠️ « une
+  prédiction » n'est **pas soutenable** : l'article confirmateur est de la **même
+  année**. Et **le vrai apport n'est pas l'exposant** — c'est l'**attracteur**
+  mesuré en insertion extrinsèque (médiane **99,36 /s** contre **40,22 /s**), que
+  nulle publication ne décrit. *(entrée 13)*
+* **note de bas de page — la provenance du 3000 GPa** chez Turon, Dávila, Camanho
+  & Costa (2007), K = α·E/t avec α ≈ 50, et la contradiction interne de Guo.
+  **Coïncidence numérique plausible, non démontrée.** *(entrée 12)*
+* ~~**le garde-fou crack-band**~~ — **RETIRÉ** : `src/MatLaw.cpp:1304` ne
+  l'applique qu'aux lois `dpr` et `saksala`, or le deck de réplique pose
+  `bulkModel = neohookean` : **il ne se déclenche jamais sur le banc d'impact**.
+  *(entrée 7)*
+
+Plus une **suite de non-régression de 97 contrôles** — dont **44 au tier rapide
+par défaut**, 89 au tier `full`, 97 au tier `all`, et **217 assertions** ; les
+tiers **s'emboîtent au lieu de s'additionner**, et le « 42 » du brief était
+exactement le tier par défaut de l'époque, donc pas une erreur. Plus un **bilan
+d'énergie** dont la **mesure** du résidu est inconditionnelle là où le leur est un
+résidu par soustraction — ⚠️ mais dont l'**arrêt** est opt-in et **n'est pas armé
+sur le deck de réplique**, et dont le **poste gravitaire n'existe pas**. Plus le
+refus plutôt que le silence quand une clé serait inerte.
+
+<details>
+<summary><b>Déplier le §5.4 d'origine du 2026-08-29 (neuf entrées trop flatteuses — ne pas citer)</b></summary>
 
 Treize entrées au lot 4 §3. **Quatre sont des résultats scientifiques**, pas de
 l'ingénierie :
@@ -235,6 +292,8 @@ l'ingénierie :
 Plus une **suite de non-régression de 98 contrôles** (et non 42), un **bilan
 d'énergie fermé** là où le leur est un résidu, et le refus plutôt que le silence
 quand une clé serait inerte.
+
+</details>
 
 ---
 

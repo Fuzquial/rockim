@@ -1,16 +1,31 @@
 # LOT 4 — Bilan de rockim contre l'état de l'art Imperial
 
 > # ⚠️ CE DOCUMENT EST CORRIGÉ PAR UN CONTRE-AUDIT
-> **129 verdicts, 52 confirmés — 40 %.** Six critiques, trente-deux hautes.
-> Les corrections, et **le plan refait**, sont dans
-> [`chantier_imperial_2026-08-29/CONTRE_AUDIT_corrections.md`](../chantier_imperial_2026-08-29/CONTRE_AUDIT_corrections.md).
+> **129 verdicts, 52 confirmés — 40 %.** Six critiques, trente-deux hautes,
+> trente-quatre moyennes. Les corrections, et **le plan refait**, sont dans
+> [`chantier_imperial_2026-08-29/CONTRE_AUDIT_corrections.md`](../chantier_imperial_2026-08-29/CONTRE_AUDIT_corrections.md)
+> — dont le **§9** dépouille les 34 moyennes une par une (2026-08-30).
 > **En cas de contradiction, c'est ce document-là qui fait foi.**
-> En particulier : **les deux « blocages » tombent**, le chiffre du §1 est **78**
-> et non 117, le §6 contient **trois actions dangereuses ou impossibles**
-> (A6 désassemble l'outil, A8 est refusée par le deck, A11 porte une consigne qui
-> diviserait le pas de temps par 32), et **neuf des treize avantages du §3 sont
-> trop flatteurs**. Le texte ci-dessous est conservé tel quel — on ne réécrit pas
-> l'historique.
+>
+> **État au 2026-08-30 : les §1 et §3 ont été RÉCRITS ici même**, leurs versions
+> d'origine conservées intégralement aux §1bis et §3bis. Ce qui a changé :
+> * **§1** — la prémisse (`solidity-solver-open` **EST** le code d'Imperial), le
+>   nombre (**79 lignes** citant un `Y3D*.c`, dont 72 avec numéro de ligne — jamais
+>   117), la commande (il faut **`grep -rEc`** ; sans `-E` elle ne rend **rien**),
+>   le périmètre (+`specs/`, `configs/`, `build_sol.cmd`) et **sept des huit
+>   verdicts** de la table de rachat ;
+> * **§3** — **neuf des treize avantages** étaient trop flatteurs : deux **retirés**
+>   (n° 7 et 10, inertes sur le banc de réplique), quatre **affaiblis ou
+>   reformulés**, et le compte des « résultats scientifiques » passe de **quatre à
+>   un** (+ un publiable après reformulation) ;
+> * **§6** — le plan contient **trois actions dangereuses ou impossibles** (A6
+>   désassemble l'outil, A8 est refusée par le deck, A11 portait une consigne qui
+>   aurait divisé le pas de temps par 32) : il est **remplacé** par le §6 du
+>   contre-audit ;
+> * **les deux « blocages » tombent** (§1.1 du contre-audit).
+>
+> Les §0, §2, §4, §5, §6 et §7 ci-dessous sont **conservés tels quels** — on ne
+> réécrit pas l'historique — et restent sous l'autorité du contre-audit.
 
 # et LE point qui commande tout le reste
 
@@ -35,7 +50,168 @@ Le §9 dit ce qui reste à faire.
 
 ---
 
-## 1. LE RÉSULTAT PRINCIPAL — et ce n'était pas la question posée
+## 1. LE RÉSULTAT PRINCIPAL — **récrit le 2026-08-30 après contre-audit**
+
+> **Ce §1 a été entièrement réécrit.** Sa version d'origine du 2026-08-29 est
+> conservée **intégralement** au [§1bis](#1bis-la-version-dorigine-du-2026-08-29-conservée)
+> — on ne réécrit pas l'historique, mais on ne laisse pas non plus un lecteur
+> pressé tomber d'abord sur un texte faux. **Ce qui a changé** : la prémisse
+> (§1.0), le nombre (§1.1), la commande (§1.1), le périmètre (§1.1), sept des huit
+> verdicts de la table de rachat (§1.2) et l'estimation d'effort (§1.3).
+
+### 1.0 La prémisse d'origine était fausse, et il faut le dire avant tout le reste
+
+La version du 2026-08-29 annonçait comme résultat principal que « rockim porte
+117 attributions **à un code qui n'est pas celui d'Imperial** ».
+
+**C'est faux.** `solidity-solver-open` **EST** le code d'Imperial College London :
+dépôt public `ImperialCollegeLondon/solidity-solver-open`, **LGPL-3.0**, C,
+17 000 lignes, format `.Y3D` — la lignée Munjiza de la thèse de Guo et des
+articles de Yang *et al.* Cloné et lu le **2026-08-26**, provenance documentée en
+**quatre endroits** du dépôt (`CR_solidity_2026-08-27.md:19`,
+`BILAN_replique_solidity_2026-08-27.md:11`, `DOCUMENTATION_rockim.md`
+§5.4 quinquies, `tools/verify_suite.py:443`). L'histoire de l'erreur — une
+sur-correction du 29/08 au soir, reprise par le brief de mission — est retracée
+dans [`../chantier_imperial_2026-08-29/A03_resourcer_attributions.md`](../chantier_imperial_2026-08-29/A03_resourcer_attributions.md) §3.
+
+**Ce qui reste vrai, et c'est l'avertissement utile** — plus étroit, mais solide :
+
+> Le code public **n'est pas la version qui a produit l'article de 2026**. Son
+> facteur d'endommagement d'élément y est câblé à zéro (`Y3Dfd.c` l. 749-751,
+> `df = R0`) et son DIF est neutre (`dpeftdif = R1`), alors que l'article publie
+> les équations (3)-(4) d'un modèle d'endommagement. **Lire une FORME dans ce code
+> et en conclure une implémentation de ce que décrit l'article de 2026 reste une
+> faute** — non pas parce que ce serait le code de quelqu'un d'autre (c'est bien le
+> leur, même lignée, mêmes auteurs), mais parce que **ce n'est pas la version dont
+> l'article parle**. La lecture la plus simple : *version ouverte en retard sur la
+> version interne*, ce qui est banal pour un code de recherche.
+
+Donc les noms de valeur `solidity` sont **exacts** et **ne seront pas renommés**.
+C'est un geste que la version d'origine proposait, et il est **annulé**.
+
+### 1.1 Le nombre, la commande et le périmètre — les trois étaient faux
+
+**Le nombre.** « 117 » n'est le total de rien, sous aucune convention de comptage,
+et il contredisait le tableau qui le supportait trois lignes plus bas (dont les
+lignes somment à 172). Recompté le 2026-08-30 sur le périmètre **étendu**
+`src include tools bench_impact/configs specs configs build_sol.cmd` :
+
+| ce qu'on compte | commande | n |
+|---|---|---|
+| **lignes citant un fichier source `Y3D*.c`** | `grep -rEc "Y3D[a-z]*\.c" …` | **79** |
+| … **dont** celles portant un numéro de ligne `l. NNNN` | `grep -rEc "Y3D[a-z]*\.c[^ ]* l\. *[0-9]" …` | **72** |
+| lignes citant `Y3D*.c` **ou** le mot « solidity » | `grep -rEc "Y3D[a-z]*\.c\|[Ss]olidity" …` | **182** |
+| occurrences de `Y3D*.c` \| de `Y3D*.c` ou « solidity » | `grep -rhoE … \| wc -l` | 79 \| 208 |
+
+**La commande.** Celle imprimée dans la version d'origine — `grep -rc "…\|…"`,
+**sans `-E`** — ne rend **rien du tout** (exit 1, aucune sortie) : en expression
+régulière **de base**, le `|` est un caractère **littéral**, et le motif cherche la
+chaîne « Y3D….c|Solidity », qui n'existe nulle part. Un rapporteur qui recopie la
+commande conclut que le résultat principal du document n'existe pas. **Il faut
+`grep -rEc`.**
+
+**Le périmètre.** La version d'origine s'arrêtait à
+`src include tools bench_impact/configs`. Elle manquait **`specs/`** (5 lignes dans
+`WP7_couplage_contact.md`, 1 dans `WP6_contact_residuel.md`, 1 dans `spec.md`),
+**`configs/`** (`fdem3d_bench1_insert.cfg`, `p1_banc.cfg`) et **`build_sol.cmd`** —
+c'est-à-dire les spécifications de lots de travail et le script de build qui porte
+le nom dans son nom.
+
+**Ventilation à jour, sur le périmètre étendu** (lignes citant `Y3D*.c`) :
+
+| fichier | lignes |
+|---|---|
+| `src/Fdem3dSolver.cpp` | 22 |
+| `src/FdemSolver.cpp` | 20 |
+| `include/rockim/Fdem3dSolver.hpp` | 9 |
+| `include/rockim/FdemSolver.hpp` | 8 |
+| `bench_impact/configs/impact_imperial_coulomb.cfg` | 7 |
+| `bench_impact/configs/impact_imperial.cfg` | 6 |
+| `bench_impact/configs/impact_kuru9.cfg`, `impact_kuru11.cfg` | 2 + 2 |
+| `tools/verify_suite.py` | 2 |
+| `specs/005-impact-insert-yang/WP7_couplage_contact.md` | 1 |
+| **total** | **79** |
+
+### 1.2 Le vrai problème n'est pas l'attribution — c'est la REPRODUCTIBILITÉ
+
+La prémisse fausse masquait un défaut réel, et qui subsiste entier :
+
+1. **Ces 72 citations ne sont pas vérifiables.** Elles disent `Y3Dfd.c l. 1099`
+   et rien d'autre : ni dépôt, ni licence, ni **commit**, ni date de lecture. Or le
+   dépôt est **activement maintenu** (dernier push relevé le 2026-03-31) : **les
+   numéros de ligne bougent**. Un rapporteur qui reclone aujourd'hui ne retrouvera
+   pas nécessairement ces lignes. *Une référence sans version n'est pas une
+   référence.*
+2. **Trois statuts sont confondus en deux.** Ce que disent les **articles publiés**,
+   ce que fait le **code public**, ce que fait la **version interne** (inconnue,
+   non consultable) — c'est cette distinction manquante qui a produit toute la
+   confusion de la session, dans les deux sens.
+3. **Quelques conventions n'ont réellement aucune source publiée**, et elles
+   doivent être assumées comme des choix de rockim (table ci-dessous). C'est un
+   sous-ensemble bien plus petit que ce qu'annonçait la version d'origine.
+
+### 1.3 Table de rachat — **récrite**, sept verdicts sur huit ont changé
+
+*Rappel de la convention : « racheté » = une source **d'article** (auteur, page,
+équation) peut remplacer ou compléter la citation de code.*
+
+| clé de rockim | attribution actuelle | verdict **révisé le 2026-08-30** |
+|---|---|---|
+| **`jointFailRule = majority`** | « `nfail>1`, Y3Dfd.c l. 1175 » | **RACHETÉE — et c'est la seule à DEUX sources indépendantes.** Manuscrit UCL **p. 14** : « *A joint element is labelled as failed when **at least two integration points have zero stress components*** ». Le code et le texte **concordent**. **Garder les deux citations, pas remplacer l'une par l'autre.** *(inchangé)* |
+| **`jointDeltaC = guo`** | Guo 2014 éq. 2.30 | **DÉJÀ BONNE.** Confirmée par le manuscrit UCL **éq. 10 p. 12** (`Gf ≈ ⅓ f δc`). *(inchangé)* |
+| **plancher `st = max(2 sp, 3 GfII/dpefs)`** | « Y3Dfd.c l. 1110-1126 » + Guo éq. 2.24/2.30 | **PARTIELLEMENT RACHETÉE.** La partie Guo tient ; le plancher `2 sp` n'a **aucune source d'article** — mais il est **relevé dans un code publié sous LGPL-3.0**, ce qui n'est pas rien. À présenter comme *convention d'implémentation relevée dans le code public d'Imperial, sans contrepartie publiée*. |
+| **`jointDeltaC = solidity`** | « Y3Dfd.c l. 1099 » | ~~NON RACHETABLE, à renommer~~ → **CONVENTION DE CODE, SOURCÉE.** Le nom est **exact** : il désigne un code public identifiable. **Ne pas renommer.** À compléter d'un ancrage de version (§1.4, A3.1). |
+| **taux de déformation `strainRateFilter = none`** | « ce que fait LEUR code : Y3Dfd.c l. 1448 » | ~~NON RACHETABLE, le mot « LEUR » est faux~~ → **le mot « LEUR » est JUSTE.** C'est bien leur code. Reste vrai : **aucune source d'article ne décrit la mesure du taux** — donc statut *convention de code, sans contrepartie publiée*. |
+| **`gcBirth = penalty`** | « Y3Did.c l. 915-964 » (13 occurrences) | ~~NON RACHETABLE~~ → **PARTIELLEMENT RACHETÉE, et le rachat est substantiel.** Le **problème** et **une rampe** sont publiés : manuscrit UCL **p. 17** décrit exactement la difficulté (« *the overlap between tetrahedral elements due to compression will generate an initial non-zero contact force …, which can cause instability problems* ») et **l'éq. (18)** publie le remède, `f = (n_c/n_total)·f_initial`, « *n_total … (usually 10)* ». **Seul le RÉ-ÉCHELONNEMENT DE PÉNALITÉ est propre à rockim** — et il est mesuré (+936 / +179 / +27 J/m). |
+| **`contactMu.<phase>`, règle de paire = MINIMUM** | « Solidity Y3Did.c l. 1292 » | **CHOIX DE ROCKIM, à assumer — mais sans reprocher un silence.** Aucune source dépouillée ne traite la combinaison pour une **paire de matériaux différents**, et pour cause : dans tous leurs essais publiés **les corps en contact sont du même matériau**, la question ne se pose pas. Le minimum se justifie physiquement (le plus faible gouverne le glissement). ⚠️ **Ne pas citer de nombre de sources** : 4, 5 et 6 circulent dans trois documents pour la même affirmation (cf. contre-audit §9, M-11). |
+| **`contactDamageCoupling = solidity`** | « raideur normale ET frottement × `d_fact = min(1−D_i, 1−D_j)`, effondrement /1000 sous 0,041 (Y3Did.c l. 995, 1044, 1263-1265) » | ~~NON RACHETABLE, ET C'EST LE PLUS GRAVE~~ → **reste le point le plus délicat, mais pour une autre raison.** Le [lot 2b](2026-08-29_lot2b_couplage_endommagement_contact.md) tient **entièrement** : le mot « penalty » n'apparaît **pas une fois** dans l'article de pulvérisation, et le seul couplage (1−D) publié porte sur la **contrainte d'élément**. **Mais la forme vient bien de leur code public** — où elle est **INERTE** (`df = R0` ⇒ `d_fact = 1`). rockim a donc **activé une branche morte**, en la branchant sur son propre moteur d'endommagement (`el_[e].bdD`, exigé à `src/Fdem3dSolver.cpp:648-652`). **Ce n'est ni une réplication, ni une « transcription » : c'est un geste propre, défendable, qu'il faut décrire comme tel.** |
+
+**Sept des huit lignes ont changé de verdict.** Le décompte des « non rachetables »
+passe de **cinq à zéro** : aucune ne l'est au sens où la version d'origine
+l'entendait (« sans source »). Elles se répartissent désormais en *rachetées par
+un article* (2), *conventions de code publiées mais sans contrepartie d'article*
+(4) et *choix propres de rockim, à assumer* (2, dont un partiel).
+
+### 1.4 L'action — **elle change de nature, et son effort n'est pas « faible »**
+
+Les trois gestes de la version d'origine sont remplacés par ceux de la fiche
+[`A03_resourcer_attributions.md`](../chantier_imperial_2026-08-29/A03_resourcer_attributions.md) §5 :
+
+| # | quoi | pourquoi |
+|---|---|---|
+| **A3.1** | remplacer les citations **nues** `Y3Dfd.c l. 1099` par une citation **complète** : dépôt, licence, **commit** (ou date de lecture), fichier, ligne | 72 citations concernées ; le dépôt est maintenu, donc les lignes bougent, donc rien n'est vérifiable en l'état |
+| **A3.2** | distinguer partout **trois** statuts : **articles** / **code public** / **version interne** | c'est la distinction manquante, et c'est elle qui a produit la confusion **dans les deux sens** |
+| **A3.3** | ajouter la source **d'article** *en plus* du code là où elle existe | fait le 2026-08-30 pour `jointFailRule` (UCL p. 14) et `gcBirth` (UCL p. 17, éq. 18), dans `DOCUMENTATION_rockim.md` §5.4 quinquies |
+
+~~**Effort FAIBLE**~~ → **effort MOYEN.** Le contre-audit l'établit : ce n'est pas
+un geste mécanique mais **79 arbitrages de source**, un par site, répartis sur
+10 fichiers dont deux sources de 4 900 et 7 100 lignes, plus la table de rachat à
+refaire (fait ici) et les deux bilans qui la citent. **La fiche A03 le dit dans ses
+propres mots** : « cela ne doit pas être fait à la va-vite un soir de session ».
+
+**Ce qui reste vrai de la conclusion d'origine, et qu'il faut garder** :
+
+> Tant que les citations ne sont pas ancrées sur une version, **toute phrase du
+> manuscrit qui dit « comme Imperial » en s'appuyant sur ces clés est
+> invérifiable** — non pas indéfendable, la nuance compte : la source existe et
+> elle est publique, mais le lecteur ne peut pas la retrouver.
+
+---
+
+## 1bis. La version d'origine du 2026-08-29, conservée
+
+*Ce qui suit est le §1 tel qu'il a été écrit le 2026-08-29, **inchangé**. Il est
+conservé pour l'historique et parce que le raisonnement qui l'a produit est
+lui-même instructif. **Il ne doit pas être cité** : sa prémisse, son nombre, sa
+commande et sept de ses huit verdicts sont corrigés au §1 ci-dessus.*
+*Seul changement de forme : les **niveaux de titre** de ce bloc ont été abaissés
+en `#####` pour ne pas créer de doublons d'ancres avec le §1 récrit. **Aucun mot
+du texte n'a été touché.***
+
+<details>
+<summary><b>Déplier le §1 d'origine (prémisse fausse — ne pas citer)</b></summary>
+
+##### 1. LE RÉSULTAT PRINCIPAL — et ce n'était pas la question posée
 
 > **⚠️ LA PRÉMISSE DE TOUT CE §1 EST FAUSSE. Lire d'abord
 > `chantier_imperial_2026-08-29/A03_resourcer_attributions.md`.**
@@ -72,7 +248,7 @@ suite de vérification et les decks n'ont pas été touchés.** Or c'est là que
 attributions comptent : ce sont elles qui finiront dans le manuscrit, dans les
 figures et dans les réponses aux relecteurs.
 
-### 1.1 Table de rachat — ce qui peut désormais être re-sourcé
+##### 1.1 Table de rachat — ce qui peut désormais être re-sourcé
 
 Les lots 2 et 3 ont établi la formulation publiée. Chaque attribution peut donc
 être rejugée :
@@ -88,7 +264,7 @@ Les lots 2 et 3 ont établi la formulation publiée. Chaque attribution peut don
 | **`contactMu.<phase>`, règle de paire = MINIMUM** | « Solidity Y3Did.c l. 1292 » | **NON RACHETABLE — et c'est un cas d'école.** Le [lot 2c](2026-08-29_lot2c_frottement_tangentiel.md) §4 a établi qu'**Imperial ne publie AUCUNE règle de paire**, sur cinq sources. Le « minimum » est donc un choix de rockim. Il peut être bon ; il ne peut pas se réclamer d'eux. |
 | **`contactDamageCoupling = solidity`** | « raideur normale ET frottement multipliés par `d_fact = min(1−D_i, 1−D_j)`, effondrement /1000 sous 0,041 (Y3Did.c l. 995, 1044, 1263-1265) » | **NON RACHETABLE, ET C'EST LE PLUS GRAVE.** Le [lot 2b](2026-08-29_lot2b_couplage_endommagement_contact.md) a établi que le mot « penalty » **n'apparaît pas une seule fois** dans l'article de pulvérisation, et que **le seul couplage (1−D) publié porte sur la contrainte d'élément**. rockim a donc implémenté, sous un nom qui promet une réplication, un mécanisme **qu'aucune publication d'Imperial ne décrit**. |
 
-### 1.2 L'action
+##### 1.2 L'action
 
 **Effort FAIBLE, valeur ÉLEVÉE, et c'est la seule action de ce lot qui touche à
 l'intégrité scientifique du dépôt.** Trois gestes :
@@ -104,6 +280,9 @@ l'intégrité scientifique du dépôt.** Trois gestes :
 
 **Tant que ce n'est pas fait, toute phrase du manuscrit qui dit « comme
 Imperial » en s'appuyant sur ces clés est indéfendable.**
+
+
+</details>
 
 ---
 
@@ -291,7 +470,109 @@ de tout le bilan, et il est à l'avantage du dépôt.
 
 ---
 
-## 3. CE QUE ROCKIM A ET QU'IMPERIAL N'A PAS
+## 3. CE QUE ROCKIM A ET QU'IMPERIAL N'A PAS — **récrit le 2026-08-30 après contre-audit**
+
+> **Neuf des treize entrées d'origine étaient trop flatteuses.** Le contre-audit
+> l'a établi entrée par entrée, et j'ai revérifié moi-même chaque preuve chiffrée
+> ci-dessous. La version d'origine est conservée **intégralement** au
+> [§3bis](#3bis-la-version-dorigine-du-2026-08-29-conservée).
+>
+> **Le motif de l'erreur, et il faut le nommer** : la consigne du brief — « ne pas
+> présenter rockim comme systématiquement en retard » — a été **sur-corrigée en
+> complaisance**. Une liste d'avantages qui ne survit pas à l'ouverture d'un
+> fichier ne défend pas le dépôt : elle l'expose.
+
+**Deux règles de rédaction, tirées des corrections ci-dessous, et qui valent pour
+tout le manuscrit :**
+
+1. **« Imperial ne publie pas X » est presque toujours faux, maintenant qu'on sait
+   que leur solveur est public.** L'énoncé correct est **« X n'est décrit dans
+   aucune PUBLICATION d'Imperial »** — ce qui reste un argument, et un argument
+   vérifiable.
+2. **Une capacité qui n'est pas ARMÉE sur le banc dont on parle ne compte pas
+   comme un avantage sur ce banc.** Trois des treize entrées échouent sur ce seul
+   test. C'est exactement la faute que le dépôt s'interdit ailleurs de sa propre
+   initiative (`src/FdemSolver.cpp:829-831`).
+
+### 3.1 La liste corrigée
+
+| # | l'avantage, **requalifié** | statut |
+|---|---|---|
+| **1** | **97 contrôles de non-régression, dont 44 au tier rapide par défaut**, 89 au tier `full`, 97 au tier `all` ; **217 assertions** chiffrées. ~~« 98, pas 42 »~~ : 98 n'est le total de rien, la ventilation 42/45/8 était périmée **et** somme à 95, et **les tiers s'emboîtent au lieu de s'additionner** (`tools/verify_suite.py:894`). Le « 42 » du brief était **exactement le tier par défaut de l'époque**. ~~« Imperial ne publie aucune suite »~~ → **« aucune suite de non-régression n'est décrite dans leurs publications »**. | **TENU, requalifié** |
+| **2** | **Un bilan d'énergie fermé et imprimé**, là où Imperial obtient amortissement et erreur numérique **par soustraction** et l'écrit (ARMA 24-0952 p. 3). ⚠️ **Deux réserves, §3.2.** | **TENU, avec réserves** |
+| **3** | **Le refus plutôt que le silence.** `jointElastic = parabolic` lève si `jointSoftening` n'est ni `yan` ni `munjiza` (`src/FdemSolver.cpp:196-205`), avec en commentaire *« une capacite active et muette est indiscernable d une capacite inerte »*. ~~« Aucun code publié ne fait ça »~~ → **« cette discipline n'est décrite dans aucune publication d'Imperial »** ; et je n'ai pas dépouillé leur code sur ce point, donc je ne peux rien dire de ce qu'il fait. | **TENU, requalifié** |
+| **4** | **Des avertissements croisés** quand un deck pose la clé de l'autre schéma d'insertion (`src/Fdem3dSolver.cpp:552-561`). | **TENU** |
+| **5** | **Le pas de temps budgète explicitement la pénalité**, facteur 2 de la parabole compris (`src/FdemSolver.cpp:3105-3112`). ⚠️ En **3D**, la raideur **tangentielle** du contact n'y entrait pas jusqu'au chantier **A11** du 2026-08-29 ; elle y entre désormais sous `dtBudgetTangential = on` (opt-in, défaut bit-identique), effet mesuré **−2,2 %** (intrinsèque) et **−4,7 %** (adaptative). | **TENU, daté** |
+| **6** | **Un pilote au point matériel** (`tools/yan_point.cpp`) qui **réutilise la fonction d'adoucissement expédiée** (`rockim/YanSoftening.hpp`) et trace σ(δ) et τ(δ). ~~« la loi expédiée est testée, pas une ré-implémentation »~~ : **à moitié seulement** — l'en-tête dit lui-même que le pilote *« reproduces »* / *« mirrors »* la mise à jour de traction de `jointForces()`, donc **cette moitié EST une ré-implémentation**. Il **ne compare rien** (il imprime quatre nombres, aucun ratio, **aucun verdict**) et **n'est appelé ni par le build ni par la suite** (`grep -c yan_point CMakeLists.txt build*.cmd` → **0** sur les 31 scripts). La valeur de l'intégrale est verrouillée dans la suite **par le solveur lui-même** (`yan_integral`, `tools/verify_suite.py:140-144`). | **AFFAIBLI** |
+| **7** | ~~Un garde-fou crack-band qui lève si le plus gros élément dépasse E·G_f/f_t²~~ | **RETIRÉ.** `src/MatLaw.cpp:1304` : `if (kind == "dpr" \|\| kind == "saksala")` — **le garde-fou ne s'applique qu'à ces deux lois**. Or le deck de réplique pose `bulkModel = neohookean` (`impact_imperial.cfg:190`) : **il ne se déclenche jamais sur le banc d'impact.** Et il porte sur la loi de **volume**, alors qu'en FDEM l'énergie de rupture est portée par les **joints**. |
+| **8** | **La parité 2D/3D est une RÈGLE DE CONSTITUTION** : deux lois (`YanSoftening.hpp`, `YangDif.hpp`) sont **partagées** entre les solveurs pour la garantir *par construction* — `YangDif.hpp:8-13` écrit qu'une divergence sur les bornes en dur « serait MUETTE et fausserait toute comparaison dimensionnelle ». **13 capacités** sont contrôlées des deux côtés. ~~« instrumentée »~~ : **aucun contrôle ne COMPARE une grandeur 2D à son homologue 3D** — les 13 paires portent des références **indépendantes**. Et **cinq ruptures de parité sont ouvertes** (impression de la pénalité absente en 2D ; `potXi_` 2D seulement ; `potKt_` hors budget 3D jusqu'à A11 ; le diagnostic de l'entrée 9 sans équivalent 3D ; `groupBond` **3D seulement** — `grep -c "groupBond\|gbond_" src/FdemSolver.cpp` → **0**). **C'est le REGISTRE des ruptures qui est l'avantage, pas la parité.** | **REFORMULÉ — et plus fort ainsi** |
+| **9** | **Un diagnostic instrumenté du *diffuse ratcheting*** de la pénalité intrinsèque (part des joints au-dessus de D = 0,01 au pic, D moyen — `src/FdemSolver.cpp:6840-6843`). ⚠️ **Il est enfermé dans `if (scen_ == Scenario::BRAZILIAN)` et n'existe qu'en 2D** (0 occurrence en 3D). **Le périmètre est l'inverse de ce qu'on croit** : la pathologie est diagnostiquée sur un essai de **calibration 2D**, et **pas du tout sur la percussion 3D** — le cas même comparé à Imperial. | **AFFAIBLI — et il en sort une action (B8)** |
+| **10** | ~~Un plafond d'impulsion dur sur le contact (20 m/s par pas et par nœud)~~ | **RETIRÉ du banc de réplique.** `capF = 20·m/dt` vit dans `generalContact()` — la branche **pénalité** (`src/FdemSolver.cpp:5019`, miroir 3D `:3685`). Le banc de réplique tourne en **`contact = potential`** (`impact_imperial.cfg:79`) : **le plafond est inerte sur la totalité du banc.** *(Il reste un vrai garde-fou pour les runs en pénalité — ne pas le supprimer, juste ne pas le revendiquer ici.)* |
+| **11** | **Un levier mesuré et séparé** : pénalité contre schéma d'insertion, **à pénalité égale +1,5 point**, le reste étant de la pénalité (`BILAN_interference_2026-08-29.md:207-213` — **la mesure CORRIGÉE**, pas celle de :118-131). Aucune publication ne décrit une telle séparation. | **TENU — le plus solide de la liste** |
+| **12** | **La provenance du 3000 GPa retrouvée** — règle de Turon, Dávila, Camanho & Costa (2007), K = α·E/t avec α ≈ 50 — **et une contradiction interne d'Imperial mise au jour** : Guo recommande E ≤ p₀ ≤ 10E deux phrases après avoir cité Turon, et les auteurs de l'article ont suivi Turon. ⚠️ **Coïncidence numérique plausible, non démontrée** : rien n'établit qu'ils ont appliqué Turon consciemment. **Note de bas de page, pas résultat.** | **TENU, déclassé** |
+| **13** | **Une INFÉRENCE indépendante, confirmée** : l'exposant littéral 0,07 de la loi de DIF en traction publiée en 2025 ne raccorde **aucune** de ses deux bornes (**1,1245** au lieu de 1 en ε̇ = 5·10⁻⁶ /s ; **1,5160** au lieu du plateau 1,85 en ε̇ = 10² /s, soit **22 % de discontinuité**) ; l'exposant qui raccorde **simultanément** les deux vaut **0,1707** (**1,0010** en bas, **1,8500** en haut), valeur relevée indépendamment sur la courbe tracée de leur figure 2(b) ; **l'article de 2026 imprime 0,17**. ~~« une prédiction »~~ : **non soutenable** — l'article confirmateur est de la **même année** (*IJRMMS* **206**, 2026, 106660) et rien n'établit qu'il n'était pas déjà paru le 2026-08-18. ⚠️ **1,0031** figurait dans l'en-tête de `YangDif.hpp` : **c'était faux**, corrigé en **1,0010** le 2026-08-30. | **TENU, reformulé** |
+
+### 3.2 Les deux réserves sur l'entrée 2 (bilan d'énergie)
+
+Elles ne l'annulent pas, elles la bornent — et la deuxième est opérationnelle.
+
+**(a) L'ARRÊT est opt-in, et le deck de réplique ne l'arme pas.**
+`src/Fdem3dSolver.cpp:2316` `eAbortPct_ = cfg_.getd("budgetAbortPct", 0.0)`, puis
+`:2322` `if (eAbortPct_ <= 0.0 || eAbort_) return;`. Sur les **22 decks** de
+`bench_impact/configs`, **quatre** l'arment (`impact_kuru9`, `impact_kuru11`,
+`impact_p2_nombres`, `impact_p2_facies`, à 2 %) — **`impact_imperial.cfg` non**.
+
+> **La distinction juste** : la **MESURE** du résidu est **inconditionnelle**
+> (`src/Fdem3dSolver.cpp:4519-4522` imprime toujours « residu : … J (… % de
+> l'echelle) [OK|CHECK] ») ; c'est l'**INTERRUPTION** qui est opt-in. Formulé
+> ainsi, l'argument tient devant un relecteur. Formulé comme « refuse de continuer
+> s'il dérive », il tombe dès qu'on ouvre le deck.
+
+**(b) Le poste GRAVITAIRE n'existe pas — et c'est celui qu'ARMA distingue.**
+`src/Fdem3dSolver.cpp:4038` `bodyForces()` applique la pesanteur **sans aucun
+compteur de travail**, et il n'existe aucun `gravWork_` dans l'en-tête. Or
+`gravity = 9.81` est posé dans onze decks, `impact_imperial.cfg` compris, et
+ARMA 24-0952 pose explicitement l'énergie potentielle gravitaire dans ses éq. 3-7.
+
+*Magnitude honnête* : sur 600 µs d'impact les déplacements sont micrométriques,
+le travail de la pesanteur est de l'ordre de **10⁻⁴ J** contre ~49 J injectés —
+**invisible**. Le défaut est **structurel, pas numérique**. Il devient réel dès
+qu'un run est long ou quasi statique.
+
+*Second trou, plus gênant* : `src/Fdem3dSolver.cpp:4063`
+`brushWork_ += bw; // POSTE SEPARE, jamais dans sumW`. Dès que le tri anti-gravité
+des fragments est armé, **son travail tombe entièrement dans le résidu** — et un
+garde-fou `budgetAbortPct` peut alors couper un run **sain** sur un artefact
+purement numérique.
+
+### 3.3 Le compte honnête des « résultats scientifiques »
+
+La version d'origine en annonçait **quatre** (entrées 7, 11, 12, 13). Le compte
+qui résiste :
+
+| | |
+|---|---|
+| **de plein droit** | **entrée 11** — la séparation **mesurée** des deux leviers, pénalité contre schéma d'insertion, à pénalité égale. Aucune publication ne fait cette étude. |
+| **publiable après reformulation** | **entrée 13** — l'exposant 0,1707, présenté comme **inférence indépendante** et non comme prédiction. Et **le vrai apport n'est pas l'exposant** : c'est la conséquence physique mesurée — le saut de 22 % en ε̇ = 10² /s est un **attracteur** en insertion extrinsèque, la population insérée s'empilant juste sous le seuil (médiane **99,36 /s** avec l'exposant littéral contre **40,22 /s** avec 0,1707, mesure du 2026-08-18). Cela, aucune publication ne le décrit. |
+| **note de bas de page** | **entrée 12** — la règle de Turon : coïncidence numérique plausible, non démontrée. |
+| **retirée** | **entrée 7** — le garde-fou crack-band ne se déclenche pas sur le banc. |
+
+**Un résultat solide et une reformulation publiable, ce n'est pas maigre — c'est
+simplement quatre fois moins que ce que la version d'origine annonçait.** Et les
+deux qui restent sont, eux, défendables ligne de code à l'appui.
+
+---
+
+## 3bis. La version d'origine du 2026-08-29, conservée
+
+*Ce qui suit est le §3 tel qu'il a été écrit le 2026-08-29, **inchangé** — seuls
+les niveaux de titre sont abaissés pour ne pas créer de doublons d'ancres.
+**Il ne doit pas être cité** : neuf de ses treize entrées sont corrigées ci-dessus.*
+
+<details>
+<summary><b>Déplier le §3 d'origine (neuf entrées trop flatteuses — ne pas citer)</b></summary>
+
+##### 3. CE QUE ROCKIM A ET QU'IMPERIAL N'A PAS
 
 Le brief l'exige, et ce n'est pas une politesse — la liste est longue et plusieurs
 entrées sont scientifiques, pas cosmétiques.
@@ -338,6 +619,9 @@ entrées sont scientifiques, pas cosmétiques.
 
 **Les entrées 7, 11, 12 et 13 sont des résultats scientifiques**, pas de
 l'ingénierie logicielle. Elles ont leur place dans le manuscrit.
+
+
+</details>
 
 ---
 
