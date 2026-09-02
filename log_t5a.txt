@@ -1,0 +1,27 @@
+﻿[FDEM] jointResidualMu = 0.5 : le frottement du joint glisse du PIC tan(frictionDeg) vers ce residuel par la meme f(D) que la cohesion. C est la distinction pic/fracture de Y-Geo (AbuAisha et al. 2015, eq. 7.5) et l equivalent du glissement que Solidity applique au joint rompu remis au contact (0,6 calcaire, 0,18 granite chez Yang et al.).
+[FDEM] population pre-endommagee : 31 / 1194 joints demarrent rompus (D = 1, frottement residuel mu = 0.5, graine 16587)
+[FDEM] gcSurfaceRefresh = eager : les faces liberees entrent au pas ou leur joint se separe (estampille nDead_, pas de grille % 8)
+[FDEM] gcRestitution = 0.2 (DEFAUT) : detente normale du contact general a ce facteur — a figer au deck des que e ou l ejection est une metrique
+[FDEM] 813 elements, 1194 joints, 2439 nodes, dt = 1.37453e-08 s, steps = 43652
+[FDEM] voronoi: 144 grains, 1 phase(s), 381 grain-boundary joints, hmin = 0.00128157 m
+  10%   20%   30%   40%   50%   60%   70%   80%   90%   100%
+
+[FDEM] ---- summary ----
+[FDEM] block kinetic energy at end: 0.00300989 J/m
+[FDEM] net work injected by general contact: 0 J/m
+[FDEM] joint dashpot work: 0 J/m  [OK, dissipative]
+[FDEM] energy budget (V2/B4): KE 0 -> 0.00300989 J/m
+[FDEM]   elements     : 0.393316 J/m preleve (stocke elastique 0.391379 J/m)
+[FDEM]   joints       : 4.24646 J/m cohesif (fissuration + stocke), dashpot -0 J/m
+[FDEM]   contact      : -0 J/m (dont frottement -0 J/m)
+[FDEM]   Cundall      : 1.37605 J/m
+[FDEM]   frontieres   : -0 J/m (dont stocke ressorts 0 J/m)
+[FDEM]   outil->solide: 0 J/m, platines/grips: 6.01325 J/m
+[FDEM]   integration  : +0.00559157 J/m (correction leapfrog f^2 dt^2/2m)
+[FDEM]   residu       : -1.11027e-14 J/m (9.22986e-14 % de l'echelle) [OK]
+[FDEM] grains: 144, phases: rock 100% (target 100%)
+[FDEM] joints intra/homo/hetero: 813/381/0, broken: 26/12/0  (intergranular fraction 31.5789 %)
+[FDEM] tension verification (voronoi grains):
+[FDEM]   peak macro stress = 5.654 MPa, expected ft = 10 MPa, error = -43.46 %  [FAIL]
+[FDEM]   broken joints = 7 / 1194
+[rockim] wall time: 18.837 s, output in 'out_t5a'

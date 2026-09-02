@@ -165,7 +165,12 @@ def main():
     gmsh.option.setNumber("Mesh.MeshSizeMin", h)
     gmsh.option.setNumber("Mesh.MeshSizeMax", h)
     gmsh.option.setNumber("Mesh.RandomSeed", seed)
-    gmsh.option.setNumber("Mesh.Algorithm", 6)        # frontal-Delaunay 2D
+    # CORRECTIF 2026-08-30 : Algorithm = 5 (Delaunay) PARTOUT, plus seulement
+    # pour tunnelhs. La mesure du 2026-08-17 (commentaire ci-dessous) vaut pour
+    # toutes les surfaces : l'algorithme 6 (frontal) pave en quasi-equilateraux
+    # alignes — mesure sur box3d_star_h25 : fabric d'orientation 7,9 en face
+    # superieure (Delaunay pur : 1,1) — trois directions de fissure imposees.
+    gmsh.option.setNumber("Mesh.Algorithm", 5)        # Delaunay 2D (jamais 6)
     gmsh.option.setNumber("Mesh.Optimize", 1)
     if kind == "box3d":
         gmsh.model.occ.addBox(0, 0, 0, W, D, H)

@@ -116,6 +116,56 @@ struct PhaseSet {
     double aTen = 1.0, aCoh = 1.0, aGf = 1.0, aE = 1.0, aFric = 1.0;
     double heteroFactor = 1.0;
 
+    // ---- proprietes de joint PAR PAIRE DE PHASES (2026-09-01) -------------
+    // Les alpha ci-dessus donnent UN facteur pour tout le reseau ; la
+    // litterature GBM tabule au contraire chaque paire (Aboayanah et al.
+    // RMRE 2024, Table 2 : six paires Bt-Bt, Fsp-Fsp, Qz-Qz, Bt-Fsp, Bt-Qz,
+    // Qz-Fsp, dont les GfI vont de 1,07 a 907 J/m2 — deux ordres de
+    // grandeur que deux boutons ne peuvent pas representer).
+    // Syntaxe (opt-in, l'ordre des deux phases est indifferent) :
+    //   gb.feldspar.quartz.ft            = 2.0e6
+    //   gb.feldspar.quartz.cohesion      = 32e6
+    //   gb.feldspar.quartz.Gf            = 300
+    //   gb.feldspar.quartz.gfShearFactor = 4.83
+    //   gb.feldspar.quartz.frictionDeg   = 39.0
+    //   gb.feldspar.quartz.E             = 71.5e9
+    // Une valeur posee REMPLACE le resultat de la regle alpha/hetero pour
+    // cette paire (elle ne s'y multiplie pas) ; une valeur absente laisse
+    // la regle alpha agir. Sans aucune cle gb.<a>.<b>.*, chemin et
+    // resultats strictement inchanges.
+    struct GbPair {
+        double ft = -1.0, coh = -1.0, Gf = -1.0, gfs = -1.0;
+        double phiDeg = -1.0, E = -1.0;
+        bool any = false;
+    };
+    std::vector<GbPair> pairGb;            // n x n, symetrique ; vide = aucun
+
+    const GbPair* gbOf(int a, int b) const {
+        if (pairGb.empty() || a < 0 || b < 0 || a >= n() || b >= n())
+            return nullptr;
+        const GbPair& g = pairGb[(std::size_t)a * n() + b];
+        return g.any ? &g : nullptr;
+    }
+
+    std::string gbOverrideSummary() const {
+        if (pairGb.empty()) return {};
+        std::string s;
+        for (int i = 0; i < n(); ++i)
+            for (int j = i; j < n(); ++j) {
+                const GbPair* g = gbOf(i, j);
+                if (!g) continue;
+                s += "  " + name[i] + "-" + name[j] + " :";
+                if (g->ft > 0)  s += " ft " + std::to_string(g->ft / 1e6) + " MPa";
+                if (g->coh > 0) s += " c " + std::to_string(g->coh / 1e6) + " MPa";
+                if (g->Gf > 0)  s += " GfI " + std::to_string(g->Gf);
+                if (g->gfs > 0) s += " x" + std::to_string(g->gfs);
+                if (g->phiDeg > 0) s += " phi " + std::to_string(g->phiDeg);
+                if (g->E > 0)   s += " E " + std::to_string(g->E / 1e9) + " GPa";
+                s += "\n";
+            }
+        return s;
+    }
+
     int    n() const { return (int)mat.size(); }
     double maxE() const {
         double e = 0.0;
@@ -201,6 +251,47 @@ struct PhaseSet {
         if (ps.mat.empty())
             throw std::runtime_error("PhaseSet: 'phases' key present but empty");
         for (double& f : ps.fraction) f /= fsum;
+
+        // ---- surcharges par paire de phases (voir GbPair ci-dessus) ------
+        // Lecture directe par cle : pas besoin d'enumerer le fichier, et
+        // les deux ordres d'ecriture sont acceptes. Une seule cle presente
+        // suffit a armer la paire ; les autres proprietes restent sous la
+        // regle alpha.
+        const int np = ps.n();
+        std::vector<GbPair> pg((std::size_t)np * np);
+        bool anyPair = false;
+        auto rd = [&](const std::string& a, const std::string& b,
+                      const char* prop) {
+            double v = c.getd("gb." + a + "." + b + "." + prop, -1.0);
+            if (v < 0.0) v = c.getd("gb." + b + "." + a + "." + prop, -1.0);
+            return v;
+        };
+        for (int i = 0; i < np; ++i)
+            for (int j = i; j < np; ++j) {
+                GbPair g;
+                g.ft     = rd(ps.name[i], ps.name[j], "ft");
+                g.coh    = rd(ps.name[i], ps.name[j], "cohesion");
+                g.Gf     = rd(ps.name[i], ps.name[j], "Gf");
+                g.gfs    = rd(ps.name[i], ps.name[j], "gfShearFactor");
+                g.phiDeg = rd(ps.name[i], ps.name[j], "frictionDeg");
+                g.E      = rd(ps.name[i], ps.name[j], "E");
+                g.any = g.ft > 0 || g.coh > 0 || g.Gf > 0 || g.gfs > 0
+                        || g.phiDeg > 0 || g.E > 0;
+                if (!g.any) continue;
+                if (g.phiDeg > 0 && !(g.phiDeg < 89.0))
+                    throw std::runtime_error(
+                        "PhaseSet: gb." + ps.name[i] + "." + ps.name[j]
+                        + ".frictionDeg doit etre dans [0, 89)");
+                if (g.gfs > 0 && !(g.Gf > 0))
+                    throw std::runtime_error(
+                        "PhaseSet: gb." + ps.name[i] + "." + ps.name[j]
+                        + ".gfShearFactor sans .Gf — poser les deux (GfII = "
+                          "Gf x gfShearFactor)");
+                anyPair = true;
+                pg[(std::size_t)i * np + j] = g;
+                pg[(std::size_t)j * np + i] = g;
+            }
+        if (anyPair) ps.pairGb.swap(pg);
         return ps;
     }
 };

@@ -1,0 +1,7 @@
+﻿rockim_f2n.exe : [rockim] error: Config: cannot open 'calib_quick\q3r_gbm_P050.cfg'
+Au caractère Ligne:7 : 3
++   & .\rockim_f2n.exe calib_quick\q3r_gbm_P050.cfg out_q3r_gbm_P050 *> ...
++   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: ([rockim] error:...r_gbm_P050.cfg':String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 

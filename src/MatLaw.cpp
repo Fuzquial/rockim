@@ -1210,8 +1210,8 @@ std::unique_ptr<MatLaw> MatLaw::make(const std::string& kind,
     // portee de l'heterogeneite (voir MatLaw.hpp) — validee ici pour que la
     // faute de frappe soit signalee, et non ignoree en silence
     std::string wsc = c.gets("weibullScope", "strength");
-    if (wsc != "strength" && wsc != "strengthGf")
-        throw std::runtime_error("weibullScope must be strength | strengthGf");
+    if (wsc != "strength" && wsc != "strengthGf" && wsc != "lcz")
+        throw std::runtime_error("weibullScope must be strength | strengthGf | lcz");
     if (kind == "elastic") {
         law = std::make_unique<ElasticLaw>(m);
     } else if (kind == "dpr") {

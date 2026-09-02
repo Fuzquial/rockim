@@ -98,6 +98,20 @@ int main(int argc, char** argv) {
                                      "joints — the vumat_fdem_coupled "
                                      "configuration) and mode = fdem3d (3D "
                                      "bulk, no plane-strain trick needed)");
+        // Le couplage thermo-mecanique n existe qu en 2D `fdem`. Le lecteur
+        // de configuration ignorant les cles inconnues EN SILENCE, un deck 3D
+        // portant `thermal = on` tournerait sans thermique et sans un mot —
+        // exactement le resultat faux-mais-plausible que le depot proscrit.
+        if (cfg.has("thermal") && mode != "fdem")
+            throw std::runtime_error("'thermal' (choc thermique de paroi) "
+                                     "n'est implemente que pour mode = fdem "
+                                     "(2D). Le deck demande mode = " + mode);
+        // Idem pour le litage de Lisjak (bedding*) : 2D `fdem` seulement.
+        if (cfg.has("beddingDip") && mode != "fdem")
+            throw std::runtime_error("'bedding*' (schistosite pervasive de "
+                                     "Lisjak) n'est implemente que pour "
+                                     "mode = fdem (2D). Le deck demande "
+                                     "mode = " + mode);
         std::unique_ptr<Solver> solver;
         if      (mode == "fem") solver = std::make_unique<FemSolver>(cfg, out);
         else if (mode == "fem3d") solver = std::make_unique<Fem3dSolver>(cfg, out);

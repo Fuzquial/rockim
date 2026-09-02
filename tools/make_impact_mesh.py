@@ -145,6 +145,18 @@ if not LEGER:
     set_pts(names["plate"], 0.004 * s)
 
 gmsh.option.setNumber("Mesh.RandomSeed", 1)
+# CORRECTIF 2026-08-30 (v2, mesure) : ni le frontal (6, defaut implicite) ni
+# le Delaunay (5) ne conviennent SOUS CHAMP DE FOND : les deux pavent la zone
+# fine en hexagones alignes (fabric d'orientation 10,8 mesure sur la face de
+# roche ; pics a 3 directions -> facies de fissuration invalide). Seul
+# MeshAdapt (1) casse le reseau (fabric 2,2), et Netgen repare sa qualite
+# d'element : h inscrit min 0,43 mm contre 0,29 (Delaunay) et 0,06 (MeshAdapt
+# seul) — c'est h_min qui commande le pas de temps. Matrice testee le
+# 2026-08-30 (A/B/C/D/B2, echelle 2) ; RandomFactor et ExtendFromBoundary
+# sont sans effet sur le reseau.
+gmsh.option.setNumber("Mesh.Algorithm", 1)     # MeshAdapt (jamais 5/6 sous champ)
+gmsh.option.setNumber("Mesh.Algorithm3D", 1)   # Delaunay 3D explicite
+gmsh.option.setNumber("Mesh.OptimizeNetgen", 1)
 gmsh.model.mesh.generate(3)
 gmsh.option.setNumber("Mesh.MshFileVersion", 2.2)
 gmsh.write(out)
