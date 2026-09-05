@@ -482,3 +482,17 @@ banni) ; corrige en AJOUT par grainMeshRandom. Les resultats GBM anterieurs
 Etat complet, plan de runs A-E, recuperation de la revue en cours et regles :
 **HANDOFF_2026-09-02.md** (a lire en premier dans une nouvelle session).
 Memoire de l agent : project-rockim-schistosite-lisjak.md.
+
+## 2026-09-02 (soir) — chantier « contact outil » : T0/T1, Signorini vérifié, panel de conception
+
+Handoff complet : [`panel_contact_2026-09-02/HANDOFF_contact_outil_2026-09-02.md`](panel_contact_2026-09-02/HANDOFF_contact_outil_2026-09-02.md).
+Résumé : `toolContact = signorini` existait sans doc ni test ; vérifié en forme
+fermée (T0 `selftest-toolcontact`, 2,2e-16) et sur un banc de raclage de 60 s
+(T1 `configs/verify_fdem_toolcontact.cfg` : pompe reproduite en pénalité 4,43 /
+8,25× borne, supprimée en Signorini 0,905 / 1,08×). Suite `fast` 47/47, défaut
+bit-identique (`suite_f2t0.txt`, binaire `rockim_f2t0.exe`). Deux indicateurs
+imprimés à chaque run avec outil. Doc §5.6 bis. Panel de 16 agents (résultats
+dans le même dossier) : plan par étapes 0-9 ; corrections vérifiées — T1 était
+un bloc LIBRE (pas une coupe), le cutter 2D LABOURE sous son arête (84 % de la
+passe sur v3), `adaptive + damage + gcBirth = penalty` incohérent, `absorbing =
+all` n'est pas un bloc tenu. Panel 2 (contact d'Abaqus) en cours à la sauvegarde.

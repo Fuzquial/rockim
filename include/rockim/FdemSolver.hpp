@@ -318,6 +318,7 @@ private:
     // MSH 2.2 ASCII, elements type 2) : le maillage "a la Yan et al.",
     // simplexes uniformes sans structure de grains (box uniquement).
     void buildMeshFile();
+    void checkFinite();                    // C4 (w20) : NaN/Inf reel
     void buildMeshDisc();                  // discMesh = native: exact rim
     void buildMeshShpb();                  // geometry = shpb: bar-disc-bar
     void setupShpbGauges();                // monitor-point element lists
@@ -1556,7 +1557,24 @@ private:
     double confAchieved_ = 0.0;
 
     long stepCount_ = 0;
+    long nanEvery_ = 256;                  // nanCheckEvery (C4, w20)
     double work_ = 0.0, peakF_ = 0.0;
+    // T1 : |v| nodale maximale vue sur le run, echantillonnee tous les 1024
+    // pas. Rapportee a 2 v_outil au resume — borne physique dure du choc
+    // contre une masse infinie. Voir le bloc de suivi dans step().
+    double vNodeMax_ = 0.0;
+    double toolV0_ = 0.0;      // vitesse d'outil de reference (2 v = borne)
+    // ETAPE 2 : detecteurs PAR CANAL (print-only). Somme des increments
+    // POSITIFS par pas de chaque famille : un canal sain oscille autour de
+    // zero, un canal qui pompe accumule. Le net (jointWork_, gcWork_) ne le
+    // montre pas, le residu B4 non plus.
+    double jointWorkPos_ = 0.0, gcWorkPos_ = 0.0;
+    double toolWork2_ = 0.0;   // travail outil au TRAPEZE (v- + v+)/2
+    long nStickTool_ = 0, nActTool_ = 0;   // noeuds colles / actifs (Coulomb)
+    long nDeepNode_ = 0;       // noeuds rejetes par d < -capk (traversees)
+    long vMaxEvery_ = 1024;    // cadence d echantillonnage de vNodeMax_
+    bool fixBottomShear_ = false;   // ETAPE 3 : shearSupport = fixedBottom
+    bool toolSigGroup_ = false;     // ETAPE 3 : toolSignoriniGroup
     long nBroken_ = 0;
     int nFrag_ = 1;
     double detachedVol_ = 0.0;

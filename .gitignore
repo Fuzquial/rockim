@@ -1,69 +1,130 @@
 # ---------------------------------------------------------------------------
-# .gitignore rockim — etendu le 2026-08-17.
-# Avant : une seule ligne (meshes/p1_banc_h20.msh). Consequence, 632 Mo de
-# sorties de calcul et 156 Mo de maillages etaient candidats au commit.
-# Principe : on versionne ce qui est ECRIT (source, configs, outils, docs,
-# figures) ; on exclut ce qui est PRODUIT (sorties de run, maillages generes,
-# binaires, objets, journaux) et qui se regenere par une commande documentee.
+# .gitignore de rockim_g0 — reecrit a la naissance de g0 (2026-09-05).
+#
+# Herite du .gitignore de la branche f2-2026-09-02, etendu pour tenir la
+# decision (2) du PLAN_ROBUSTESSE : g0 versionne ce qui est ECRIT (source,
+# en-tetes, outils, decks, docs) et JAMAIS ce qui est PRODUIT (executables,
+# objets, sorties de run, maillages generes, figures, campagnes). Les
+# dossiers de campagne de rockim_f2 (matrices, heterogeneite, bitid_wNN,
+# phases A/B, panels, calibrations) ne sont deliberement PAS repris dans g0 :
+# ils restent dans rockim_f2, qui est gele mais conserve.
+#
+# ATTENTION : ne JAMAIS lancer `git clean -x` dans ce depot.
 # ---------------------------------------------------------------------------
+
+# --- produits de compilation ---
+*.exe
+*.obj
+*.lib
+*.pdb
+*.exp
+*.ilk
+*.o
+*.a
+build/
+build_*/
+bin/
+CMakeCache.txt
+CMakeFiles/
+.ninja_deps
+.ninja_log
+*.ninja
 
 # --- sorties de calcul (des centaines de Mo de VTU) ---
 out_*/
 runs/
-calibration_redbohus/runs/
+results/*.vtu
 *.vtu
+*.vtp
+*.pvd
 *.odb
-
-# --- maillages GENERES : reproduits par tools/make_unstructured_mesh.py,
-#     dont la ligne de commande figure en tete de chaque config ---
-meshes/*.msh
-
-# --- produits de compilation ---
-*.obj
-*.exe
-*.lib
-*.pdb
-*.o
-*.a
+calibration_redbohus/runs/
 
 # --- journaux et traces de run ---
 *.log
 rockim_*.csv
+history.csv
+frames.csv
+probes.csv
+config_effective.cfg
+
+# --- gros CSV de resultats de campagne (les petites tables de reference,
+#     versionnees a la main, sont ajoutees avec `git add -f`) ---
+*_results.csv
+*_metrics.csv
+matrice*.csv
+smoke_*.csv
+
+# --- maillages GENERES : reproduits par tools/make_*_mesh.py ou par Gmsh,
+#     la ligne de commande figure en tete de chaque deck ---
+*.msh
+# ... SAUF les quatre maillages dont dependent les decks de bit-identite
+#     (tests_f2/bitid/*.cfg) : sans eux, `tools/bitid.py` n'est pas rejouable
+#     depuis un clone. Total ~7,5 Mo.
+!meshes/cut3d_h50.msh
+!meshes/impact_kuru_s15.msh
+!meshes/t1_toolcontact.msh
+!etude_lois_fem/meshes/T1_c05_clean.msh
+
+# --- dossiers de CAMPAGNE (restent dans rockim_f2, gele) --------------------
+etude_lois_fem/matrice*/
+etude_lois_fem/heterogeneite/
+etude_lois_fem/bitid_w*/
+etude_lois_fem/bitid_archive/
+etude_lois_fem/phaseA/
+etude_lois_fem/phaseB/
+etude_lois_fem/smoke/
+etude_lois_fem/enquete/
+etude_lois_fem/convergence/
+etude_lois_fem/selftests/
+etude_lois_fem/figures/
+perc3d/
+bench_impact/out*/
+bench_impact/*.pdf
+bench_impact/*.txt
+calib_quick/
+panel_contact*/
+tunnel_schisto/
+tunnel_edz/meshtest/
+g2d/
+g2db/
+g3b/
+g3dc/
+gcut/
+gcut3/
+gf3/
+gf4/
+gfin/
+gfin2/
+gif*/
+_gif*/
+tests_f2/bitid/out_*/
+
+# --- figures : decision du 2026-08-19 (F. Uzquiano), reconduite -------------
+#     Les planches, GIF et PDF des etudes pesent des dizaines de Mo pour
+#     quelques centaines de ko de texte ; la selection utile est archivee
+#     dans phd_geothermie\FDEM\rockim\...\figures\
+*.png
+*.gif
+*.pdf
+tunnel_edz/*.png
+bench_abuaisha/*.png
+bench_abuaisha/*.pdf
 
 # --- livraison par bundle : l'archive fait foi, jamais le depot ---
 *.bundle
 old/
 
 # --- sauvegardes manuelles de source : git EST la sauvegarde ---
-#     (elles restent sur le disque, elles ne sont simplement pas versionnees)
+*.bak
 *.bak_*
+*.orig
 versions/v*/
+_backup_*/
+uploads/
 
 # --- caches Python et trames intermediaires des GIF ---
 __pycache__/
+*.pyc
 _gif_frames/
 _gif3d_frames/
-tunnel_edz/meshtest/
-
-# --- FIGURES DES ETUDES : decision du 2026-08-19 (F. Uzquiano) -------------
-#     Les planches, GIF et PDF des etudes pesent 87 Mo pour 644 ko de texte :
-#     les versionner ferait passer le bundle de 18 a ~105 Mo. Ils restent
-#     LOCAUX, et la selection utile est archivee dans
-#     phd_geothermie\FDEM\rockim\{tunnel_edz,indentation_ye,coupe_pdc}\figures\
-#     ATTENTION : ne JAMAIS lancer `git clean -x` dans ce depot.
-tunnel_edz/*.png
-tunnel_edz/*.gif
-tunnel_edz/*.pdf
-bench_abuaisha/*.png
-bench_abuaisha/*.gif
-*.gif
-
-# --- extension 2026-08-21 (publication GitHub) -----------------------------
-# meme decision que ci-dessus, etendue aux PDF du banc et aux sauvegardes
-# manuelles pre-correctif (git EST la sauvegarde ; REVERT.md reste local) :
-bench_abuaisha/*.pdf
-*.png
-_backup_*/
-uploads/
-bench_impact/*.pdf
-bench_impact/*.txt

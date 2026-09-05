@@ -53,6 +53,7 @@ private:
     void applyContact();
     void internalForcesAndDamage();
     void integrate();
+    void checkFinite();                  // C4 (w20) : NaN/Inf reel
     void updateDamage(Elem& e, const Eigen::Vector3d& sEff, double szz);
     void erode(Elem& e);
     void refreshActiveNodes();
@@ -95,6 +96,7 @@ private:
     double erodedVol_ = 0;
     long   nEroded_ = 0;
     double peakF_ = 0;
+    long nanEvery_ = 256, nanStep_ = 0;  // nanCheckEvery (C4, w20)
 
     // bar-wave verification
     std::vector<int> barBcNodes_, gaugeNodes_;

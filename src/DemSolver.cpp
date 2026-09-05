@@ -1,4 +1,5 @@
 #include "rockim/DemSolver.hpp"
+#include "rockim/Guards.hpp"
 #include "rockim/VtkWriter.hpp"
 
 #include <algorithm>
@@ -29,6 +30,7 @@ void DemSolver::init() {
     r_ = cfg_.getd("particleRadius", r_);
     T_ = cfg_.getd("T", 250e-6);
     packing_ = cfg_.gets("packing", "hex");
+    nanEvery_ = cfg_.geti("nanCheckEvery", 256);       // C4 (w20), 0 = off
 
     std::string s = cfg_.gets("scenario", "percussion");
     if      (s == "percussion") scen_ = Scenario::PERCUSSION;
@@ -58,6 +60,12 @@ void DemSolver::init() {
     sideWalls_  = cfg_.getb("sideWalls", false);
 
     buildPacking();
+    for (std::size_t i = 0; i < p_.size(); ++i)        // C3 (w20)
+        if (!(p_[i].m > 0.0) || !std::isfinite(p_[i].m))
+            throw std::runtime_error("packing: masse nulle ou negative : "
+                "particule " + std::to_string(i) + ", "
+                + guards::coords(p_[i].x) + ", m = " + guards::num(p_[i].m)
+                + " kg, r = " + guards::num(p_[i].r) + " m");
     buildBonds();
     placeTool();
     computeStableDt();
@@ -317,6 +325,24 @@ void DemSolver::step() {
 
     integrate();
     t_ += dt_;
+    ++nanStep_;                          // C4 (w20) : detecteur reel
+    if (nanEvery_ > 0 && nanStep_ % nanEvery_ == 0) checkFinite();
+}
+
+void DemSolver::checkFinite() {
+    static const char* const names[3] = {"x", "v", "f"};
+    guards::checkFinite("DEM", nanStep_, t_, p_.size(), 3, names,
+        [&](std::size_t i, int k) -> const Eigen::Vector2d& {
+            return k == 0 ? p_[i].x : k == 1 ? p_[i].v : p_[i].f;
+        },
+        [&](std::size_t i) -> const Eigen::Vector2d& { return p_[i].x; },
+        [&](std::size_t i) -> long {     // premiere liaison de la particule
+            for (std::size_t b = 0; b < b_.size(); ++b)
+                if ((std::size_t)b_[b].i == i || (std::size_t)b_[b].j == i)
+                    return (long)b;
+            return -1;
+        },
+        {{"work", work_}, {"|toolF|", tool_.F.norm()}});
 }
 
 // ---------------------------------------------------------------------------
@@ -645,6 +671,7 @@ void DemSolver::historyRow(std::ostream& os) const {
 }
 
 void DemSolver::finalize() {
+    if (nanEvery_ > 0) checkFinite();    // C4 (w20) : dernier controle
     computeFragments();
 
     // fragment-size distribution

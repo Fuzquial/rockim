@@ -4,6 +4,7 @@
 // failure criteria, torque bookkeeping, stable time step).
 // ---------------------------------------------------------------------------
 #include "rockim/Dem3dSolver.hpp"
+#include "rockim/Guards.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -53,6 +54,7 @@ void Dem3dSolver::init() {
     else if (sc == "shear")      scen_ = Scenario::SHEAR;
     else if (sc == "tension")    scen_ = Scenario::TENSION;
     else throw std::runtime_error("dem3d scenario must be percussion | shear | tension");
+    nanEvery_ = cfg_.geti("nanCheckEvery", 256);       // C4 (w20), 0 = off
 
     W_ = cfg_.getd("W", 0.1);
     D_ = cfg_.getd("D", 0.1);
@@ -77,6 +79,12 @@ void Dem3dSolver::init() {
     bottomWall_ = cfg_.getb("bottomWall", scen_ != Scenario::TENSION);
 
     buildPacking();
+    for (std::size_t i = 0; i < p_.size(); ++i)        // C3 (w20)
+        if (!(p_[i].m > 0.0) || !std::isfinite(p_[i].m))
+            throw std::runtime_error("packing: masse nulle ou negative : "
+                "particule " + std::to_string(i) + ", "
+                + guards::coords(p_[i].x) + ", m = " + guards::num(p_[i].m)
+                + " kg, r = " + guards::num(p_[i].r) + " m");
     buildBonds();
     placeTool();
     computeStableDt();
@@ -376,6 +384,24 @@ void Dem3dSolver::step() {
 
     integrate();
     t_ += dt_;
+    ++nanStep_;                          // C4 (w20) : detecteur reel
+    if (nanEvery_ > 0 && nanStep_ % nanEvery_ == 0) checkFinite();
+}
+
+void Dem3dSolver::checkFinite() {
+    static const char* const names[3] = {"x", "v", "f"};
+    guards::checkFinite("DEM3D", nanStep_, t_, p_.size(), 3, names,
+        [&](std::size_t i, int k) -> const Eigen::Vector3d& {
+            return k == 0 ? p_[i].x : k == 1 ? p_[i].v : p_[i].f;
+        },
+        [&](std::size_t i) -> const Eigen::Vector3d& { return p_[i].x; },
+        [&](std::size_t i) -> long {     // premiere liaison de la particule
+            for (std::size_t b = 0; b < b_.size(); ++b)
+                if ((std::size_t)b_[b].i == i || (std::size_t)b_[b].j == i)
+                    return (long)b;
+            return -1;
+        },
+        {{"work", work_}, {"|toolF|", tool_.F.norm()}});
 }
 
 // ---------------------------------------------------------------------------
@@ -748,6 +774,7 @@ void Dem3dSolver::historyRow(std::ostream& os) const {
 }
 
 void Dem3dSolver::finalize() {
+    if (nanEvery_ > 0) checkFinite();    // C4 (w20) : dernier controle
     computeFragments();
 
     std::map<int, double> mass;

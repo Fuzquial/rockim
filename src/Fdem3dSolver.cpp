@@ -21,6 +21,8 @@
 // dans SOURCES_SOLIDITY.md §3.
 // ---------------------------------------------------------------------------
 #include "rockim/Fdem3dSolver.hpp"
+#include "rockim/Guards.hpp"
+#include "rockim/ToolPdc3d.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -76,6 +78,7 @@ void Fdem3dSolver::init() {
     // Portes du 2D le 2026-08-19. La garde de parite qui les refusait ici
     // est levee. Opt-in strict : cles absentes = branches non calculees.
     viscIns_ = cfg_.geti("viscousInInsertion", 1) != 0;
+    nanEvery_ = cfg_.geti("nanCheckEvery", 256);       // C4 (w20), 0 = off
     {
         std::string sd = cfg_.gets("strainRateDIF", "off");
         if (sd != "off" && sd != "yang" && sd != "yang-fig2")
@@ -1118,6 +1121,7 @@ void Fdem3dSolver::buildMeshFile() {
         throw std::runtime_error("meshFile: cannot open '" + path + "'");
     std::string line;
     std::map<long, int> id2idx;
+    std::vector<long> gmshIds;             // id Gmsh par noeud (C3, w20)
     std::vector<Eigen::Vector3d> vpos;
     std::vector<std::array<int, 4>> tets;
     std::vector<long> tetPhys;             // tag physique par tet (0 = aucun)
@@ -1152,6 +1156,7 @@ void Fdem3dSolver::buildMeshFile() {
                 long id; double x, y, z;
                 in >> id >> x >> y >> z;
                 id2idx[id] = (int)vpos.size();
+                gmshIds.push_back(id);
                 vpos.push_back({x, y, z});
             }
         } else if (line.rfind("$Elements", 0) == 0) {
@@ -1178,7 +1183,8 @@ void Fdem3dSolver::buildMeshFile() {
                         auto it = id2idx.find(nid);
                         if (it == id2idx.end())
                             throw std::runtime_error("meshFile: element "
-                                "references unknown node id");
+                                + std::to_string(id) + " reference le noeud "
+                                "inconnu id " + std::to_string(nid));
                         vv[q] = it->second;
                     }
                 }
@@ -1193,6 +1199,9 @@ void Fdem3dSolver::buildMeshFile() {
         throw std::runtime_error("meshFile: no tetrahedra found in '" + path
                                  + "' (need ASCII MSH 2.2 with type-4 "
                                  "elements)");
+    // C3 (w20) : noeud jamais reference = erreur nommee (il fausse aussi la
+    // boite englobante), coordonnees du fichier
+    guards::checkOrphans(vpos, tets, gmshIds);
     // translate to the origin and take the box from the bounding box
     Eigen::Vector3d lo = vpos[0], hi = vpos[0];
     for (const auto& p : vpos) { lo = lo.cwiseMin(p); hi = hi.cwiseMax(p); }
@@ -1455,7 +1464,9 @@ void Fdem3dSolver::buildFromTets(const std::vector<Eigen::Vector3d>& vpos,
             det = -det;
         }
         e.V0 = det / 6.0;
-        if (e.V0 <= 0) throw std::runtime_error("degenerate tet");
+        if (e.V0 <= 0)                         // C3 (w20) : erreur NOMMEE
+            guards::degenerateError("fdem3d", (long)tId, vv, vpos,
+                                    guards::kNoIds, e.V0);
         Eigen::Matrix3d Jinv = J.inverse();
         // grad N_a: N0 = 1 - xi - eta - zeta, N1 = xi, ...
         e.dN.col(1) = Jinv.row(0);
@@ -1498,6 +1509,14 @@ void Fdem3dSolver::buildFromTets(const std::vector<Eigen::Vector3d>& vpos,
         }
     }
 
+    {   // C3 (w20) : sliver (< 1e-6 x mediane) = erreur nommee (sommets du
+        // maillage d'origine, avant duplication par tet)
+        std::vector<double> vols;
+        vols.reserve(tets.size());
+        for (std::size_t k = 0; k < tets.size(); ++k)
+            vols.push_back(el_[el_.size() - tets.size() + k].V0);
+        guards::checkDegenerate("fdem3d", vols, tets, vpos, guards::kNoIds);
+    }
     for (auto& [key, lst] : faces) {
         if (lst.size() == 2) {
             // V1 — physical groups : AUCUN joint entre deux groupes ; les
@@ -1544,6 +1563,7 @@ void Fdem3dSolver::buildFromTets(const std::vector<Eigen::Vector3d>& vpos,
     for (const auto& e : el_)
         for (int a = 0; a < 4; ++a)
             m_[e.n[a]] += phases_.mat[e.phase].rho * e.V0 / 4.0;
+    guards::checkMasses("fdem3d", m_, X0_, guards::kNoMask, guards::kNoIds);   // C3 (w20)
 
     if (scen_ == Scenario::TENSION) {
         for (int i = 0; i < (int)X0_.size(); ++i) {
@@ -2063,9 +2083,81 @@ void Fdem3dSolver::placeTool() {
         tool_.v.setZero();
         return;
     }
-    if (sh != "sphere" && sh != "disc" && sh != "flat")
-        throw std::runtime_error("toolShape must be sphere | flat | none (3D)");
+    if (sh != "sphere" && sh != "disc" && sh != "flat" && sh != "pdc")
+        throw std::runtime_error("toolShape must be sphere | flat | pdc | none (3D)");
     tool_.flat = sh == "flat" && scen_ == Scenario::PERCUSSION;
+    // ---- toolShape = pdc (2026-09-03) : cutter PDC 3D, disque fini ---------
+    // Reproduction de Heilman et al. ARMA 24-0238. Geometrie et conventions
+    // dans ToolPdc3d.hpp. Opt-in : sans la valeur `pdc`, rien ne change.
+    tool_.pdc = (sh == "pdc");
+    if (tool_.pdc) {
+        if (scen_ != Scenario::SHEAR)
+            throw std::runtime_error("toolShape = pdc exige scenario = shear "
+                                     "(coupe a vitesse imposee) en 3D");
+        // E3/E6 : une cle 2D recopiee dans un deck 3D ne doit pas etre avalee.
+        if (cfg_.has("cutterLen"))
+            throw std::runtime_error("cutterLen est une cle 2D (etendue de la "
+                                     "face d un COIN). En 3D la face est un "
+                                     "DISQUE : poser cutterDia [m]");
+        if (!cfg_.has("cutterDia"))
+            throw std::runtime_error("toolShape = pdc : cutterDia [m] requis "
+                                     "(13 mm chez Heilman et al.)");
+        if (!cfg_.has("cutterThick"))
+            throw std::runtime_error("toolShape = pdc : cutterThick [m] requis "
+                                     "(2,5 mm chez Heilman et al.) — sans "
+                                     "epaisseur le cutter est un demi-espace "
+                                     "qui piege le copeau (mesure 2D du "
+                                     "2026-08-18)");
+        tool_.radius  = 0.5 * cfg_.getd("cutterDia", 0.013);
+        tool_.thick   = cfg_.getd("cutterThick", 0.0025);
+        tool_.rakeDeg = cfg_.getd("backRakeDeg", -20.0);
+        tool_.cham    = cfg_.getd("chamferLen", 0.0);
+        tool_.chamDeg = cfg_.getd("chamferDeg", 45.0);
+        if (!(tool_.radius > 0.0 && tool_.thick > 0.0))
+            throw std::runtime_error("cutterDia et cutterThick doivent etre > 0");
+        if (!(tool_.rakeDeg > -60.0 && tool_.rakeDeg < 60.0))
+            throw std::runtime_error("backRakeDeg must be in (-60, 60)");
+        if (tool_.cham < 0.0 || tool_.cham >= tool_.radius)
+            throw std::runtime_error("chamferLen doit etre dans [0, cutterDia/2)");
+        if (tool_.cham > 0.0) {
+            double ga = tool_.chamDeg * M_PI / 180.0;
+            if (!(tool_.chamDeg > 0.0 && tool_.chamDeg < 90.0)
+                || tool_.cham * std::tan(ga) >= tool_.thick)
+                throw std::runtime_error("chamfer : chamferDeg dans (0, 90) et "
+                                         "chamferLen.tan(chamferDeg) < cutterThick");
+        }
+        // cutterFloor : booleen. Les commentaires 2D ecrivent « = flat », qui
+        // vaudrait FALSE sous getb (Config.cpp:71-76). On refuse l ambiguite.
+        {
+            std::string fl = cfg_.gets("cutterFloor", "");
+            if (fl == "flat")
+                throw std::runtime_error("cutterFloor = flat est ambigu (getb le "
+                                         "lirait FALSE) : ecrire cutterFloor = true");
+            tool_.floorFlat = cfg_.getb("cutterFloor", false);
+        }
+        rockim::pdc3d::Frame fr = rockim::pdc3d::frame(tool_.rakeDeg);
+        tool_.n = fr.n; tool_.u = fr.u; tool_.w = fr.w;
+        if (tool_.rakeDeg > 0.0) {
+            double band = tool_.thick * std::sin(tool_.rakeDeg * M_PI / 180.0);
+            std::cout << "\n[FDEM3D] *** AVERTISSEMENT *** backRakeDeg = "
+                      << tool_.rakeDeg << " > 0 : le dos du cutter descend de "
+                      << band * 1e3 << " mm SOUS la ligne d arete (t.sin b) et "
+                         "laboure son plancher"
+                      << (tool_.floorFlat ? " — cutterFloor = true le rend a la roche."
+                                          : " — poser cutterFloor = true, ou "
+                                            "backRakeDeg < 0 (orientation des "
+                                            "decks 2D valides et d un vrai PDC).")
+                      << "\n\n";
+        }
+        if (!toolSig_)
+            std::cout << "\n[FDEM3D] *** AVERTISSEMENT *** toolShape = pdc en "
+                         "toolContact = penalty : l ecretage geometrique 0,6 h "
+                         "atteint l axe median du cutter dans l anneau de "
+                         "l arete de coupe, ou la normale saute de 90 deg — la "
+                         "force sautera. Et a vitesse imposee la penalite "
+                         "pompe (injection x4,43 mesuree en 2D). Poser "
+                         "toolContact = signorini.\n\n";
+    }
     if (scen_ == Scenario::PERCUSSION) {
         // REPARATION (2026-08-28) : rendre VISIBLE le piege documente au
         // commentaire « le contact ne prend jamais le relais » (bloc
@@ -2082,6 +2174,27 @@ void Fdem3dSolver::placeTool() {
         tool_.x = {cfg_.getd("toolX", 0.5 * W_), cfg_.getd("toolY", 0.5 * D_),
                    zTip};
         tool_.v = {0.0, 0.0, -cfg_.getd("impactSpeed", 8.0)};
+    } else if (tool_.pdc) {
+        // Coupe au cutter PDC : `x` est l ARETE, posee a la profondeur de
+        // passe, centree en Y par defaut, partant DEVANT la face verticale de
+        // l entaille (toolX) pour engager progressivement.
+        tool_.free = false;
+        double depth = cfg_.getd("cutDepth", 0.004);
+        double vCut  = cfg_.getd("cutSpeed", 10.0);
+        tool_.x = {cfg_.getd("toolX", -2.0e-3), cfg_.getd("toolY", 0.5 * D_),
+                   H_ - depth};
+        tool_.v = {vCut, 0.0, 0.0};
+        std::cout << "[FDEM3D] PDC cutter 3D : disque D = " << 2.0 * tool_.radius
+                  << " m, epaisseur " << tool_.thick << " m, chanfrein "
+                  << tool_.cham << " m a " << tool_.chamDeg << " deg, garde "
+                  << tool_.rakeDeg << " deg, passe " << depth << " m, vitesse "
+                  << vCut << " m/s, arete en (" << tool_.x.x() << ", "
+                  << tool_.x.y() << ", " << tool_.x.z() << ") m ; largeur de "
+                     "contact a la surface libre "
+                  << rockim::pdc3d::contactWidth(tool_.radius, depth,
+                                                 tool_.rakeDeg) * 1e3
+                  << " mm (forme fermee, ToolPdc3d.hpp)"
+                  << (tool_.floorFlat ? " ; cutterFloor = true" : "") << "\n";
     } else {
         tool_.free = false;
         double depth = cfg_.getd("cutDepth", 0.004);
@@ -2395,22 +2508,26 @@ void Fdem3dSolver::step() {
 
     integrate();
     t_ += dt_;
-    if ((++stepCount_ & 1023) == 0) {
-        // ---- E5 (2026-08-19), miroir du 2D : u_[0] peut etre un noeud FIXED,
-        // donc toujours fini — le detecteur etait AVEUGLE. Echantillonnage de
-        // tout le maillage a pas constant (~256 noeuds), decalage tournant.
-        bool bad = !std::isfinite(work_);
-        const std::size_t nN = X0_.size();
-        const std::size_t stride = (nN > 256) ? nN / 256 : 1;
-        const std::size_t off = (std::size_t)((stepCount_ >> 10) % (long)stride);
-        for (std::size_t i = off; i < nN && !bad; i += stride)
-            if (!std::isfinite(u_[i].x()) || !std::isfinite(u_[i].y())
-                || !std::isfinite(u_[i].z()))
-                bad = true;
-        if (bad)
-            throw std::runtime_error("FDEM3D instability (NaN)");
+    if ((++stepCount_ & 1023) == 0)
         checkEnergyAbort();                // opt-in (budgetAbortPct), E2
-    }
+    // C4 (w20) : detecteur REEL — toutes les composantes de u, v, f de tous
+    // les noeuds tous les nanCheckEvery pas (remplace l'echantillon E5 a
+    // ~256 noeuds / 1024 pas). Lecture pure.
+    if (nanEvery_ > 0 && stepCount_ % nanEvery_ == 0) checkFinite();
+}
+
+void Fdem3dSolver::checkFinite() {
+    static const char* const names[3] = {"u", "v", "f"};
+    guards::checkFinite("FDEM3D", stepCount_, t_, X0_.size(), 3, names,
+        [&](std::size_t i, int k) -> const Eigen::Vector3d& {
+            return k == 0 ? u_[i] : k == 1 ? v_[i] : f_[i];
+        },
+        [&](std::size_t i) -> const Eigen::Vector3d& { return X0_[i]; },
+        [&](std::size_t i) -> long {
+            return i < elemOf_.size() ? (long)elemOf_[i] : -1;
+        },
+        {{"work", work_}, {"|toolF|", tool_.F.norm()},
+         {"|toolV|", tool_.v.norm()}});
 }
 
 // ---------------------------------------------------------------------------
@@ -3869,9 +3986,42 @@ void Fdem3dSolver::toolContact() {
         }
         return;
     }
+    // ---- toolShape = pdc : geometrie construite UNE fois par pas ---------
+    // (ToolPdc3d.hpp). Inerte quand tool_.pdc == false : les deux lambdas
+    // ci-dessous ne la lisent que dans leur branche pdc.
+    rockim::pdc3d::Geom pdcG;
+    pdcG.R = tool_.radius; pdcG.thick = tool_.thick; pdcG.cham = tool_.cham;
+    pdcG.chamDeg = tool_.chamDeg; pdcG.rakeDeg = tool_.rakeDeg;
+    const rockim::pdc3d::Frame pdcF{tool_.n, tool_.u, tool_.w};
     auto nodeFc = [&](int i, Eigen::Vector3d& Fc) {
         Eigen::Vector3d p = X0_[i] + u_[i];
-        if (tool_.flat) {
+        if (tool_.pdc) {
+            // Cutter PDC 3D : appartenance et normale par distance signee
+            // exacte (ToolPdc3d.hpp). Meme assemblage de force que la sphere.
+            rockim::pdc3d::Query q = rockim::pdc3d::query(pdcG, pdcF, tool_.x, p);
+            if (!q.inside) return false;
+            // cutterFloor (miroir 2D, FdemSolver.cpp:6244) : sous le niveau de
+            // l arete, jamais de contact — le plancher de coupe reste a la roche.
+            if (tool_.floorFlat && p.z() < tool_.x.z()) return false;
+            Eigen::Vector3d n = q.normal;
+            // ECRETAGE EN PROFONDEUR sur la taille d element (miroir 2D,
+            // FdemSolver.cpp:6251-6253) : un noeud glisse profond ne doit pas
+            // dominer la courbe (pics isoles de 32 MN/m mesures en 2D).
+            double pen = q.pen;
+            double capPen = 0.6 * hEl_[elemOf_[i]];
+            if (pen > capPen) pen = capPen;
+            Eigen::Vector3d vrel = v_[i] - tool_.v;
+            double c = 2.0 * xiC_ * std::sqrt(kp_ * m_[i]);
+            double fn = kp_ * pen - c * vrel.dot(n);
+            if (fn < 0) fn = 0;
+            if (cplMode_) fn *= cplDf(elemOf_[i], -1);        // (1-D)
+            Eigen::Vector3d vt = vrel - vrel.dot(n) * n;
+            double vtn = vt.norm();
+            Eigen::Vector3d ftv = Eigen::Vector3d::Zero();
+            if (vtn > 0) ftv = -ctcMu(elemOf_[i]) * fn         // WP6
+                               * std::tanh(vtn / vReg_) * vt / vtn;
+            Fc = fn * n + ftv;
+        } else if (tool_.flat) {
             // flat-ended punch: vertical contact only against the bottom
             // face (sharp edge, as in 2D)
             double rx = p.x() - tool_.x.x(), ry = p.y() - tool_.x.y();
@@ -3938,7 +4088,17 @@ void Fdem3dSolver::toolContact() {
         Eigen::Vector3d p = X0_[i] + u_[i];
         Eigen::Vector3d n;
         double pen;
-        if (tool_.flat) {
+        if (tool_.pdc) {
+            // Cutter PDC 3D, voie Signorini : la geometrie vient du meme
+            // noyau que la voie penalite (ToolPdc3d.hpp) ; l impulsion
+            // ci-dessous est inchangee. Pas d ecretage en profondeur ici : a
+            // relax = 0 l impulsion ne depend pas de pen, seulement de v_n.
+            rockim::pdc3d::Query q = rockim::pdc3d::query(pdcG, pdcF, tool_.x, p);
+            if (!q.inside) return false;
+            if (tool_.floorFlat && p.z() < tool_.x.z()) return false;
+            n = q.normal;
+            pen = q.pen;
+        } else if (tool_.flat) {
             double rx = p.x() - tool_.x.x(), ry = p.y() - tool_.x.y();
             if (rx * rx + ry * ry > tool_.radius * tool_.radius) return false;
             pen = p.z() - tool_.x.z();
@@ -4560,6 +4720,7 @@ void Fdem3dSolver::historyRow(std::ostream& os) const {
 }
 
 void Fdem3dSolver::finalize() {
+    if (nanEvery_ > 0) checkFinite();      // C4 (w20) : dernier controle
     computeFragments();
 
     std::ofstream fe(out_ + "/fdem3d_final_elements.csv");

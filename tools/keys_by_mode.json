@@ -1,0 +1,1943 @@
+{
+ "_meta": {
+  "generated": "2026-09-05 20:44:31",
+  "generator": "tools/gen_keys_by_mode.py (voir la docstring : methode)",
+  "rule": "cle lue par UN SEUL solveur = cle de ce mode, refusee dans les autres modes ; lue par le code partage ou par >= 2 solveurs = commune, jamais refusee ; cle absente du registre (construite dynamiquement) = jamais refusee",
+  "files_scanned": [
+   "src\\Config.cpp",
+   "src\\Dem3dSolver.cpp",
+   "src\\DemSolver.cpp",
+   "src\\Fdem3dSolver.cpp",
+   "src\\FdemSolver.cpp",
+   "src\\Fem3dSolver.cpp",
+   "src\\FemSolver.cpp",
+   "src\\MatLaw.cpp",
+   "src\\Tessellation.cpp",
+   "src\\Tessellation3.cpp",
+   "src\\ToolPdc3d.cpp",
+   "src\\VtkWriter.cpp",
+   "src\\main.cpp",
+   "include\\rockim\\Config.hpp",
+   "include\\rockim\\Dem3dSolver.hpp",
+   "include\\rockim\\DemSolver.hpp",
+   "include\\rockim\\Fdem3dSolver.hpp",
+   "include\\rockim\\FdemSolver.hpp",
+   "include\\rockim\\Fem3dKinematics.hpp",
+   "include\\rockim\\Fem3dSolver.hpp",
+   "include\\rockim\\FemSolver.hpp",
+   "include\\rockim\\KeyGuard.hpp",
+   "include\\rockim\\MatLaw.hpp",
+   "include\\rockim\\Material.hpp",
+   "include\\rockim\\PotentialContact.hpp",
+   "include\\rockim\\RandomField.hpp",
+   "include\\rockim\\Solver.hpp",
+   "include\\rockim\\Tessellation.hpp",
+   "include\\rockim\\Tessellation3.hpp",
+   "include\\rockim\\Tool.hpp",
+   "include\\rockim\\ToolPdc3d.hpp",
+   "include\\rockim\\ToolSignorini.hpp",
+   "include\\rockim\\VtkWriter.hpp",
+   "include\\rockim\\YanSoftening.hpp",
+   "include\\rockim\\YangDif.hpp"
+  ],
+  "always_common": [
+   "D",
+   "H",
+   "T",
+   "W",
+   "cfl",
+   "dtFactor",
+   "frames",
+   "historyFlush",
+   "mesh",
+   "meshFile",
+   "mode",
+   "nanCheckEvery",
+   "nx",
+   "ny",
+   "nz",
+   "outputDir",
+   "scenario",
+   "seed"
+  ],
+  "n_keys": 389,
+  "n_common": 239,
+  "n_mode_specific": 150,
+  "n_obsolete": 1,
+  "rule_c1": "C1 (w21) : cle du deck NON consommee ET hors registre (ni commune, ni du mode, ni famille dynamique lue) = faute ; cle du registre non consommee (lecture conditionnelle) = legitime ; cle obsolete = « remplacee par » ; cle d'un autre mode = « sans effet en mode » ; source des obsoletes : tools/obsolete_keys.json",
+  "rule_w22": "w22 (relecture D1) : une cle du deck NON consommee est legitime ssi le mode courant figure dans ses lecteurs (readers) ou si 'shared' y figure (code partage, ALWAYS_COMMON) ; sinon « cle X sans effet en mode Y : cles des modes Z1, Z2 » (kReaders dans KeysByMode.hpp)"
+ },
+ "modes": {
+  "dem": [
+   "sideWalls"
+  ],
+  "dem3d": [],
+  "fdem": [
+   "absorbFactor",
+   "beddingCohRatio",
+   "beddingEperp",
+   "beddingFtRatio",
+   "beddingGfIIRatio",
+   "beddingGfIRatio",
+   "beddingGperp",
+   "beddingNuPerp",
+   "boreCX",
+   "boreCY",
+   "boreSelectR",
+   "brazilianLoading",
+   "brazilianStopAfterPeak",
+   "brazilianStopDelay",
+   "dampingLocalAfter",
+   "dampingSwitchT",
+   "dampingViscous",
+   "dampingViscousScheme",
+   "diametralBand",
+   "discFlattenDeg",
+   "discMesh",
+   "elasticGaugeHi",
+   "elasticGaugeLo",
+   "excavRamp",
+   "excavRelease",
+   "excavStart",
+   "fluidBulk",
+   "fluidDensity",
+   "gaugeHiFrac",
+   "gaugeLoFrac",
+   "gcBoxMesh",
+   "gcCell",
+   "gcSurfaceRefresh",
+   "gcXwindow",
+   "grainElemSize",
+   "grainMesh",
+   "grainMeshRandom",
+   "grainSizeSpread",
+   "gripsStopAfterPeak",
+   "gripsStopDelay",
+   "historyStrains",
+   "hydro",
+   "hydroCavityClosure",
+   "hydroInjection",
+   "hydroP0",
+   "hydroPressure",
+   "hydroRamp",
+   "hydroRate",
+   "hydroSource",
+   "hydroStart",
+   "hydroWetDamage",
+   "insituSh",
+   "insituSv",
+   "insituSxy",
+   "jointPrebrokenSeed",
+   "lateralRollers",
+   "loadArcDeg",
+   "loadRate",
+   "loading",
+   "microseismic",
+   "platenHalfWidth",
+   "platenPenaltyFactor",
+   "platenTributary",
+   "potXi",
+   "preBrokenAngleDeg",
+   "preBrokenJoints",
+   "preBrokenTol",
+   "shearSupport",
+   "shpbBarDiameter",
+   "shpbBarElemSize",
+   "shpbDiscDiameter",
+   "shpbDiscElemSize",
+   "shpbDiscSmooth",
+   "shpbGap",
+   "shpbGaugeHalfLength",
+   "shpbIncidentLength",
+   "shpbMonitor1",
+   "shpbMonitor2",
+   "shpbNoDisc",
+   "shpbPulse",
+   "shpbPulsePlateau",
+   "shpbPulseTau",
+   "shpbPulseV0",
+   "shpbTransmitLength",
+   "thermalAlpha",
+   "thermalConduct",
+   "thermalCrackResist",
+   "thermalEvery",
+   "thermalFaces",
+   "thermalH",
+   "thermalHeatCap",
+   "thermalSpeedup",
+   "thermalStart",
+   "thermalTemp",
+   "thermalTref",
+   "thickness",
+   "toolSignoriniGroup",
+   "toolStart",
+   "ucsStopAfterPeak",
+   "ucsStopDelay",
+   "vNodeMaxEvery",
+   "weakPlaneAngleDeg",
+   "weakPlaneFactor",
+   "weakPlaneFactor2",
+   "weakPlaneFrac2",
+   "weakPlaneFrictionDeg",
+   "weakPlaneGf",
+   "weakPlaneOffset",
+   "weakPlaneSeed",
+   "weakPlaneTol",
+   "weakPlanes",
+   "writeJointState"
+  ],
+  "fdem3d": [
+   "bulkViscosityGraded",
+   "cutterDia",
+   "dtBudgetTangential",
+   "fragBrushDirZ",
+   "trackGroup",
+   "trackGroups",
+   "viscousInInsertion"
+  ],
+  "fem": [
+   "barGaugeFrac",
+   "barV0",
+   "damage",
+   "fixSides",
+   "stopOnRebound",
+   "strainCap"
+  ],
+  "fem3d": [
+   "activeNodes",
+   "bladeHeight",
+   "bottomFree",
+   "bottomPressure",
+   "clearanceDeg",
+   "contactPenaltyFactor",
+   "erodeDetMin",
+   "erodeStrainMax",
+   "fieldStats",
+   "gripSection",
+   "kinematics",
+   "matWeibullM",
+   "meshMirror",
+   "probes",
+   "quarterModel",
+   "symmetryY",
+   "toolDelay",
+   "toolLockXY",
+   "toolPulseForce",
+   "toolPulseImpedance",
+   "toolPulseTable",
+   "topPressure",
+   "triaxStats",
+   "vtkCap"
+  ]
+ },
+ "common": [
+  "D",
+  "E",
+  "Gf",
+  "H",
+  "T",
+  "W",
+  "absorbLayer",
+  "absorbSpringFactor",
+  "absorbSpringR",
+  "absorbing",
+  "backRakeDeg",
+  "beddingDip",
+  "bondCohesion",
+  "bondFrictionDeg",
+  "bondRadiusFactor",
+  "bondStrengthScatter",
+  "bondTensile",
+  "bottomWall",
+  "budgetAbortMin",
+  "budgetAbortPct",
+  "bulkCohesion",
+  "bulkDamage",
+  "bulkDamageCd",
+  "bulkDamageDelta0",
+  "bulkDamageDeltaF",
+  "bulkDamageDmax",
+  "bulkFrictionDeg",
+  "bulkFt",
+  "bulkGf",
+  "bulkModel",
+  "bulkViscosity",
+  "bulkViscosityXi",
+  "capH",
+  "capP0",
+  "cdpCap",
+  "cdpCapH",
+  "cdpCapP0",
+  "cdpCompDamage",
+  "cdpCompLength",
+  "cdpDilationDeg",
+  "cdpEcc",
+  "cdpFbFc",
+  "cdpHardening",
+  "cdpKc",
+  "cdpTension",
+  "cdpTensionDamage",
+  "cdpTensionTable",
+  "cdpViscosity",
+  "cdpWc",
+  "cdpWt",
+  "cfl",
+  "chamferDeg",
+  "chamferLen",
+  "cohesion",
+  "compAc",
+  "compDamage",
+  "compGIIc",
+  "confineFaces",
+  "confineGaugeTime",
+  "confiningPressure",
+  "confiningRamp",
+  "contact",
+  "contactDamageCoupling",
+  "contactMu",
+  "contactResidualMu",
+  "contactVreg",
+  "contactXi",
+  "crushCap",
+  "cutDepth",
+  "cutSpeed",
+  "cutterFloor",
+  "cutterLen",
+  "cutterThick",
+  "dampingLocal",
+  "dfhBetaDeg",
+  "dfhDCoh",
+  "dfhDeld",
+  "dfhK",
+  "dfhPsiDeg",
+  "dfhS",
+  "dfhSigW",
+  "dfhWeibullM",
+  "dfhZeff",
+  "dpApex",
+  "dpTension",
+  "dprCap",
+  "dtFactor",
+  "energyBodyForces",
+  "erodeD",
+  "erodeDc",
+  "erodeEpv",
+  "erodeWfrac",
+  "extraContacts",
+  "fieldSeed",
+  "fragBrushAccel",
+  "fragBrushBeta",
+  "fragBrushDirX",
+  "fragBrushDirY",
+  "fragBrushStart",
+  "fragBrushV0",
+  "fragBrushZeroV",
+  "frames",
+  "frictionDeg",
+  "ft",
+  "gbAlphaCoh",
+  "gbAlphaE",
+  "gbAlphaFric",
+  "gbAlphaGf",
+  "gbAlphaTen",
+  "gbHeteroFactor",
+  "gcActEvery",
+  "gcActMargin",
+  "gcActivation",
+  "gcBirth",
+  "gcBirthPenMax",
+  "gcBirthPenMin",
+  "gcBirthTau",
+  "gcPenaltyFactor",
+  "gcRestitution",
+  "gcXi",
+  "geometry",
+  "gfShearFactor",
+  "grainJitter",
+  "grainSeeding",
+  "grainSize",
+  "gravity",
+  "gripLateralFree",
+  "historyFlush",
+  "impactSpeed",
+  "insertion",
+  "insertionPenaltyFactor",
+  "jointContactPenalty",
+  "jointDeath",
+  "jointDeltaC",
+  "jointElastic",
+  "jointFailRule",
+  "jointFrictionScaled",
+  "jointPenaltyFactor",
+  "jointPrebrokenFrac",
+  "jointQuadrature",
+  "jointResidualMu",
+  "jointShearEnvelope",
+  "jointShearRange",
+  "jointShearUnload",
+  "jointSizeEffect",
+  "jointSizeEffectClamp",
+  "jointSizeEffectM",
+  "jointSoftening",
+  "jointWeibullM",
+  "jointXi",
+  "jointZeff",
+  "knFactor",
+  "kpFactor",
+  "ksRatio",
+  "law",
+  "lloydIters",
+  "mcCohesion",
+  "mcDilationDeg",
+  "mcFrictionDeg",
+  "meanTensionCapFactor",
+  "merB",
+  "merFc0",
+  "merN",
+  "meridian",
+  "mesh",
+  "meshFile",
+  "meshJitter",
+  "mode",
+  "mpConfineFirst",
+  "mpDt",
+  "mpLc",
+  "mpOut",
+  "mpPath",
+  "mpSigma3",
+  "mpSteps",
+  "mpStrainMax",
+  "nanCheckEvery",
+  "nu",
+  "nx",
+  "ny",
+  "nz",
+  "outputDir",
+  "packing",
+  "particleRadius",
+  "phases",
+  "potPenaltyFactor",
+  "potTangentFactor",
+  "pullDelay",
+  "pullRamp",
+  "pullV",
+  "rankineDrive",
+  "refineLevels",
+  "rho",
+  "saksalaEta",
+  "scenario",
+  "seed",
+  "skAt",
+  "skBetaDP",
+  "skBetaT",
+  "skCres",
+  "skDcap",
+  "skHdp",
+  "skNd",
+  "skPp0",
+  "skPtr0",
+  "skSdp",
+  "skSmr",
+  "skWcap",
+  "stopPeakDrop",
+  "strainRateDIF",
+  "strainRateDIFArm",
+  "strainRateFilter",
+  "strainRateTau",
+  "strengthCorrAngleDeg",
+  "strengthCorrLength",
+  "strengthCorrLengthB",
+  "tensionDamage",
+  "tensionShearRetention",
+  "thermal",
+  "toolContact",
+  "toolGap",
+  "toolImpulseCap",
+  "toolMass",
+  "toolRadius",
+  "toolShape",
+  "toolSignoriniRelax",
+  "toolStop",
+  "toolWidth",
+  "toolX",
+  "toolY",
+  "unknownKeys",
+  "verifyFt",
+  "vertexMergeFrac",
+  "weibullScope",
+  "writeJointMode",
+  "yanA",
+  "yanB",
+  "yanC",
+  "yanQuadN"
+ ],
+ "prefixes_common": [
+  "cdp",
+  "hydro"
+ ],
+ "prefixes_dynamic": [
+  "contactMu.",
+  "gauge.",
+  "gb.",
+  "groupBond.",
+  "groupPhase.",
+  "groupVel.",
+  "phase."
+ ],
+ "obsolete": {
+  "fragBrushV": "fragBrushV0"
+ },
+ "readers": {
+  "D": [
+   "dem3d",
+   "fdem3d",
+   "fem3d",
+   "shared"
+  ],
+  "E": [
+   "shared"
+  ],
+  "Gf": [
+   "shared"
+  ],
+  "H": [
+   "dem",
+   "dem3d",
+   "fdem",
+   "fdem3d",
+   "fem",
+   "fem3d",
+   "shared"
+  ],
+  "T": [
+   "dem",
+   "dem3d",
+   "fdem",
+   "fdem3d",
+   "fem",
+   "fem3d",
+   "shared"
+  ],
+  "W": [
+   "dem",
+   "dem3d",
+   "fdem",
+   "fdem3d",
+   "fem",
+   "fem3d",
+   "shared"
+  ],
+  "absorbFactor": [
+   "fdem"
+  ],
+  "absorbLayer": [
+   "dem",
+   "dem3d"
+  ],
+  "absorbSpringFactor": [
+   "dem",
+   "dem3d",
+   "fdem",
+   "fdem3d",
+   "fem",
+   "fem3d"
+  ],
+  "absorbSpringR": [
+   "dem",
+   "dem3d",
+   "fdem",
+   "fdem3d",
+   "fem",
+   "fem3d"
+  ],
+  "absorbing": [
+   "dem",
+   "dem3d",
+   "fdem",
+   "fdem3d",
+   "fem",
+   "fem3d"
+  ],
+  "activeNodes": [
+   "fem3d"
+  ],
+  "backRakeDeg": [
+   "fdem",
+   "fdem3d",
+   "fem3d"
+  ],
+  "barGaugeFrac": [
+   "fem"
+  ],
+  "barV0": [
+   "fem"
+  ],
+  "beddingCohRatio": [
+   "fdem"
+  ],
+  "beddingDip": [
+   "fdem",
+   "shared"
+  ],
+  "beddingEperp": [
+   "fdem"
+  ],
+  "beddingFtRatio": [
+   "fdem"
+  ],
+  "beddingGfIIRatio": [
+   "fdem"
+  ],
+  "beddingGfIRatio": [
+   "fdem"
+  ],
+  "beddingGperp": [
+   "fdem"
+  ],
+  "beddingNuPerp": [
+   "fdem"
+  ],
+  "bladeHeight": [
+   "fem3d"
+  ],
+  "bondCohesion": [
+   "dem",
+   "dem3d"
+  ],
+  "bondFrictionDeg": [
+   "dem",
+   "dem3d"
+  ],
+  "bondRadiusFactor": [
+   "dem",
+   "dem3d"
+  ],
+  "bondStrengthScatter": [
+   "dem",
+   "dem3d"
+  ],
+  "bondTensile": [
+   "dem",
+   "dem3d"
+  ],
+  "boreCX": [
+   "fdem"
+  ],
+  "boreCY": [
+   "fdem"
+  ],
+  "boreSelectR": [
+   "fdem"
+  ],
+  "bottomFree": [
+   "fem3d"
+  ],
+  "bottomPressure": [
+   "fem3d"
+  ],
+  "bottomWall": [
+   "dem",
+   "dem3d"
+  ],
+  "brazilianLoading": [
+   "fdem"
+  ],
+  "brazilianStopAfterPeak": [
+   "fdem"
+  ],
+  "brazilianStopDelay": [
+   "fdem"
+  ],
+  "budgetAbortMin": [
+   "fdem",
+   "fdem3d"
+  ],
+  "budgetAbortPct": [
+   "fdem",
+   "fdem3d"
+  ],
+  "bulkCohesion": [
+   "fdem",
+   "fdem3d"
+  ],
+  "bulkDamage": [
+   "fdem",
+   "fdem3d"
+  ],
+  "bulkDamageCd": [
+   "fdem",
+   "fdem3d"
+  ],
+  "bulkDamageDelta0": [
+   "fdem",
+   "fdem3d"
+  ],
+  "bulkDamageDeltaF": [
+   "fdem",
+   "fdem3d"
+  ],
+  "bulkDamageDmax": [
+   "fdem",
+   "fdem3d"
+  ],
+  "bulkFrictionDeg": [
+   "fdem",
+   "fdem3d"
+  ],
+  "bulkFt": [
+   "fdem",
+   "fdem3d"
+  ],
+  "bulkGf": [
+   "fdem",
+   "fdem3d"
+  ],
+  "bulkModel": [
+   "fdem",
+   "fdem3d"
+  ],
+  "bulkViscosity": [
+   "fdem",
+   "fdem3d",
+   "fem3d"
+  ],
+  "bulkViscosityGraded": [
+   "fdem3d"
+  ],
+  "bulkViscosityXi": [
+   "fdem",
+   "fdem3d"
+  ],
+  "capH": [
+   "shared"
+  ],
+  "capP0": [
+   "shared"
+  ],
+  "cdpCap": [
+   "shared"
+  ],
+  "cdpCapH": [
+   "shared"
+  ],
+  "cdpCapP0": [
+   "shared"
+  ],
+  "cdpCompDamage": [
+   "shared"
+  ],
+  "cdpCompLength": [
+   "shared"
+  ],
+  "cdpDilationDeg": [
+   "shared"
+  ],
+  "cdpEcc": [
+   "shared"
+  ],
+  "cdpFbFc": [
+   "shared"
+  ],
+  "cdpHardening": [
+   "shared"
+  ],
+  "cdpKc": [
+   "shared"
+  ],
+  "cdpTension": [
+   "shared"
+  ],
+  "cdpTensionDamage": [
+   "shared"
+  ],
+  "cdpTensionTable": [
+   "shared"
+  ],
+  "cdpViscosity": [
+   "shared"
+  ],
+  "cdpWc": [
+   "shared"
+  ],
+  "cdpWt": [
+   "shared"
+  ],
+  "cfl": [
+   "fem",
+   "shared"
+  ],
+  "chamferDeg": [
+   "fdem",
+   "fdem3d"
+  ],
+  "chamferLen": [
+   "fdem",
+   "fdem3d"
+  ],
+  "clearanceDeg": [
+   "fem3d"
+  ],
+  "cohesion": [
+   "fdem",
+   "shared"
+  ],
+  "compAc": [
+   "shared"
+  ],
+  "compDamage": [
+   "shared"
+  ],
+  "compGIIc": [
+   "shared"
+  ],
+  "confineFaces": [
+   "fdem",
+   "fdem3d",
+   "fem3d"
+  ],
+  "confineGaugeTime": [
+   "fdem",
+   "fdem3d",
+   "fem3d"
+  ],
+  "confiningPressure": [
+   "fdem",
+   "fdem3d",
+   "fem3d"
+  ],
+  "confiningRamp": [
+   "fdem",
+   "fdem3d",
+   "fem3d"
+  ],
+  "contact": [
+   "fdem",
+   "fdem3d"
+  ],
+  "contactDamageCoupling": [
+   "fdem",
+   "fdem3d"
+  ],
+  "contactMu": [
+   "dem",
+   "dem3d",
+   "fdem",
+   "fdem3d",
+   "fem",
+   "fem3d"
+  ],
+  "contactPenaltyFactor": [
+   "fem3d"
+  ],
+  "contactResidualMu": [
+   "fdem",
+   "fdem3d"
+  ],
+  "contactVreg": [
+   "fdem",
+   "fdem3d",
+   "fem3d"
+  ],
+  "contactXi": [
+   "dem",
+   "dem3d",
+   "fdem",
+   "fdem3d",
+   "fem",
+   "fem3d"
+  ],
+  "crushCap": [
+   "fdem",
+   "fdem3d"
+  ],
+  "cutDepth": [
+   "dem",
+   "dem3d",
+   "fdem",
+   "fdem3d",
+   "fem",
+   "fem3d"
+  ],
+  "cutSpeed": [
+   "dem",
+   "dem3d",
+   "fdem",
+   "fdem3d",
+   "fem",
+   "fem3d"
+  ],
+  "cutterDia": [
+   "fdem3d"
+  ],
+  "cutterFloor": [
+   "fdem",
+   "fdem3d"
+  ],
+  "cutterLen": [
+   "fdem",
+   "fdem3d"
+  ],
+  "cutterThick": [
+   "fdem",
+   "fdem3d"
+  ],
+  "damage": [
+   "fem"
+  ],
+  "dampingLocal": [
+   "dem",
+   "dem3d",
+   "fdem",
+   "fdem3d",
+   "fem3d"
+  ],
+  "dampingLocalAfter": [
+   "fdem"
+  ],
+  "dampingSwitchT": [
+   "fdem"
+  ],
+  "dampingViscous": [
+   "fdem"
+  ],
+  "dampingViscousScheme": [
+   "fdem"
+  ],
+  "dfhBetaDeg": [
+   "shared"
+  ],
+  "dfhDCoh": [
+   "shared"
+  ],
+  "dfhDeld": [
+   "shared"
+  ],
+  "dfhK": [
+   "shared"
+  ],
+  "dfhPsiDeg": [
+   "shared"
+  ],
+  "dfhS": [
+   "shared"
+  ],
+  "dfhSigW": [
+   "shared"
+  ],
+  "dfhWeibullM": [
+   "shared"
+  ],
+  "dfhZeff": [
+   "shared"
+  ],
+  "diametralBand": [
+   "fdem"
+  ],
+  "discFlattenDeg": [
+   "fdem"
+  ],
+  "discMesh": [
+   "fdem"
+  ],
+  "dpApex": [
+   "shared"
+  ],
+  "dpTension": [
+   "shared"
+  ],
+  "dprCap": [
+   "shared"
+  ],
+  "dtBudgetTangential": [
+   "fdem3d"
+  ],
+  "dtFactor": [
+   "dem",
+   "dem3d",
+   "fdem",
+   "fdem3d",
+   "fem3d",
+   "shared"
+  ],
+  "elasticGaugeHi": [
+   "fdem"
+  ],
+  "elasticGaugeLo": [
+   "fdem"
+  ],
+  "energyBodyForces": [
+   "fdem",
+   "fdem3d"
+  ],
+  "erodeD": [
+   "fem",
+   "shared"
+  ],
+  "erodeDc": [
+   "shared"
+  ],
+  "erodeDetMin": [
+   "fem3d"
+  ],
+  "erodeEpv": [
+   "shared"
+  ],
+  "erodeStrainMax": [
+   "fem3d"
+  ],
+  "erodeWfrac": [
+   "shared"
+  ],
+  "excavRamp": [
+   "fdem"
+  ],
+  "excavRelease": [
+   "fdem"
+  ],
+  "excavStart": [
+   "fdem"
+  ],
+  "extraContacts": [
+   "dem",
+   "dem3d",
+   "fdem",
+   "fdem3d"
+  ],
+  "fieldSeed": [
+   "fdem",
+   "fdem3d",
+   "fem3d"
+  ],
+  "fieldStats": [
+   "fem3d"
+  ],
+  "fixSides": [
+   "fem"
+  ],
+  "fluidBulk": [
+   "fdem"
+  ],
+  "fluidDensity": [
+   "fdem"
+  ],
+  "fragBrushAccel": [
+   "fdem",
+   "fdem3d"
+  ],
+  "fragBrushBeta": [
+   "fdem",
+   "fdem3d"
+  ],
+  "fragBrushDirX": [
+   "fdem",
+   "fdem3d"
+  ],
+  "fragBrushDirY": [
+   "fdem",
+   "fdem3d"
+  ],
+  "fragBrushDirZ": [
+   "fdem3d"
+  ],
+  "fragBrushStart": [
+   "fdem",
+   "fdem3d"
+  ],
+  "fragBrushV0": [
+   "fdem",
+   "fdem3d"
+  ],
+  "fragBrushZeroV": [
+   "fdem",
+   "fdem3d"
+  ],
+  "frames": [
+   "shared"
+  ],
+  "frictionDeg": [
+   "shared"
+  ],
+  "ft": [
+   "shared"
+  ],
+  "gaugeHiFrac": [
+   "fdem"
+  ],
+  "gaugeLoFrac": [
+   "fdem"
+  ],
+  "gbAlphaCoh": [
+   "shared"
+  ],
+  "gbAlphaE": [
+   "shared"
+  ],
+  "gbAlphaFric": [
+   "shared"
+  ],
+  "gbAlphaGf": [
+   "shared"
+  ],
+  "gbAlphaTen": [
+   "shared"
+  ],
+  "gbHeteroFactor": [
+   "shared"
+  ],
+  "gcActEvery": [
+   "fdem",
+   "fdem3d"
+  ],
+  "gcActMargin": [
+   "fdem",
+   "fdem3d"
+  ],
+  "gcActivation": [
+   "fdem",
+   "fdem3d"
+  ],
+  "gcBirth": [
+   "fdem",
+   "fdem3d"
+  ],
+  "gcBirthPenMax": [
+   "fdem",
+   "fdem3d"
+  ],
+  "gcBirthPenMin": [
+   "fdem",
+   "fdem3d"
+  ],
+  "gcBirthTau": [
+   "fdem",
+   "fdem3d"
+  ],
+  "gcBoxMesh": [
+   "fdem"
+  ],
+  "gcCell": [
+   "fdem"
+  ],
+  "gcPenaltyFactor": [
+   "fdem",
+   "fdem3d"
+  ],
+  "gcRestitution": [
+   "fdem",
+   "fdem3d"
+  ],
+  "gcSurfaceRefresh": [
+   "fdem"
+  ],
+  "gcXi": [
+   "fdem",
+   "fdem3d"
+  ],
+  "gcXwindow": [
+   "fdem"
+  ],
+  "geometry": [
+   "fdem",
+   "fem3d"
+  ],
+  "gfShearFactor": [
+   "shared"
+  ],
+  "grainElemSize": [
+   "fdem"
+  ],
+  "grainJitter": [
+   "fdem",
+   "fdem3d"
+  ],
+  "grainMesh": [
+   "fdem"
+  ],
+  "grainMeshRandom": [
+   "fdem"
+  ],
+  "grainSeeding": [
+   "fdem",
+   "fdem3d"
+  ],
+  "grainSize": [
+   "fdem",
+   "fdem3d"
+  ],
+  "grainSizeSpread": [
+   "fdem"
+  ],
+  "gravity": [
+   "fdem",
+   "fdem3d"
+  ],
+  "gripLateralFree": [
+   "dem3d",
+   "fdem",
+   "fdem3d",
+   "fem3d"
+  ],
+  "gripSection": [
+   "fem3d"
+  ],
+  "gripsStopAfterPeak": [
+   "fdem"
+  ],
+  "gripsStopDelay": [
+   "fdem"
+  ],
+  "historyFlush": [
+   "shared"
+  ],
+  "historyStrains": [
+   "fdem"
+  ],
+  "hydro": [
+   "fdem"
+  ],
+  "hydroCavityClosure": [
+   "fdem"
+  ],
+  "hydroInjection": [
+   "fdem"
+  ],
+  "hydroP0": [
+   "fdem"
+  ],
+  "hydroPressure": [
+   "fdem"
+  ],
+  "hydroRamp": [
+   "fdem"
+  ],
+  "hydroRate": [
+   "fdem"
+  ],
+  "hydroSource": [
+   "fdem"
+  ],
+  "hydroStart": [
+   "fdem"
+  ],
+  "hydroWetDamage": [
+   "fdem"
+  ],
+  "impactSpeed": [
+   "dem",
+   "dem3d",
+   "fdem",
+   "fdem3d",
+   "fem",
+   "fem3d"
+  ],
+  "insertion": [
+   "fdem",
+   "fdem3d"
+  ],
+  "insertionPenaltyFactor": [
+   "fdem",
+   "fdem3d"
+  ],
+  "insituSh": [
+   "fdem"
+  ],
+  "insituSv": [
+   "fdem"
+  ],
+  "insituSxy": [
+   "fdem"
+  ],
+  "jointContactPenalty": [
+   "fdem",
+   "fdem3d"
+  ],
+  "jointDeath": [
+   "fdem",
+   "fdem3d"
+  ],
+  "jointDeltaC": [
+   "fdem",
+   "fdem3d"
+  ],
+  "jointElastic": [
+   "fdem",
+   "fdem3d"
+  ],
+  "jointFailRule": [
+   "fdem",
+   "fdem3d"
+  ],
+  "jointFrictionScaled": [
+   "fdem",
+   "fdem3d"
+  ],
+  "jointPenaltyFactor": [
+   "fdem",
+   "fdem3d"
+  ],
+  "jointPrebrokenFrac": [
+   "fdem",
+   "fdem3d"
+  ],
+  "jointPrebrokenSeed": [
+   "fdem"
+  ],
+  "jointQuadrature": [
+   "fdem",
+   "fdem3d"
+  ],
+  "jointResidualMu": [
+   "fdem",
+   "fdem3d"
+  ],
+  "jointShearEnvelope": [
+   "fdem",
+   "fdem3d"
+  ],
+  "jointShearRange": [
+   "fdem",
+   "fdem3d"
+  ],
+  "jointShearUnload": [
+   "fdem",
+   "fdem3d"
+  ],
+  "jointSizeEffect": [
+   "fdem",
+   "fdem3d"
+  ],
+  "jointSizeEffectClamp": [
+   "fdem",
+   "fdem3d"
+  ],
+  "jointSizeEffectM": [
+   "fdem",
+   "fdem3d"
+  ],
+  "jointSoftening": [
+   "fdem",
+   "fdem3d"
+  ],
+  "jointWeibullM": [
+   "fdem",
+   "fdem3d"
+  ],
+  "jointXi": [
+   "fdem",
+   "fdem3d"
+  ],
+  "jointZeff": [
+   "fdem",
+   "fdem3d"
+  ],
+  "kinematics": [
+   "fem3d"
+  ],
+  "knFactor": [
+   "dem",
+   "dem3d"
+  ],
+  "kpFactor": [
+   "fem",
+   "fem3d"
+  ],
+  "ksRatio": [
+   "dem",
+   "dem3d"
+  ],
+  "lateralRollers": [
+   "fdem"
+  ],
+  "law": [
+   "fdem",
+   "fdem3d",
+   "fem3d",
+   "shared"
+  ],
+  "lloydIters": [
+   "fdem",
+   "fdem3d"
+  ],
+  "loadArcDeg": [
+   "fdem"
+  ],
+  "loadRate": [
+   "fdem"
+  ],
+  "loading": [
+   "fdem"
+  ],
+  "matWeibullM": [
+   "fem3d"
+  ],
+  "mcCohesion": [
+   "shared"
+  ],
+  "mcDilationDeg": [
+   "shared"
+  ],
+  "mcFrictionDeg": [
+   "shared"
+  ],
+  "meanTensionCapFactor": [
+   "fdem",
+   "fdem3d"
+  ],
+  "merB": [
+   "shared"
+  ],
+  "merFc0": [
+   "shared"
+  ],
+  "merN": [
+   "shared"
+  ],
+  "meridian": [
+   "shared"
+  ],
+  "mesh": [
+   "fdem",
+   "fdem3d",
+   "fem3d",
+   "shared"
+  ],
+  "meshFile": [
+   "fdem",
+   "fdem3d",
+   "fem3d",
+   "shared"
+  ],
+  "meshJitter": [
+   "fdem",
+   "fdem3d",
+   "fem3d"
+  ],
+  "meshMirror": [
+   "fem3d"
+  ],
+  "microseismic": [
+   "fdem"
+  ],
+  "mode": [
+   "shared"
+  ],
+  "mpConfineFirst": [
+   "shared"
+  ],
+  "mpDt": [
+   "shared"
+  ],
+  "mpLc": [
+   "shared"
+  ],
+  "mpOut": [
+   "shared"
+  ],
+  "mpPath": [
+   "shared"
+  ],
+  "mpSigma3": [
+   "shared"
+  ],
+  "mpSteps": [
+   "shared"
+  ],
+  "mpStrainMax": [
+   "shared"
+  ],
+  "nanCheckEvery": [
+   "dem",
+   "dem3d",
+   "fdem",
+   "fdem3d",
+   "fem",
+   "fem3d",
+   "shared"
+  ],
+  "nu": [
+   "shared"
+  ],
+  "nx": [
+   "fdem",
+   "fdem3d",
+   "fem",
+   "fem3d",
+   "shared"
+  ],
+  "ny": [
+   "fdem",
+   "fdem3d",
+   "fem",
+   "fem3d",
+   "shared"
+  ],
+  "nz": [
+   "fdem3d",
+   "fem3d",
+   "shared"
+  ],
+  "outputDir": [
+   "shared"
+  ],
+  "packing": [
+   "dem",
+   "dem3d"
+  ],
+  "particleRadius": [
+   "dem",
+   "dem3d"
+  ],
+  "phases": [
+   "shared"
+  ],
+  "platenHalfWidth": [
+   "fdem"
+  ],
+  "platenPenaltyFactor": [
+   "fdem"
+  ],
+  "platenTributary": [
+   "fdem"
+  ],
+  "potPenaltyFactor": [
+   "fdem",
+   "fdem3d"
+  ],
+  "potTangentFactor": [
+   "fdem",
+   "fdem3d"
+  ],
+  "potXi": [
+   "fdem"
+  ],
+  "preBrokenAngleDeg": [
+   "fdem"
+  ],
+  "preBrokenJoints": [
+   "fdem"
+  ],
+  "preBrokenTol": [
+   "fdem"
+  ],
+  "probes": [
+   "fem3d"
+  ],
+  "pullDelay": [
+   "fdem",
+   "fdem3d",
+   "fem3d"
+  ],
+  "pullRamp": [
+   "dem3d",
+   "fdem",
+   "fdem3d",
+   "fem3d"
+  ],
+  "pullV": [
+   "dem",
+   "dem3d",
+   "fdem",
+   "fdem3d",
+   "fem3d"
+  ],
+  "quarterModel": [
+   "fem3d"
+  ],
+  "rankineDrive": [
+   "shared"
+  ],
+  "refineLevels": [
+   "fdem",
+   "fdem3d"
+  ],
+  "rho": [
+   "shared"
+  ],
+  "saksalaEta": [
+   "shared"
+  ],
+  "scenario": [
+   "dem",
+   "dem3d",
+   "fdem",
+   "fdem3d",
+   "fem",
+   "fem3d",
+   "shared"
+  ],
+  "seed": [
+   "dem",
+   "dem3d",
+   "fdem",
+   "fdem3d",
+   "fem3d",
+   "shared"
+  ],
+  "shearSupport": [
+   "fdem"
+  ],
+  "shpbBarDiameter": [
+   "fdem"
+  ],
+  "shpbBarElemSize": [
+   "fdem"
+  ],
+  "shpbDiscDiameter": [
+   "fdem"
+  ],
+  "shpbDiscElemSize": [
+   "fdem"
+  ],
+  "shpbDiscSmooth": [
+   "fdem"
+  ],
+  "shpbGap": [
+   "fdem"
+  ],
+  "shpbGaugeHalfLength": [
+   "fdem"
+  ],
+  "shpbIncidentLength": [
+   "fdem"
+  ],
+  "shpbMonitor1": [
+   "fdem"
+  ],
+  "shpbMonitor2": [
+   "fdem"
+  ],
+  "shpbNoDisc": [
+   "fdem"
+  ],
+  "shpbPulse": [
+   "fdem"
+  ],
+  "shpbPulsePlateau": [
+   "fdem"
+  ],
+  "shpbPulseTau": [
+   "fdem"
+  ],
+  "shpbPulseV0": [
+   "fdem"
+  ],
+  "shpbTransmitLength": [
+   "fdem"
+  ],
+  "sideWalls": [
+   "dem"
+  ],
+  "skAt": [
+   "shared"
+  ],
+  "skBetaDP": [
+   "shared"
+  ],
+  "skBetaT": [
+   "shared"
+  ],
+  "skCres": [
+   "shared"
+  ],
+  "skDcap": [
+   "shared"
+  ],
+  "skHdp": [
+   "shared"
+  ],
+  "skNd": [
+   "shared"
+  ],
+  "skPp0": [
+   "shared"
+  ],
+  "skPtr0": [
+   "shared"
+  ],
+  "skSdp": [
+   "shared"
+  ],
+  "skSmr": [
+   "shared"
+  ],
+  "skWcap": [
+   "shared"
+  ],
+  "stopOnRebound": [
+   "fem"
+  ],
+  "stopPeakDrop": [
+   "fdem",
+   "fdem3d"
+  ],
+  "strainCap": [
+   "fem"
+  ],
+  "strainRateDIF": [
+   "fdem",
+   "fdem3d"
+  ],
+  "strainRateDIFArm": [
+   "fdem",
+   "fdem3d"
+  ],
+  "strainRateFilter": [
+   "fdem",
+   "fdem3d"
+  ],
+  "strainRateTau": [
+   "fdem",
+   "fdem3d"
+  ],
+  "strengthCorrAngleDeg": [
+   "fdem",
+   "fdem3d",
+   "fem3d"
+  ],
+  "strengthCorrLength": [
+   "fdem",
+   "fdem3d",
+   "fem3d"
+  ],
+  "strengthCorrLengthB": [
+   "fdem",
+   "fdem3d",
+   "fem3d"
+  ],
+  "symmetryY": [
+   "fem3d"
+  ],
+  "tensionDamage": [
+   "fem3d",
+   "shared"
+  ],
+  "tensionShearRetention": [
+   "shared"
+  ],
+  "thermal": [
+   "fdem",
+   "shared"
+  ],
+  "thermalAlpha": [
+   "fdem"
+  ],
+  "thermalConduct": [
+   "fdem"
+  ],
+  "thermalCrackResist": [
+   "fdem"
+  ],
+  "thermalEvery": [
+   "fdem"
+  ],
+  "thermalFaces": [
+   "fdem"
+  ],
+  "thermalH": [
+   "fdem"
+  ],
+  "thermalHeatCap": [
+   "fdem"
+  ],
+  "thermalSpeedup": [
+   "fdem"
+  ],
+  "thermalStart": [
+   "fdem"
+  ],
+  "thermalTemp": [
+   "fdem"
+  ],
+  "thermalTref": [
+   "fdem"
+  ],
+  "thickness": [
+   "fdem"
+  ],
+  "toolContact": [
+   "fdem",
+   "fdem3d",
+   "fem3d"
+  ],
+  "toolDelay": [
+   "fem3d"
+  ],
+  "toolGap": [
+   "dem",
+   "dem3d",
+   "fdem",
+   "fdem3d",
+   "fem",
+   "fem3d"
+  ],
+  "toolImpulseCap": [
+   "fdem",
+   "fdem3d"
+  ],
+  "toolLockXY": [
+   "fem3d"
+  ],
+  "toolMass": [
+   "dem",
+   "dem3d",
+   "fdem",
+   "fdem3d",
+   "fem",
+   "fem3d"
+  ],
+  "toolPulseForce": [
+   "fem3d"
+  ],
+  "toolPulseImpedance": [
+   "fem3d"
+  ],
+  "toolPulseTable": [
+   "fem3d"
+  ],
+  "toolRadius": [
+   "dem",
+   "dem3d",
+   "fdem",
+   "fdem3d",
+   "fem",
+   "fem3d"
+  ],
+  "toolShape": [
+   "dem",
+   "dem3d",
+   "fdem",
+   "fdem3d",
+   "fem",
+   "fem3d"
+  ],
+  "toolSignoriniGroup": [
+   "fdem"
+  ],
+  "toolSignoriniRelax": [
+   "fdem",
+   "fdem3d",
+   "fem3d"
+  ],
+  "toolStart": [
+   "fdem"
+  ],
+  "toolStop": [
+   "fdem",
+   "fdem3d"
+  ],
+  "toolWidth": [
+   "dem",
+   "fdem",
+   "fem"
+  ],
+  "toolX": [
+   "dem",
+   "dem3d",
+   "fdem",
+   "fdem3d",
+   "fem",
+   "fem3d"
+  ],
+  "toolY": [
+   "dem3d",
+   "fdem3d",
+   "fem3d"
+  ],
+  "topPressure": [
+   "fem3d"
+  ],
+  "trackGroup": [
+   "fdem3d"
+  ],
+  "trackGroups": [
+   "fdem3d"
+  ],
+  "triaxStats": [
+   "fem3d"
+  ],
+  "ucsStopAfterPeak": [
+   "fdem"
+  ],
+  "ucsStopDelay": [
+   "fdem"
+  ],
+  "unknownKeys": [
+   "shared"
+  ],
+  "vNodeMaxEvery": [
+   "fdem"
+  ],
+  "verifyFt": [
+   "fdem",
+   "fdem3d"
+  ],
+  "vertexMergeFrac": [
+   "fdem",
+   "fdem3d"
+  ],
+  "viscousInInsertion": [
+   "fdem3d"
+  ],
+  "vtkCap": [
+   "fem3d"
+  ],
+  "weakPlaneAngleDeg": [
+   "fdem"
+  ],
+  "weakPlaneFactor": [
+   "fdem"
+  ],
+  "weakPlaneFactor2": [
+   "fdem"
+  ],
+  "weakPlaneFrac2": [
+   "fdem"
+  ],
+  "weakPlaneFrictionDeg": [
+   "fdem"
+  ],
+  "weakPlaneGf": [
+   "fdem"
+  ],
+  "weakPlaneOffset": [
+   "fdem"
+  ],
+  "weakPlaneSeed": [
+   "fdem"
+  ],
+  "weakPlaneTol": [
+   "fdem"
+  ],
+  "weakPlanes": [
+   "fdem"
+  ],
+  "weibullScope": [
+   "fdem",
+   "fdem3d",
+   "shared"
+  ],
+  "writeJointMode": [
+   "fdem",
+   "fdem3d"
+  ],
+  "writeJointState": [
+   "fdem"
+  ],
+  "yanA": [
+   "fdem",
+   "fdem3d"
+  ],
+  "yanB": [
+   "fdem",
+   "fdem3d"
+  ],
+  "yanC": [
+   "fdem",
+   "fdem3d"
+  ],
+  "yanQuadN": [
+   "fdem",
+   "fdem3d"
+  ]
+ }
+}

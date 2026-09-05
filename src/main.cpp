@@ -14,6 +14,7 @@
 #include <fstream>
 #include <iostream>
 #include <memory>
+#include <sstream>
 
 #include "rockim/Config.hpp"
 #include "rockim/Dem3dSolver.hpp"
@@ -22,18 +23,27 @@
 #include "rockim/FdemSolver.hpp"
 #include "rockim/Fem3dSolver.hpp"
 #include "rockim/FemSolver.hpp"
+#include "rockim/Guards.hpp"
+#include "rockim/KeyGuard.hpp"
+#include "rockim/KeysByMode.hpp"
 #include "rockim/PotentialContact.hpp"
 #include "rockim/Solver.hpp"
+#include "rockim/ToolSignorini.hpp"
+#include "rockim/ToolPdc3d.hpp"
 
 using namespace rockim;
 
 int main(int argc, char** argv) {
     if (argc < 2) {
         std::cerr << "usage: rockim <config.cfg> [output_dir]\n"
-                     "       rockim selftest-saksala2011 [out.csv]\n";
+                     "       rockim selftest-saksala2011 [out.csv]\n"
+                     "       rockim selftest-cdp [out.csv]\n"
+                     "       rockim selftest-fixed [out.csv]\n"
+                     "       rockim matpoint <cfg> [out.csv]\n";
         return 1;
     }
 
+    std::string outDir;                    // connu apres la lecture du deck
     try {
         if (std::string(argv[1]) == "selftest-saksala2011") {
             std::string csv = argc > 2 ? argv[2] : "rockim_saksala.csv";
@@ -47,6 +57,38 @@ int main(int argc, char** argv) {
             int rc = mcSelftest(csv);
             std::cout << "[rockim] mc selftest traces written to " << csv
                       << "\n";
+            return rc;
+        }
+        if (std::string(argv[1]) == "selftest-triax") {
+            std::string csv = argc > 2 ? argv[2] : "rockim_triax.csv";
+            int rc = triaxSelftest(csv);
+            std::cout << "[rockim] triax selftest traces written to " << csv
+                      << "\n";
+            return rc;
+        }
+        // CDP (2026-09-04) : banc point-materiel et pilote generique
+        if (std::string(argv[1]) == "selftest-cdp") {
+            std::string csv = argc > 2 ? argv[2] : "rockim_cdp.csv";
+            int rc = cdpSelftest(csv);
+            std::cout << "[rockim] cdp selftest traces written to " << csv
+                      << "\n";
+            return rc;
+        }
+        // tensionDamage = fixed (2026-09-05) : bancs falsifiants (a)-(e)
+        if (std::string(argv[1]) == "selftest-fixed") {
+            std::string csv = argc > 2 ? argv[2] : "rockim_fixed.csv";
+            int rc = fixedCrackSelftest(csv);
+            std::cout << "[rockim] fixed-crack selftest traces written to " << csv
+                      << "\n";
+            return rc;
+        }
+        if (std::string(argv[1]) == "matpoint") {
+            if (argc < 3)
+                throw std::runtime_error("usage: rockim matpoint <cfg> [out.csv]");
+            Config mp = Config::load(argv[2]);
+            std::string csv = argc > 3 ? argv[3] : mp.gets("mpOut", "matpoint.csv");
+            int rc = matpointDrive(mp, csv);
+            std::cout << "[rockim] matpoint trace written to " << csv << "\n";
             return rc;
         }
         if (std::string(argv[1]) == "selftest-dpdfh") {
@@ -63,6 +105,23 @@ int main(int argc, char** argv) {
                       << csv << "\n";
             return rc;
         }
+        // T0 (2026-09-02) : contact outil de Signorini, en forme fermee.
+        // Sans maillage ni simulation — voir ToolSignorini.hpp.
+        if (std::string(argv[1]) == "selftest-toolcontact") {
+            std::string csv = argc > 2 ? argv[2] : "rockim_toolcontact.csv";
+            int rc = toolSignoriniSelftest(csv);
+            std::cout << "[rockim] toolcontact selftest traces written to "
+                      << csv << "\n";
+            return rc;
+        }
+        // Cutter PDC 3D (2026-09-03) : geometrie en forme fermee, sans
+        // maillage — voir ToolPdc3d.hpp et src/ToolPdc3d.cpp (G1..G5).
+        if (std::string(argv[1]) == "selftest-pdc3d") {
+            std::string csv = argc > 2 ? argv[2] : "rockim_pdc3d.csv";
+            int rc = pdc3dSelftest(csv);
+            std::cout << "[rockim] pdc3d selftest traces written to " << csv << "\n";
+            return rc;
+        }
         if (std::string(argv[1]) == "selftest-potential3d") {
             std::string csv = argc > 2 ? argv[2] : "rockim_potential3d.csv";
             int rc = potentialSelftest3d(csv);
@@ -73,6 +132,7 @@ int main(int argc, char** argv) {
         Config cfg = Config::load(argv[1]);
         std::string out = (argc > 2) ? argv[2] : cfg.gets("outputDir", "out");
         std::filesystem::create_directories(out);
+        outDir = out;
 
         std::string mode = cfg.gets("mode", "fem");
         std::string mesh = cfg.gets("mesh", "grid");
@@ -82,10 +142,11 @@ int main(int argc, char** argv) {
         if (mesh == "voronoi" && mode != "fdem" && mode != "fdem3d")
             throw std::runtime_error("mesh = voronoi (grains + phases) is only "
                                      "implemented for mode = fdem | fdem3d");
-        if (mesh == "file" && mode != "fdem" && mode != "fdem3d")
+        if (mesh == "file" && mode != "fdem" && mode != "fdem3d"
+            && mode != "fem3d")
             throw std::runtime_error("mesh = file (unstructured import) is "
                                      "only implemented for mode = fdem | "
-                                     "fdem3d");
+                                     "fdem3d | fem3d");
         if (cfg.has("phases") && mode != "fdem" && mode != "fdem3d")
             throw std::runtime_error("'phases' (mineral phases) is only "
                                      "implemented for mode = fdem | fdem3d");
@@ -112,6 +173,30 @@ int main(int argc, char** argv) {
                                      "Lisjak) n'est implemente que pour "
                                      "mode = fdem (2D). Le deck demande "
                                      "mode = " + mode);
+        // C6 (w20) : idem pour le couplage hydro-mecanique (AbuAisha) —
+        // `hydro` et toute cle `hydro*` : 2D `fdem` seulement. Un deck 3D
+        // avec hydro = on tournait sans fluide et sans un mot (05/09).
+        // (w21 : keysWithPrefix MARQUE les cles rendues comme consommees —
+        // on ne l'appelle donc que hors fdem, pour qu'en fdem une cle hydro*
+        // mal orthographiee reste visible par l'audit C1.)
+        if (mode != "fdem") {
+            auto hk = cfg.keysWithPrefix("hydro");
+            if (!hk.empty())
+                throw std::runtime_error("'" + hk.front() + "' (couplage "
+                    "hydro-mecanique, cavite + fissures) n'est implemente "
+                    "que pour mode = fdem (2D). Le deck demande mode = "
+                    + mode + " ; retirez les cles hydro*");
+        }
+        // C6 (w20) : registre des cles PAR MODE (tools/keys_by_mode.json ->
+        // include/rockim/KeysByMode.hpp, genere par tools/gen_keys_by_mode.py) :
+        // une cle lue par UN SEUL solveur, presente dans un deck d'un autre
+        // mode, est refusee (« cle X sans effet en mode Y »). Les cles lues
+        // par plusieurs solveurs ou par le code partage sont communes et ne
+        // sont jamais refusees. w21 (C1) : ce controle est FONDU dans l'audit
+        // des cles consommees fait apres init() (KeyGuard.hpp) — toutes les
+        // cles fautives (obsolete, autre mode, faute de frappe, inconnue)
+        // sont listees d'un coup et unknownKeys = warn s'y applique aussi ;
+        // keysbymode::check() reste disponible mais n'est plus appele ici.
         std::unique_ptr<Solver> solver;
         if      (mode == "fem") solver = std::make_unique<FemSolver>(cfg, out);
         else if (mode == "fem3d") solver = std::make_unique<Fem3dSolver>(cfg, out);
@@ -123,8 +208,41 @@ int main(int argc, char** argv) {
 
         solver->init();
 
-        long nSteps = (long)std::ceil(solver->duration() / solver->dt());
         int  nFrames = cfg.geti("frames", 50);
+        bool histFlush = cfg.getb("historyFlush", true);
+        // C1 (w21, decision de Fernando du 2026-09-05 20:00) : toute cle du
+        // deck qu'aucun getter n'a consommee pendant l'initialisation et que
+        // ni le solveur du mode courant ni le code partage ne lisent (registre
+        // des lecteurs kReaders, w22) est une ERREUR nommee — obsolete (->
+        // nouveau nom), d'un autre mode (-> les modes ou elle agit), faute de
+        // frappe (suggestion Levenshtein <= 2), ou inconnue de rockim — toutes
+        // listees d'un coup, code 1 ; unknownKeys = warn : avertissement et le
+        // run continue. Regle detaillee dans KeyGuard.hpp et DOC §8.11.
+        // C7 : <outputDir>/config_effective.cfg = les cles consommees et leur
+        // valeur effective (deck ou defaut).
+        {
+            const std::string policy = cfg.gets("unknownKeys", "error");
+            auto found = keyguard::enforce(cfg, mode, policy);
+            auto eff = cfg.effective();
+            std::size_t nDeck = 0;
+            for (const auto& e : eff) if (e.fromDeck) ++nDeck;
+            std::ostringstream stamp;
+            stamp << "exe " << argv[0] << " ; unknownKeys = " << policy;
+            keyguard::writeEffective(cfg, out + "/config_effective.cfg", mode, found,
+                                     stamp.str());
+            std::cout << "[rockim] cles : " << eff.size() << " consommees ("
+                      << nDeck << " du deck, " << (eff.size() - nDeck)
+                      << " au defaut), " << cfg.size() - nDeck
+                      << " du deck non lues" << (found.empty() ? "" : " dont "
+                      + std::to_string(found.size()) + " fautives")
+                      << " -> " << out << "/config_effective.cfg\n";
+            // w22 : fin du suivi — les getters appeles dans step() (ex.
+            // confineGaugeTime a chaque pas) lisent la table sans verrou ni
+            // chaine de defaut, comme avant w21. Lecture pure.
+            cfg.seal();
+        }
+
+        long nSteps = (long)std::ceil(solver->duration() / solver->dt());
         long outEvery  = std::max(1L, nSteps / std::max(1, nFrames));
         long histEvery = std::max(1L, nSteps / 2000);
 
@@ -138,7 +256,6 @@ int main(int argc, char** argv) {
         // lignes a ~2000 sur tout le run, le cout est negligeable, et le
         // fichier se termine toujours sur une ligne complete. Purement I/O :
         // aucun effet sur le calcul (bit-neutre par construction).
-        bool histFlush = cfg.getb("historyFlush", true);
         auto histRow = [&] {
             solver->historyRow(hist);
             if (histFlush) hist.flush();
@@ -174,6 +291,16 @@ int main(int argc, char** argv) {
         std::cout << "[rockim] wall time: "
                   << std::chrono::duration<double>(t1 - t0).count() << " s, output in '"
                   << out << "'\n";
+    } catch (const NanError& e) {
+        // C4 (w20) : NaN/Inf detecte par le garde reel — pas, temps, noeud,
+        // element voisin dans le message ; trace ecrite dans ERROR.txt, code 3
+        std::cerr << "[rockim] error: " << e.what() << "\n";
+        if (!outDir.empty()) {
+            std::ofstream ef(outDir + "/ERROR.txt");
+            ef << "[rockim] error: " << e.what() << "\n";
+            std::cerr << "[rockim] trace : " << outDir << "/ERROR.txt\n";
+        }
+        return 3;
     } catch (const std::exception& e) {
         std::cerr << "[rockim] error: " << e.what() << "\n";
         return 1;

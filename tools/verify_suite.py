@@ -48,6 +48,13 @@ RX = {
     "pot3_ke":   r"pot3_ke_rel = ([\d.eE+-]+)",
     "pot3_mom":  r"pot3_mom_rel = ([\d.eE+-]+)",
     "szfac":     r"facteur mean/min/max = ([\d.eE+-]+)",
+    # --- T1 (2026-09-02) : les deux indicateurs de la pompe de contact outil.
+    # Reclames en conclusion du rapport coupe PDC du 2026-08-18 et jamais
+    # poses. Le residu B4 est structurellement AVEUGLE a une pompe logee dans
+    # un canal compte : il lisait [OK] a 1,9e-10 % sur le run v3 pendant que
+    # l outil injectait 408 fois son travail de corps rigide.
+    "toolinj":   r"injection outil.*= ratio ([\d.eE+-]+)",
+    "toolvb":    r"v nodale max.*= ([\d.eE+-]+) x 2 v_outil",
     # --- pas de temps stable, ajoute 2026-08-29 (chantier A11) -------------
     # Le budget de pas de temps du 3D ignorait la raideur TANGENTIELLE du
     # contact par potentiel, alors que le 2D la prend depuis longtemps. Xiang,
@@ -149,6 +156,67 @@ TESTS = [
                  ("pass_tag", None, 0, True)]),
     # ... et son miroir 3D (tet-tet, A3 phase 2) : pointe-contre-face puis
     # oblique, dKE 2e-8, quantite de mouvement machine
+    # ---- T0/T1 (2026-09-02) : CONTACT OUTIL, la pompe mesuree le 2026-08-18.
+    # Le rapport coupe PDC concluait : « aucun des deux [indicateurs] ne coute
+    # quoi que ce soit a calculer ; ils devraient etre imprimes a chaque run
+    # avec outil ». Voici les trois controles qui les mettent sous critere,
+    # pour ~65 s au lieu des 1 h 20 d un run de coupe.
+    #
+    # T0 — l ALGEBRE, en forme fermee, sans maillage (0,1 s) : condition de
+    # Signorini, borne 2 v_outil, invariance d echelle (six decades, c est
+    # elle qui autorise T1 a tourner a 10 m/s), pas d adhesion, cap de
+    # Coulomb sur l impulsion, dissipativite dans le repere de l outil, et
+    # effet reel de toolSignoriniRelax. Ecart machine : 2,2e-16.
+    dict(name="selftest_toolcontact", tier="fast", selftest="selftest-toolcontact",
+         checks=[("pass_tag", None, 0, True)]),
+    # ---- CUTTER PDC 3D (2026-09-03) : geometrie du disque chanfreine en
+    # forme fermee, sans maillage (ToolPdc3d.hpp, src/ToolPdc3d.cpp).
+    # G1 penetration = distance exacte au polygone meridien (20 000 tirages,
+    # 1e-12 R) avec sa variante qui DOIT echouer (noyau vif sur un solide
+    # chanfreine) ; G2 p + pen.N tombe sur la peau ; G3 largeur de contact a
+    # la surface libre contre 2 sqrt(R^2 - (d/cos b - R)^2), 7,180 mm pour
+    # l article, et la formule 2D qui DOIT echouer a 20 deg ; G4 theoreme du
+    # plancher (b < 0 : rien sous l arete ; b > 0 : bande t.sin b, DOIT
+    # echouer) ; G5 signe de la garde. Bit-identite du reste de la suite sans
+    # la cle : c est le principe VIII, verifie en relancant le tier fast.
+    dict(name="selftest_pdc3d", tier="fast", selftest="selftest-pdc3d",
+         checks=[("pass_tag", None, 0, True)]),
+    # T1 — le banc de raclage, 334 elements, 4 x 2 mm, cutter PDC a 10 m/s.
+    #
+    # LE CAS PENALITE EST LA POUR ECHOUER : c est lui qui donne des DENTS au
+    # banc. Un controle que les deux voies passeraient ne prouverait rien.
+    # Mesure : injection 4,43 (l outil livre 4,4 fois son travail de corps
+    # rigide) et 8,25 fois la borne physique — sur un run dont le residu B4
+    # affiche [OK] a 1,7e-12 %. Les references sont donc celles de la POMPE :
+    # si un correctif futur les fait tomber, le banc doit le SIGNALER, pas
+    # l avaler en silence.
+    # /!\ CHAOTIQUE HORS OMP_NUM_THREADS = 1 : le meme deck en multi-thread
+    # donne 7,31 et 8 joints casses au lieu de 4,43 et 2. La suite fixe
+    # OMP = 1, ou les trois runs de recette sont bit-identiques.
+    dict(name="t1_toolcontact_penalty", tier="fast", cfg="verify_fdem_toolcontact.cfg",
+         over=["toolContact = penalty"],
+         checks=[("toolinj", 4.42633, 1e-4, True),
+                 ("toolvb", 8.2484, 1e-3, True),
+                 ("broken", 2, 0, True)]),
+    # LE CAS SIGNORINI EST LA POUR PASSER, et il est REPRODUCTIBLE. La pompe
+    # disparait : injection 4,43 -> 0,905 (l outil livre MOINS que son travail
+    # de corps rigide, donc rien n est cree) et 8,25 -> 1,08 fois la borne,
+    # ce qui reste dans la lecture ondulatoire (reflexion sur surface libre).
+    # T1 EST UN BANC DE POMPE, PAS UN BANC DE FORCE (requalifie 2026-09-02
+    # soir). Le bloc est LIBRE : FIXED n est pose qu en scenario percussion
+    # (FdemSolver.cpp:3685-3686), le deck ne pose pas absorbing, donc l outil
+    # CHASSE le bloc (contact 37,4-42,2 us = 33 releves sur 2015). Le « pic
+    # divise par 9,9 » compare deux pics dont l un vient d un run qui pompe ;
+    # sur la course engagee les forces MOYENNES sont a x1,40. Et 0 joint casse
+    # est un fait de MATERIAU : l_cz = E Gf/ft^2 = 65 mm pour un bloc de 4 mm.
+    # Le verdict sur la force demande un bloc TENU (shearSupport =
+    # fixedBottom), dampingLocal = 0 et un l_cz a l echelle du bloc : bancs
+    # T1h puis T1b. Voir panel_contact_2026-09-02/.
+    dict(name="t1_toolcontact_signorini", tier="fast", cfg="verify_fdem_toolcontact.cfg",
+         over=["toolContact = signorini"],
+         checks=[("toolinj", 0.904801, 1e-5, True),
+                 ("toolvb", 1.07878, 1e-4, True),
+                 ("broken", 0, 0, True)]),
     dict(name="selftest_potential3d", tier="fast", selftest="selftest-potential3d",
          checks=[("pot3_ke", 0.0, 1e-5, True), ("pot3_mom", 0.0, 1e-12, True),
                  ("pass_tag", None, 0, True)]),

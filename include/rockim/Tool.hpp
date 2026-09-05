@@ -55,6 +55,13 @@ struct Tool {
     // had delivered only 253 J/m of work.
     double thick = 0.0;
 
+    // ETAPE 3 (ii) : cutterFloor = flat. true = un noeud situe SOUS la ligne
+    // d arete (rel.y() < 0) n est jamais en contact, quelle que soit sa
+    // position selon la face inclinee. Sans cela le test dt2 >= 0 laisse
+    // entrer une bande de thick.sin(rake) sous l arete — le contraire de ce
+    // que le commentaire du solveur promet. Defaut false = historique.
+    bool floorFlat = false;
+
     // Outward normal of the rake face (points INTO the rock, i.e. forward and
     // slightly up for a positive back rake) and the along-face direction.
     Eigen::Vector2d rakeNormal() const {

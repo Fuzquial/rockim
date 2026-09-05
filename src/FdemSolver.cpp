@@ -20,6 +20,7 @@
 // dans SOURCES_SOLIDITY.md §3.
 // ---------------------------------------------------------------------------
 #include "rockim/FdemSolver.hpp"
+#include "rockim/Guards.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -37,6 +38,7 @@
 #include <stdexcept>
 
 #include "rockim/PotentialContact.hpp"
+#include "rockim/ToolSignorini.hpp"
 #include "rockim/YangDif.hpp"
 #include "rockim/RandomField.hpp"
 #include "rockim/Tessellation.hpp"
@@ -95,6 +97,7 @@ FdemSolver::FdemSolver(const Config& cfg, std::string outDir)
 void FdemSolver::init() {
     mat_ = Material::from(cfg_);
     phases_ = PhaseSet::from(cfg_);
+    nanEvery_ = cfg_.geti("nanCheckEvery", 256);       // C4 (w20), 0 = off
 
     std::string sc = cfg_.gets("scenario", "percussion");
     if      (sc == "percussion") scen_ = Scenario::PERCUSSION;
@@ -927,6 +930,12 @@ void FdemSolver::init() {
             throw std::runtime_error("toolContact must be penalty | signorini");
         toolSig_ = (tc == "signorini");
         toolSigRelax_ = cfg_.getd("toolSignoriniRelax", 0.0);
+        // ETAPE 3 (iii) : impulsion par GROUPE de copies liees (voir
+        // toolContact()). Defaut off = chemin par copie, bit-identique.
+        toolSigGroup_ = cfg_.getb("toolSignoriniGroup", false);
+        if (toolSigGroup_ && !toolSig_)
+            throw std::runtime_error("toolSignoriniGroup exige toolContact = "
+                                     "signorini");
         if (!(toolSigRelax_ >= 0.0 && toolSigRelax_ <= 1.0))
             throw std::runtime_error("toolSignoriniRelax must be in [0, 1]");
         if (toolSig_)
@@ -1086,8 +1095,30 @@ void FdemSolver::init() {
                          "Signorini frottement seulement.\n";
         }
     }
+    {   // ETAPE 3 (i) : appui de fond pour les scenarios de COUPE
+        std::string ss = cfg_.gets("shearSupport", "none");
+        if (ss != "none" && ss != "fixedBottom")
+            throw std::runtime_error("shearSupport must be none | fixedBottom");
+        fixBottomShear_ = (ss == "fixedBottom");
+        if (fixBottomShear_ && cfg_.gets("absorbing", "none") != "none")
+            std::cout << "[FDEM] AVERTISSEMENT: shearSupport = fixedBottom AVEC "
+                         "absorbing != none — les ressorts de flanc chargent la "
+                         "face d ENTREE que l outil engage (1,2e9 N/m par noeud, "
+                         "contre 0,107 MN/m de pic outil sur T1). Poser "
+                         "absorbing = none sur un banc de force.\n";
+        if (fixBottomShear_)
+            std::cout << "[FDEM] shearSupport = fixedBottom : fond encastre en "
+                         "scenario de coupe (le bloc ne s enfuit plus)\n";
+    }
     xiC_ = cfg_.getd("contactXi", 0.05);
     vReg_ = cfg_.getd("contactVreg", 1e-3);
+    // ETAPE 2 : cadence d echantillonnage de la vitesse nodale maximale.
+    // 1024 = defaut historique (une passe sur les noeuds tous les 1024 pas,
+    // cout negligeable) ; 1 sur les bancs, ou un pic isole ne doit pas passer
+    // entre deux mesures. Lecture PURE.
+    vMaxEvery_ = (long)cfg_.getd("vNodeMaxEvery", 1024.0);
+    if (vMaxEvery_ < 1)
+        throw std::runtime_error("vNodeMaxEvery doit etre >= 1");
 
     placeTool();
     setupBoundaries();
@@ -1965,6 +1996,7 @@ void FdemSolver::buildMeshFile() {
         throw std::runtime_error("meshFile: cannot open '" + path + "'");
     std::string line;
     std::map<long, int> id2idx;
+    std::vector<long> gmshIds;             // id Gmsh par noeud (C3, w20)
     std::vector<Eigen::Vector2d> vpos;
     std::vector<std::array<int, 3>> tris;
     bool sawFormat = false;
@@ -1984,6 +2016,7 @@ void FdemSolver::buildMeshFile() {
                 long id; double x, y, z;
                 in >> id >> x >> y >> z;
                 id2idx[id] = (int)vpos.size();
+                gmshIds.push_back(id);
                 vpos.push_back({x, y});
             }
         } else if (line.rfind("$Elements", 0) == 0) {
@@ -2010,7 +2043,8 @@ void FdemSolver::buildMeshFile() {
                         auto it = id2idx.find(nid);
                         if (it == id2idx.end())
                             throw std::runtime_error("meshFile: element "
-                                "references unknown node id");
+                                + std::to_string(id) + " reference le noeud "
+                                "inconnu id " + std::to_string(nid));
                         vv[q] = it->second;
                     }
                 }
@@ -2022,6 +2056,9 @@ void FdemSolver::buildMeshFile() {
         throw std::runtime_error("meshFile: no triangles found in '" + path
                                  + "' (need ASCII MSH 2.2 with type-2 "
                                  "elements)");
+    // C3 (w20) : noeud jamais reference = erreur nommee (il fausse aussi la
+    // boite englobante), coordonnees du fichier
+    guards::checkOrphans(vpos, tris, gmshIds);
     Eigen::Vector2d lo = vpos[0], hi = vpos[0];
     for (const auto& p : vpos) { lo = lo.cwiseMin(p); hi = hi.cwiseMax(p); }
     for (auto& p : vpos) p -= lo;
@@ -2190,7 +2227,9 @@ void FdemSolver::buildFromTriangles(const std::vector<Eigen::Vector2d>& vpos,
         double det = (B.x() - A.x()) * (C.y() - A.y())
                    - (C.x() - A.x()) * (B.y() - A.y());
         e.A0 = 0.5 * det;
-        if (e.A0 <= 0) throw std::runtime_error("inverted element in mesh gen");
+        if (e.A0 <= 0)                         // C3 (w20) : erreur NOMMEE
+            guards::degenerateError("fdem", (long)tId, tris[tId], vpos,
+                                    guards::kNoIds, e.A0);
         // dN(:,a) = grad N_a in the reference configuration
         e.dN.col(0) = Eigen::Vector2d(B.y() - C.y(), C.x() - B.x()) / det;
         e.dN.col(1) = Eigen::Vector2d(C.y() - A.y(), A.x() - C.x()) / det;
@@ -2211,6 +2250,13 @@ void FdemSolver::buildFromTriangles(const std::vector<Eigen::Vector2d>& vpos,
         }
     }
 
+    {   // C3 (w20) : triangle sliver (< 1e-6 x mediane) = erreur nommee
+        std::vector<double> areas;
+        areas.reserve(tris.size());
+        for (std::size_t k = 0; k < tris.size(); ++k)
+            areas.push_back(el_[el_.size() - tris.size() + k].A0);
+        guards::checkDegenerate("fdem", areas, tris, vpos, guards::kNoIds);
+    }
     // ---- nVert_ : le nombre de SOMMETS de maillage (correctif 2026-09-01) --
     // CORRECTIF D UN CRASH. nVert_ n etait ecrit que par buildBindingTables(),
     // qui ne tourne qu en `insertion = adaptive`. En schema INTRINSEQUE il
@@ -2282,6 +2328,7 @@ void FdemSolver::buildFromTriangles(const std::vector<Eigen::Vector2d>& vpos,
     for (const auto& e : el_)
         for (int a = 0; a < 3; ++a)
             m_[e.n[a]] += phases_.mat[e.phase].rho * e.A0 * thk_ / 3.0;
+    guards::checkMasses("fdem", m_, X0_, guards::kNoMask, guards::kNoIds);   // C3 (w20)
 
     // Clamped grip rows ONLY when the test is grip-driven. With platens the
     // specimen is held by contact alone — no zero-thickness clamped layer, so
@@ -3486,6 +3533,7 @@ void FdemSolver::placeTool() {
                                                          : H_ + tool_.radius + gap;
         tool_.x = {xc, yTop};
         tool_.v = {0.0, -vImp};
+        toolV0_ = std::abs(vImp);          // T1 : reference de la borne 2 v
         // toolStart : l outil ne part qu apres cet instant — le phasage
         // choc thermique (quasi-statique) -> percussion (dynamique) dans le
         // MEME run. Avant toolStart, ni contact ni integration : l outil est
@@ -3556,6 +3604,12 @@ void FdemSolver::placeTool() {
                              "Retirer la cle, ou implementer FR-008 (spec "
                              "003-cutter-pdc-3d).\n\n";
             tool_.thick   = cfg_.getd("cutterThick", 0.0);
+            tool_.floorFlat = cfg_.getb("cutterFloor", false);
+            if (tool_.floorFlat)
+                std::cout << "[FDEM] cutterFloor = flat : le plancher sous "
+                             "l arete n est plus laboure (bande de "
+                          << tool_.thick * std::sin(tool_.rakeDeg * M_PI / 180.0)
+                             * 1e3 << " mm rendue au demi-espace libre)\n";
             // A : ecretage en impulsion — voir FdemSolver.hpp. Lu ICI plutot
             // qu'avec les autres cles de contact pour rester a cote de la
             // geometrie d'outil qu'il borne.
@@ -3587,6 +3641,7 @@ void FdemSolver::placeTool() {
                        H_ - depth + tool_.radius};
         }
         tool_.v = {vCut, 0.0};
+        toolV0_ = std::abs(vCut);          // T1 : reference de la borne 2 v
     }
 }
 
@@ -3679,7 +3734,17 @@ void FdemSolver::setupBoundaries() {
                     cAbsX_[nid] += zS * L2;
                     kAbsY_[nid] += sF * G / Rbot * L2 * thk_;
                     kAbsX_[nid] += sF * G / (2.0 * Rbot) * L2 * thk_;
-                } else if (scen_ == Scenario::PERCUSSION) {
+                } else if (scen_ == Scenario::PERCUSSION || fixBottomShear_) {
+                    // ETAPE 3 (i) : shearSupport = fixedBottom. AUCUNE
+                    // combinaison de cles existantes ne tenait un bloc de
+                    // COUPE : `absorbing` != none pose ressorts + Lysmer sur
+                    // les DEUX flancs, donc sur la face d ENTREE que l outil
+                    // engage ; `absorbSpringR` est une cle unique lue pour les
+                    // flancs ET le fond ; `lateralRollers` impose u_x = 0 sur
+                    // cette meme face. Le FIXED du fond n existait qu en
+                    // percussion. Sans cette cle T1 mesure un bloc qui S ENFUIT
+                    // (chasse a 10,2 m/s, 1,8 % du temps en contact) et aucun
+                    // banc de FORCE n est possible.
                     flag_[nid] = FIXED;                // encastred bottom
                 }
             }
@@ -4195,9 +4260,24 @@ void FdemSolver::step() {
         bodyForces();                      // gravity (no-op when gravity = 0)
         if (adaptive_) insertionSweep();   // before jointForces: a joint born
                                            // this step carries traction now
+        // ---- ETAPE 2 (2026-09-02) : TRAVAIL POSITIF PAR CANAL -------------
+        // POURQUOI. Le ratio d injection outil est <= 1 PAR THEOREME sous
+        // toolContact = signorini (toolWork_ lit v- ; le 1/2 m v^2 du premier
+        // toucher tombe dans biasW_), donc il ne peut RIEN dire des canaux
+        // joint et fragments. Et le residu B4 est aveugle a une pompe logee
+        // dans un canal COMPTE (quatrieme occurrence, RESULTATS §3.3). Il
+        // fallait donc un detecteur PAR CANAL : la somme des increments
+        // POSITIFS de chaque famille, pas son net. Un canal sain oscille
+        // autour de zero ; un canal qui pompe accumule.
+        // Cout : deux soustractions par pas. Lecture PURE, aucune force
+        // touchee — la suite fast reste bit-identique.
+        double jw0 = jointWork_, gw0 = gcWork_;
         jointForces();
+        double jw1 = jointWork_;
         generalContact();
         toolContact();
+        if (jw1 > jw0) jointWorkPos_ += jw1 - jw0;
+        if (gcWork_ > gw0) gcWorkPos_ += gcWork_ - gw0;
     }
     if (scen_ == Scenario::SHPB) shpbGaugeRead();   // monitor points 1 and 2
     brazilianForces();                     // no-op outside the brazilian
@@ -4326,25 +4406,29 @@ void FdemSolver::step() {
     integrate();
     t_ += dt_;
 
-    if ((++stepCount_ & 1023) == 0) {                  // cheap stability guard
-        checkEnergyAbort();                // opt-in (budgetAbortPct), E2
-        // ---- E5 (2026-08-19) : la garde testait u_[0].x(), or le noeud 0
-        // peut etre FIXED — donc rigoureusement nul, donc toujours fini. Le
-        // detecteur etait AVEUGLE a une divergence qui n'aurait pas touche ce
-        // noeud precis. On echantillonne desormais tout le maillage a pas
-        // constant (~256 noeuds), avec un decalage qui tourne d'un controle a
-        // l'autre pour couvrir l'integralite des noeuds au fil du run. Cout :
-        // 256 tests tous les 1024 pas. Lecture PURE, aucun flottant ne change.
-        bool bad = !std::isfinite(work_);
-        const std::size_t nN = X0_.size();
-        const std::size_t stride = (nN > 256) ? nN / 256 : 1;
-        const std::size_t off = (std::size_t)((stepCount_ >> 10) % (long)stride);
-        for (std::size_t i = off; i < nN && !bad; i += stride)
-            if (!std::isfinite(u_[i].x()) || !std::isfinite(u_[i].y()))
-                bad = true;
-        if (bad)
-            throw std::runtime_error("FDEM instability (NaN) — reduce dtFactor");
+    if ((++stepCount_ % vMaxEvery_) == 0) {            // T1 : cadence reglable
+        for (const auto& vv : v_) vNodeMax_ = std::max(vNodeMax_, vv.norm());
     }
+    if ((stepCount_ & 1023) == 0)                      // cheap stability guard
+        checkEnergyAbort();                // opt-in (budgetAbortPct), E2
+    // C4 (w20) : detecteur REEL — toutes les composantes de u, v, f de tous
+    // les noeuds tous les nanCheckEvery pas (remplace l'echantillon E5 a
+    // ~256 noeuds / 1024 pas). Lecture pure.
+    if (nanEvery_ > 0 && stepCount_ % nanEvery_ == 0) checkFinite();
+}
+
+void FdemSolver::checkFinite() {
+    static const char* const names[3] = {"u", "v", "f"};
+    guards::checkFinite("FDEM", stepCount_, t_, X0_.size(), 3, names,
+        [&](std::size_t i, int k) -> const Eigen::Vector2d& {
+            return k == 0 ? u_[i] : k == 1 ? v_[i] : f_[i];
+        },
+        [&](std::size_t i) -> const Eigen::Vector2d& { return X0_[i]; },
+        [&](std::size_t i) -> long {
+            return i < elemOf_.size() ? (long)elemOf_[i] : -1;
+        },
+        {{"work", work_}, {"|toolF|", tool_.F.norm()},
+         {"|toolV|", tool_.v.norm()}});
 }
 
 // ---------------------------------------------------------------------------
@@ -6000,6 +6084,16 @@ void FdemSolver::generalContact() {
                     double s = (p - g.P).dot(g.ed) / g.L2;
                     if (s < 0.0 || s > 1.0) continue;
                     double d = (p - g.P).dot(g.nrm);
+                    // ETAPE 2 : un noeud plus profond que l ecretage QUITTE
+                    // l ensemble actif en silence — c est une traversee que
+                    // l audit de penetration ne voit pas (le piege du §6ter :
+                    // « 0,141 mm = exactement l ecretage »). On le COMPTE.
+                    if (d < -g.capk) {
+#ifdef _OPENMP
+#pragma omp atomic
+#endif
+                        ++nDeepNode_;
+                    }
                     if (d >= 0.0 || d < -g.capk) continue; // outside / too deep
                     outC.push_back({i, k, s, d, g.e, g.nrm});
                 }
@@ -6157,6 +6251,16 @@ void FdemSolver::toolContact() {
             // chip, which the capped penalty then pumps to km/s.
             if (tool_.thick > 0.0 && dn < -tool_.thick) return false;
             if (dt2 < 0.0 || dt2 > tool_.faceLen) return false;
+            // ETAPE 3 (ii) : cutterFloor = flat. LE CODE FAISAIT LE CONTRAIRE
+            // DE SON COMMENTAIRE. Le test dt2 < 0 exclut selon la direction de
+            // la face INCLINEE (tdir = (-sin b, cos b), Tool.hpp), pas selon
+            // l horizontale : pour rel = (-0,20 ; -0,05) mm a 20 deg on obtient
+            // dn = -0,205 et dt2 = +0,021 — le noeud est 0,05 mm SOUS l arete
+            // et il est declare EN CONTACT. Bande labouree =
+            // cutterThick.sin(rake) : 0,171 mm sur T1, 0,855 mm sur v3, soit
+            // 84 % de la passe. Cette cle rend au plancher de coupe le demi-
+            // espace que le cutter est cense lui laisser.
+            if (tool_.floorFlat && rel.y() < 0.0) return false;
             // DEEP-PENETRATION CAP on the local element size, exactly as the
             // general contact does. Capping on the face length instead (6.5 mm
             // on a 13 mm cutter) let a node of the chip end up millimetres
@@ -6247,10 +6351,12 @@ void FdemSolver::toolContact() {
     // peut qu'annuler l'approche, donc un noeud ne peut jamais repartir a plus
     // de 2 v_outil. Aucun reglage, aucune raideur.
     // -----------------------------------------------------------------------
-    auto nodeSig = [&](int i, Eigen::Vector2d& Fc) {
+    // GEOMETRIE de la voie Signorini, extraite pour que le chemin par GROUPE
+    // (etape 3 iii) la partage au lieu d en faire une TROISIEME copie. La voie
+    // penalite (nodeFc) garde la sienne, intacte : bit-identite du defaut.
+    auto sigGeom = [&](int i, Eigen::Vector2d& n, Eigen::Vector2d& tdir,
+                       double& pen) {
         Eigen::Vector2d p = X0_[i] + u_[i];
-        Eigen::Vector2d n, tdir;
-        double pen;
         if (tool_.shape == Tool::Shape::PDC) {
             n = tool_.rakeNormal();
             tdir = tool_.rakeDir();
@@ -6259,6 +6365,7 @@ void FdemSolver::toolContact() {
             if (dn >= 0.0) return false;
             if (tool_.thick > 0.0 && dn < -tool_.thick) return false;
             if (dt2 < 0.0 || dt2 > tool_.faceLen) return false;
+            if (tool_.floorFlat && rel.y() < 0.0) return false;   // ETAPE 3 (ii)
             pen = -dn;
         } else if (tool_.shape == Tool::Shape::FLAT) {
             if (std::abs(p.x() - tool_.x.x()) > 0.5 * tool_.width) return false;
@@ -6274,31 +6381,108 @@ void FdemSolver::toolContact() {
             tdir = {-n.y(), n.x()};
             pen = tool_.radius - dist;
         }
+        return true;
+    };
+
+    auto nodeSig = [&](int i, Eigen::Vector2d& Fc) {
+        Eigen::Vector2d n, tdir;
+        double pen;
+        if (!sigGeom(i, n, tdir, pen)) return false;
         // (1) vitesse libre — f_[i] porte deja toutes les autres forces
         Eigen::Vector2d vFree = v_[i] + (dt_ / m_[i]) * f_[i];
         Eigen::Vector2d vrel = vFree - tool_.v;
-        double vn = vrel.dot(n);
-        // (3) le noeud se separe-t-il de lui-meme au pas suivant ?
-        if (-pen + dt_ * vn >= 0.0) return false;
-        // (4) impulsion normale, positive par construction
-        double vTarget = toolSigRelax_ * pen / dt_;
-        double rn = m_[i] * (vTarget - vn);
-        if (rn <= 0.0) return false;
-        // (5) frottement de Coulomb sur l'IMPULSION
-        double vt = vrel.dot(tdir);
-        double rt = -m_[i] * vt;
-        double cap = ctcMu(elemOf_[i]) * rn;                   // WP6
-        if (rt > cap) rt = cap;
-        else if (rt < -cap) rt = -cap;
+        // (3-5) l'algebre impulsion / saut de vitesse est EXTRAITE dans
+        // ToolSignorini.hpp, pour que le banc T0 (selftest-toolcontact)
+        // verifie CE noyau et non une transcription. Arithmetique et ordre
+        // des operations INCHANGES — la geometrie ci-dessus reste ici.
+        toolsig::Impulse R = toolsig::impulse(
+            pen, vrel.dot(n), vrel.dot(tdir),
+            m_[i], dt_, ctcMu(elemOf_[i]), toolSigRelax_);  // WP6 sur mu
+        if (!R.active) return false;
+        // ETAPE 2 : fraction de noeuds COLLES. A mu = 0,8 et rake 20 deg le
+        // noyau colle au toucher (|rt| = 0,342 mv < cap 0,752 mv) : le
+        // calibreur F_v/F_h = tan(theta + atan mu) suppose le GLISSEMENT et ne
+        // s applique donc pas tel quel. Sans ce compteur on l appliquerait a
+        // tort.
+#ifdef _OPENMP
+#pragma omp atomic
+#endif
+        ++nActTool_;
+        if (R.sticking) {
+#ifdef _OPENMP
+#pragma omp atomic
+#endif
+            ++nStickTool_;
+        }
         // (6) report en force
-        Fc = (rn / dt_) * n + (rt / dt_) * tdir;
+        Fc = (R.rn / dt_) * n + (R.rt / dt_) * tdir;
         return true;
     };
+
+    // -----------------------------------------------------------------------
+    // ETAPE 3 (iii) — IMPULSION PAR GROUPE DE COPIES LIEES
+    // (toolSignoriniGroup = on, defaut off = chemin par copie inchange).
+    //
+    // LE DEFAUT QU ELLE MESURE. Sous insertion = adaptive, integrate() n integre
+    // PAS noeud par noeud : il integre les GROUPES de copies liees comme UN
+    // seul noeud (F = somme f_i, M = somme m_i, vitesse commune reecrite sur
+    // toutes les copies, voir « Bound groups integrate as ONE node »). Or
+    // nodeSig decide et dimensionne son impulsion PAR COPIE, avec m_[i] et
+    // f_[i] propres. L operateur de Delassus du solveur est donc diagonal PAR
+    // GROUPE (1/M), pas par copie (1/m_i) : le theoreme que le banc T0 verifie
+    // n est pas exactement celui que le solveur applique.
+    //
+    // POURQUOI CA MARCHE QUAND MEME AUJOURD HUI. Contre un obstacle rigide qui
+    // touche TOUTES les copies d un sommet, la somme des impulsions par copie
+    // vaut l impulsion exacte du groupe, par LINEARITE : somme r_i = M(vT -
+    // vn_libre) - dt somme f_i,n. L ecart n apparait que si une copie est
+    // jugee « separante » par son f_i propre alors que le groupe, lui,
+    // approche : le groupe repart alors a vn+ > 0 au lieu de 0 (un
+    // REDRESSEUR, borne par dt.somme|f_i|/M ~ 2,6 m/s par pas sur v3, jamais
+    // mesure).
+    //
+    // CE CHEMIN-CI supprime l approximation : une seule decision et une seule
+    // impulsion pour le groupe, redistribuee au prorata des masses (m_i/M), ce
+    // qui reproduit exactement ce qu integrate() appliquera. SEQUENTIEL a
+    // dessein : c est un instrument de mesure, on veut un resultat
+    // deterministe a comparer au chemin par copie, pas de la vitesse.
+    // -----------------------------------------------------------------------
+    if (toolSig_ && toolSigGroup_ && adaptive_) {
+        for (int vv = 0; vv < nVert_; ++vv)
+            for (const auto& g : grpsOfVert_[vv]) {
+                int i0 = g[0];                      // copies : meme position
+                Eigen::Vector2d n, tdir;
+                double pen;
+                if (!sigGeom(i0, n, tdir, pen)) continue;
+                double M = 0.0;
+                Eigen::Vector2d F = Eigen::Vector2d::Zero();
+                for (int i : g) { M += m_[i]; F += f_[i]; }
+                if (M <= 0.0) continue;
+                Eigen::Vector2d vrel = v_[i0] + (dt_ / M) * F - tool_.v;
+                toolsig::Impulse R = toolsig::impulse(
+                    pen, vrel.dot(n), vrel.dot(tdir), M, dt_,
+                    ctcMu(elemOf_[i0]), toolSigRelax_);
+                if (!R.active) continue;
+                ++nActTool_;
+                if (R.sticking) ++nStickTool_;
+                Eigen::Vector2d Fc = (R.rn / dt_) * n + (R.rt / dt_) * tdir;
+                for (int i : g) {                   // prorata des masses
+                    Eigen::Vector2d Fi = (m_[i] / M) * Fc;
+                    f_[i] += Fi;
+                    toolWork_ += Fi.dot(v_[i]) * dt_;
+                    toolWork2_ += Fi.dot(v_[i]
+                                  + (0.5 * dt_ / m_[i]) * (f_[i] + Fi)) * dt_;
+                }
+                tool_.F -= Fc;
+            }
+        return;
+    }
 #ifdef _OPENMP
     int nT = omp_get_max_threads();
     std::vector<Eigen::Vector2d> FT(nT, Eigen::Vector2d::Zero());
     double tw = 0.0;                       // V2/B4 : travail outil -> solide
-#pragma omp parallel reduction(+:tw)
+    double tw2 = 0.0;                      // ETAPE 2 : le meme, au trapeze
+#pragma omp parallel reduction(+:tw,tw2)
     {
         int t = omp_get_thread_num();
         Eigen::Vector2d Floc = Eigen::Vector2d::Zero();
@@ -6308,18 +6492,26 @@ void FdemSolver::toolContact() {
             if (!(toolSig_ ? nodeSig(i, Fc) : nodeFc(i, Fc))) continue;
             f_[i] += Fc;
             tw += Fc.dot(v_[i]) * dt_;
+            // ETAPE 2 : le meme travail au TRAPEZE. toolWork_ lit v- ; pour une
+            // IMPULSION le travail vrai est r.(v- + v+)/2, et l ecart r^2/2m
+            // (le 1/2 m v^2 d un noeud frappe au repos) tombe dans biasW_. D ou
+            // le theoreme « injection <= 1 en Signorini » : le ratio actuel
+            // sous-compte structurellement. Ce compteur-ci ne sous-compte pas.
+            tw2 += Fc.dot(v_[i] + (0.5 * dt_ / m_[i]) * (f_[i] + Fc)) * dt_;
             Floc -= Fc;
         }
         FT[t] = Floc;
     }
     for (const auto& F : FT) tool_.F += F;
     toolWork_ += tw;
+    toolWork2_ += tw2;
 #else
     for (int i = 0; i < (int)X0_.size(); ++i) {
         Eigen::Vector2d Fc;
         if (!(toolSig_ ? nodeSig(i, Fc) : nodeFc(i, Fc))) continue;
         f_[i] += Fc;
         toolWork_ += Fc.dot(v_[i]) * dt_;  // V2/B4
+        toolWork2_ += Fc.dot(v_[i] + (0.5 * dt_ / m_[i]) * (f_[i] + Fc)) * dt_;
         tool_.F -= Fc;
     }
 #endif
@@ -7860,6 +8052,7 @@ void FdemSolver::historyRow(std::ostream& os) const {
 }
 
 void FdemSolver::finalize() {
+    if (nanEvery_ > 0) checkFinite();      // C4 (w20) : dernier controle
     computeFragments();
 
     std::ofstream fe(out_ + "/fdem_final_elements.csv");
@@ -8452,6 +8645,58 @@ void FdemSolver::finalize() {
         std::cout << "  (tool KE loss: "
                   << toolKE0_ - (toolKEStop_ >= 0.0 ? toolKEStop_ : tool_.ke())
                   << " J/m)";
+    // ---- T1 (2026-09-02) : LES DEUX INDICATEURS DE LA POMPE DE CONTACT -----
+    // Reclames en conclusion du rapport coupe PDC du 2026-08-18 (§7, « lecon
+    // methodologique, 4e occurrence ») et jamais poses : les deux nombres du
+    // facteur 408 etaient DEJA imprimes tous les deux, personne ne faisait la
+    // division. Le residu B4 ne peut pas voir une pompe logee dans un canal
+    // COMPTE — il lisait [OK] a 1,9e-10 % sur le run v3.
+    //   1. injection = toolWork_ (outil -> solide) / work_ (corps rigide).
+    //      Doivent etre du meme ordre ; v3 : 77 286 / 189 = 408.
+    //   2. v nodale max / 2 v_outil. Borne PHYSIQUE (choc elastique contre
+    //      une masse infinie), aucun reglage ; v3 : 2 544 / 20 = 127.
+    // Purement informatif : aucune force, aucune trajectoire ne change.
+    {
+        double inj = (std::abs(work_) > 1e-12)
+                   ? std::abs(toolWork_ / work_) : 0.0;
+        std::cout << "\n[FDEM] injection outil   : " << toolWork_
+                  << " J/m vers le solide / " << work_
+                  << " J/m corps rigide = ratio " << inj;
+        if (inj > 2.0) std::cout << "  [POMPE]";
+        // SEUIL DU DRAPEAU, et pourquoi il vaut 2 et non 1. La borne 2 v_outil
+        // s'applique a la contribution du CONTACT seule (choc contre une masse
+        // infinie). Dans un continuum, l'onde emise se reflechit sur une
+        // surface LIBRE en doublant la vitesse particulaire : un noeud de peau
+        // peut donc legitimement approcher 2 x cette borne. Le drapeau ne
+        // tombe qu'au-dela, ou plus aucune lecture ondulatoire ne tient.
+        // Mesure du banc T1 (2026-09-02, meme deck a une cle pres) :
+        // penalite 10,98 — signorini 1,08. La marge separe sans ambiguite.
+        double inj2 = (std::abs(work_) > 1e-12)
+                    ? std::abs(toolWork2_ / work_) : 0.0;
+        std::cout << "\n[FDEM] injection (trapeze): " << toolWork2_
+                  << " J/m = ratio " << inj2
+                  << "   (le ratio ci-dessus sous-compte : <= 1 par theoreme "
+                     "en Signorini)";
+        std::cout << "\n[FDEM] canaux (travail +): joints " << jointWorkPos_
+                  << " J/m, contact general " << gcWorkPos_ << " J/m";
+        if (std::abs(work_) > 1e-12)
+            std::cout << " = " << (100.0 * jointWorkPos_ / std::abs(work_))
+                      << " % / " << (100.0 * gcWorkPos_ / std::abs(work_))
+                      << " % du travail outil";
+        std::cout << "\n[FDEM] noeuds profonds   : " << nDeepNode_
+                  << " rejets d < -capk (traversees hors audit)";
+        if (nActTool_ > 0)
+            std::cout << "\n[FDEM] contact outil     : " << nStickTool_ << " / "
+                      << nActTool_ << " evaluations COLLEES ("
+                      << (100.0 * (double)nStickTool_ / (double)nActTool_)
+                      << " %)";
+        double vb = 2.0 * toolV0_;
+        std::cout << "\n[FDEM] v nodale max      : " << vNodeMax_ << " m/s";
+        if (vb > 1e-12)
+            std::cout << " = " << (vNodeMax_ / vb) << " x 2 v_outil ("
+                      << vb << " m/s)"
+                      << ((vNodeMax_ > 2.0 * vb) ? "  [HORS BORNE]" : "");
+    }
     std::cout << "\n[FDEM] broken joints     : " << nBroken_ << " / " << jt_.size()
               << "\n[FDEM] fragments         : " << nFrag_
               << " (detached vol " << detachedVol_ << " m^3/m)"
@@ -8636,6 +8881,321 @@ int potentialSelftest(const std::string& csvPath) {
                  "(la conservation est jugee sur dKE ; le compteur de "
                  "travail porte un biais O(dt) documente)\n";
     return ok ? 0 : 1;
+}
+
+// ---------------------------------------------------------------------------
+// T0 — BANC DU CONTACT OUTIL DE SIGNORINI (selftest-toolcontact).
+//
+// POURQUOI CE BANC EXISTE. Le rapport coupe PDC du 2026-08-18 mesure une
+// pompe d energie dans le contact outil : 77 286 J/m injectes dans le solide
+// pour 189 J/m de travail de corps rigide (facteur 408), et des noeuds a
+// 2 544 m/s contre une borne physique de 2 v_outil = 20 m/s (facteur 127) —
+// pendant que le residu du bilan B4 affichait [OK] a 1,9e-10 %. Le residu ne
+// peut pas voir une pompe logee dans un canal COMPTE. Il fallait donc un
+// controle qui juge la LOI de contact elle-meme, et non le bilan.
+//
+// CE QU IL VERIFIE, en forme fermee, sans maillage et sans simulation : le
+// noyau REEL (ToolSignorini.hpp, appele par FdemSolver::toolContact()), sur
+// les proprietes que le schema CD-Lagrange garantit par construction.
+//
+// LES CHIFFRES DE REFERENCE sont ceux du run v3 mesure (journal
+// coupe_pdc/methode/run_cut_v3.log) : masse nodale mediane 2,46e-5 kg/m,
+// dt = 1,26821e-9 s, penalite outil kp = 4,826e10 N/m, h median 2,5e-4 m.
+// Le banc imprime, pour contraste, ce que la voie PENALITE fait des memes
+// nombres — c est le facteur que le schema doit supprimer, pas reduire.
+// ---------------------------------------------------------------------------
+int toolSignoriniSelftest(const std::string& csvPath) {
+    using rockim::toolsig::Impulse;
+    using rockim::toolsig::impulse;
+
+    // --- constantes mesurees du run v3 -------------------------------------
+    const double m   = 2.46e-5;        // masse nodale mediane   [kg/m]
+    const double dt  = 1.26821e-9;     // pas de temps           [s]
+    const double kp  = 4.826e10;       // penalite outil E.t     [N/m]
+    const double hM  = 2.5e-4;         // h median               [m]
+    const double pen = 0.05 * hM;      // penetration d essai    [m]
+
+    std::ofstream csv(csvPath);
+    csv << "cas,parametre,attendu,obtenu,ecart_rel,verdict\n";
+    int fails = 0;
+    double worst = 0.0;
+
+    auto check = [&](const char* cas, const char* what, double exp,
+                     double got, double tol) {
+        double den = std::abs(exp) > 1e-30 ? std::abs(exp) : 1.0;
+        double err = std::abs(got - exp) / den;
+        bool ok = err <= tol;
+        if (!ok) ++fails;
+        worst = std::max(worst, err);
+        csv << cas << "," << what << "," << exp << "," << got << "," << err
+            << "," << (ok ? "PASS" : "FAIL") << "\n";
+        if (!ok)
+            std::cout << "[toolsig] FAIL " << cas << " / " << what
+                      << " : attendu " << exp << ", obtenu " << got << "\n";
+        return ok;
+    };
+
+    // --- C1 : condition de Signorini — un noeud qui se separe ne recoit RIEN
+    // g+ = -pen + dt.vn >= 0  =>  impulsion nulle. On teste au seuil exact
+    // puis franchement au-dessus : aucune impulsion dans les deux cas.
+    {
+        Impulse a = impulse(pen, pen / dt, 0.0, m, dt, 0.5, 0.0);   // g+ = 0
+        Impulse b = impulse(pen, 10.0 * pen / dt, 0.0, m, dt, 0.5, 0.0);
+        check("C1_signorini", "rn_au_seuil", 0.0, a.rn, 0.0);
+        check("C1_signorini", "rn_separation", 0.0, b.rn, 0.0);
+        check("C1_signorini", "actif_au_seuil", 0.0, a.active ? 1.0 : 0.0, 0.0);
+    }
+
+    // --- C2 : LE theoreme du banc. Un noeud AU REPOS heurte par l outil
+    // repart exactement a v_outil selon la normale (contact inelastique de
+    // Moreau, e = 0 a relax = 0) — jamais a 2 v_outil, la borne du choc
+    // elastique, et a fortiori jamais aux 373 m/s PAR PAS de la penalite.
+    {
+        const double vTool = 10.0;                   // outil vers le noeud
+        // repere local : vitesse libre RELATIVE = -v_outil selon la normale
+        Impulse r = impulse(pen, -vTool, 0.0, m, dt, 0.0, 0.0);
+        double dv = r.rn / m;                        // saut de vitesse nodal
+        double vAfter = 0.0 + dv;                    // noeud initialement nul
+        check("C2_repos", "rn", m * vTool, r.rn, 1e-14);
+        check("C2_repos", "v_apres", vTool, vAfter, 1e-14);
+        // borne physique : le noeud ne depasse jamais 2 v_outil
+        check("C2_repos", "v_sur_2vTool_sous_1", 1.0,
+              (vAfter / (2.0 * vTool)) < 1.0 ? 1.0 : 0.0, 0.0);
+        // contraste PENALITE, memes nombres : F ecretee a 0,6 h, dv = F dt/m
+        double Fpen = kp * 0.6 * hM;
+        double dvPen = Fpen * dt / m;
+        std::cout << "[toolsig] contraste penalite : F ecretee = "
+                  << Fpen / 1e6 << " MN/m -> dv = " << dvPen
+                  << " m/s en UN pas, soit " << (dvPen / (2.0 * vTool))
+                  << " x la borne 2 v_outil ; Signorini donne " << vAfter
+                  << " m/s (ratio " << (dvPen / vAfter) << ")\n";
+        csv << "C2_repos,dv_penalite_contraste," << 2.0 * vTool << ","
+            << dvPen << "," << (dvPen / (2.0 * vTool)) << ",INFO\n";
+    }
+
+    // --- C3 : INVARIANCE D ECHELLE. C est elle qui autorise le banc T1 a
+    // tourner a 10 m/s (dix fois moins cher) pour conclure a 1 m/s : le
+    // rapport v_apres / v_outil ne depend pas de v_outil.
+    {
+        const double vs[] = {1e-3, 1e-1, 1.0, 10.0, 1e2, 1e3};
+        for (double vT : vs) {
+            Impulse r = impulse(pen, -vT, 0.0, m, dt, 0.0, 0.0);
+            check("C3_echelle", "v_apres_sur_vTool", 1.0,
+                  (r.rn / m) / vT, 1e-14);
+        }
+    }
+
+    // --- C4 : PAS D ADHESION, et charge nulle = impulsion nulle.
+    // Un noeud deja solidaire de l outil (approche nulle) ne recoit AUCUNE
+    // impulsion : c est la propriete « zeroload » au niveau du noyau.
+    {
+        Impulse r = impulse(pen, 0.0, 0.0, m, dt, 0.5, 0.0);
+        check("C4_zeroload", "rn_approche_nulle", 0.0, r.rn, 0.0);
+        check("C4_zeroload", "actif", 0.0, r.active ? 1.0 : 0.0, 0.0);
+        // et jamais de traction : rn >= 0 sur un balayage d approches
+        double minRn = 1e300;
+        for (int k = 1; k <= 200; ++k)
+            minRn = std::min(minRn,
+                             impulse(pen, -0.05 * k, 0.0, m, dt, 0.5, 0.0).rn);
+        check("C4_zeroload", "rn_min_positif", 1.0, minRn >= 0.0 ? 1.0 : 0.0,
+              0.0);
+    }
+
+    // --- C5 : cap de Coulomb sur l IMPULSION (et non sur la force).
+    {
+        const double mu = 0.3, vT = 10.0;
+        Impulse gl = impulse(pen, -vT, 50.0, m, dt, mu, 0.0);   // glissement
+        check("C5_coulomb", "rt_ecrete", -mu * gl.rn, gl.rt, 1e-14);
+        check("C5_coulomb", "glisse", 0.0, gl.sticking ? 1.0 : 0.0, 0.0);
+        Impulse st = impulse(pen, -vT, 0.1, m, dt, mu, 0.0);    // collage
+        check("C5_coulomb", "rt_collage", -m * 0.1, st.rt, 1e-14);
+        check("C5_coulomb", "colle", 1.0, st.sticking ? 1.0 : 0.0, 0.0);
+    }
+
+    // --- C6 : DISSIPATIVITE. Dans le repere de l outil, l impulsion ne peut
+    // pas augmenter l energie cinetique du noeud — c est la negation directe
+    // de la pompe. Balayage (approche, glissement, frottement).
+    {
+        double worstGain = 0.0;
+        const double mus[] = {0.0, 0.3, 0.8, 1.5};
+        for (int a = 1; a <= 20; ++a)
+        for (int b = 0; b <= 20; ++b)
+        for (double mu : mus) {
+            double vn = -0.5 * a, vt = 0.5 * b;
+            Impulse r = impulse(pen, vn, vt, m, dt, mu, 0.0);
+            double vn2 = vn + r.rn / m, vt2 = vt + r.rt / m;
+            double ke0 = 0.5 * m * (vn * vn + vt * vt);
+            double ke1 = 0.5 * m * (vn2 * vn2 + vt2 * vt2);
+            worstGain = std::max(worstGain, (ke1 - ke0) / std::max(ke0, 1e-30));
+        }
+        check("C6_dissipatif", "gain_KE_max_repere_outil", 0.0,
+              std::max(0.0, worstGain), 1e-14);
+    }
+
+    // --- C7 : rattrapage de penetration (toolSignoriniRelax). A relax = 0 la
+    // penetration acquise n est PAS resorbee (condition de vitesse pure) ;
+    // a relax = 1 elle l est en un pas. Verifie que la cle agit vraiment —
+    // le defaut « lu mais sans effet » que le chanfrein du cutter illustre.
+    {
+        Impulse r0 = impulse(pen, -10.0, 0.0, m, dt, 0.0, 0.0);
+        Impulse r1 = impulse(pen, -10.0, 0.0, m, dt, 0.0, 1.0);
+        check("C7_relax", "rn_relax0", m * 10.0, r0.rn, 1e-14);
+        check("C7_relax", "rn_relax1", m * (pen / dt + 10.0), r1.rn, 1e-12);
+        check("C7_relax", "relax_agit", 1.0, (r1.rn > r0.rn) ? 1.0 : 0.0, 0.0);
+    }
+
+    // --- C8/C9 : BARRE DE SAINT-VENANT — le contact e = 0 est-il MOU ? ------
+    //
+    // LA QUESTION. Le noyau annule la vitesse d approche (e = 0, choc
+    // parfaitement inelastique au NOEUD). Un noeud isole heurte par l outil
+    // repart donc a v_outil et non a 2 v_outil (cas C2). D ou le soupcon :
+    // « Signorini est trop mou, il tue le rebond ». C EST FAUX, et ce banc le
+    // demontre : dans un SOLIDE, la restitution n est pas portee par le noeud,
+    // elle est portee par l ONDE.
+    //
+    // LE THEOREME (Saint-Venant, choc longitudinal d une barre). Une barre
+    // libre au repos, heurtee par un obstacle rigide de masse infinie anime de
+    // v, recoit une onde de compression ; celle-ci se reflechit en TRACTION sur
+    // l extremite libre, revient, et la barre se separe a t = 2L/c en repartant
+    // a 2v — la borne du choc elastique — alors que CHAQUE contact nodal est
+    // inelastique. La duree de contact vaut 2L/c avec c = sqrt(E/rho).
+    //
+    // CE QUE LE BANC TUERAIT. Si la barre repartait a v au lieu de 2v, le noyau
+    // dissiperait ce que l onde doit rendre : le contact serait mou AU NIVEAU
+    // DISCRET et tout le plan s arreterait la. La seule perte legitime est
+    // celle du PREMIER toucher, 1/2 m1 v^2 = KE/N (KE = 1/2 M v^2), donc
+    // proportionnelle a 1/N : on la mesure a DEUX N pour verifier qu elle
+    // DIVISE PAR QUATRE de N = 100 a N = 400 — un seuil fixe (« < 1 % ») serait
+    // vide de sens, il vaut exactement 1 % a N = 100 par construction.
+    //
+    // Materiau : granite Utah FORGE de Heilman et al. (celui de T1 et de v3).
+    {
+        const double Ebar = 48.26e9, rhoBar = 2610.0, Lbar = 0.1;
+        const double cBar = std::sqrt(Ebar / rhoBar);      // 4300 m/s
+        const double vW = 10.0;                            // vitesse de l outil
+        const double tContactTh = 2.0 * Lbar / cBar;       // 46,5 us
+
+        // Une seule routine, deux maillages : c est la comparaison des deux qui
+        // porte le verdict sur la perte.
+        auto bar = [&](int N, double damping, double& vOut, double& tCon,
+                       double& lossRel) {
+            const double M = rhoBar * Lbar;                // masse lineique
+            const double m = M / N;                        // masse nodale
+            const double kSp = N * Ebar / Lbar;            // raideur d un ressort
+            // pas stable de la chaine : 2/omega_max, omega_max = 2 sqrt(k/m)
+            const double dt = 0.2 * 2.0 / (2.0 * std::sqrt(kSp / m));
+            std::vector<double> u(N, 0.0), v(N, 0.0), f(N, 0.0);
+            // Le mur avance en +x vers le noeud 0 ; normale sortante = +x, donc
+            // la penetration vaut xMur - x0 et la vitesse relative v0 - vMur.
+            double xW = -1e-9;                             // effleure le noeud 0
+            double work = 0.0;                             // travail du mur
+            long firstTouch = -1, lastTouch = -1;
+            const long nSteps = (long)(6.0 * tContactTh / dt);
+            for (long s = 0; s < nSteps; ++s) {
+                // forces internes (ressorts entre voisins, extremites libres)
+                for (int i = 0; i < N; ++i) f[i] = 0.0;
+                for (int i = 0; i + 1 < N; ++i) {
+                    double fs = kSp * (u[i + 1] - u[i]);
+                    f[i] += fs;
+                    f[i + 1] -= fs;
+                }
+                if (damping > 0.0)                          // Cundall, cas C9
+                    for (int i = 0; i < N; ++i)
+                        if (v[i] != 0.0)
+                            f[i] -= damping * std::abs(f[i])
+                                  * (v[i] > 0.0 ? 1.0 : -1.0);
+                // vitesse LIBRE puis impulsion de Signorini sur le noeud 0
+                std::vector<double> vFree(N);
+                for (int i = 0; i < N; ++i) vFree[i] = v[i] + dt * f[i] / m;
+                double pen = xW - u[0];                     // > 0 = dans l outil
+                if (pen > 0.0) {
+                    Impulse r = impulse(pen, vFree[0] - vW, 0.0, m, dt, 0.0,
+                                        0.0);
+                    if (r.active) {
+                        vFree[0] += r.rn / m;
+                        work += r.rn * vW;                  // impulsion x v_mur
+                        if (firstTouch < 0) firstTouch = s;
+                        lastTouch = s;
+                    }
+                }
+                for (int i = 0; i < N; ++i) { v[i] = vFree[i]; u[i] += dt * v[i]; }
+                xW += dt * vW;
+                // separation franche et durable : on arrete des que la barre a
+                // pris le large, sinon le mur la rattrape et la refrappe
+                if (lastTouch >= 0 && s > lastTouch + 200 && u[0] > xW) break;
+            }
+            double vm = 0.0, ke = 0.0, ue = 0.0;
+            for (int i = 0; i < N; ++i) { vm += v[i]; ke += 0.5 * m * v[i] * v[i]; }
+            // L ENERGIE ELASTIQUE STOCKEE compte : la barre repart en vibrant,
+            // et sans ce terme le bilan serait lu a une phase arbitraire de
+            // l oscillation (mesure : 2,34 % au lieu de 1 % a N = 100, avec un
+            // rapport 3,16 entre N = 100 et 400 au lieu de 4 — la signature
+            // d un terme oublie, pas d une dissipation).
+            for (int i = 0; i + 1 < N; ++i) {
+                double e = u[i + 1] - u[i];
+                ue += 0.5 * kSp * e * e;
+            }
+            vOut = vm / N;
+            tCon = (lastTouch - firstTouch + 1) * dt;
+            // perte rapportee a 1/2 M v^2 : doit valoir 1/N — la SEULE perte
+            // legitime du contact nodal e = 0 est celle du PREMIER toucher,
+            // 1/2 m1 v^2, soit m1/M = 1/N de l echelle.
+            lossRel = (work - ke - ue) / (0.5 * M * vW * vW);
+        };
+
+        double v100, t100, l100, v400, t400, l400;
+        bar(100, 0.0, v100, t100, l100);
+        bar(400, 0.0, v400, t400, l400);
+
+        // (a) LE theoreme : la barre repart a 2 v_outil, pas a v_outil.
+        check("C8_barre", "vOut_sur_2v_N100", 1.0, v100 / (2.0 * vW), 0.03);
+        check("C8_barre", "vOut_sur_2v_N400", 1.0, v400 / (2.0 * vW), 0.03);
+        // (b) duree de contact = 2 L / c
+        check("C8_barre", "tContact_sur_2Lc_N400", 1.0, t400 / tContactTh, 0.05);
+        // (c) la perte est celle du PREMIER toucher : 1/N, donc /4 de 100 a 400
+        check("C8_barre", "perte_x_N_vaut_1_N100", 1.0, l100 * 100.0, 0.5);
+        check("C8_barre", "perte_divisee_par_4", 4.0, l100 / l400, 0.5);
+        // (d) dissipatif : la perte est positive (le mur ne recoit rien)
+        check("C8_barre", "perte_positive", 1.0, (l100 > 0.0) ? 1.0 : 0.0, 0.0);
+        std::cout << "[toolsig] barre de Saint-Venant : N = 100 -> v_sortie = "
+                  << v100 << " m/s (2 v = " << 2.0 * vW << "), contact "
+                  << t100 * 1e6 << " us (theorie " << tContactTh * 1e6
+                  << "), perte " << 100.0 * l100 << " % ; N = 400 -> "
+                  << v400 << " m/s, " << t400 * 1e6 << " us, perte "
+                  << 100.0 * l400 << " %\n";
+        csv << "C8_barre,vOut_N100," << 2.0 * vW << "," << v100 << ","
+            << std::abs(v100 - 2.0 * vW) / (2.0 * vW) << ",INFO\n";
+
+        // --- C9 : le meme banc AVEC l amortissement de Cundall du solveur.
+        // integrate() applique dampNow*|F|*sign(v) a la force TOTALE, impulsion
+        // de contact COMPRISE (FdemSolver.cpp:7396-7404) : c est un amortisseur
+        // de contact deguise, mesure a 51 % du travail outil sur T1. On verifie
+        // qu il MORD (donc que dampingLocal = 0 est obligatoire sur tout banc
+        // de force) sans pour autant faire tomber la restitution sous 1,9 v.
+        double v100d, t100d, l100d;
+        bar(100, 0.05, v100d, t100d, l100d);
+        // Critere en FOURCHETTE : le Cundall doit mordre franchement (c est
+        // la demonstration) sans effondrer la restitution d onde. Mesure :
+        // 16,89 m/s, soit 15,5 % sous 2 v. Une fourchette [5 % ; 30 %] attrape
+        // une regression dans les DEUX sens.
+        double lossD = 1.0 - v100d / (2.0 * vW);
+        check("C9_cundall", "perte_cundall_dans_5_30_pct", 1.0,
+              (lossD > 0.05 && lossD < 0.30) ? 1.0 : 0.0, 0.0);
+        check("C9_cundall", "cundall_mord", 1.0,
+              (v100d < v100) ? 1.0 : 0.0, 0.0);
+        std::cout << "[toolsig] meme barre a dampingLocal = 0,05 : v_sortie = "
+                  << v100d << " m/s (" << 100.0 * (1.0 - v100d / v100)
+                  << " % sous le cas non amorti) — d ou la regle "
+                     "dampingLocal = 0 sur tout banc de force\n";
+    }
+
+    std::cout << "[toolsig] ecart relatif max = " << worst << ", "
+              << fails << " echec(s)\n"
+              << "[" << (fails == 0 ? "PASS" : "FAIL")
+              << "] selftest-toolcontact : contact outil de Signorini "
+                 "(CD-Lagrange) — Signorini, borne 2 v_outil, invariance "
+                 "d echelle, zeroload, Coulomb, dissipativite, relax\n";
+    return fails == 0 ? 0 : 1;
 }
 
 } // namespace rockim

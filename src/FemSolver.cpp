@@ -1,4 +1,5 @@
 #include "rockim/FemSolver.hpp"
+#include "rockim/Guards.hpp"
 #include "rockim/VtkWriter.hpp"
 
 #include <algorithm>
@@ -32,6 +33,7 @@ void FemSolver::init() {
     damageOn_  = cfg_.getb("damage", scen_ != Scenario::BAR_WAVE);
     erodeD_    = cfg_.getd("erodeD", erodeD_);
     strainCap_ = cfg_.getd("strainCap", strainCap_);
+    nanEvery_  = cfg_.geti("nanCheckEvery", 256);       // C4 (w20), 0 = off
 
     Dm_ = mat_.Dmat();
     mat_.dpParams(dpAlpha_, dpK_);
@@ -132,6 +134,16 @@ void FemSolver::buildMesh() {
 
         double mNode = mat_.rho * e.A * thk_ / 3.0;
         for (int k = 0; k < 3; ++k) m_[e.n[k]] += mNode;
+    }
+    {   // C3 (w20) : orphelin, triangle degenere, masse nulle = erreurs nommees
+        std::vector<double> areas;
+        std::vector<std::array<int, 3>> conn;
+        areas.reserve(el_.size());
+        conn.reserve(el_.size());
+        for (const auto& e : el_) { areas.push_back(e.A); conn.push_back(e.n); }
+        guards::checkOrphans(X0_, conn, guards::kNoIds);
+        guards::checkDegenerate("fem", areas, conn, X0_, guards::kNoIds);
+        guards::checkMasses("fem", m_, X0_, guards::kNoMask, guards::kNoIds);
     }
 
     // Boundary conditions: bottom fully fixed (bedrock support) except for
@@ -270,6 +282,24 @@ void FemSolver::step() {
     integrate();
 
     t_ += dt_;
+    ++nanStep_;                          // C4 (w20) : detecteur reel
+    if (nanEvery_ > 0 && nanStep_ % nanEvery_ == 0) checkFinite();
+}
+
+void FemSolver::checkFinite() {
+    static const char* const names[3] = {"u", "v", "f"};
+    guards::checkFinite("FEM", nanStep_, t_, X0_.size(), 3, names,
+        [&](std::size_t i, int k) -> const Eigen::Vector2d& {
+            return k == 0 ? u_[i] : k == 1 ? v_[i] : f_[i];
+        },
+        [&](std::size_t i) -> const Eigen::Vector2d& { return X0_[i]; },
+        [&](std::size_t i) -> long {
+            for (std::size_t e = 0; e < el_.size(); ++e)
+                for (int a = 0; a < 3; ++a)
+                    if ((std::size_t)el_[e].n[a] == i) return (long)e;
+            return -1;
+        },
+        {{"work", work_}, {"|toolF|", tool_.F.norm()}});
 }
 
 // ---------------------------------------------------------------------------
@@ -527,6 +557,7 @@ void FemSolver::historyRow(std::ostream& os) const {
 }
 
 void FemSolver::finalize() {
+    if (nanEvery_ > 0) checkFinite();    // C4 (w20) : dernier controle
     // Convenience CSV snapshot of the final damage field (easy to plot)
     std::ofstream fe(out_ + "/fem_final_elements.csv");
     fe << "cx,cy,damage,eroded\n";

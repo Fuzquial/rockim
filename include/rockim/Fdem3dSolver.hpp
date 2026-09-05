@@ -200,6 +200,15 @@ private:
                              // then the center of the bottom face — the 3D
                              // lift of the 2D FLAT tool (percussion only)
         double mass = 0.5, radius = 0.015;
+        // ---- toolShape = pdc (2026-09-03, scenario shear seulement) ------
+        // Cutter PDC : DISQUE fini chanfreine, geometrie dans ToolPdc3d.hpp.
+        // `x` est l'ARETE DE COUPE (convention 2D), `radius` = cutterDia/2.
+        // n, u, w = repere de la face (Tool.hpp:67-74 releve y -> z).
+        // pdc = false (defaut) : sphere / plat, bit-identique.
+        bool pdc = false;
+        double thick = 0.0, rakeDeg = -20.0, cham = 0.0, chamDeg = 45.0;
+        bool floorFlat = false;
+        Eigen::Vector3d n{1, 0, 0}, u{0, 0, 1}, w{0, 1, 0};
         Eigen::Vector3d x{0, 0, 0}, v{0, 0, 0}, F{0, 0, 0};
         void integrate(double dt) { if (free) v += (dt / mass) * F; x += dt * v; }
         double ke() const { return 0.5 * mass * v.squaredNorm(); }
@@ -212,6 +221,7 @@ private:
     // simplexes uniformes sans structure de grains. Le bloc est translate a
     // l'origine et W/D/H sont relus de la boite englobante.
     void buildMeshFile();
+    void checkFinite();                    // C4 (w20) : NaN/Inf reel
     void buildFromTets(const std::vector<Eigen::Vector3d>& vpos,
                        const std::vector<std::array<int, 4>>& tets,
                        const std::vector<int>& tetGrain,
@@ -950,6 +960,7 @@ private:
     int trackGroup_ = -1;                  // groupe suivi dans history.csv
 
     long stepCount_ = 0;
+    long nanEvery_ = 256;                  // nanCheckEvery (C4, w20)
     double work_ = 0.0, peakF_ = 0.0;
     long nBroken_ = 0;
     int nFrag_ = 1;

@@ -65,6 +65,7 @@ private:
     void contactForces();
     void wallAndToolForces();
     void integrate();
+    void checkFinite();                  // C4 (w20) : NaN/Inf reel
     void rebuildGrid();
     void toolParticleContact(Part& p);
 
@@ -83,6 +84,7 @@ private:
     double r_ = 1.25e-3;
     std::string packing_ = "hex";
 
+    long nanEvery_ = 256, nanStep_ = 0;  // nanCheckEvery (C4, w20)
     std::vector<Part> p_;
     std::vector<Bond> b_;
     long nBroken_ = 0;
