@@ -97,7 +97,7 @@ deg/MPa, `dfhPsiMax = 51,7` deg = `dfhBetaDeg`, donc ecoulement ASSOCIE tant que
 le plafond mord). La constante #5 de la carte (`dfhPsiDeg`, 15 deg) est alors
 MORTE. `dfhPsiVar` absente ou 0 : `psiDeg` fixe, chemin d'origine bit-identique.
 
-### 2.4 Sortie de l'endommagement DP-DFH au `.vtu` (2D et 3D)
+### 2.4 Sortie de l'endommagement DP-DFH au `.vtu` (2D seulement)
 
 `law = dpdfh` calcule trois endommagements directionnels dans un repere fige
 (SDV 4-6 de la VUMAT) mais rien ne sortait : les `.vtu` ne portaient que les
@@ -105,6 +105,13 @@ contraintes. On ecrit desormais `dfhD = max(D1,D2,D3)` — exactement ce que
 lisent les extracteurs du banc 6 (leur SDV 2) — et `dfhTini`, l'instant du
 premier amorcage. **Ajout de sortie pur**, aucune trajectoire ne change ; en 2D
 il prend la forme de deux entrees de la carte `vtk::ScalarField` de `f2`.
+
+**RESERVE de la relecture adverse (2026-09-06).** La branche d'origine ecrivait
+ces deux champs dans les DEUX solveurs (`git show insertion-pointe:src/FdemSolver.cpp`
+l. 5635 et `:src/Fdem3dSolver.cpp` l. 3421) ; le port ne les a mis qu'en 2D —
+`grep dfhD src/Fdem3dSolver.cpp` ne rend rien. Le titre de cette section disait
+« 2D et 3D » : il est corrige. Reste a porter en miroir dans
+`Fdem3dSolver::writeFrame()`, avec une passe `bitid` de confirmation.
 
 ### 2.5 Decks
 
@@ -129,7 +136,9 @@ il prend la forme de deux entrees de la carte `vtk::ScalarField` de `f2`.
 
 `python tools/bitid.py --exe build/rockim.exe --threads 4` contre l'ancre de
 naissance `tools/bitid_refs.json` : **8/8 IDENTIQUE**, avant comme apres le
-port. Rapport : `results/bitid_g0-0.2.0_insertion_pointe.json`.
+port. Rapport : `results/bitid_apres_port_insertion_pointe.json` (le nom
+`bitid_g0-0.2.0_insertion_pointe.json` cite ici jusqu'au 2026-09-06 n'a jamais
+existe, et il n'y a pas de tag `g0-0.2.0`).
 
 **Attention** : les 8 decks de l'ancre couvrent `cdp`, `dpr`, `saksala2011`, les
 joints cohesifs et le contact de Signorini — **aucun ne pose `law = dpdfh`**.
@@ -163,6 +172,12 @@ L'ancre ne prouve donc rien sur le portage de psi(p) ; d'ou le banc §4.2.
   (`pbar = 1,7297 sigma3 + 88,4 MPa` pour `beta = 51,7` deg,
   `dcoh = 153,3 MPa`) : 88 / 434 / 607 / 780 / 954 MPa.
   **VERDICT : tous les criteres passes.**
+
+- **[D] la variante qui DOIT echouer**, `--falsify` : le meme deck d'essai avec
+  `dfhPsiVar = 0` rend un ecart max de `+0,000e+00` et une trace **bit-identique**
+  au temoin, donc le critere B echoue comme il doit. L'option etait annoncee dans
+  l'en-tete du script et dans `mp_dpdfh_psivar_on.cfg` mais **n'existait pas** ;
+  elle a ete ecrite a la relecture adverse du 2026-09-06.
 
 ### 4.3 Banc court insertion — `tests_f2/insertion_pointe/`
 

@@ -26,7 +26,7 @@
 #      La VARIANTE QUI DOIT ECHOUER : rejouer l ESSAI avec dfhPsiVar = 0 —
 #      l ecart tombe alors a zero partout (option --falsify).
 # ---------------------------------------------------------------------------
-import argparse, csv, collections, hashlib, os, subprocess, sys, tempfile
+import argparse, csv, collections, hashlib, io, os, re, subprocess, sys, tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.normpath(os.path.join(HERE, "..", ".."))
@@ -59,6 +59,9 @@ def main():
     ap.add_argument("--exe", default=os.path.join("build", "rockim.exe"))
     ap.add_argument("--ref", default=None, help="binaire d avant le portage (critere A)")
     ap.add_argument("--keep", action="store_true")
+    ap.add_argument("--falsify", action="store_true",
+                    help="rejoue l ESSAI avec dfhPsiVar = 0 : l ecart doit"
+                         " tomber a zero partout, donc le critere B doit ECHOUER")
     a = ap.parse_args()
     exe = a.exe if os.path.isabs(a.exe) else os.path.join(ROOT, a.exe)
     tmp = tempfile.mkdtemp(prefix="rockim_psivar_")
@@ -114,6 +117,29 @@ def main():
                  "OK" if good else "ECHEC"))
     print("\n[C] psi decroissant avec p (changement de signe de l ecart a "
           "pbar = %.1f MPa) : %s" % (PCROSS, "OK" if ok else "ECHEC"))
+    if a.falsify:
+        # VARIANTE QUI DOIT ECHOUER (annoncee dans l en-tete de ce fichier et
+        # dans mp_dpdfh_psivar_on.cfg) : le MEME deck d essai, dfhPsiVar = 0.
+        # Si psi(p) est bien pilotee par cette seule cle, la trace redevient
+        # RIGOUREUSEMENT celle du temoin — le critere B (« la cle AGIT ») doit
+        # donc ECHOUER sur cette variante. Un banc dont la variante negative
+        # passerait ne prouverait rien.
+        txt = io.open(on, encoding="utf-8").read()
+        txt2 = re.sub(r"(?m)^(\s*dfhPsiVar\s*=\s*)1\b", r"\g<1>0", txt)
+        assert txt2 != txt, "dfhPsiVar = 1 introuvable dans mp_dpdfh_psivar_on.cfg"
+        fz = os.path.join(tmp, "mp_dpdfh_psivar_falsify.cfg")
+        io.open(fz, "w", encoding="utf-8", newline="\n").write(txt2)
+        fF = run(exe, fz, os.path.join(tmp, "falsify.csv"))
+        dF = read(fF)
+        worst = max(abs(float(dF[s3][-1]["eps_vol"])
+                        - float(dOff[s3][-1]["eps_vol"])) for s3 in dOff)
+        same = sha(fOff) == sha(fF)
+        ok &= same
+        print("\n[FALSIFY] meme deck d essai avec dfhPsiVar = 0 : ecart max "
+              "%+.3e, trace %s au TEMOIN — le critere B echoue comme il doit : %s"
+              % (worst, "IDENTIQUE" if same else "DIFFERENTE",
+                 "OK" if same else "ECHEC (la cle n est pas le seul pilote)"))
+
     print("\n[psivar] VERDICT : %s" % ("TOUS LES CRITERES PASSES" if ok else "ECHEC"))
     if not a.keep:
         import shutil; shutil.rmtree(tmp, ignore_errors=True)

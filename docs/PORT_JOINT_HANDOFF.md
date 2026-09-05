@@ -83,7 +83,7 @@ lecture ; ils peuvent glisser, les ancres textuelles restent valables.
 
 | ligne (`joint-handoff`) | contenu | ce qu'il y a dans `g0` | verdict |
 |---|---|---|---|
-| `src/FdemSolver.cpp:5175` | `double cap = ctcMu(elemOf_[i]) * rn;   // WP6` — le cap de Coulomb sur l'IMPULSION du contact de Signorini outil-roche, evalue au mu residuel | la routine `nodeSig` a ete SORTIE du solveur vers l'en-tete partage `include/rockim/ToolSignorini.hpp` ; l'appelant lui passe deja `ctcMu(elemOf_[i])` : `src/FdemSolver.cpp:6400` et `6464` (`m_[i], dt_, ctcMu(elemOf_[i]), toolSigRelax_);  // WP6 sur mu`) | **REFACTOR** — meme physique, code partage 2D/3D |
+| `src/FdemSolver.cpp:5175` | `double cap = ctcMu(elemOf_[i]) * rn;   // WP6` — le cap de Coulomb sur l'IMPULSION du contact de Signorini outil-roche, evalue au mu residuel | l'ALGEBRE impulsion / saut de vitesse a ete sortie vers l'en-tete partage `include/rockim/ToolSignorini.hpp` (`toolsig::impulse`, qui applique `cap = mu * rn`) ; la lambda `nodeSig` elle-meme reste dans chaque solveur (2D `src/FdemSolver.cpp:6462`, 3D `src/Fdem3dSolver.cpp:4139`) et lui passe deja `ctcMu(elemOf_[i])` : `src/FdemSolver.cpp:6400` et `6464` (`m_[i], dt_, ctcMu(elemOf_[i]), toolSigRelax_);  // WP6 sur mu`) | **REFACTOR** — meme physique, code partage 2D/3D |
 | `src/FdemSolver.cpp:5263-5264` | commentaire `// WP6 : volontairement PAS de ctcMu ici — le plateau est une frontiere de machine, pas un support de fragments.` | `src/FdemSolver.cpp:6645-6648`, meme commentaire ETENDU : `// WP6/WP7 : … Il garde donc contactMu GLOBAL, sans frottement par phase ni couplage (1-D).` | **REFACTOR** — la decision de perimetre est conservee et precisee |
 | `include/rockim/Fdem3dSolver.hpp:496` | commentaire `// evaluation residuelle (atomic : appele depuis les boucles OMP).` | le `#pragma omp atomic` et les compteurs `nCtcPulv_` / `tCtcPulv0_` sont en place dans le `ctcMu()` de `g0` ; seul le libelle du commentaire a change | **REFACTOR** |
 
@@ -109,7 +109,7 @@ Regroupees par site. Toutes : **REFACTOR, rien a porter.**
 | `FdemSolver.cpp:3535`, `3540` ; `Fdem3dSolver.cpp:3868`, `3873` | boucle OpenMP et report nodal de `bodyForces()` | `FdemSolver.cpp:4681 s.`, `Fdem3dSolver.cpp:4393 s.` : meme boucle, comptabilite V2/B4 du travail de la pesanteur ajoutee |
 | `FdemSolver.cpp:3683` ; `Fdem3dSolver.cpp:3982` | `" J/m (hors bilan B4)\n"` | `FdemSolver.cpp:4913-4915`, `Fdem3dSolver.cpp:4518 s.` : message conditionnel `eBody_` (cf. §2.1) |
 | `FdemSolver.cpp:4661` ; `Fdem3dSolver.cpp:3190` | `if (muC_ > 0.0 && potKt_ > 0.0)` dans le contact par potentiel | meme test, `muC_` remplace par `ctcMu(...)` (frottement par phase / couplage) |
-| `FdemSolver.cpp:5165-5186` (corps de `nodeSig`) | contact de Signorini outil-roche ecrit dans le solveur 2D | **sorti** vers `include/rockim/ToolSignorini.hpp`, partage 2D/3D (cf. §3) |
+| `FdemSolver.cpp:5165-5186` (corps de `nodeSig`) | contact de Signorini outil-roche ecrit dans le solveur 2D | son ALGEBRE est **sortie** vers `include/rockim/ToolSignorini.hpp`, partagee 2D/3D ; la GEOMETRIE et la lambda restent dans chaque solveur, a dessein (cf. §3) |
 | `FdemSolver.cpp:5673` | `double vol = -0.5 * A2 * thk_;` (fermeture de cavite hydro) | `FdemSolver.cpp:7147` : `-0.5 * (A2 + aClose) * thk_` — terme de fermeture ajoute |
 | `FdemSolver.cpp:5990-5995`, `6091-6095` | amortissement local de Cundall (branche groupe et branche noeud) | meme arithmetique, pilotee par `dampNow` (bascule `dampingSwitchT`) au lieu de `damping_` |
 | `FdemSolver.cpp:6202-6220` (writeFrame) | deux appels `writeTriMesh` dupliques, `bdOn_` ou non | `FdemSolver.cpp:7815 s.` : une carte NOMMEE `vtk::ScalarField ef{...}` que les champs optionnels enrichissent — byte-identique quand aucun optionnel n'est arme |
@@ -120,6 +120,26 @@ Regroupees par site. Toutes : **REFACTOR, rien a porter.**
 | `Fdem3dSolver.cpp:3565`, `3630` | `if (tool_.flat) {` | `Fdem3dSolver.cpp:4076`, `4153` : `} else if (tool_.flat) {` — une branche `pdc` a ete inseree avant |
 
 ---
+
+## 4bis. Contre-verification adverse (2026-09-06)
+
+La mesure de l'ecart a ete refaite independamment (lignes depouillees de leur
+indentation, dedupliquees, marquees contre `main`) : **120 lignes** de
+`joint-handoff` absentes de `g0`, dont **9 neuves**. Le tableau du paragraphe 1 en
+annonce 106 et 8 ; l'ecart tient a la normalisation, mais l'ordre de grandeur et
+surtout la CONCLUSION sont reproduits. La neuvieme ligne est
+`double k = kPara * J.pj * J.A0 / 3.0;` (`src/Fdem3dSolver.cpp`) : elle n'apparait
+« absente » que parce que le port de `insertion = none` l'a elle-meme reecrite en
+`double k = noJoints_ ? 0.0 : kPara * J.pj * J.A0 / 3.0;`. Rien n'est perdu.
+
+Dix verdicts ont ete recontroles dans le code de `g0`, tous confirmes : `brushWork_`
+et `energyBodyForces` ; `ctcMu()` rendant `mu` sous `muPerPhase_` / `cplMode_` ;
+`kContact` (budget A1) dans les DEUX solveurs ; `disc + mesh = file` desormais
+supporte, seul `shpb` etant refuse ; `guards::degenerateError` ; `fixBottomShear_`
+dans la branche percussion ; `checkFinite` / `nanCheckEvery` (C4) a la place de
+l'echantillon E5 ; `toolShape = sphere | flat | pdc | none` en 3D ;
+`countInserted()` excluant `J.pre` ; l'extraction Signorini (avec la reserve de
+redaction corrigee aux paragraphes 3 et 4).
 
 ## 5. Consequences
 

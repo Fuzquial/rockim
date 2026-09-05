@@ -1,7 +1,7 @@
 # Changelog de rockim (arbre g0)
 
 Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Une section par tag (mesure A3/A5 du
-plan de robustesse du 2026-09-05) ; en attendant la mise sous git (A1), la section `[Non publié]`
+plan de robustesse du 2026-09-05). L'arbre `g0` est sous git depuis le tag `g0-0.1.0` (mesure A1) ; la section `[Non publié]`
 reçoit les lignes exigées par les règles déjà en vigueur — dont **toute ancre de bit-identité changée**
 (`tools/bitid_refs.json`, règle de `tools/BITID.md`).
 
@@ -36,14 +36,22 @@ Détail complet, mesures et bancs : [`docs/PORT_INSERTION_POINTE.md`](docs/PORT_
   la forme de `vumat_hole.f` l. 336-339 : `ψ = clamp(dfhPsi0 − dfhKPsi·p̄[MPa], 0, dfhPsiMax)`. La
   constante #5 de la carte (`dfhPsiDeg`, 15 deg) est alors morte. Clé absente ⇒ `psiDeg` fixe,
   trajectoires inchangées au bit près.
-- **`dfhD` et `dfhTini` dans les `.vtu`** sous `law = dpdfh` (2D et 3D) : DMAX = max(D1,D2,D3) des
+- **`dfhD` et `dfhTini` dans les `.vtu`** sous `law = dpdfh`, **en 2D seulement** : DMAX = max(D1,D2,D3) des
   trois endommagements directionnels du repère figé (SDV 4-6 de la VUMAT, ce que lisent les
   extracteurs du banc 6) et l'instant du premier amorçage. **Ajout de sortie pur.**
+  RÉSERVE (relecture adverse du 2026-09-06) : la branche d'origine écrivait ces deux champs
+  dans les DEUX solveurs (`git show insertion-pointe:src/Fdem3dSolver.cpp` l. 3421) ; le port
+  ne les a mis qu'en 2D, le `writeFrame()` de `Fdem3dSolver` reste muet sur l'endommagement
+  DP-DFH. À porter en miroir (une quinzaine de lignes) avec une passe `bitid` de confirmation —
+  aucun deck de l'ancre n'étant en `dpdfh`, l'ajout y serait neutre.
 - **Decks** `tunnel_edz/configs/tunnel_tip13.cfg`, `tunnel_tip16.cfg`, `tunnel_tip20.cfg` (calibration
   du facteur 1,3 / 1,6 / 2,0 sur le tunnel EDZ), repris tels quels.
 - **Bancs courts** `tests_f2/insertion_pointe/` (4 decks + `check_tip.py`, ~10 min à OMP 2) et
   `tests_f2/psivar/` (2 decks point-matériel + `check_psivar.py`, ~2 s). Tous deux impriment un
-  verdict OK/ÉCHEC par critère.
+  verdict OK/ÉCHEC par critère. `check_psivar.py --falsify` (écrite à la relecture adverse du
+  2026-09-06 : l'option était annoncée dans l'en-tête du script et n'existait pas) rejoue le
+  deck d'essai avec `dfhPsiVar = 0` : écart max **+0,000e+00**, trace **bit-identique** au
+  témoin — le critère B échoue comme il doit, la clé est bien le seul pilote de ψ(p).
 - **`etude_lois_fem/meshes/drop_orphans.py` et `check_orphans.py`** : ces outils sont NOMMÉS par le
   message d'erreur du lecteur de maillage mais n'avaient pas été repris à la naissance de `g0`
   (seuls les `*.py` de la racine de `etude_lois_fem/` l'avaient été). Repris de `rockim_f2`.
@@ -93,6 +101,61 @@ Détail complet, mesures et bancs : [`docs/PORT_INSERTION_POINTE.md`](docs/PORT_
   `rockim_f2w21.exe` rendent la **même trace au SHA-256 près**
   (`341fac848845623c2db4a702897f4efab6a797842d843964b6cf83274c997580`).
 
+### Relecture adverse (2026-09-06)
+
+Contre-expertise indépendante de la naissance et des trois ports. **Verdict : conforme.** Ce qui a
+été vérifié à la main, et ce qui a été corrigé.
+
+Vérifié :
+- `rockim_f2` **intact** : aucun fichier de `src/`, `include/` ni aucun `*.exe` postérieur à
+  20 h 54 (dernière écriture de Fernando, `src/main.cpp` ; dernier exe `rockim_f2w22.exe` à 20 h 51),
+  soit plus d'une heure avant la création du worktree `g0` (22 h 01). Les seuls fichiers de
+  `rockim_f2` touchés depuis sont des SORTIES des campagnes en cours
+  (`etude_lois_fem/heterogeneite/figures/`, `etude_lois_fem/bitid_w21/`). Les six worktrees
+  (`rockim_p1`, `rockim_f2_wt`, `rockim_p2`…`p4`, `studio_wt`) sont dans l'état qu'ils avaient déjà.
+- `rockim_g0` est bien un worktree de `FDEM/rockim` (gitdir `rockim/rockim_p1/.git/worktrees/rockim_g0`)
+  sur la branche `g0`, `git status --porcelain` **vide** après les trois commits de port.
+  Aucun `*.exe`, `*.obj`, `*.vtu`, `*.pdb` n'est suivi ; les `*.msh` suivis sont 14 fichiers,
+  11,4 Mo au total, le plus gros 4,67 Mo (les 4 exemptions déclarées, plus 10 fichiers déjà suivis
+  par `f2-2026-09-02` — conservés au titre de la décision 2). Rien n'est poussé sur `origin`.
+- **Rebuild complet** `tools/build.ps1 -Clean` (reconfiguration CMake + 13 objets + link) puis
+  `python tools/bitid.py --exe build/rockim.exe --threads 4` : **8/8 IDENTIQUE** contre l'ancre
+  héritée, inchangée (rapport `results/bitid_relecture_adverse_2026-09-06.json`). L'exe reconstruit
+  fait 2 068 480 octets comme le précédent mais un SHA-256 différent : MSVC horodate le PE, c'est
+  l'algèbre qui est reproductible, pas l'octet du binaire.
+- **`diff -r` de `src/` et `include/` entre `rockim_f2` et `rockim_g0`** : exactement 6 fichiers
+  diffèrent, et ce sont les 6 du port — `FdemSolver.cpp/.hpp`, `Fdem3dSolver.cpp/.hpp`, `MatLaw.cpp`,
+  `KeysByMode.hpp` (régénéré). Aucune autre divergence.
+- **Opt-in relu dans le code, pas dans le compte rendu** : `tipFactor_ = 1.0` et `noJoints_ = false`
+  par défaut ; sous `tipFactor_ == 1` le drapeau `tipBias` est faux, `vertTip_` n'est jamais rempli
+  et le facteur vaut `1.0` exactement (multiplication neutre au bit près) ; `psiVar` défaut `false`.
+  Le registre `KeysByMode.hpp` se régénère à l'identique (hors horodatage) par
+  `tools/gen_keys_by_mode.py`.
+- **`docs/PORT_JOINT_HANDOFF.md` recompté indépendamment** et dix de ses verdicts recontrôlés dans
+  le code : voir le paragraphe « 4bis » ajouté à ce document. La conclusion « rien à porter » tient.
+- **Banc ψ(p) rejoué** avec l'exe reconstruit : les cinq lignes du tableau de
+  `docs/PORT_INSERTION_POINTE.md` §4.2 sont reproduites au chiffre près.
+
+### Corrigé — relecture adverse (2026-09-06)
+- `tests_f2/psivar/check_psivar.py` : l'option **`--falsify`** était annoncée dans l'en-tête du
+  script ET dans `mp_dpdfh_psivar_on.cfg` mais **n'existait pas** (`unrecognized arguments`). Elle est
+  écrite : elle rejoue le deck d'essai avec `dfhPsiVar = 0` et exige que la trace redevienne
+  bit-identique au témoin. Mesuré : écart max `+0,000e+00`, `sha256` identique — le critère B échoue
+  comme il doit. Un banc dont la variante négative n'existe pas ne prouve rien : c'est exactement la
+  règle « un réglage que l'on peut écrire, que le solveur accepte, et qui ne fait rien ».
+- `docs/PORT_INSERTION_POINTE.md` §4.1 citait un rapport `results/bitid_g0-0.2.0_insertion_pointe.json`
+  **qui n'existe pas** (le fichier s'appelle `bitid_apres_port_insertion_pointe.json`, et il n'y a pas
+  de tag `g0-0.2.0`). Référence corrigée.
+- `dfhD` / `dfhTini` étaient annoncés « 2D et 3D » ici et dans `docs/PORT_INSERTION_POINTE.md` §2.4 ;
+  ils ne sont **qu'en 2D**. La branche d'origine les écrivait dans les deux solveurs : le port est
+  incomplet sur ce point. Titre et texte corrigés, réserve écrite aux deux endroits.
+- `docs/PORT_JOINT_HANDOFF.md` disait que « la routine `nodeSig` a été sortie vers
+  `ToolSignorini.hpp` » : seule l'ALGÈBRE impulsion / saut de vitesse (`toolsig::impulse`) l'a été,
+  la lambda `nodeSig` et toute la géométrie restent dans chaque solveur, à dessein. Rédaction
+  corrigée aux §3 et §4 ; le verdict REFACTOR, lui, est confirmé.
+- `CHANGELOG.md` : l'historique hérité de `rockim_f2` suivait la section `[g0-0.1.0]` **sans titre de
+  version** et se lisait donc comme en faisant partie. Un titre
+  `## [hérité de rockim_f2]` l'en sépare. Préambule remis à jour (`g0` est sous git depuis A1).
 ## [g0-0.1.0] — 2026-09-05 — naissance de g0
 
 ### Naissance
@@ -138,6 +201,12 @@ Détail complet, mesures et bancs : [`docs/PORT_INSERTION_POINTE.md`](docs/PORT_
   chaîne `build_f2.cmd` : g0 naît sur l'ancre de f2, et cette ancre est **la nouvelle ancre de
   naissance** de l'arbre g0 (tag `g0-0.1.0`).
 
+
+## [hérité de rockim_f2] — historique antérieur à la naissance de g0
+
+Sections reprises telles quelles du `CHANGELOG.md` de `rockim_f2` : elles décrivent l'arbre
+`rockim_f2`, gelé mais conservé, et non des changements faits dans `g0`. Sans ce titre elles
+se lisaient comme faisant partie de `[g0-0.1.0]` (relecture adverse du 2026-09-06).
 
 ### Ajouté
 - 2026-09-05 — `tools/bitid.py` (bit-identité générique, mesure B6), `tests_f2/bitid/` (8 decks
