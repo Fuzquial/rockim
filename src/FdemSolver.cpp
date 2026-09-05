@@ -760,10 +760,46 @@ void FdemSolver::init() {
     // activated when the edge-averaged traction reaches the envelope.
     {
         std::string ins = cfg_.gets("insertion", "intrinsic");
-        if (ins != "intrinsic" && ins != "adaptive")
+        if (ins != "intrinsic" && ins != "adaptive" && ins != "none")
             throw std::runtime_error("insertion must be intrinsic | adaptive "
-                                     "(got '" + ins + "')");
+                                     "| none (got '" + ins + "')");
         adaptive_ = ins == "adaptive";
+        // insertion = none : CONTINUUM PUR (voir FdemSolver.hpp pour la
+        // mesure du 2026-08-25 qui a motive la cle).
+        noJoints_ = ins == "none";
+        if (noJoints_)
+            std::cout << "[FDEM] insertion = none : continuum pur, aucun "
+                         "joint ne peut naitre (la loi de volume porte toute "
+                         "la fissuration)" << std::endl;
+    }
+    // ---- insertion preferentielle en POINTE (2026-08-24, OPT-IN) --------
+    // insertionTipFactor = 1 (defaut) : chemin d origine, resultats
+    // bit-identiques. > 1 : une facette adjacente a une fissure existante
+    // (sommet portant un joint de D >= insertionTipDamage) voit son enveloppe
+    // DIVISEE par ce facteur, tandis qu une facette en terrain vierge garde
+    // l enveloppe nominale. Motivation mesuree : voir FdemSolver.hpp.
+    {
+        tipFactor_ = cfg_.getd("insertionTipFactor", 1.0);
+        tipD_ = cfg_.getd("insertionTipDamage", 0.5);
+        if (tipFactor_ < 1.0)
+            throw std::runtime_error("insertionTipFactor doit etre >= 1 "
+                                     "(1 = comportement d origine ; au-dela, "
+                                     "l enveloppe est RELACHEE en pointe de "
+                                     "fissure, l amorcage restant intact)");
+        if (tipD_ < 0.0 || tipD_ > 1.0)
+            throw std::runtime_error("insertionTipDamage doit etre dans [0,1]");
+        if (tipFactor_ > 1.0) {
+            if (!adaptive_)
+                throw std::runtime_error("insertionTipFactor exige "
+                                         "insertion = adaptive (en "
+                                         "intrinsique tous les joints "
+                                         "existent deja : il n y a rien a "
+                                         "inserer)");
+            std::cout << "[FDEM] insertion preferentielle en pointe : "
+                      << "enveloppe relachee /" << tipFactor_
+                      << " en pointe (pointe = sommet portant un joint de "
+                      << "D >= " << tipD_ << ") ; amorcage inchange\n";
+        }
     }
     // jointSoftening = linear (default, unchanged) | yan — the exponential
     // reduction factor f(D) of the article (its eq. 11), see YanSoftening.hpp.
@@ -895,10 +931,14 @@ void FdemSolver::init() {
                          "origin + jointFrictionScaled = 1.\n";
     }
     assignJointProps();
-    if (adaptive_) {
+    // insertion = none : les joints doivent AUSSI etre lies (sinon ils
+    // restent intrinseques et cassent, ce qui est l exact contraire du
+    // continuum pur voulu — bug corrige le 2026-08-25).
+    if (adaptive_ || noJoints_) {
         for (auto& J : jt_) J.bonded = true;
         buildBindingTables();
-        std::cout << "[FDEM] adaptive insertion: " << jt_.size()
+        std::cout << (noJoints_ ? "[FDEM] insertion = none: "
+                                : "[FDEM] adaptive insertion: ") << jt_.size()
                   << " bonded edges, activation penalty "
                   << cfg_.getd("insertionPenaltyFactor", 4.0) << " E/h\n";
         if (cfg_.has("jointPenaltyFactor"))
@@ -3371,6 +3411,21 @@ void FdemSolver::refreshDif(Joint& J, double er) {
 void FdemSolver::insertionSweep() {
     struct Hit { int jI; double sig, tau; };
     std::vector<Hit> hits;
+    // ---- pointes de fissure (opt-in, cf. FdemSolver.hpp) -----------------
+    // Un sommet est une POINTE des qu il porte un joint deja insere et
+    // suffisamment endommage (D >= tipD_). Le balayage des sommets coute
+    // O(joints), le meme ordre que le balayage lui-meme, et n a lieu que si
+    // la capacite est armee : tipFactor_ = 1 laisse le chemin d origine
+    // intact au bit pres.
+    const bool tipBias = tipFactor_ > 1.0;
+    if (tipBias) {
+        vertTip_.assign(nVert_, 0);
+        for (const auto& J : jt_) {
+            if (J.bonded || J.D < tipD_) continue;
+            vertTip_[vOf_[J.a1]] = 1;
+            vertTip_[vOf_[J.a2]] = 1;
+        }
+    }
 #ifdef _OPENMP
     #pragma omp parallel
     {
@@ -3409,7 +3464,11 @@ void FdemSolver::insertionSweep() {
             double fs = dC * J.coh
                       + J.tanPhi * rockim::mcFrictionTerm(sig, J.ft, yangEnv_);
             if (fs < 0.0) fs = 0.0;
-            if (sig >= dT * J.ft || std::abs(tau) >= fs)
+            // enveloppe RELACHEE en pointe (voir plus haut)
+            double fac = 1.0;
+            if (tipBias && (vertTip_[vOf_[J.a1]] || vertTip_[vOf_[J.a2]]))
+                fac = 1.0 / tipFactor_;
+            if (sig >= fac * dT * J.ft || std::abs(tau) >= fac * fs)
                 mine.push_back({jI, sig, tau});
         }
         #pragma omp critical
@@ -3444,7 +3503,10 @@ void FdemSolver::insertionSweep() {
         double fs = dC * J.coh
                   + J.tanPhi * rockim::mcFrictionTerm(sig, J.ft, yangEnv_);
         if (fs < 0.0) fs = 0.0;
-        if (sig >= dT * J.ft || std::abs(tau) >= fs)
+        double fac = 1.0;                          // idem branche OpenMP
+        if (tipBias && (vertTip_[vOf_[J.a1]] || vertTip_[vOf_[J.a2]]))
+            fac = 1.0 / tipFactor_;
+        if (sig >= fac * dT * J.ft || std::abs(tau) >= fac * fs)
             hits.push_back({jI, sig, tau});
     }
 #endif
@@ -3452,7 +3514,16 @@ void FdemSolver::insertionSweep() {
     // deterministic activation order whatever the thread count
     std::sort(hits.begin(), hits.end(),
               [](const Hit& x, const Hit& y) { return x.jI < y.jI; });
-    for (const Hit& h : hits) activateJoint(h.jI, h.sig, h.tau);
+    for (const Hit& h : hits) {
+        // diagnostic : l insertion prolonge-t-elle une fissure ou en ouvre-t-elle
+        // une nouvelle ? Le rapport est l observable que la capacite vise.
+        if (tipBias) {
+            const Joint& J = jt_[h.jI];
+            if (vertTip_[vOf_[J.a1]] || vertTip_[vOf_[J.a2]]) ++nProp_;
+            else ++nNuc_;
+        }
+        activateJoint(h.jI, h.sig, h.tau);
+    }
 }
 
 // Stress continuity at insertion (the article's guard against the classical
@@ -4131,6 +4202,9 @@ void FdemSolver::computeStableDt() {
     for (std::size_t i = 0; i < X0_.size(); ++i)
         K[i] = 2.0 * (tiOn_ ? tiEmax_ : phases_.mat[el_[elemOf_[i]].phase].E)
                * thk_;                     // TI : le plus raide des deux
+    // insertion = none : aucun joint ne peut s activer, son ressort de
+    // penalite ne contraint donc pas la stabilite (il n est jamais evalue).
+    if (!noJoints_)
     for (const auto& J : jt_) {
         // jointElastic = parabolic : la tangente INITIALE de la branche
         // de Guo (eq. 2.31) vaut 2 ft/dnE = 2 pj, des deux cotes de
@@ -4247,7 +4321,7 @@ void FdemSolver::step() {
 
     if (fProf.on) {
         double t0 = fnow(); elementForces(); bodyForces();
-        double t05 = fnow(); if (adaptive_) insertionSweep();
+        double t05 = fnow(); if (adaptive_ && !noJoints_) insertionSweep();
         double t1 = fnow(); jointForces();
         double t2 = fnow(); generalContact();
         double t3 = fnow(); toolContact();
@@ -4258,7 +4332,8 @@ void FdemSolver::step() {
     } else {
         elementForces();
         bodyForces();                      // gravity (no-op when gravity = 0)
-        if (adaptive_) insertionSweep();   // before jointForces: a joint born
+        if (adaptive_ && !noJoints_) insertionSweep();   // before jointForces:
+                                           // a joint born
                                            // this step carries traction now
         // ---- ETAPE 2 (2026-09-02) : TRAVAIL POSITIF PAR CANAL -------------
         // POURQUOI. Le ratio d injection outil est <= 1 PAR THEOREME sous
@@ -7498,7 +7573,12 @@ void FdemSolver::integrate() {
     // dampNow == damping_ identiquement — meme arithmetique, bit-identique).
     const double dampNow = (dampSwitchT_ >= 0.0 && t_ >= dampSwitchT_)
                          ? dampAfter_ : damping_;
-    if (adaptive_) {
+    // insertion = none : les groupes lies doivent AUSSI integrer comme UN
+    // noeud, sinon les copies bougent independamment et le maillage se
+    // comporte comme un NUAGE de triangles libres (bug observe le
+    // 2026-08-25 : outil freine de 0,1 J seulement, 460 J d energie
+    // elastique nee de rien).
+    if (adaptive_ || noJoints_) {
         // Bound groups integrate as ONE node: forces and masses summed,
         // Cundall damping and the quiet-boundary terms applied to the sums,
         // the common velocity written back to every copy. For a singleton
@@ -7819,6 +7899,14 @@ void FdemSolver::writeFrame(int frame) {
     // est byte-identique quand aucun champ optionnel n est arme. Les vecteurs
     // vivent a la portee de la fonction (writeTriMesh garde des pointeurs).
     std::vector<double> bdv, tmv;
+    // ---- endommagement de la LOI DE VOLUME (porte de insertion-pointe,
+    // commit c2c2d42 du 2026-08-24). law = dpdfh calcule trois endommagements
+    // directionnels dans un repere fige (SDV 4-6 de la VUMAT) mais rien ne
+    // sortait : les .vtu ne portaient que les contraintes. On ecrit
+    // DMAX = max(D1,D2,D3), exactement ce que lisent les extracteurs du banc
+    // 6 (leur SDV 2), plus l instant du premier amorcage. AJOUT DE SORTIE
+    // PUR : aucune trajectoire ne change.
+    std::vector<double> dfhv, dfht;
     vtk::ScalarField ef{{"vonMises", &svm}, {"fragment", &frag},
                         {"phase", &phs}, {"grain", &grn},
                         {"sigmaXX", &sxx}, {"sigmaYY", &syy},
@@ -7835,6 +7923,20 @@ void FdemSolver::writeFrame(int frame) {
     if (thermOn_) {
         tmv = Tel_;                        // temperature par element
         ef["temp"] = &tmv;
+    }
+    if (law_ && law_->name() == "dpdfh") {
+        dfhv.resize(el_.size());
+        dfht.resize(el_.size());
+        for (std::size_t e = 0; e < el_.size(); ++e) {
+            const auto& d = el_[e].st.dfh;
+            dfhv[e] = std::max(d.Dv[0], std::max(d.Dv[1], d.Dv[2]));
+            double t0 = 0.0;
+            for (int i = 0; i < 3; ++i)
+                if (d.ti[i] > 0.0 && (t0 == 0.0 || d.ti[i] < t0)) t0 = d.ti[i];
+            dfht[e] = t0;
+        }
+        ef["dfhD"] = &dfhv;
+        ef["dfhTini"] = &dfht;
     }
     vtk::writeTriMesh(out_ + name, pts, tris, ef,
                       {{"velocity", &vel}});
@@ -8342,6 +8444,14 @@ void FdemSolver::finalize() {
                   << " % des joints sollicites — refuses au gel parce que deja "
                      "adoucis ; au-dela de quelques % l armement rate sa "
                      "cible)\n";
+    }
+    if (tipFactor_ > 1.0) {
+        long tot = nProp_ + nNuc_;
+        std::cout << "[FDEM] insertions en POINTE : " << nProp_
+                  << " propagations / " << nNuc_ << " nucleations ("
+                  << (tot ? 100.0 * nProp_ / tot : 0.0)
+                  << " % de propagation ; reference sans biais : 43,7 %, "
+                     "schema intrinsique : 56,8 %)\n";
     }
     if (difOn_) {
         // Sur les joints REELLEMENT inseres : c est la seule population sur

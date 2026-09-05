@@ -504,7 +504,47 @@ private:
     // union-find at the two endpoint vertices: copies bind per connected
     // component of the element fan over still-bonded edges.
     bool adaptive_ = false;
+    // ---- insertion = none : le CONTINUUM PUR (porte de insertion-pointe,
+    // commit 2ead636 du 2026-08-25). Aucun joint n existe ni ne peut naitre :
+    // les copies de noeuds restent liees pour toujours (liaison rigide =
+    // elements finis a noeuds partages, exactement). C est le mode a utiliser
+    // quand la fissuration est portee par la LOI DE VOLUME (law = dpdfh,
+    // saksala, bulkDamage...) et non par des cohesifs.
+    //
+    // Pourquoi la cle existe : on obtenait ce comportement en posant des
+    // resistances de joint inatteignables (ft = 1e12). C est une bombe a
+    // retardement — mesure du 2026-08-25 sur l impact 3D DP-DFH : un element
+    // totalement endommage (D -> DCAP, 1 % de raideur, aucune suppression) se
+    // distord, sort une contrainte aberrante, franchit meme une enveloppe a
+    // 1e12, et les 89 424 joints qui s activent alors portent dnE = ft/pj =
+    // 8 cm : l energie passe de 53 J a -89 GJ en 10 microsecondes. Avec
+    // insertion = none le balayage n existe pas, donc le piege non plus.
+    // BONUS : le pas de temps ne paie plus le ressort des joints (ils ne
+    // peuvent pas s activer), ce qui le multiplie par ~2,6.
+    bool noJoints_ = false;
     long nInserted_ = 0;
+    // ---- Insertion preferentielle en POINTE (2026-08-24, OPT-IN) ---------
+    // Mesure qui la motive : l adaptatif ne propage que 43,7 % de ses
+    // ruptures (le reste NUCLEE en terrain vierge) contre 56,8 % pour
+    // l intrinseque a loi de joint identique. Cause : la contrainte est
+    // moyennee sur deux CST, ce qui ECRASE la singularite de pointe (2,7
+    // elements par zone cohesive de mode I) — la facette devant une pointe
+    // ne se distingue plus d une facette quelconque de l anneau plastique.
+    // Correctif : une facette EN POINTE voit son enveloppe DIVISEE par
+    // insertionTipFactor ; une facette en terrain vierge garde l enveloppe
+    // nominale. Defaut 1,0 = chemin inchange, bit-identique.
+    //
+    // Pourquoi relacher la POINTE plutot que penaliser la nucleation (les
+    // deux se valent a un facteur global pres) : mesure du 2026-08-24 sur
+    // verify_fdem_voronoi_tension — penaliser la nucleation x1,6 fait passer
+    // l essai de 15 joints rompus a ZERO. Sans fissure preexistante tout est
+    // terrain vierge, donc le facteur relevait la RESISTANCE MACROSCOPIQUE
+    // de 60 % et aurait invalide le calage GBM Red Bohus. Relacher la pointe
+    // laisse l amorcage — donc la resistance mesuree — inchange.
+    double tipFactor_ = 1.0;      // insertionTipFactor
+    double tipD_ = 0.5;           // insertionTipDamage : ce qui compte comme pointe
+    std::vector<char> vertTip_;   // sommet touche par un joint rompu (>= tipD_)
+    long nNuc_ = 0, nProp_ = 0;   // compteurs de diagnostic
     std::vector<std::vector<int>> copiesOfVert_;   // vertex -> node copies
     std::vector<std::vector<int>> jointsOfVert_;   // vertex -> incident joints
     std::vector<std::vector<std::vector<int>>> grpsOfVert_; // vertex -> groups

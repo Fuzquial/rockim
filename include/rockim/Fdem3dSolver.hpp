@@ -381,6 +381,19 @@ private:
     // sigma_n >= ft or |tau| >= fs (Mohr-Coulomb). Node splitting falls out
     // of re-running the union-find at the face's three vertices.
     bool adaptive_ = false;
+    // insertion = none : continuum pur — miroir EXACT du 2D, voir
+    // FdemSolver.hpp pour la mesure qui a motive la cle (porte de
+    // insertion-pointe, commit 2ead636 du 2026-08-25).
+    bool noJoints_ = false;
+    // ---- Insertion preferentielle en POINTE — miroir EXACT du 2D --------
+    // (principe III : memes cles, meme loi). Voir FdemSolver.hpp pour la
+    // mesure qui la motive. En 3D la pointe est un FRONT, mais le test reste
+    // porte par les SOMMETS de la facette : une facette dont un sommet porte
+    // deja un joint rompu est en propagation. Defaut 1,0 = bit-identique.
+    double tipFactor_ = 1.0;      // insertionTipFactor
+    double tipD_ = 0.5;           // insertionTipDamage
+    std::vector<char> vertTip_;
+    long nNuc_ = 0, nProp_ = 0;
     // --- PORTAGE 2D -> 3D du 2026-08-18 ------------------------------------
     // jointContactPenalty = fixed (defaut) | adaptive : k- = k+(D) = (1-D) pj
     //   Ghesquiere-Dierickx, Molinari & Anciaux, arXiv:2511.14323 sec. 4. La

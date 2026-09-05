@@ -1,5 +1,5 @@
 #pragma once
-// KeysByMode.hpp — GENERE par tools/gen_keys_by_mode.py le 2026-09-05 20:44:31 : NE PAS EDITER.
+// KeysByMode.hpp — GENERE par tools/gen_keys_by_mode.py le 2026-09-05 22:49:27 : NE PAS EDITER.
 // Registre lisible : tools/keys_by_mode.json (methode dans la docstring du generateur).
 // Table des cles PROPRES A UN MODE (lues par un seul solveur) ; toute autre cle est commune.
 #include <stdexcept>
@@ -276,7 +276,11 @@ inline const char* const kKnown[] = {
     "dfhDCoh",
     "dfhDeld",
     "dfhK",
+    "dfhKPsi",
+    "dfhPsi0",
     "dfhPsiDeg",
+    "dfhPsiMax",
+    "dfhPsiVar",
     "dfhS",
     "dfhSigW",
     "dfhWeibullM",
@@ -369,6 +373,8 @@ inline const char* const kKnown[] = {
     "impactSpeed",
     "insertion",
     "insertionPenaltyFactor",
+    "insertionTipDamage",
+    "insertionTipFactor",
     "insituSh",
     "insituSv",
     "insituSxy",
@@ -702,7 +708,11 @@ inline const Readers kReaders[] = {
     {"dfhDCoh", "shared"},
     {"dfhDeld", "shared"},
     {"dfhK", "shared"},
+    {"dfhKPsi", "shared"},
+    {"dfhPsi0", "shared"},
     {"dfhPsiDeg", "shared"},
+    {"dfhPsiMax", "shared"},
+    {"dfhPsiVar", "shared"},
     {"dfhS", "shared"},
     {"dfhSigW", "shared"},
     {"dfhWeibullM", "shared"},
@@ -795,6 +805,8 @@ inline const Readers kReaders[] = {
     {"impactSpeed", "dem dem3d fdem fdem3d fem fem3d"},
     {"insertion", "fdem fdem3d"},
     {"insertionPenaltyFactor", "fdem fdem3d"},
+    {"insertionTipDamage", "fdem fdem3d"},
+    {"insertionTipFactor", "fdem fdem3d"},
     {"insituSh", "fdem"},
     {"insituSv", "fdem"},
     {"insituSxy", "fdem"},

@@ -7,6 +7,69 @@ reçoit les lignes exigées par les règles déjà en vigueur — dont **toute a
 
 ## [Non publié]
 
+### Ajouté — port de la branche orpheline `insertion-pointe` (décision 3)
+
+Quatre commits de `insertion-pointe` (2ead636), jamais fusionnés, dont **aucune des six clés
+n'existait dans `f2`** : contenu réellement orphelin. Deux decks de `f2`
+(`bench_impact/configs/impact3d_dpdfh.cfg` et `..._gros.cfg`) les posaient déjà et étaient donc
+**refusés** par `rockim_f2w21` (garde C1). Tout arrive en **clé opt-in à défaut bit-identique**.
+Détail complet, mesures et bancs : [`docs/PORT_INSERTION_POINTE.md`](docs/PORT_INSERTION_POINTE.md).
+
+- **`insertionTipFactor` (défaut 1) et `insertionTipDamage` (défaut 0,5)** — insertion préférentielle
+  en POINTE de fissure, 2D et 3D. Une facette dont un sommet porte déjà un joint inséré et endommagé
+  (`D >= insertionTipDamage`) voit son enveloppe DIVISÉE par `insertionTipFactor` ; une facette en
+  terrain vierge garde l'enveloppe nominale, donc **l'amorçage — et la résistance macroscopique
+  mesurée — restent intacts** (mesuré : pic 51,0807 → 51,0807 MPa). Motivation : l'adaptatif ne
+  propage que 43,7 % de ses ruptures contre 56,8 % pour l'intrinsèque, la moyenne sur deux CST
+  écrasant la singularité de pointe. À `insertionTipFactor = 1` aucun test supplémentaire n'est
+  évalué : **chemin d'origine au bit près**. Gardes : facteur < 1 refusé, `insertionTipDamage` hors
+  [0,1] refusé, facteur > 1 sans `insertion = adaptive` refusé. Compte
+  `propagations / nucléations` imprimé en fin de run.
+- **`insertion = none`** — le CONTINUUM PUR (2D et 3D) : aucun joint n'existe ni ne peut naître, les
+  copies de nœuds restent liées pour toujours (= éléments finis à nœuds partagés). Remplace le
+  bricolage `insertion = adaptive` + `ft = 1e12`, qui a fait passer un impact 3D DP-DFH de 53 J à
+  **−89 GJ en 10 µs** le 2026-08-25 (89 424 joints « inatteignables » activés par un élément
+  distordu, portant `dnE = ft/pj = 8 cm`). Trois conséquences câblées : joints liés comme en
+  adaptatif, groupes liés intégrant comme UN nœud, et **ressort de pénalité des joints sorti du
+  budget de pas de temps** (mesuré : dt × 1,715 sur le banc 2D).
+- **`dfhPsiVar` (défaut 0), `dfhPsi0`, `dfhKPsi`, `dfhPsiMax`** — dilatance VARIABLE ψ(p̄) du DP-DFH,
+  la forme de `vumat_hole.f` l. 336-339 : `ψ = clamp(dfhPsi0 − dfhKPsi·p̄[MPa], 0, dfhPsiMax)`. La
+  constante #5 de la carte (`dfhPsiDeg`, 15 deg) est alors morte. Clé absente ⇒ `psiDeg` fixe,
+  trajectoires inchangées au bit près.
+- **`dfhD` et `dfhTini` dans les `.vtu`** sous `law = dpdfh` (2D et 3D) : DMAX = max(D1,D2,D3) des
+  trois endommagements directionnels du repère figé (SDV 4-6 de la VUMAT, ce que lisent les
+  extracteurs du banc 6) et l'instant du premier amorçage. **Ajout de sortie pur.**
+- **Decks** `tunnel_edz/configs/tunnel_tip13.cfg`, `tunnel_tip16.cfg`, `tunnel_tip20.cfg` (calibration
+  du facteur 1,3 / 1,6 / 2,0 sur le tunnel EDZ), repris tels quels.
+- **Bancs courts** `tests_f2/insertion_pointe/` (4 decks + `check_tip.py`, ~10 min à OMP 2) et
+  `tests_f2/psivar/` (2 decks point-matériel + `check_psivar.py`, ~2 s). Tous deux impriment un
+  verdict OK/ÉCHEC par critère.
+- **`etude_lois_fem/meshes/drop_orphans.py` et `check_orphans.py`** : ces outils sont NOMMÉS par le
+  message d'erreur du lecteur de maillage mais n'avaient pas été repris à la naissance de `g0`
+  (seuls les `*.py` de la racine de `etude_lois_fem/` l'avaient été). Repris de `rockim_f2`.
+
+### Corrigé
+- `bench_impact/configs/impact3d_dpdfh.cfg` et `impact3d_dpdfh_gros.cfg` **chargent** (ils étaient
+  refusés clé par clé). Trois réparations : les six clés existent maintenant ; la **commande exacte
+  de régénération** du maillage est dans l'en-tête (les `.msh` n'existaient nulle part, ni dans `g0`
+  ni dans `rockim_f2`, et les comptes annoncés — 98 858 et 143 451 tétraèdres — venaient de
+  paramètres jamais consignés : les comptes réellement obtenus, 105 498 et 150 535, sont écrits) ;
+  les decks pointent sur `*_clean.msh` car gmsh écrit le point du champ de taille (= le point
+  d'impact) en nœud 0-D orphelin que le lecteur refuse.
+- Message d'annonce du bloc de liaison des joints : il disait `adaptive insertion: N bonded edges`
+  même sous `insertion = none`. Il dit maintenant `insertion = none: N bonded edges` dans ce cas.
+  **Sortie seule**, aucun flottant touché.
+
+### Bit-identité
+- `python tools/bitid.py --exe build/rockim.exe --threads 4` contre l'ancre de naissance
+  `tools/bitid_refs.json` : **8/8 IDENTIQUE** après le port (`results/bitid_apres_port_insertion_pointe.json`).
+  L'ancre est **inchangée** (aucun `--update`).
+- **Trou de l'ancre comblé à la main** : aucun de ses 8 decks ne pose `law = dpdfh`, elle ne pouvait
+  donc rien dire du port de ψ(p). Preuve dédiée : sur le point matériel DP-DFH
+  `tests_f2/psivar/mp_dpdfh_psivar_off.cfg`, `build/rockim.exe` et le binaire d'avant le portage
+  `rockim_f2w21.exe` rendent la **même trace au SHA-256 près**
+  (`341fac848845623c2db4a702897f4efab6a797842d843964b6cf83274c997580`).
+
 ## [g0-0.1.0] — 2026-09-05 — naissance de g0
 
 ### Naissance

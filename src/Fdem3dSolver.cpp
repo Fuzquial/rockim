@@ -477,10 +477,38 @@ void Fdem3dSolver::init() {
     // selects the (softer) activation penalty in that mode.
     {
         std::string ins = cfg_.gets("insertion", "intrinsic");
-        if (ins != "intrinsic" && ins != "adaptive")
+        if (ins != "intrinsic" && ins != "adaptive" && ins != "none")
             throw std::runtime_error("insertion must be intrinsic | adaptive "
-                                     "(got '" + ins + "')");
+                                     "| none (got '" + ins + "')");
         adaptive_ = ins == "adaptive";
+        // insertion = none : CONTINUUM PUR — miroir exact du 2D, voir
+        // FdemSolver.cpp pour la mesure qui a motive la cle (impact 3D
+        // DP-DFH du 2026-08-25 : 53 J devenus -89 GJ en 10 us par
+        // activation de joints "neutralises" a ft = 1e12).
+        noJoints_ = ins == "none";
+        if (noJoints_)
+            std::cout << "[FDEM3D] insertion = none : continuum pur, aucun "
+                         "joint ne peut naitre (la loi de volume porte toute "
+                         "la fissuration)" << std::endl;
+    }
+    // ---- insertion preferentielle en POINTE (OPT-IN, miroir du 2D) ------
+    {
+        tipFactor_ = cfg_.getd("insertionTipFactor", 1.0);
+        tipD_ = cfg_.getd("insertionTipDamage", 0.5);
+        if (tipFactor_ < 1.0)
+            throw std::runtime_error("insertionTipFactor doit etre >= 1 "
+                                     "(1 = comportement d origine)");
+        if (tipD_ < 0.0 || tipD_ > 1.0)
+            throw std::runtime_error("insertionTipDamage doit etre dans [0,1]");
+        if (tipFactor_ > 1.0) {
+            if (!adaptive_)
+                throw std::runtime_error("insertionTipFactor exige "
+                                         "insertion = adaptive");
+            std::cout << "[FDEM3D] insertion preferentielle en pointe : "
+                      << "enveloppe relachee /" << tipFactor_
+                      << " en pointe (sommet portant un joint de D >= "
+                      << tipD_ << ")\n";
+        }
     }
     // jointSoftening = linear (default, unchanged) | yan — the exponential
     // reduction factor f(D) of Yan et al. eq. 11, ported from the 2D solver.
@@ -597,10 +625,14 @@ void Fdem3dSolver::init() {
                          "origin + jointFrictionScaled = 1.\n";
     }
     assignJointProps();
-    if (adaptive_) {
+    // insertion = none : les joints doivent AUSSI etre lies (sinon ils
+    // restent intrinseques et cassent, ce qui est l exact contraire du
+    // continuum pur voulu — bug corrige le 2026-08-25).
+    if (adaptive_ || noJoints_) {
         for (auto& J : jt_) J.bonded = true;
         buildBindingTables();
-        std::cout << "[FDEM3D] adaptive insertion: " << jt_.size()
+        std::cout << (noJoints_ ? "[FDEM3D] insertion = none: "
+                                : "[FDEM3D] adaptive insertion: ") << jt_.size()
                   << " bonded faces, activation penalty "
                   << cfg_.getd("insertionPenaltyFactor", 4.0) << " E/h\n";
     }
@@ -1944,6 +1976,20 @@ void Fdem3dSolver::refreshDif(Joint& J, double er) {
 void Fdem3dSolver::insertionSweep() {
     struct Hit { int jI; double sig, fs; Eigen::Vector3d tauV; };
     std::vector<Hit> hits;
+    // pointes de fissure (opt-in) — miroir du 2D, cf. Fdem3dSolver.hpp
+    const bool tipBias = tipFactor_ > 1.0;
+    if (tipBias) {
+        vertTip_.assign(nVert_, 0);
+        for (const auto& J : jt_) {
+            if (J.bonded || J.D < tipD_) continue;
+            for (int k = 0; k < 3; ++k) vertTip_[vOf_[J.a[k]]] = 1;
+        }
+    }
+    auto atTip = [&](const Joint& J) {
+        for (int k = 0; k < 3; ++k)
+            if (vertTip_[vOf_[J.a[k]]]) return true;
+        return false;
+    };
     auto testJoint = [&](int jI, std::vector<Hit>& out) {
         const Joint& J = jt_[jI];
         if (!J.bonded) return;
@@ -1973,7 +2019,8 @@ void Fdem3dSolver::insertionSweep() {
         double fs = dC * J.coh
                   + J.tanPhi * rockim::mcFrictionTerm(sig, J.ft, yangEnv_);
         if (fs < 0.0) fs = 0.0;
-        if (sig >= dT * J.ft || tauV.norm() >= fs)
+        double fac = (tipBias && atTip(J)) ? 1.0 / tipFactor_ : 1.0;
+        if (sig >= fac * dT * J.ft || tauV.norm() >= fac * fs)
             out.push_back({jI, sig, fs, tauV});
     };
 #ifdef _OPENMP
@@ -1991,7 +2038,10 @@ void Fdem3dSolver::insertionSweep() {
     if (hits.empty()) return;
     std::sort(hits.begin(), hits.end(),
               [](const Hit& x, const Hit& y) { return x.jI < y.jI; });
-    for (const Hit& h : hits) activateJoint(h.jI, h.sig, h.tauV, h.fs);
+    for (const Hit& h : hits) {
+        if (tipBias) { if (atTip(jt_[h.jI])) ++nProp_; else ++nNuc_; }
+        activateJoint(h.jI, h.sig, h.tauV, h.fs);
+    }
 }
 
 // Stress continuity at insertion, as in 2D: opening offset so the elastic
@@ -2338,7 +2388,9 @@ void Fdem3dSolver::computeStableDt() {
         // dn = 0. Sans ce facteur le pas de temps serait sqrt(2) trop
         // grand — un run de plusieurs heures gache EN SILENCE.
         const double kPara = paraElastic_ ? 2.0 : 1.0;
-        double k = kPara * J.pj * J.A0 / 3.0;
+        // insertion = none : le ressort de penalite n est jamais evalue, il
+        // ne contraint donc pas la stabilite (miroir du 2D).
+        double k = noJoints_ ? 0.0 : kPara * J.pj * J.A0 / 3.0;
         for (int q = 0; q < 3; ++q) { K[J.a[q]] += k; K[J.b[q]] += k; }
     }
     double nExtra = cfg_.getd("extraContacts", 2.0);
@@ -2448,7 +2500,7 @@ void Fdem3dSolver::step() {
 
     if (f3Prof.on) {
         double t0 = f3now(); elementForces(); bodyForces();
-        double t1 = f3now(); if (adaptive_) insertionSweep();
+        double t1 = f3now(); if (adaptive_ && !noJoints_) insertionSweep();
         double t2 = f3now(); jointForces();
         double t3 = f3now(); generalContact();
         double t4 = f3now(); toolContact();
@@ -2459,7 +2511,7 @@ void Fdem3dSolver::step() {
     } else {
         elementForces();
         bodyForces();                      // gravite + anti-gravite du tri
-        if (adaptive_) insertionSweep();   // before jointForces: a joint born
+        if (adaptive_ && !noJoints_) insertionSweep();   // before jointForces
                                            // this step carries traction now
         jointForces();
         generalContact();
@@ -4171,7 +4223,12 @@ void Fdem3dSolver::integrate() {
         keInit_ = ke0;
     }
     double cw = 0.0, lw = 0.0, bw = 0.0, bias = 0.0;  // V2/B4 compteurs
-    if (adaptive_) {
+    // insertion = none : les groupes lies doivent AUSSI integrer comme UN
+    // noeud, sinon les copies bougent independamment et le maillage se
+    // comporte comme un NUAGE de tetraedres libres (bug observe le
+    // 2026-08-25 : outil freine de 0,1 J seulement, 460 J d energie
+    // elastique nee de rien).
+    if (adaptive_ || noJoints_) {
         // Bound groups integrate as ONE node (sum of forces and masses,
         // damping and quiet-boundary terms on the sums), exactly as in the
         // 2D solver. Copies of a group share flags (same position) and stay
@@ -4903,6 +4960,13 @@ void Fdem3dSolver::finalize() {
                   << jt_.size() << " joints inserted ("
                   << (jt_.empty() ? 0.0 : 100.0 * nInserted_ / jt_.size())
                   << " %), " << nBroken_ << " fully broken\n";
+    if (tipFactor_ > 1.0) {
+        long tot = nProp_ + nNuc_;
+        std::cout << "[FDEM3D] insertions en POINTE : " << nProp_
+                  << " propagations / " << nNuc_ << " nucleations ("
+                  << (tot ? 100.0 * nProp_ / tot : 0.0)
+                  << " % de propagation)\n";
+    }
     if (difIntrinsic_) {
         // CONTROLE (principe IV) : le critere porte sur la contrainte MOYENNE
         // des deux tetras, l endommagement sur l ouverture PROPRE du joint.
