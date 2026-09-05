@@ -70,6 +70,19 @@ Détail complet, mesures et bancs : [`docs/PORT_INSERTION_POINTE.md`](docs/PORT_
 - **Corrigé** `bench_impact/tools/fig_fp.py` : coquille de chaîne non brute `label="moyenne (30 $\mu$s)"` →
   `label=r"..."` (portée de `dif-intrinseque`).
 
+### Non porté — branche `joint-handoff` (décision 3), lecture ligne par ligne
+- **Aucune ligne de `src/` ni de `include/` n'est reprise.** Les trois « pertes probables » de la
+  revue sont **toutes les trois déjà dans `g0`**, et dans les trois cas ÉTENDUES par `f2` : le poste
+  d'énergie séparé `brushWork_` (que `f2` peut en plus faire entrer dans le bilan par
+  `energyBodyForces`) ; le court-circuit `if (muCRes_ < 0.0) return muC_;` de `contactResidualMu`
+  (devenu `return mu` — le rendre à `muC_` **annulerait** le frottement par phase de `f2`, ce serait
+  une régression) ; le budget de pas de temps Signorini A1 qui sort `kp_` du CFL (présent dans les
+  deux solveurs, `f2` ajoutant les platines, le contact général SHPB, le potentiel,
+  `dtBudgetTangential` et deux bornes visqueuses). Sur les 106 lignes de `joint-handoff` absentes de
+  `g0`, 98 sont des lignes de `main` que `f2` a réécrites pour son propre compte et 8 seulement ont
+  été écrites par la branche — toutes du refactor. Verdict ligne par ligne :
+  [`docs/PORT_JOINT_HANDOFF.md`](docs/PORT_JOINT_HANDOFF.md).
+
 ### Bit-identité
 - `python tools/bitid.py --exe build/rockim.exe --threads 4` contre l'ancre de naissance
   `tools/bitid_refs.json` : **8/8 IDENTIQUE** après le port (`results/bitid_apres_port_insertion_pointe.json`).
