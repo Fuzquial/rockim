@@ -104,7 +104,7 @@ def main():
                         linewidths=1.0, alpha=0.55)
     A.add_collection(lc)
     A.plot(p[sep:cut], Fm[sep:cut], color="#1f4e79", lw=2.2,
-           label="moyenne (30 $\mu$s)")
+           label=r"moyenne (30 $\mu$s)")
     cb = fig.colorbar(lc, ax=A, pad=0.02)
     cb.set_label(r"temps [$\mu$s]")
     k = sep + int(np.argmax(Fm[sep:cut]))

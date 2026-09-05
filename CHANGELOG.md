@@ -60,6 +60,16 @@ Détail complet, mesures et bancs : [`docs/PORT_INSERTION_POINTE.md`](docs/PORT_
   même sous `insertion = none`. Il dit maintenant `insertion = none: N bonded edges` dans ce cas.
   **Sortie seule**, aucun flottant touché.
 
+### Ajouté — port de la branche orpheline `dif-intrinseque` (décision 3)
+- `bench_impact/tools/fig_bilan.py` (159 lignes) : la planche du run de référence — partition de
+  l'énergie contre les chiffres publiés (ARMA 24-0952 : fissuration 2,6 %, frottement 64,9 % de
+  49,3 J) et les sept critères de la Table 3 de Yang et al. rapportés à leur fourchette. C'est,
+  avec la coquille de `fig_fp.py`, **tout** ce que `dif-intrinseque` apportait encore : son C++ est
+  un sous-ensemble strict de `joint-handoff` (`git diff --stat joint-handoff...dif-intrinseque --
+  src include` est vide).
+- **Corrigé** `bench_impact/tools/fig_fp.py` : coquille de chaîne non brute `label="moyenne (30 $\mu$s)"` →
+  `label=r"..."` (portée de `dif-intrinseque`).
+
 ### Bit-identité
 - `python tools/bitid.py --exe build/rockim.exe --threads 4` contre l'ancre de naissance
   `tools/bitid_refs.json` : **8/8 IDENTIQUE** après le port (`results/bitid_apres_port_insertion_pointe.json`).
