@@ -28,7 +28,7 @@ de `f2` posaient deja ces cles et etaient donc **refuses** par `rockim_f2w21`
 
 **Mesure qui la motive** (relevee dans la branche) : l'insertion adaptative ne
 PROPAGE que 43,7 % de ses ruptures — le reste NUCLEE en terrain vierge — contre
-56,8 % pour le schema intrinseque a loi de joint identique. Cause : la
+58,9 % pour le schema intrinseque a loi de joint identique (chiffre CORRIGE le 2026-09-06 : « 56,8 % » etait une coquille de recopie ; la mesure d'origine, BILAN_insertion_adaptative.md l. 102/127/154, donne 58,9 %). Cause : la
 contrainte est moyennee sur deux CST, ce qui ECRASE la singularite de pointe
 (2,7 elements par zone cohesive de mode I) ; la facette devant une pointe ne se
 distingue plus d'une facette quelconque de l'anneau plastique.

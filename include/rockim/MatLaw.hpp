@@ -63,6 +63,31 @@
 //               ftScale = 1). Verified by trace superposition against the
 //               ifx-compiled Fortran reference on four loading paths.
 //
+//  * dfhplus  — DFH+ ETAPE 1 (2026-09-06) : MEME perimetre physique que
+//               dpdfh, CADRE different. La loi est dans un fichier SEPARE,
+//               src/MatLawDfhPlus.cpp (fabrique : include/rockim/
+//               MatLawDfhPlus.hpp) — DpDfhLaw ci-dessus n'est pas touchee.
+//               Elle est batie sur une ENERGIE LIBRE POSTULEE unique, avec
+//               DECOMPOSITION SPECTRALE de la deformation elastique (seule la
+//               partie POSITIVE est degradee, unilateralite naturelle) :
+//                 rho psi = (lambda/2)[g_v <tr e>+^2 + <tr e>-^2]
+//                         + G A:(e+)^2 + G ||e-||^2,
+//               A = somme_i (1-D_i) n_i (x) n_i (repere FIGE), g_v = moyenne
+//               HARMONIQUE des trois integrites. D'ou, ANALYTIQUEMENT,
+//               sigma = d(rho psi)/d e (projection spectrale de Daleckii-
+//               Krein) et Y_i = -d(rho psi)/dD_i >= 0 INCONDITIONNELLEMENT,
+//               qui pilote l'obscuration par sigma^eq = sqrt(2 E Y_i / c_nu).
+//               Plasticite DP non associee sur la contrainte effective
+//               d(rho psi)/d e a D = 0 = C : e^e — meme critere, meme retour,
+//               meme apex que dpdfh (compression et triaxiaux identiques a
+//               2,5e-10). MEMES CLES dfh* : les cartes sont interchangeables.
+//               Cles propres : dfhpPsiClamp (true = ecretage d'admissibilite
+//               de la dilatance), dfhpVolInteg (harmonic | min | none).
+//               Expose son energie libre au banc (hasFreeEnergy). Resultat :
+//               `rockim thermobench dfhplus` PASS, 0 violation, la ou dpdfh en
+//               a 7 172. Bancs : `rockim selftest-dfhplus`. Compte rendu :
+//               docs/DFHPLUS_etape1.md.
+//
 //  * saksala  — rate-DEPENDENT damage-viscoplasticity in the spirit of
 //               Saksala's model for percussive drilling: the SAME DP cone
 //               but with a PERZYNA viscoplastic return (linear overstress,
@@ -370,6 +395,30 @@ struct MatState {
         double kap[3] = {0, 0, 0};
         double eul[3] = {0, 0, 0};
     } fcm;
+
+    // ---- law = dfhplus (2026-09-06, etape 1 du chantier DFH+) -------------
+    // Sous-etat OPT-IN, nul et sans effet pour toutes les autres lois (croissance
+    // par addition, principe VIII). La loi dfhplus est ecrite sur une ENERGIE
+    // LIBRE POSTULEE (cf. src/MatLawDfhPlus.cpp) : sa seule variable d'etat
+    // reversible est la deformation elastique, portee par le champ PARTAGE
+    // MatState::epsP (eps^e = eps - eps^p) ; ici ne restent que les variables
+    // IRREVERSIBLES et le repere fige.
+    struct Dfhp {
+        bool seeded = false;      // tirages de Weibull faits
+        bool frozen = false;      // repere d'endommagement fige
+        bool dead = false;        // erosion dfhDeld
+        double Dv[3] = {0, 0, 0};        // endommagements directionnels D_i
+        double eul[3] = {0, 0, 0};       // repere fige (Euler ZYX, comme Dfh)
+        double sc[3] = {0, 0, 0};        // seuils de Weibull tries
+        double ti[3] = {0, 0, 0};        // instants d'amorcage
+        double peeq = 0.0;               // multiplicateur plastique cumule
+        double smaxh = 0.0;              // max de la contrainte equivalente [Pa]
+        double t = 0.0;                  // temps total cumule
+        double psi = 0.0;                // rho psi au dernier appel [J/m^3]
+        double wDam = 0.0;               // int sum Y_i dD_i [J/m^3]
+        double clamp = 0.0;              // tan(Psi) effectif du dernier retour
+        int nClamp = 0;                  // nb de pas ou l'ecretage a agi
+    } dfhp;
 };
 
 class MatLaw {
@@ -381,6 +430,30 @@ public:
                                    double dt, double lc) const = 0;
     virtual std::string name() const = 0;
     double cP() const { return mat_.cP(); }
+
+    // ---- ENERGIE LIBRE EXPOSEE (2026-09-06, AJOUT du chantier DFH+) -------
+    // Une loi construite sur une energie libre POSTULEE peut la rendre : le
+    // banc thermodynamique (`rockim thermobench`) cesse alors d'estimer rho psi
+    // par une sonde de decharge (estimateur biaise, increments contamines et
+    // non relaches exclus) et lit la valeur EXACTE. Defaut : « non exposee »,
+    // donc STRICTEMENT sans effet sur les lois existantes (dpdfh comprise) —
+    // croissance par addition, principe VIII.
+    virtual bool hasFreeEnergy() const { return false; }
+    // rho psi(eps, etat) [J/m^3] a variables internes FIGEES ; n'a de sens que
+    // si hasFreeEnergy() est vrai. `eps` est la deformation TOTALE, comme pour
+    // stress() ; l'etat porte la part plastique et l'endommagement.
+    virtual double freeEnergy(const Eigen::Matrix3d&, const MatState&) const {
+        return 0.0;
+    }
+
+    // Forces motrices ANALYTIQUES Y_k = -d(rho psi)/d D_k [J/m^3], remplies
+    // dans `Y` (au plus 3) ; rend le nombre ecrit, 0 = « non exposees ».
+    // Meme logique additive que freeEnergy : le banc peut alors confronter la
+    // formule analytique aux differences finies sur l'energie libre exposee.
+    virtual int damageForces(const Eigen::Matrix3d&, const MatState&,
+                             double*) const {
+        return 0;
+    }
 
     // uniaxial compressive yield of the DP cone (analytic, for verification)
     double sigmaCdp() const { return kdp_ / (1.0 / std::sqrt(3.0) - adp_); }
@@ -478,6 +551,17 @@ int cdpSelftest(const std::string& csvPath);
 // beta = 1 et 0,1 (donnee) ; (e) energie dissipee = Gf/lc a 2 % (les deux).
 // Retourne 0 si (a), (b), (c), (e) et la bit-identite scalar/cle passent.
 int fixedCrackSelftest(const std::string& csvPath);
+
+// Bancs de la loi dfhplus (2026-09-06, etape 1 du chantier DFH+), au point
+// materiel : (1) sigma = d(rho psi)/d eps verifie contre les differences finies
+// centrees ; (2) Y_i = -d(rho psi)/d D_i idem ; (3) reduction elastique exacte a
+// D = 0 ; (4) objectivite sous rotation rigide ; (5) exposant de vitesse de
+// l'obscuration 3/(m+3) pour m = 6, 12, 24 (dfhplus ET dpdfh, cote a cote) ;
+// (6) comparaison dfhplus / dpdfh en traction, compression, triaxial et sur un
+// chemin NON COAXIAL ; (7) controle qui DOIT echouer : sans l'ecretage de
+// dilatance (dfhpPsiClamp = false) la dissipation plastique devient negative.
+// Retourne 0 si (1)-(5) passent.
+int dfhPlusSelftest(const std::string& csvPath);
 
 // rockim matpoint <cfg> [out.csv] : pilote point-materiel generique (toutes
 // les lois), chemins triax | tension | biaxial | uniaxial, cles mp* — le

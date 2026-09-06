@@ -1,5 +1,5 @@
 #pragma once
-// KeysByMode.hpp — GENERE par tools/gen_keys_by_mode.py le 2026-09-05 22:49:27 : NE PAS EDITER.
+// KeysByMode.hpp — GENERE par tools/gen_keys_by_mode.py le 2026-09-06 11:58:13 : NE PAS EDITER.
 // Registre lisible : tools/keys_by_mode.json (methode dans la docstring du generateur).
 // Table des cles PROPRES A UN MODE (lues par un seul solveur) ; toute autre cle est commune.
 #include <stdexcept>
@@ -285,6 +285,8 @@ inline const char* const kKnown[] = {
     "dfhSigW",
     "dfhWeibullM",
     "dfhZeff",
+    "dfhpPsiClamp",
+    "dfhpVolInteg",
     "diametralBand",
     "discFlattenDeg",
     "discMesh",
@@ -717,6 +719,8 @@ inline const Readers kReaders[] = {
     {"dfhSigW", "shared"},
     {"dfhWeibullM", "shared"},
     {"dfhZeff", "shared"},
+    {"dfhpPsiClamp", "shared"},
+    {"dfhpVolInteg", "shared"},
     {"diametralBand", "fdem"},
     {"discFlattenDeg", "fdem"},
     {"discMesh", "fdem"},

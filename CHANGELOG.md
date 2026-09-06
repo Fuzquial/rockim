@@ -7,6 +7,87 @@ reçoit les lignes exigées par les règles déjà en vigueur — dont **toute a
 
 ## [Non publié]
 
+
+### Ajouté — `law = dfhplus` : le périmètre de DP-DFH sur une énergie libre postulée (2026-09-06)
+
+Étape 1 du chantier **DFH+**, suite du banc `thermobench`. **`DpDfhLaw` n'est pas touchée** — ni son
+code, ni ses clés, ni ses résultats (`selftest-dpdfh` rejoué OK, `thermobench dpdfh` reproduit
+7 172 / 59 483, pire −15 240 J/m³, 1 124 significatives, 0 / 3 574 en symétrie) : `dfhplus` est une
+**loi séparée**, dans un fichier séparé. Compte rendu chiffré : **`docs/DFHPLUS_etape1.md`**.
+
+- **Nouveaux fichiers** `include/rockim/MatLawDfhPlus.hpp`, `src/MatLawDfhPlus.cpp` (la loi ;
+  l'en-tête porte l'énergie libre, ses trois dérivées et le choix de la contrainte effective) et
+  `src/DfhPlusBench.cpp` (`rockim selftest-dfhplus`, sept bancs). Une branche
+  `else if (kind == "dfhplus")` dans `MatLaw::make`, trois entrées dans `CMakeLists.txt`, une
+  commande dans `main.cpp`.
+- **L'énergie libre**, avec **décomposition spectrale** de ε^e (Miehe et al. 2010) — seule la partie
+  **positive** est dégradée, l'unilatéralité est naturelle :
+  `ρψ = (λ/2)[g_v <tr ε^e>₊² + <tr ε^e>₋²] + G A:(ε^e⁺)² + G ‖ε^e⁻‖²`, avec `A = Σ_i (1−D_i) n_i⊗n_i`
+  (repère figé) et `g_v` = moyenne **harmonique** des trois intégrités (couplage en série : g_v → 0
+  dès qu'un D_i → 1). À D = 0 c'est **exactement** l'élasticité linéaire.
+- **σ = ∂ρψ/∂ε^e** analytique (projection spectrale de Daleckii–Krein), vérifiée contre les
+  différences finies sur ρψ : **2,0e−9**. **Y_i = −∂ρψ/∂D_i** analytique, **≥ 0 inconditionnellement**
+  (deux carrés × λ > 0, G > 0) et **borné** à saturation (g_v ≤ 3(1−D_i) ⇒ le préfacteur ≤ 9).
+  L'obscuration est branchée sur `Y_i` par la contrainte équivalente d'énergie
+  `σ^eq = √(2 E Y_i / c_ν)`, calibrée pour valoir exactement σ̄_ii en traction uniaxiale à D = 0.
+- **Plasticité sur `∂ρψ/∂ε|_{D=0} = C : ε^e`** — la seule mesure indépendante de D, donc la seule qui
+  laisse la surface de charge en place quand la roche se fissure ; linéaire, donc le critère, le
+  retour radial et l'apex de `dpdfh` s'y transposent sans modification. **Mesuré : compression
+  uniaxiale et triaxiaux 20/50/100 MPa identiques à `dpdfh` à 2,4–2,6e−10.**
+- **Clés.** Les neuf clés matériau de `dpdfh` sont reprises **à l'identique** (`dfhBetaDeg`,
+  `dfhDCoh`, `dfhPsiDeg`, `dfhWeibullM`, `dfhSigW`, `dfhZeff`, `dfhK`, `dfhS`, `dfhDeld`, plus
+  `dfhPsiVar`/`dfhPsi0`/`dfhKPsi`/`dfhPsiMax`) : **les cartes sont interchangeables**. Deux clés
+  propres : `dfhpPsiClamp` (défaut `true`, écrêtage d'admissibilité de la dilatance avec
+  prédicteur-correcteur) et `dfhpVolInteg` (`harmonic` | `min` | `none`). Registre des clés régénéré
+  (`tools/gen_keys_by_mode.py`).
+- **RÉSULTAT CENTRAL** — `rockim thermobench dfhplus` → **PASS, 0 violation** sur les cinq tests, sur
+  les **mêmes** 12 000 tirages où `dpdfh` échoue : symétrie **0 / 2 078**, dissipation **0 / 120 000**
+  (pire déficit **−4,7e−3 J/m³ = 3,8e−6 % de Gf/ℓc**, contre −15 240 J/m³ = 17,6 % pour `dpdfh`),
+  réduction 0 / 96 000 (3,3e−15), objectivité 0 / 480 000 (2,3e−14), continuité 0 / 120 000.
+  **Avec le MÊME instrument** que `dpdfh` (`--probe`, sonde de décharge) : **1 / 79 826** contre
+  7 172 / 59 483, et **0 violation significative** contre 1 124.
+- **Exposant de vitesse 3/(m+3) CONSERVÉ** : m = 6 / 12 / 24 → **0,3333 / 0,1989 / 0,1107** contre
+  les cibles 0,3333 / 0,2000 / 0,1111 (−0,02 / −0,55 / −0,41 %), aussi près que `dpdfh` sur le même
+  banc. La régression n'est faite que dans le **régime de fragmentation multiple** (λ_frag V_el > 10) :
+  en dessous l'élément casse sur un défaut et le pic est rate-indépendant.
+- **Écarts mesurés avec `dpdfh`** (banc 6) : pic de traction **identique à 5e−13** (il est atteint à
+  l'amorçage, où les deux lois sont la même élasticité) ; aire sous la courbe de traction **+0,23 %** ;
+  branche adoucissante **plus raide de +17 % au maximum** (vers D ≈ 0,65 : le terme λ ne peut pas être
+  dégradé direction par direction sans casser la symétrie majeure) puis **plus relâchée** en fin de
+  course (σ à D = 0,98 : 0,027 contre 1,094 MPa) ; cisaillement dégradé par la moyenne **arithmétique**
+  des intégrités (conséquence du potentiel) au lieu du `min(f_i, f_j)` **postulé** par la VUMAT ;
+  chemin **non coaxial** : +12,5 % de travail total, et **0 violation** là où `dpdfh` concentrait ses
+  cinq pires déficits.
+- **Contrôle qui DOIT échouer** : `dfhpPsiClamp = false`. Sur la carte de la thèse (Ψ = 15°)
+  l'écrêtage ne mord jamais et la dissipation plastique est positive sur les 371 incréments **avec ou
+  sans** la clé — c'est un résultat, pas un échec (sur la surface q̄/p̄ > tan β = 1,266 ≫ tan Ψ = 0,268).
+  En écoulement **associé** (Ψ = β = 51,7°) la clé sert et le facteur est **21** sur le pire déficit
+  (−8 127 → −386 J/m³). Elle ne suffit pas : les 252 incréments résiduels ont `q_proj < 0`, c'est le
+  terme **déviatorique** qui est négatif — point ouvert, `docs/DFHPLUS_etape1.md` §9.
+
+### Ajouté — `thermobench` : énergie libre exposée, et deux discriminants (2026-09-06)
+
+- **Trois virtuelles AJOUTÉES à `MatLaw`** — `hasFreeEnergy()`, `freeEnergy(eps, state)`,
+  `damageForces(eps, state, Y[])` — avec un défaut « non exposée » : **zéro effet sur les lois
+  existantes** (croissance par addition, principe VIII ; `thermobench dpdfh` et
+  `thermobench elastic` rendent exactement les mêmes chiffres qu'avant). Quand une loi les expose,
+  le test 2 bascule de l'estimateur par sonde à la **valeur exacte** : les limites L1/L2/L3
+  disparaissent et **plus aucun incrément n'est exclu** (0 contaminé, 0 non relâché sur `dfhplus`,
+  contre 49 650 + 10 867 sur `dpdfh`). Nouvelle option **`--probe`** : force la sonde même sur une
+  loi qui expose son énergie libre, pour comparer deux lois **avec le même instrument**.
+- **Discriminant de QUADRATURE (test 2).** Un incrément flagué à 8 sous-pas est rejoué à **32** :
+  l'erreur du trapèze au *coin* d'une réponse C¹ par morceaux est divisée par 16, une vraie violation
+  ne bouge pas. Sur `dfhplus` : **58 flags à 8 sous-pas, tous effacés à 32** (rapport grossier/fin
+  65 ≈ 8², la signature exacte de la quadrature).
+- **Discriminant TEMPS / DÉFORMATION (test 5), et une lecture corrigée.** `r = ‖dσ‖/(M‖dε‖)` n'est un
+  critère de continuité de σ(ε) qu'**à temps gelé** : un mécanisme piloté par le temps (obscuration,
+  dx ~ dt) fait tomber σ sans que ε bouge, et le raffinement **ne peut pas** l'effacer puisqu'il
+  divise dt en même temps que dε. Le verdict porte désormais sur la valeur à temps gelé (dt × 1e−6),
+  la valeur à temps courant reste publiée. **Conséquence : les 84 flags de `dpdfh` et les 87 de
+  `dfhplus` disparaissent tous**, et le pire r tombe à **0,99999 ≤ 1** — exactement la borne
+  élastique — pour les deux lois. La conclusion du compte rendu précédent (« discontinuité de la loi
+  à saturation ») était **fausse** : les deux réponses σ(ε) sont continues.
+
 ### Ajouté — `rockim thermobench` : banc thermodynamique générique des lois (2026-09-06)
 
 Étape 1 du chantier **DFH+**. La relecture adverse de
@@ -62,7 +143,7 @@ Détail complet, mesures et bancs : [`docs/PORT_INSERTION_POINTE.md`](docs/PORT_
   (`D >= insertionTipDamage`) voit son enveloppe DIVISÉE par `insertionTipFactor` ; une facette en
   terrain vierge garde l'enveloppe nominale, donc **l'amorçage — et la résistance macroscopique
   mesurée — restent intacts** (mesuré : pic 51,0807 → 51,0807 MPa). Motivation : l'adaptatif ne
-  propage que 43,7 % de ses ruptures contre 56,8 % pour l'intrinsèque, la moyenne sur deux CST
+  propage que 43,7 % de ses ruptures contre 58,9 % pour l'intrinsèque (chiffre CORRIGÉ le 2026-09-06 : « 56,8 % » était une coquille de recopie, la mesure d'origine est 58,9 % — `BILAN_insertion_adaptative.md` l. 102, 127 et 154, et `PHD.md`), la moyenne sur deux CST
   écrasant la singularité de pointe. À `insertionTipFactor = 1` aucun test supplémentaire n'est
   évalué : **chemin d'origine au bit près**. Gardes : facteur < 1 refusé, `insertionTipDamage` hors
   [0,1] refusé, facteur > 1 sans `insertion = adaptive` refusé. Compte

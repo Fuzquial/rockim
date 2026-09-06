@@ -43,7 +43,7 @@ int main(int argc, char** argv) {
                      "       rockim matpoint <cfg> [out.csv]\n"
                      "       rockim thermobench <loi> [out.csv] "
                      "[--ref <loi>] [--deck <cfg>] [--draws N] [--seed S] "
-                     "[--max-rows N]\n";
+                     "[--max-rows N] [--probe]\n";
         return 1;
     }
 
@@ -96,7 +96,8 @@ int main(int argc, char** argv) {
             if (argc < 3)
                 throw std::runtime_error(
                     "usage: rockim thermobench <loi> [out.csv] [--ref <loi>] "
-                    "[--deck <cfg>] [--draws N] [--seed S] [--max-rows N]");
+                    "[--deck <cfg>] [--draws N] [--seed S] [--max-rows N] "
+                    "[--probe]");
             ThermoBenchOpts opt;
             opt.law = argv[2];
             opt.csv = "thermobench_" + opt.law + ".csv";
@@ -118,6 +119,7 @@ int main(int argc, char** argv) {
                 else if (a == "--draws")     opt.nDraws = std::stoi(need("--draws"));
                 else if (a == "--seed")      opt.seed = std::stoull(need("--seed"));
                 else if (a == "--max-rows")  opt.maxRows = std::stoi(need("--max-rows"));
+                else if (a == "--probe")     opt.forceProbe = true;
                 else throw std::runtime_error("thermobench: option inconnue '"
                                               + a + "'");
             }
@@ -130,6 +132,17 @@ int main(int argc, char** argv) {
             std::string csv = argc > 3 ? argv[3] : mp.gets("mpOut", "matpoint.csv");
             int rc = matpointDrive(mp, csv);
             std::cout << "[rockim] matpoint trace written to " << csv << "\n";
+            return rc;
+        }
+        // dfhplus (2026-09-06, etape 1 du chantier DFH+) : bancs falsifiants
+        // de la loi neuve au point materiel — sigma = d(rho psi)/d eps,
+        // Y_i >= 0, reduction elastique, objectivite, exposant 3/(m+3),
+        // comparaison chiffree avec dpdfh, controle dfhpPsiClamp.
+        if (std::string(argv[1]) == "selftest-dfhplus") {
+            std::string csv = argc > 2 ? argv[2] : "rockim_dfhplus.csv";
+            int rc = dfhPlusSelftest(csv);
+            std::cout << "[rockim] dfhplus selftest traces written to " << csv
+                      << "\n";
             return rc;
         }
         if (std::string(argv[1]) == "selftest-dpdfh") {

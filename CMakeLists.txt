@@ -80,6 +80,7 @@ endif()
 # ---------------------------------------------------------------------------
 add_executable(rockim
   src/Config.cpp
+  src/DfhPlusBench.cpp
   src/Dem3dSolver.cpp
   src/DemSolver.cpp
   src/Fdem3dSolver.cpp
@@ -88,6 +89,7 @@ add_executable(rockim
   src/FemSolver.cpp
   src/main.cpp
   src/MatLaw.cpp
+  src/MatLawDfhPlus.cpp
   src/Tessellation.cpp
   src/Tessellation3.cpp
   src/ThermoBench.cpp

@@ -2,6 +2,7 @@
 // MatLaw — the fem3d constitutive laws. See the header for the model cards.
 // ---------------------------------------------------------------------------
 #include "rockim/MatLaw.hpp"
+#include "rockim/MatLawDfhPlus.hpp"
 
 #include <algorithm>
 #include <array>
@@ -4719,6 +4720,14 @@ std::unique_ptr<MatLaw> MatLaw::make(const std::string& kind,
                                      "dfhSigW/dfhZeff/dfhK/dfhS/dfhDCoh > 0, "
                                      "dfhBetaDeg in (0, 89)");
         law = std::make_unique<DpDfhLaw>(m, p);
+    } else if (kind == "dfhplus") {
+        // DFH+ etape 1 (2026-09-06) : MEME perimetre physique que dpdfh mais
+        // batie sur une ENERGIE LIBRE POSTULEE (decomposition spectrale de la
+        // deformation elastique, sigma = d(rho psi)/d eps, Y_i = -d(rho psi)/
+        // dD_i). Loi SEPAREE, dans src/MatLawDfhPlus.cpp : DpDfhLaw ci-dessus
+        // n'est pas touchee. Memes cles dfh* (cartes interchangeables) + les
+        // cles propres au cadre dfhpPsiClamp / dfhpVolInteg.
+        law = makeDfhPlusLaw(m, c);
     } else if (kind == "cdp") {
         // Concrete Damaged Plasticity (2026-09-04) : cles cdp*, erosion par
         // les cles existantes (erodeD, erodeEpv, erodeDc, erodeWfrac) ;
@@ -4728,7 +4737,8 @@ std::unique_ptr<MatLaw> MatLaw::make(const std::string& kind,
                                        br.erodeDc, br.erodeWfrac);
     } else {
         throw std::runtime_error("law must be elastic | dpr | mc | saksala | "
-                                 "saksala2011 | dpdfh | cdp (got '" + kind + "')");
+                                 "saksala2011 | dpdfh | dfhplus | cdp (got '"
+                                 + kind + "')");
     }
     // crack-band feasibility check at the coarsest element (dpr/saksala
     // only: saksala2011 deliberately has NO fracture-energy regularization,

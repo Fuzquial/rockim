@@ -33,6 +33,10 @@
 //     --seed S        graine (defaut 20260906) — reproductibilite exacte
 //     --max-rows N    nombre maximum de lignes ecrites dans le CSV (defaut
 //                     20000) ; le COMPTE des violations, lui, est complet
+//     --probe         force l'estimateur par SONDE DE DECHARGE du test 2 meme
+//                     si la loi expose son energie libre (MatLaw::freeEnergy) :
+//                     c'est ainsi qu'on compare une loi neuve a `dpdfh` avec le
+//                     MEME instrument
 //
 // Code de retour : 0 si aucun test ne trouve de violation, 1 sinon, 2 si la
 // loi ne se construit pas. Le banc N'ECRIT RIEN dans l'etat du depot et ne
@@ -51,6 +55,10 @@ struct ThermoBenchOpts {
     unsigned long long seed = 20260906ull;
     int nDraws = 12000;
     int maxRows = 20000;
+    // --probe : FORCE l'estimateur par sonde de decharge meme si la loi expose
+    // son energie libre. Sert a comparer une loi neuve a une loi ancienne AVEC
+    // LE MEME INSTRUMENT (sans quoi les deux colonnes ne sont pas comparables).
+    bool forceProbe = false;
 };
 
 // Joue le banc et imprime le compte rendu. Voir src/ThermoBench.cpp pour la

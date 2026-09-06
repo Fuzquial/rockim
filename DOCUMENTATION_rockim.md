@@ -89,7 +89,7 @@ tolérances par nature de test, contrôles à charge nulle et dampWork ≤ 0 inc
 
 ```bash
 ./rockim thermobench <loi> [sortie.csv] [--ref <loi>] [--deck <cfg>] \
-                           [--draws N] [--seed S] [--max-rows N]
+                           [--draws N] [--seed S] [--max-rows N] [--probe]
 ```
 
 Vérifie **au point matériel**, sur des états et des chemins **tirés au hasard**
@@ -107,7 +107,7 @@ Sources : `include/rockim/ThermoBench.hpp`, `src/ThermoBench.cpp` (l'en-tête du
 | **2** dissipation ≥ 0 | `D = σ_mid : dε − d(ρψ)`, `ρψ` estimée par **sonde de décharge élastique à temps gelé** (voir ci-dessous) | rel. 1e-6 | incréments « contaminés » (un mécanisme bouge pendant la sonde) et « non relâchés » exclus et comptés |
 | **3** réduction | avec `--ref <loi>` : les deux lois sur les **mêmes** chemins, écart relatif ; sans : réduction **élastique** (amplitude ≤ 0,3 f_t/E, σ doit valoir λ tr(ε) I + 2G ε) | 1e-12 | c'est le test qui prouvera qu'une loi neuve à **paramètres neutres** rend *exactement* la loi de référence |
 | **4** objectivité | rotation rigide superposée `ε → Q ε Qᵀ` (même `x0`) : écart sur les **invariants** (contraintes principales triées) rapporté à max\|σ\| ; l'écart **tensoriel** `‖σ_tourné − Q σ Qᵀ‖` est donné en information | 1e-8 | |
-| **5** continuité | `r = ‖dσ‖ / (M ‖dε‖)`, `M = max(3K, 2G)`, sur l'incrément entier **puis découpé en 8** : un transitoire raide voit `r` chuter, une vraie discontinuité la garde | r ≤ 1,05 sur la valeur **raffinée** | note si un mécanisme s'est activé sur l'incrément |
+| **5** continuité | `r = ‖dσ‖ / (M ‖dε‖)`, `M = max(3K, 2G)`, sur l'incrément entier, découpé en 8, **puis rejoué à temps gelé** (dt × 1e-6) | r ≤ 1,05 sur la valeur **à temps gelé** | voir 3.4.2 (b) : à temps courant `r` n'est **pas** un critère de continuité de σ(ε) |
 
 **Tirages.** Six familles en parts égales — traction, compression uniaxiale,
 **triaxial 0–300 MPa**, cisaillement, chemins **non coaxiaux** (les directions
@@ -162,6 +162,74 @@ bornes ont donc été prises :
 - Contrôle du test 3 seul : `--ref dpdfh` sur `dpdfh` rend **0 / 480 000, pire
   écart 0,0 exactement** ; `--ref elastic` rend **125 567 / 480 000**. Le test
   discrimine.
+
+#### 3.4.2 Deux additions du 2026-09-06 (chantier `dfhplus`)
+
+**(a) L'énergie libre EXPOSÉE.** Trois méthodes virtuelles ont été **ajoutées**
+à `MatLaw` — `hasFreeEnergy()`, `freeEnergy(eps, state)` et
+`damageForces(eps, state, Y[])` — avec un défaut « non exposée » : **zéro effet
+sur les lois existantes**, `dpdfh` comprise (croissance par addition, principe
+VIII). Quand une loi les expose, le banc **bascule automatiquement** de
+l'estimateur par sonde à la **valeur exacte** : les limites L1, L2 et L3
+ci-dessus disparaissent, plus aucun incrément n'est exclu, et le travail est
+intégré sur **8 sous-pas** au lieu de l'incrément entier. `--probe` **force**
+l'estimateur par sonde même sur une loi qui expose son énergie libre : c'est
+ainsi qu'on compare une loi neuve à `dpdfh` **avec le même instrument**.
+
+Un **discriminant de quadrature** accompagne le chemin exact. Le trapèze commet,
+à chaque *coin* de la réponse (valeur propre de ε qui change de signe sous
+endommagement, plafond `DCAP`), une erreur en O(h²) indiscernable d'une
+dissipation négative. Tout incrément flagué à 8 sous-pas est donc **rejoué à
+32** : la quadrature est divisée par 16, une vraie violation ne bouge pas. Le
+compte rendu publie le nombre d'incréments ainsi effacés (58 sur `dfhplus`,
+tous effacés).
+
+**(b) Le TEMPS GELÉ du test 5, et une lecture corrigée.** `r = ‖dσ‖/(M‖dε‖)`
+rapporte une variation de **contrainte** à un incrément de **déformation**. Un
+mécanisme piloté par le **temps** — l'obscuration de Denoual–Hild,
+`dx = (S λ)^{1/3} k c dt` — fait tomber σ *sans que ε bouge* : `r` y est
+arbitrairement grand **et invariant au raffinement** (subdiviser divise `dt`
+d'autant), alors que σ(ε) est parfaitement continue. Chaque incrément est donc
+rejoué **à temps gelé** (`dt × 1e-6`) et c'est **cette** valeur qui fait
+verdict ; la valeur à temps courant reste publiée en information.
+
+> **Correction de lecture.** Le premier compte rendu du banc concluait que les
+> 84 flags de `dpdfh` étaient « une discontinuité de la loi à saturation de
+> l'endommagement en traction, pas un transitoire de pas de temps », au motif
+> que le raffinement ne les effaçait pas. Le raffinement **ne pouvait pas** les
+> effacer, puisqu'il divise `dt` en même temps que `dε`. À temps gelé, **les 84
+> flags de `dpdfh` et les 87 de `dfhplus` disparaissent tous**, et le pire `r`
+> tombe à **0,99999 ≤ 1** — exactement la borne élastique — pour les deux lois.
+> Les deux réponses σ(ε) sont continues.
+
+Après ces deux additions : `thermobench elastic` reste **PASS** (0 violation sur
+les cinq tests), `thermobench dpdfh` reste **ÉCHEC** pour la seule raison qui
+compte (7 172 dissipations négatives, dont 1 124 significatives), et
+`thermobench dfhplus` donne **PASS, 0 violation**.
+
+#### 3.4.3 Bancs de la loi `dfhplus` — `rockim selftest-dfhplus`
+
+```bash
+./rockim selftest-dfhplus [sortie.csv]      # ~1 s a OMP_NUM_THREADS = 4
+```
+
+Sept bancs au point matériel (carte Red Bohus, ℓc = 1 mm), source
+`src/DfhPlusBench.cpp`. Verdict sur (1)–(5) ; (6) et (7) sont des **mesures**.
+
+| banc | ce qui est vérifié | mesuré |
+|---|---|---|
+| **1** | σ = ∂ρψ/∂ε contre différences finies centrées sur ρψ, 6 états × 6 composantes | **2,0e−9** (PASS < 1e−6) |
+| **2** | `Y_i = −∂ρψ/∂D_i` analytique contre différences finies, et **Y_i ≥ 0** | écart 0 ; min Y_i = 0 (PASS) |
+| **3** | réduction élastique exacte à D = 0 | **2,5e−16** (PASS < 1e−13) |
+| **4** | objectivité **tensorielle** sous rotation rigide | **6,7e−15** (PASS < 1e−12) |
+| **5** | exposant de vitesse 3/(m+3), m = 6 / 12 / 24, **régime de fragmentation multiple** | **0,3333 / 0,1989 / 0,1107** contre 0,3333 / 0,2000 / 0,1111 (PASS < 10 %) |
+| **6** | comparaison chiffrée `dfhplus` / `dpdfh` : traction, compression, triaxiaux 20/50/100 MPa, chemin non coaxial | mesure — `docs/DFHPLUS_etape1.md` §5 |
+| **7** | contrôle qui DOIT échouer : `dfhpPsiClamp = false`, en non associé **et en associé** | mesure — `docs/DFHPLUS_etape1.md` §7 |
+
+Le banc **5** ne régresse que sur les points où `λ_frag V_el > 10` (fragmentation
+multiple) : en dessous, l'élément casse sur *un* défaut et le pic est
+rate-indépendant — régresser sur toute la gamme rend 0,167 au lieu de 0,333 pour
+m = 6, **pour les deux lois**, et ne mesure rien.
 
 ### 3.5 Interface graphique
 
@@ -712,7 +780,7 @@ le mécanisme s'arme (118 paires calées). C'est délibéré et noté dans le re
 
 ### 5.5 Lois de comportement (`law`, modes fem3d / fdem / fdem3d)
 
-`law = elastic | dpr | saksala | saksala2011 | dpdfh` (défaut : dpr en fem3d ; absent
+`law = elastic | dpr | mc | saksala | saksala2011 | dpdfh | dfhplus | cdp` (défaut : dpr en fem3d ; absent
 en fdem/fdem3d = bulk élastique + crushCap, bit-compatible avec l'historique).
 En fdem 2D la loi 3D est utilisée en déformation plane exacte (ε_zz = 0). `law` est
 incompatible avec `phases` (mono-matériau).
@@ -724,6 +792,7 @@ incompatible avec `phases` (mono-matériau).
 | `saksala` | + Perzyna et cap : `saksalaEta` (0.05e6 Pa·s), `capP0` (8·cohesion), `capH` (K) |
 | `saksala2011` | portage VUMAT fidèle (vérifié 8e-14) : `skBetaDP` (0.0346), `skCres` (2.89e6), `skHdp` (−10e9), `skSdp`/`skSmr` (1e4), `skAt` (0.98), `skBetaT` (5000), `skPp0` (1040e6), `skPtr0` (377e6), `skDcap` (1e-9), `skWcap` (0.0433), `skNd` (7.5e-8) — **défauts = Table I du papier** ; poser E=60e9, nu=0.2, ft=13e6, cohesion=37.5e6, frictionDeg=30, rho=2600 |
 | `dpdfh` | portage DP-DFH de la thèse (vérifié 4.7e-12) : `dfhBetaDeg` (51.7), `dfhDCoh` (153.3e6), `dfhPsiDeg` (15), `dfhWeibullM` (24), `dfhSigW` (120e6), `dfhZeff` (1e-9), `dfhK` (0.38), `dfhS` (4.18879), `dfhDeld` (1e9 = suppression OFF) — **défauts = carte Red Bohus** ; poser seulement E=52e9, nu=0.25, rho=2620 (ft/cohesion/frictionDeg ignorés par cette loi) |
+| `dfhplus` | **DFH+ étape 1 (2026-09-06)** — MÊME périmètre physique que `dpdfh` (DP non associé, endommagement de traction anisotrope à repère figé, obscuration de Denoual-Hild, tirages de Weibull par le MÊME hachage spatial) mais bâtie sur une **ÉNERGIE LIBRE POSTULÉE** : décomposition spectrale de ε^e, seule la partie positive dégradée, σ = ∂ρψ/∂ε^e et Y_i = −∂ρψ/∂D_i **analytiques**, plasticité sur la contrainte effective ∂ρψ/∂ε\|_{D=0} = C:ε^e. **Les neuf clés `dfh*` sont identiques : les cartes sont interchangeables** (`law = dpdfh` → `law = dfhplus` suffit). Clés propres : `dfhpPsiClamp` (true — écrêtage d'admissibilité de la dilatance), `dfhpVolInteg` (`harmonic` \| `min` \| `none` — forme de l'intégrité volumique g_v). Expose son énergie libre au banc (`hasFreeEnergy`). **`thermobench dfhplus` → PASS, 0 violation** contre 7 172 pour `dpdfh` ; exposant de vitesse 3/(m+3) conservé à 0,5 % ; compression et triaxiaux identiques à `dpdfh` à 2,5e−10. Bancs : `rockim selftest-dfhplus` (§3.4.3). Compte rendu : `docs/DFHPLUS_etape1.md` |
 
 Hétérogénéité des lois : `matWeibullM` (0 = off, fem3d) tire un facteur de résistance
 par élément (i.i.d. ou champ corrélé via les mêmes clés strengthCorr*/fieldSeed).

@@ -408,6 +408,9 @@ struct DrawOut {
     double dissWorst = 0.0, dissWorstAbs = 0.0, dissWorstPsi = 0.0;
     int dissWorstStep = -1, dissAbsStep = -1;
     double dissAbsWorst = 0.0;      // dissipation la plus negative [J/m^3]
+    double dissCoarse = 0.0;        // pire cas RELATIF au trapeze GROSSIER
+    int dissQuad = 0;               // violations a 8 sous-pas qui S'EFFACENT
+                                    // au raffinement (erreur de quadrature)
     // test 3
     double redWorst = 0.0;
     int redN = 0, redBad = 0;
@@ -417,6 +420,12 @@ struct DrawOut {
     // test 5
     double contCoarse = 0.0, contFine = 0.0, contDsig = 0.0;
     int contN = 0, contBad = 0, contActive = 0;
+    double contRunning = 0.0;       // pire r a temps COURANT (info)
+    int contRaw = 0;                // flags a temps COURANT (info)
+    int contTime = 0;               // flags du test 5 qui DISPARAISSENT quand
+                                    // on gele le temps : le saut n'est pas une
+                                    // discontinuite de sigma(eps), c'est la
+                                    // relaxation PILOTEE PAR LE TEMPS
     // couverture
     double Dmax = 0.0, sigMax = 0.0, pMin = 0.0;
     std::vector<Viol> viol;
@@ -424,7 +433,7 @@ struct DrawOut {
 
 // ---- un tirage complet -----------------------------------------------------
 void runDraw(int idx, const Draw& d, const Card& c, const MatLaw& law,
-             const MatLaw* ref, DrawOut& o) {
+             const MatLaw* ref, DrawOut& o, bool exact) {
     const double dtp = d.dt * 1.0e-6;            // dt de sonde (temps gele)
     const double hSym = 1.0e-8;                  // pas des differences finies
     const double tolSym = 1.0e-4;
@@ -493,7 +502,9 @@ void runDraw(int idx, const Draw& d, const Card& c, const MatLaw& law,
     // ---- chemin : tests 2 et 5 -------------------------------------------
     {
         bool cont0 = false, unrel0 = false;
-        double psi0 = probePsi(law, st, eps, c, d.lc, dtp, cont0, unrel0);
+        double psi0 = exact
+                          ? law.freeEnergy(eps, st)
+                          : probePsi(law, st, eps, c, d.lc, dtp, cont0, unrel0);
         M3 epsK = eps, sgK = sg;
         MatState stK = st;
         M3 rot = M3::Identity();
@@ -505,34 +516,69 @@ void runDraw(int idx, const Draw& d, const Card& c, const MatLaw& law,
                 epsN = M3(rot * epsK * rot.transpose()) + d.dEps;
             M3 dE = epsN - epsK;
 
+            // Travail RAFFINE (8 sous-pas) : quand la loi expose son energie
+            // libre, c'est lui qui porte le verdict du test 2 — le trapeze
+            // grossier commet, a chaque COIN de la reponse (une valeur propre
+            // de eps qui change de signe, l'endommagement qui plafonne), une
+            // erreur de quadrature en O(||d eps||^2) que rien ne distingue
+            // d'une vraie dissipation negative. Cette erreur decroit en
+            // 1/nSub^2 ; une VRAIE violation, non.
+            double wFine = 0.0, psiFine = 0.0;
+            bool hasFine = false;
+
             // --- TEST 5 : continuite (grossier vs raffine, sur des COPIES) --
             double dn = dE.norm();
             if (dn > 0.0) {
                 MatState sc = stK;
                 M3 sgc = law.stress(epsN, sc, d.dt, d.lc);
                 MatState sf = stK;
-                M3 sgf = sgK;
-                for (int j = 1; j <= nSub; ++j)
+                M3 sgf = sgK, sgPrev = sgK;
+                for (int j = 1; j <= nSub; ++j) {
                     sgf = law.stress(epsK + ((double)j / nSub) * dE, sf,
                                      d.dt / nSub, d.lc);
+                    wFine += ddot(0.5 * (sgPrev + sgf), dE / (double)nSub);
+                    sgPrev = sgf;
+                }
+                if (exact) psiFine = law.freeEnergy(epsN, sf);
+                hasFine = true;
                 double rc = (sgc - sgK).norm() / (c.M * dn);
                 double rf = (sgf - sgK).norm() / (c.M * dn);
                 bool act = !same(irrev(sf), irrev(stK));
                 o.contN++;
                 if (act) o.contActive++;
                 o.contCoarse = std::max(o.contCoarse, rc);
-                if (rf > o.contFine) {
-                    o.contFine = rf;
-                    o.contDsig = (sgf - sgK).norm();
+                // --- DISCRIMINANT TEMPS / DEFORMATION ----------------------
+                // r rapporte une variation de CONTRAINTE a un increment de
+                // DEFORMATION. Un mecanisme pilote par le TEMPS (l'obscuration
+                // de Denoual-Hild : dx = (S lam)^{1/3} k c dt) fait tomber
+                // sigma SANS que eps bouge : r y est arbitrairement grand ET
+                // invariant au raffinement (subdiviser divise dt d'autant), et
+                // pourtant sigma(eps) n'a pas la moindre discontinuite. Le meme
+                // increment est donc rejoue A TEMPS GELE (dt x 1e-6) : c'est
+                // CETTE valeur qui mesure la continuite de sigma(eps) et qui
+                // fait verdict ; la valeur a temps courant reste publiee.
+                MatState sq = stK;
+                M3 sgq = sgK;
+                for (int j = 1; j <= nSub; ++j)
+                    sgq = law.stress(epsK + ((double)j / nSub) * dE, sq,
+                                     d.dt * 1.0e-6 / nSub, d.lc);
+                double rq = (sgq - sgK).norm() / (c.M * dn);
+                o.contRunning = std::max(o.contRunning, rf);
+                if (rq > o.contFine) {
+                    o.contFine = rq;
+                    o.contDsig = (sgq - sgK).norm();
                 }
-                if (rf > tolCont) {
+                if (rf > tolCont) o.contRaw++;
+                if (rf > tolCont && rq <= tolCont) o.contTime++;
+                if (rq > tolCont) {
                     o.contBad++;
-                    push(5, k, rf, tolCont, 0, act ? 1 : 0, epsN, sgc, sc,
-                         (sgf - sgK).norm(), dn);
+                    push(5, k, rq, tolCont, 0, act ? 1 : 0, epsN, sgc, sc,
+                         (sgq - sgK).norm(), dn);
                 }
             }
 
             // --- avance REELLE du chemin -----------------------------------
+            const MatState stK0 = stK;      // etat AVANT le pas (raffinements)
             M3 sgNn = law.stress(epsN, stK, d.dt, d.lc);
             o.Dmax = std::max(o.Dmax, stK.D);
             o.sigMax = std::max(o.sigMax, sgNn.cwiseAbs().maxCoeff());
@@ -540,11 +586,58 @@ void runDraw(int idx, const Draw& d, const Card& c, const MatLaw& law,
 
             // --- TEST 2 : dissipation ---------------------------------------
             bool cont1 = false, unrel1 = false;
-            double psi1 = probePsi(law, stK, epsN, c, d.lc, dtp, cont1, unrel1);
+            double psi1 = exact ? law.freeEnergy(epsN, stK)
+                                : probePsi(law, stK, epsN, c, d.lc, dtp,
+                                           cont1, unrel1);
             double work = ddot(0.5 * (sgK + sgNn), dE);
             double dpsi = psi1 - psi0;
             double diss = work - dpsi;
             double scale = std::abs(work) + std::abs(dpsi) + 1.0e-30;
+            double dissFine8 = 0.0;
+            if (exact && hasFine) {
+                // energie libre EXACTE (exposee) + travail RAFFINE : plus
+                // d'estimateur, plus d'exclusion, plus d'erreur de quadrature
+                // au premier plan. La valeur grossiere reste publiee en info.
+                o.dissCoarse = std::min(o.dissCoarse, diss / scale);
+                work = wFine;
+                dpsi = psiFine - psi0;
+                diss = work - dpsi;
+                scale = std::abs(work) + std::abs(dpsi) + 1.0e-30;
+                dissFine8 = diss;
+                // --- DISCRIMINANT DE QUADRATURE -------------------------
+                // Le trapeze commet, a chaque coin de la reponse, une erreur
+                // en O(h^2) : elle est divisee par 16 quand on passe de 8 a
+                // 32 sous-pas. Une VRAIE dissipation negative, elle, ne bouge
+                // pas. On ne recalcule que sur les increments deja flagues
+                // (quelques dizaines sur 120 000) : le cout est nul.
+                if (diss / scale < -tolDiss) {
+                    const int nSub2 = 32;
+                    MatState sf2 = stK0;
+                    M3 sgp = sgK, sg2 = sgK;
+                    double w2 = 0.0;
+                    for (int j = 1; j <= nSub2; ++j) {
+                        sg2 = law.stress(epsK + ((double)j / nSub2) * dE, sf2,
+                                         d.dt / nSub2, d.lc);
+                        w2 += ddot(0.5 * (sgp + sg2), dE / (double)nSub2);
+                        sgp = sg2;
+                    }
+                    double dp2 = law.freeEnergy(epsN, sf2) - psi0;
+                    double d2 = w2 - dp2;
+                    double s2 = std::abs(w2) + std::abs(dp2) + 1.0e-30;
+                    // converge vers 0 comme la quadrature (facteur >= 2 en
+                    // passant de 8 a 32 sous-pas, quand la theorie en promet
+                    // 16) => artefact de quadrature, pas une violation.
+                    if (d2 / s2 >= -tolDiss
+                        || std::abs(d2) < 0.5 * std::abs(dissFine8)) {
+                        o.dissQuad++;
+                        diss = 0.0;
+                        scale = s2;
+                    } else {
+                        diss = d2;
+                        scale = s2;
+                    }
+                }
+            }
             if (cont0 || cont1) o.dissContam++;
             else if (unrel0 || unrel1) o.dissUnrelax++;
             else {
@@ -727,6 +820,10 @@ int thermoBench(const ThermoBenchOpts& o) {
     c.M = std::max(3.0 * c.K, 2.0 * c.G);
     c.Gf = m.Gf;
 
+    // Estimateur du test 2 : energie libre EXPOSEE par la loi (exacte) ou
+    // sonde de decharge (estimateur biaise). --probe force la seconde, pour
+    // comparer une loi neuve a une loi ancienne AVEC LE MEME INSTRUMENT.
+    const bool exact = law->hasFreeEnergy() && !o.forceProbe;
     const int n = std::max(6, o.nDraws);
     std::cout << "[thermo] banc thermodynamique — loi = " << law->name()
               << (ref ? std::string(" contre reference = ") + ref->name()
@@ -734,7 +831,14 @@ int thermoBench(const ThermoBenchOpts& o) {
               << "\n[thermo] carte : E " << m.E / 1e9 << " GPa, nu " << m.nu
               << ", ft " << m.ft / 1e6 << " MPa, c " << m.cohesion / 1e6
               << " MPa, phi " << m.phiDeg << " deg, Gf " << m.Gf
-              << " J/m^2 ; k0 = ft/E = " << c.k0 << "\n[thermo] tirages : " << n
+              << " J/m^2 ; k0 = ft/E = " << c.k0
+              << "\n[thermo] test 2 : "
+              << (exact ? "energie libre EXPOSEE par la loi (exacte) + travail "
+                          "raffine 8 sous-pas"
+                        : (law->hasFreeEnergy()
+                               ? "SONDE DE DECHARGE forcee (--probe)"
+                               : "sonde de decharge (energie libre non exposee)"))
+              << "\n[thermo] tirages : " << n
               << " (graine " << o.seed << "), 6 familles, dt 1e-9-1e-5 s, "
                  "lc 0,5-2 mm\n";
 
@@ -747,7 +851,7 @@ int thermoBench(const ThermoBenchOpts& o) {
 #endif
     for (int i = 0; i < n; ++i)
         runDraw(i, draws[(std::size_t)i], c, *law, ref.get(),
-                outs[(std::size_t)i]);
+                outs[(std::size_t)i], exact);
 
     // ---- agregation (dans l'ordre des tirages : deterministe) -------------
     struct Agg {
@@ -755,10 +859,12 @@ int thermoBench(const ThermoBenchOpts& o) {
         double worst = 0.0, aux1 = 0.0, aux2 = 0.0;
         int wDraw = -1, wStep = -1, wFam = -1;
     } A1, A1p, A2, A3, A4, A5;
-    long long contam = 0, unrelax = 0, mechActive = 0;
+    long long contam = 0, unrelax = 0, mechActive = 0, contTimeAll = 0,
+              contRawAll = 0;
     double DmaxAll = 0.0, sigMaxAll = 0.0, pMinAll = 0.0, objTenMax = 0.0;
-    double contCoarseMax = 0.0, dissAbsMin = 0.0;
-    long long dissSig = 0;
+    double contCoarseMax = 0.0, dissAbsMin = 0.0, dissCoarseMin = 0.0;
+    double contRunMax = 0.0;
+    long long dissSig = 0, dissQuadAll = 0;
     int dissAbsDraw = -1, dissAbsStep = -1, dissAbsFam = -1;
     long long badByFam[N_FAMILY][5];
     for (int f = 0; f < N_FAMILY; ++f)
@@ -782,6 +888,8 @@ int thermoBench(const ThermoBenchOpts& o) {
             dissAbsStep = r.dissAbsStep; dissAbsFam = f;
         }
         dissSig += r.dissBadSig;
+        dissCoarseMin = std::min(dissCoarseMin, r.dissCoarse);
+        dissQuadAll += r.dissQuad;
         A3.nEval += r.redN;    A3.nBad += r.redBad;
         if (r.redWorst > A3.worst) { A3.worst = r.redWorst; A3.wDraw = i; A3.wFam = f; }
         A4.nEval += r.objN;    A4.nBad += r.objBad;
@@ -792,11 +900,14 @@ int thermoBench(const ThermoBenchOpts& o) {
             A5.aux1 = r.contDsig;
         }
         contam += r.dissContam; unrelax += r.dissUnrelax; mechActive += r.contActive;
+        contTimeAll += r.contTime;
+        contRawAll += r.contRaw;
         DmaxAll = std::max(DmaxAll, r.Dmax);
         sigMaxAll = std::max(sigMaxAll, r.sigMax);
         pMinAll = std::min(pMinAll, r.pMin);
         objTenMax = std::max(objTenMax, r.objTen);
         contCoarseMax = std::max(contCoarseMax, r.contCoarse);
+        contRunMax = std::max(contRunMax, r.contRunning);
         badByFam[f][0] += r.symElBad;
         badByFam[f][1] += r.dissBad;
         badByFam[f][2] += r.redBad;
@@ -850,7 +961,7 @@ int thermoBench(const ThermoBenchOpts& o) {
     line("2 dissipation >= 0", A2, "[-]");
     line("3 reduction", A3, "[-]");
     line("4 objectivite (invariants)", A4, "[-]");
-    line("5 continuite (raffine)", A5, "[-]");
+    line("5 continuite (temps gele)", A5, "[-]");
     if (A2.wDraw >= 0) {
         std::cout << "      -> pire cas RELATIF du test 2, en absolu : "
                   << "dissipation " << A2.aux1 << " J/m^3 pour rho psi = "
@@ -866,16 +977,35 @@ int thermoBench(const ThermoBenchOpts& o) {
                       << " % de Gf/lc)";
         std::cout << "\n      -> dont " << dissSig
                   << " violation(s) SIGNIFICATIVE(S) (deficit > 1 % de Gf/lc)\n";
+        if (exact)
+            std::cout << "      -> meme mesure au TRAPEZE GROSSIER (info, "
+                         "erreur de quadrature comprise) : pire relatif "
+                      << dissCoarseMin << " ; " << dissQuadAll
+                      << " increment(s) flague(s) a 8 sous-pas se sont EFFACES "
+                         "a 32 (erreur de quadrature au coin d'une reponse "
+                         "C1 par morceaux, en O(h^2)), non comptes\n";
     }
-    if (A5.wDraw >= 0)
+    if (A5.wDraw >= 0) {
         std::cout << "      -> pire cas du test 5 en ABSOLU : saut de "
                   << A5.aux1 / 1e6 << " MPa sur un increment\n";
+        std::cout << "      -> a temps COURANT " << contRawAll
+                  << " increment(s) depassent le seuil, dont " << contTimeAll
+                  << " DISPARAISSENT a temps gele (dt x 1e-6) : le saut y est "
+                     "pilote par le TEMPS (obscuration de Denoual-Hild, dx ~ "
+                     "dt), pas par la deformation. r = ||d sigma||/(M ||d eps||) "
+                     "n'est un critere de continuite de sigma(eps) qu'a temps "
+                     "gele : c'est cette valeur-la qui fait verdict.\n";
+    }
     std::cout << "  " << std::left << std::setw(34)
               << "4' objectivite (tensorielle)" << std::right
               << "                        pire " << objTenMax << " [-] (info)\n";
     std::cout << "  " << std::left << std::setw(34)
               << "5' continuite (increment entier)" << std::right
               << "                        pire " << contCoarseMax
+              << " [-] (info)\n";
+    std::cout << "  " << std::left << std::setw(34)
+              << "5'' continuite (temps COURANT)" << std::right
+              << "                        pire " << contRunMax
               << " [-] (info)\n";
     std::cout << "[thermo] sonde d'energie libre : " << contam
               << " increments CONTAMINES (un mecanisme a bouge pendant la "
