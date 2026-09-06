@@ -124,9 +124,25 @@ gelé, dans la direction `d = −(1+ν)/E σ + ν/E tr(σ) I` (pour la loi élas
 elle ramène exactement à ε = 0), par pas de τ = 1/16 jusqu'au changement de
 signe de `σ:d`, et prend `ρψ = −∫ σ:dε`. Quatre limites, toutes instrumentées :
 **(L1)** seule la part **récupérable** est mesurée, donc la grandeur rendue vaut
-`D̃ = D + d(ρψ_stockée)/dt ≥ D` : une valeur **négative prouve** une dissipation
-négative (pas de faux positif de ce chef), mais le test peut **manquer** une
-violation ; **(L2)** si un mécanisme évolue pendant la sonde, l'incrément est
+`D̃ = D + d(ρψ_stockée)/dt`, et **tant que l'énergie stockée croît** on a `D̃ ≥ D`
+(faux négatifs seulement). **⚠ CORRIGÉ le 2026-09-06 par la relecture adverse :
+la clause « pas de faux positif » est fausse et a été réfutée par mesure.** Une
+**seconde** source de biais, de signe non contrôlé, s'y ajoute : la sonde
+décharge dans une direction `d` **isotrope figée** alors que la compliance d'un
+état fortement **anisotrope** ne lui est pas alignée ; l'énergie rendue est
+sous-mesurée d'une quantité dépendante de l'état et **non monotone**, donc `D̃`
+peut passer sous `D`. Contre-exemple mesuré :
+`thermobench dfhplus --probe --draws 100000 --seed 424242424` flague **11**
+incréments (pire **−2 033 J/m³**, 2,9 % de `G_f/ℓc`, dont 3 « significatifs »),
+tous à `D = 0,9999` et 8 sur 11 **non coaxiaux**, alors que la **même loi**
+mesurée par son énergie libre **exposée** (exacte) sur les **mêmes 10⁶
+incréments** n'en a **aucun** et plafonne à −0,0245 J/m³ (2·10⁻⁵ % de `G_f/ℓc`) ;
+le garde (L3) n'en avait intercepté que 848. **Conséquence à retenir : les
+comptes de la sonde sont des bornes SUPÉRIEURES.** Le plafond d'artefact ainsi
+mesuré vaut ≈ 2 kJ/m³ ; les violations de `dpdfh` **au-dessus** de ce plafond
+(5,4 % des lignes retenues, pire cas −35,5 kJ/m³ = 57 % de `G_f/ℓc`) sont hors
+de portée de l'estimateur et restent **avérées**. Le test peut par ailleurs
+toujours **manquer** une violation ; **(L2)** si un mécanisme évolue pendant la sonde, l'incrément est
 marqué *contaminé* et exclu ; **(L3)** si l'état n'est pas relâché (τ > 4, ou
 projection qui s'annule alors que ‖σ‖ > 15 % de ‖σ₀‖ — la contrainte a *tourné*
 sous une décharge de direction figée), incrément *non relâché*, exclu ;
@@ -206,6 +222,24 @@ Après ces deux additions : `thermobench elastic` reste **PASS** (0 violation su
 les cinq tests), `thermobench dpdfh` reste **ÉCHEC** pour la seule raison qui
 compte (7 172 dissipations négatives, dont 1 124 significatives), et
 `thermobench dfhplus` donne **PASS, 0 violation**.
+
+> **Portée exacte de ce PASS (relecture adverse, 2026-09-06).** Il vaut **sur la
+> carte par défaut du banc, ψ = 15°**, et il tient à une autre graine et à un
+> échantillon 8 fois plus grand : `--draws 100000 --seed 424242424` donne
+> `elastic` PASS, `dfhplus` **PASS (0 / 10⁶, pire −0,0245 J/m³)** et `dpdfh`
+> **ÉCHEC (58 434 / 489 180, dont 8 204 significatives, pire −35,5 kJ/m³ =
+> 57 % de G_f/ℓc)**. Il ne vaut **pas** en écoulement **associé** : à
+> `dfhPsiDeg = 51.7` (= β) — régime que `dfhPsiVar = 1` atteint à basse
+> pression, `dfhPsiMax` valant 51,7° — **`dfhplus` ÉCHOUE au test 5**, 6
+> incréments sur 10⁶, pire `r = 3,17` **à temps gelé** (donc une vraie
+> discontinuité de σ(ε), pas un effet du temps). Le défaut est **hérité et non
+> introduit** : `dpdfh` échoue sur **les mêmes 6 incréments** (pire `r = 2,73`),
+> c'est le **retour de Drucker-Prager partagé** près de l'apex, et l'écrêtage
+> `dfhpPsiClamp` n'y change rien (6 violations avec comme sans). Ce que
+> l'écrêtage **fait bien**, en revanche, est mesuré au même endroit : à ψ = β il
+> supprime la seule dissipation négative du banc (désarmé : 1 / 10⁶ à
+> −2,28 kJ/m³ = 3,7 % de G_f/ℓc ; armé : 0). C'est la **falsification** que le
+> banc 7 de `selftest-dfhplus` ne pouvait pas produire sur la carte de la thèse.
 
 #### 3.4.3 Bancs de la loi `dfhplus` — `rockim selftest-dfhplus`
 
@@ -792,7 +826,7 @@ incompatible avec `phases` (mono-matériau).
 | `saksala` | + Perzyna et cap : `saksalaEta` (0.05e6 Pa·s), `capP0` (8·cohesion), `capH` (K) |
 | `saksala2011` | portage VUMAT fidèle (vérifié 8e-14) : `skBetaDP` (0.0346), `skCres` (2.89e6), `skHdp` (−10e9), `skSdp`/`skSmr` (1e4), `skAt` (0.98), `skBetaT` (5000), `skPp0` (1040e6), `skPtr0` (377e6), `skDcap` (1e-9), `skWcap` (0.0433), `skNd` (7.5e-8) — **défauts = Table I du papier** ; poser E=60e9, nu=0.2, ft=13e6, cohesion=37.5e6, frictionDeg=30, rho=2600 |
 | `dpdfh` | portage DP-DFH de la thèse (vérifié 4.7e-12) : `dfhBetaDeg` (51.7), `dfhDCoh` (153.3e6), `dfhPsiDeg` (15), `dfhWeibullM` (24), `dfhSigW` (120e6), `dfhZeff` (1e-9), `dfhK` (0.38), `dfhS` (4.18879), `dfhDeld` (1e9 = suppression OFF) — **défauts = carte Red Bohus** ; poser seulement E=52e9, nu=0.25, rho=2620 (ft/cohesion/frictionDeg ignorés par cette loi) |
-| `dfhplus` | **DFH+ étape 1 (2026-09-06)** — MÊME périmètre physique que `dpdfh` (DP non associé, endommagement de traction anisotrope à repère figé, obscuration de Denoual-Hild, tirages de Weibull par le MÊME hachage spatial) mais bâtie sur une **ÉNERGIE LIBRE POSTULÉE** : décomposition spectrale de ε^e, seule la partie positive dégradée, σ = ∂ρψ/∂ε^e et Y_i = −∂ρψ/∂D_i **analytiques**, plasticité sur la contrainte effective ∂ρψ/∂ε\|_{D=0} = C:ε^e. **Les neuf clés `dfh*` sont identiques : les cartes sont interchangeables** (`law = dpdfh` → `law = dfhplus` suffit). Clés propres : `dfhpPsiClamp` (true — écrêtage d'admissibilité de la dilatance), `dfhpVolInteg` (`harmonic` \| `min` \| `none` — forme de l'intégrité volumique g_v). Expose son énergie libre au banc (`hasFreeEnergy`). **`thermobench dfhplus` → PASS, 0 violation** contre 7 172 pour `dpdfh` ; exposant de vitesse 3/(m+3) conservé à 0,5 % ; compression et triaxiaux identiques à `dpdfh` à 2,5e−10. Bancs : `rockim selftest-dfhplus` (§3.4.3). Compte rendu : `docs/DFHPLUS_etape1.md` |
+| `dfhplus` | **DFH+ étape 1 (2026-09-06)** — MÊME périmètre physique que `dpdfh` (DP non associé, endommagement de traction anisotrope à repère figé, obscuration de Denoual-Hild, tirages de Weibull par le MÊME hachage spatial) mais bâtie sur une **ÉNERGIE LIBRE POSTULÉE** : décomposition spectrale de ε^e, seule la partie positive dégradée, σ = ∂ρψ/∂ε^e et Y_i = −∂ρψ/∂D_i **analytiques**, plasticité sur la contrainte effective ∂ρψ/∂ε\|_{D=0} = C:ε^e. **Les neuf clés `dfh*` sont identiques : les cartes sont interchangeables** (`law = dpdfh` → `law = dfhplus` suffit). Clés propres : `dfhpPsiClamp` (true — écrêtage d'admissibilité de la dilatance), `dfhpVolInteg` (`harmonic` | `min` | `none` — forme de l’intégrité volumique g_v ; ⚠ `min` ÉCHOUE au banc, non dérivable)\| `min` \| `none` — forme de l'intégrité volumique g_v). Expose son énergie libre au banc (`hasFreeEnergy`). **`thermobench dfhplus` → PASS, 0 violation** contre 7 172 pour `dpdfh` ; exposant de vitesse 3/(m+3) conservé à 0,5 % ; compression et triaxiaux identiques à `dpdfh` à 2,5e−10. **ρψ vérifiée CONVEXE** (relecture adverse, §3.4.2). ⛔ **NE PAS UTILISER au-delà de σ₃ ≈ 150 MPa** : au-dessus, `dfhplus` **sature l'endommagement de traction sous compression triaxiale** (d_t = 0,9999 contre 0 pour `dpdfh`) et la résistance confinée chute de **−1,8 % à −20,7 %** (600 MPa) — le moteur `Y_i = G‖ε⁺n_i‖²` est piloté par la **déformation** positive, et `ε^e_lat > 0` sur toute la surface DP. Diagnostic complet et seuil analytique (175,8 MPa) : `docs/DFHPLUS_etape1.md` **§11.11**. ⚠ le PASS thermodynamique vaut **à ψ = 15°** : en écoulement **associé** (ψ = β, atteint par `dfhPsiVar`) le test 5 échoue sur 6 incréments — défaut **hérité** du retour DP, `dpdfh` échoue sur les mêmes. ⚠ **jamais tournée sur un maillage.** Bancs : `rockim selftest-dfhplus` (§3.4.3). Compte rendu : `docs/DFHPLUS_etape1.md` |
 
 Hétérogénéité des lois : `matWeibullM` (0 = off, fem3d) tire un facteur de résistance
 par élément (i.i.d. ou champ corrélé via les mêmes clés strengthCorr*/fieldSeed).

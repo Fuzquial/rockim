@@ -87,6 +87,31 @@
 //               `rockim thermobench dfhplus` PASS, 0 violation, la ou dpdfh en
 //               a 7 172. Bancs : `rockim selftest-dfhplus`. Compte rendu :
 //               docs/DFHPLUS_etape1.md.
+//               !!! RELECTURE ADVERSE 2026-09-06 — DEFAUT MAJEUR (§11.11) :
+//               `dfhplus` NE REPREND PAS le perimetre de DP-DFH au-dela de
+//               sigma3 ~ 160 MPa. Identique a +0,00 % jusqu'a 150 MPa, puis
+//               elle SATURE l'endommagement de traction (d_t = 0,9999) SOUS
+//               COMPRESSION TRIAXIALE, ou dpdfh reste exactement a 0, et la
+//               resistance confinee chute de -1,8 % (175 MPa) a -20,7 %
+//               (600 MPa). Cause : Y_i = G ||eps+ n_i||^2 est pilote par la
+//               DEFORMATION positive, et eps^e_lat > 0 des que
+//               |sig_ax|/sig3 > (1-nu)/nu = 2,45 — vrai sur TOUTE la surface
+//               DP ; seuil analytique de franchissement 175,8 MPa (mesure
+//               entre 150 et 175). NE PAS UTILISER au-dela de ~150 MPa ni sur
+//               un maillage de percussion (zone broyee a 460-750 MPa) avant
+//               traitement. L'admissibilite thermodynamique n'est PAS en
+//               cause : c'est le moteur d'endommagement qui est a revoir.
+//               AUTRES POINTS de la relecture :
+//               tient a une autre graine et a 10^5 tirages (0 / 10^6 contre
+//               58 434 / 489 180 pour dpdfh) ; rho psi verifiee CONVEXE
+//               (hessienne SDP jusqu'a saturation). DEUX RESERVES : (a) le
+//               PASS vaut a psi = 15 deg — en ecoulement ASSOCIE (psi = beta,
+//               atteint par dfhPsiVar) le test 5 echoue sur 6 increments,
+//               defaut HERITE du retour DP (dpdfh echoue sur les memes) ;
+//               (b) sigma_22 residuelle en traction saturee = -22,5 % de E eps
+//               (confinement parasite en zone broyee). JAMAIS TOURNEE SUR UN
+//               MAILLAGE : objectivite au maillage, energie de bande et cout
+//               CPU restent a mesurer.
 //
 //  * saksala  — rate-DEPENDENT damage-viscoplasticity in the spirit of
 //               Saksala's model for percussive drilling: the SAME DP cone

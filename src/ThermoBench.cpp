@@ -59,11 +59,27 @@
 //   (L1) l'estimateur ne mesure que la part RECUPERABLE de l'energie libre.
 //        Toute energie STOCKEE non recuperable (ecrouissage cinematique,
 //        energie piegee autour des fissures) est comptee comme dissipee :
-//        la grandeur mesuree vaut D~ = D + d(rho psi_stockee)/dt. Cette
-//        energie stockee etant croissante dans tous les modeles vises,
-//        D~ >= D : une valeur NEGATIVE de D~ prouve une dissipation
-//        reellement negative — le test n'a pas de faux positif de ce chef,
-//        seulement des faux negatifs (il peut manquer une violation).
+//        la grandeur mesuree vaut D~ = D + d(rho psi_stockee)/dt, et tant que
+//        cette energie stockee CROIT on a D~ >= D (faux negatifs seulement).
+//        *** CORRECTION DE LA RELECTURE ADVERSE, 2026-09-06 : cette clause de
+//        « pas de faux positif » est FAUSSE, et elle est REFUTEE PAR MESURE.
+//        Il y a une SECONDE source de biais, de signe NON CONTROLE : la sonde
+//        decharge dans une direction d ISOTROPE FIGEE, alors que la compliance
+//        d'un etat fortement ANISOTROPE ne lui est pas alignee. L'energie
+//        rendue est alors sous-mesuree d'une quantite qui depend de l'etat et
+//        qui n'est PAS monotone, donc D~ peut passer sous D. Contre-exemple
+//        mesure : `thermobench dfhplus --probe --draws 100000 --seed
+//        424242424` flague 11 increments (pire -2 033 J/m^3, 2,9 % de Gf/lc,
+//        3 « significatifs »), tous a D = 0,9999 et 8 sur 11 NON COAXIAUX,
+//        alors que la MEME loi mesuree par son energie libre EXPOSEE (exacte)
+//        sur les MEMES 10^6 increments n'en a AUCUN et plafonne a
+//        -0,0245 J/m^3 (2e-5 % de Gf/lc). Le garde (L3) n'en avait intercepte
+//        que 848. CONSEQUENCE A RETENIR : les comptes de la sonde sont des
+//        BORNES SUPERIEURES. Sur `dpdfh` (qui n'expose pas son energie libre)
+//        le plafond d'artefact ainsi mesure est de ~2 kJ/m^3 ; ses violations
+//        AU-DESSUS de ce plafond (5,4 % des lignes retenues, dont un pire cas
+//        a -35,5 kJ/m^3 = 57 % de Gf/lc) sont, elles, hors de portee de
+//        l'estimateur et restent des violations averees. ***
 //   (L2) la sonde suppose la decharge NON DISSIPATIVE. Si un mecanisme
 //        evolue PENDANT la sonde, l'estimation est biaisee : le banc le
 //        DETECTE (comparaison bit a bit de la signature irreversible avant

@@ -7,6 +7,55 @@ reçoit les lignes exigées par les règles déjà en vigueur — dont **toute a
 
 ## [Non publié]
 
+### Corrigé — relecture adverse de l'étape 1 DFH+ (2026-09-06)
+
+Relecture indépendante (autre graine, 10⁵ tirages, implémentation Python écrite depuis les formules
+annoncées, exe du commit précédent recompilé). **Documentation seulement — aucun changement de
+comportement** ; `bitid` 8/8 IDENTIQUE avant et après. Compte rendu : `docs/DFHPLUS_etape1.md` §11.
+
+- **⛔ DÉFAUT MAJEUR — `dfhplus` NE REPREND PAS le périmètre de DP-DFH au-delà de σ₃ ≈ 160 MPa**
+  (§11.11), c'est-à-dire qu'elle **échoue au critère d'acceptation de l'étape 1**. Le compte rendu
+  concluait « compression et triaxiaux IDENTIQUES » sur σ₃ = 0 / 20 / 50 / 100 MPa : toute la
+  campagne est **sous** le seuil où le mécanisme s'allume. Balayage `matpoint triax` jusqu'à
+  600 MPa : identique à **+0,00 %** jusqu'à σ₃ = 150 MPa, puis `dfhplus` **sature l'endommagement de
+  traction (d_t = 0,9999) sous compression triaxiale** là où `dpdfh` reste **exactement à 0**, et la
+  résistance confinée tombe de **−1,8 % (175 MPa) à −20,7 % (600 MPa)**. À σ₃ = 600 MPa l'amorçage a
+  lieu sous **σ_lat = −600 MPa**. **Cause établie analytiquement** : `Y_i = G‖ε⁺n_i‖²` est piloté par
+  la partie positive de la **déformation** élastique, et `ε^e_lat > 0 ⟺ |σ_ax|/σ₃ > (1−ν)/ν = 2,45`,
+  condition vraie sur **toute** la surface DP ; avec `σ^eq = 0,98030·E·ε^e_lat` le seuil de Weibull
+  (112,529 MPa) est franchi à **σ₃ = 175,8 MPa prédit**, mesuré entre 150 et 175 MPa (accord 0,2 %).
+  C'est le défaut classique des découpages spectraux **en déformation** sous confinement. **La bande
+  0–100 MPa de la campagne de confinement est sûre, mais la zone broyée sous percussion travaille à
+  460–750 MPa : le régime est atteint dans l'application visée.** L'admissibilité thermodynamique
+  n'est PAS en cause (0 dissipation négative, ρψ convexe, σ = ∂ρψ/∂ε) : c'est le **moteur
+  d'endommagement à l'intérieur du cadre** qui est à revoir. **`dfhplus` ne doit pas être utilisée
+  au-delà de σ₃ ≈ 150 MPa, ni sur un maillage de percussion, avant traitement.**
+
+- **Réfuté et corrigé : la sonde de décharge du `thermobench` A des faux positifs.** La limite (L1)
+  affirmait qu'une dissipation négative mesurée « prouve » une violation. `dfhplus` la réfute : la
+  sonde flague **11** incréments (pire **−2 033 J/m³**) là où la **même loi** mesurée par son énergie
+  libre exposée en a **0** (pire −0,0245 J/m³), tous à D = 0,9999 et 8/11 non coaxiaux. Cause : la
+  décharge est de direction **isotrope figée** face à une compliance anisotrope — biais de signe non
+  contrôlé, non couvert par l'argument « énergie stockée croissante ». Corrigé dans l'en-tête de
+  `src/ThermoBench.cpp` (L1) et `DOCUMENTATION_rockim.md` §3.4. **Les comptes de la sonde sont des
+  bornes supérieures** ; les violations de `dpdfh` au-dessus du plafond d'artefact (≈ 2 kJ/m³, soit
+  5,4 % de ses lignes retenues, pire −35,5 kJ/m³ = 57 % de G_f/ℓc) restent avérées.
+- **Portée du PASS de `dfhplus` précisée** : il vaut **à ψ = 15°**. En écoulement **associé**
+  (ψ = β = 51,7°, régime atteint par `dfhPsiVar`), `dfhplus` **échoue au test 5** (6 incréments,
+  pire r = 3,17 à temps gelé) — défaut **hérité** du retour DP partagé, `dpdfh` échoue sur les
+  **mêmes 6 incréments** (r = 2,73). En contrepartie, l'écrêtage `dfhpPsiClamp` y est enfin
+  **falsifié et validé** : désarmé 1 dissipation négative significative (−2 280 J/m³), armé 0.
+- **Point ouvert n° 5 clos : ρψ est CONVEXE** (hessienne de Voigt-Mandel SDP sur 3 000 états
+  aléatoires + 7 familles dégénérées ; plus petite valeur propre 6,0·10⁶ Pa à saturation totale).
+  L'opérateur tangent reste elliptique.
+- **Contrainte latérale résiduelle sous-déclarée** : σ₂₂/(Eε) va de −5,6 % à D = 0,5 (seul chiffre
+  publié) à **−22,5 % à saturation**, soit −25,3 MPa de confinement parasite au pic de traction.
+- **`dfhpVolInteg = min` ne passe pas le banc** (1 / 10⁶, −0,1996 J/m³, 0 significative) : `min(1−D_i)`
+  n'est pas dérivable et ρψ n'est que C⁰ en D au changement d'argmin. `harmonic` (défaut) et `none`
+  passent. À réserver aux ablations.
+- `dpdfh` **confirmée intacte** : source de `DpDfhLaw` identique octet pour octet, `selftest-dpdfh`
+  et 52 004 lignes de `matpoint` (4 chemins × 4 confinements) **identiques au bit** entre l'exe
+  recompilé à `f631676` et l'exe livré. `rockim_f2` sans aucune trace du chantier.
 
 ### Ajouté — `law = dfhplus` : le périmètre de DP-DFH sur une énergie libre postulée (2026-09-06)
 
