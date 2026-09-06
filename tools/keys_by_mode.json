@@ -1,6 +1,6 @@
 {
  "_meta": {
-  "generated": "2026-09-06 11:58:13",
+  "generated": "2026-09-06 15:33:09",
   "generator": "tools/gen_keys_by_mode.py (voir la docstring : methode)",
   "rule": "cle lue par UN SEUL solveur = cle de ce mode, refusee dans les autres modes ; lue par le code partage ou par >= 2 solveurs = commune, jamais refusee ; cle absente du registre (construite dynamiquement) = jamais refusee",
   "files_scanned": [
@@ -65,9 +65,9 @@
    "scenario",
    "seed"
   ],
-  "n_keys": 397,
+  "n_keys": 398,
   "n_common": 247,
-  "n_mode_specific": 150,
+  "n_mode_specific": 151,
   "n_obsolete": 1,
   "rule_c1": "C1 (w21) : cle du deck NON consommee ET hors registre (ni commune, ni du mode, ni famille dynamique lue) = faute ; cle du registre non consommee (lecture conditionnelle) = legitime ; cle obsolete = « remplacee par » ; cle d'un autre mode = « sans effet en mode » ; source des obsoletes : tools/obsolete_keys.json",
   "rule_w22": "w22 (relecture D1) : une cle du deck NON consommee est legitime ssi le mode courant figure dans ses lecteurs (readers) ou si 'shared' y figure (code partage, ALWAYS_COMMON) ; sinon « cle X sans effet en mode Y : cles des modes Z1, Z2 » (kReaders dans KeysByMode.hpp)"
@@ -222,6 +222,7 @@
    "kinematics",
    "matWeibullM",
    "meshMirror",
+   "phaseWeibull",
    "probes",
    "quarterModel",
    "symmetryY",
@@ -486,7 +487,9 @@
  ],
  "prefixes_common": [
   "cdp",
-  "hydro"
+  "groupPhase.",
+  "hydro",
+  "phase."
  ],
  "prefixes_dynamic": [
   "contactMu.",
@@ -1179,7 +1182,8 @@
   ],
   "grainJitter": [
    "fdem",
-   "fdem3d"
+   "fdem3d",
+   "fem3d"
   ],
   "grainMesh": [
    "fdem"
@@ -1189,11 +1193,13 @@
   ],
   "grainSeeding": [
    "fdem",
-   "fdem3d"
+   "fdem3d",
+   "fem3d"
   ],
   "grainSize": [
    "fdem",
-   "fdem3d"
+   "fdem3d",
+   "fem3d"
   ],
   "grainSizeSpread": [
    "fdem"
@@ -1395,7 +1401,8 @@
   ],
   "lloydIters": [
    "fdem",
-   "fdem3d"
+   "fdem3d",
+   "fem3d"
   ],
   "loadArcDeg": [
    "fdem"
@@ -1526,7 +1533,11 @@
    "dem",
    "dem3d"
   ],
+  "phaseWeibull": [
+   "fem3d"
+  ],
   "phases": [
+   "fem3d",
    "shared"
   ],
   "platenHalfWidth": [
@@ -1587,7 +1598,8 @@
   ],
   "refineLevels": [
    "fdem",
-   "fdem3d"
+   "fdem3d",
+   "fem3d"
   ],
   "rho": [
    "shared"
@@ -1912,7 +1924,8 @@
   ],
   "vertexMergeFrac": [
    "fdem",
-   "fdem3d"
+   "fdem3d",
+   "fem3d"
   ],
   "viscousInInsertion": [
    "fdem3d"

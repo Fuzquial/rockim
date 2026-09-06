@@ -1,5 +1,5 @@
 #pragma once
-// KeysByMode.hpp — GENERE par tools/gen_keys_by_mode.py le 2026-09-06 11:58:13 : NE PAS EDITER.
+// KeysByMode.hpp — GENERE par tools/gen_keys_by_mode.py le 2026-09-06 15:33:09 : NE PAS EDITER.
 // Registre lisible : tools/keys_by_mode.json (methode dans la docstring du generateur).
 // Table des cles PROPRES A UN MODE (lues par un seul solveur) ; toute autre cle est commune.
 #include <stdexcept>
@@ -151,6 +151,7 @@ inline const Entry kTable[] = {
     {"kinematics", "fem3d"},
     {"matWeibullM", "fem3d"},
     {"meshMirror", "fem3d"},
+    {"phaseWeibull", "fem3d"},
     {"probes", "fem3d"},
     {"quarterModel", "fem3d"},
     {"symmetryY", "fem3d"},
@@ -442,6 +443,7 @@ inline const char* const kKnown[] = {
     "outputDir",
     "packing",
     "particleRadius",
+    "phaseWeibull",
     "phases",
     "platenHalfWidth",
     "platenPenaltyFactor",
@@ -585,7 +587,9 @@ inline const char* const kDynamicPrefix[] = {
 // C1 (w21) : prefixes valides par le code lui-meme (keysWithPrefix).
 inline const char* const kCommonPrefix[] = {
     "cdp",
+    "groupPhase.",
     "hydro",
+    "phase.",
     nullptr
 };
 
@@ -783,11 +787,11 @@ inline const Readers kReaders[] = {
     {"geometry", "fdem fem3d"},
     {"gfShearFactor", "shared"},
     {"grainElemSize", "fdem"},
-    {"grainJitter", "fdem fdem3d"},
+    {"grainJitter", "fdem fdem3d fem3d"},
     {"grainMesh", "fdem"},
     {"grainMeshRandom", "fdem"},
-    {"grainSeeding", "fdem fdem3d"},
-    {"grainSize", "fdem fdem3d"},
+    {"grainSeeding", "fdem fdem3d fem3d"},
+    {"grainSize", "fdem fdem3d fem3d"},
     {"grainSizeSpread", "fdem"},
     {"gravity", "fdem fdem3d"},
     {"gripLateralFree", "dem3d fdem fdem3d fem3d"},
@@ -841,7 +845,7 @@ inline const Readers kReaders[] = {
     {"ksRatio", "dem dem3d"},
     {"lateralRollers", "fdem"},
     {"law", "fdem fdem3d fem3d shared"},
-    {"lloydIters", "fdem fdem3d"},
+    {"lloydIters", "fdem fdem3d fem3d"},
     {"loadArcDeg", "fdem"},
     {"loadRate", "fdem"},
     {"loading", "fdem"},
@@ -876,7 +880,8 @@ inline const Readers kReaders[] = {
     {"outputDir", "shared"},
     {"packing", "dem dem3d"},
     {"particleRadius", "dem dem3d"},
-    {"phases", "shared"},
+    {"phaseWeibull", "fem3d"},
+    {"phases", "fem3d shared"},
     {"platenHalfWidth", "fdem"},
     {"platenPenaltyFactor", "fdem"},
     {"platenTributary", "fdem"},
@@ -892,7 +897,7 @@ inline const Readers kReaders[] = {
     {"pullV", "dem dem3d fdem fdem3d fem3d"},
     {"quarterModel", "fem3d"},
     {"rankineDrive", "shared"},
-    {"refineLevels", "fdem fdem3d"},
+    {"refineLevels", "fdem fdem3d fem3d"},
     {"rho", "shared"},
     {"saksalaEta", "shared"},
     {"scenario", "dem dem3d fdem fdem3d fem fem3d shared"},
@@ -980,7 +985,7 @@ inline const Readers kReaders[] = {
     {"unknownKeys", "shared"},
     {"vNodeMaxEvery", "fdem"},
     {"verifyFt", "fdem fdem3d"},
-    {"vertexMergeFrac", "fdem fdem3d"},
+    {"vertexMergeFrac", "fdem fdem3d fem3d"},
     {"viscousInInsertion", "fdem3d"},
     {"vtkCap", "fem3d"},
     {"weakPlaneAngleDeg", "fdem"},

@@ -7,6 +7,93 @@ reçoit les lignes exigées par les règles déjà en vigueur — dont **toute a
 
 ## [Non publié]
 
+### Ajouté — matériau PAR PHASE en éléments finis (`mode = fem3d`, 2026-09-06)
+
+Capacité **opt-in** : sans la clé `phases`, le comportement est **strictement inchangé** (le banc
+`bench_phases` le prouve octet à octet, voir plus bas). Elle rend possible l'expérience qui manquait :
+`matWeibullM` fait varier la **résistance** sur un bloc de raideur **uniforme**, donc sans contraste
+élastique aucune contrainte ne pouvait se concentrer et le calcul ne **pouvait pas** localiser. Un
+contraste de raideur (quartz 83,1 / feldspath 70 / biotite 29,3 GPa) le peut.
+
+- **Une instance de loi par phase**, même clé `law` pour toutes (`laws_[e.phase]->stress(...)`).
+  Imposé par le code : `MatLaw` fige `lam_`, `G_`, `K_`, `adp_`, `kdp_` dans son **constructeur** et
+  `stress()` ne reçoit pas de matériau — un simple champ `phase` sur l'élément ne changerait **rien** à
+  l'élasticité. Les **clés d'option de loi** (`erodeD`, `dfh*`, `cdp*`, `meridian`…) restent **globales**
+  (lues une fois dans le Config) ; les écrire par phase est refusé avec ce message. `lcMax_` reste
+  **global** pour toutes les phases : la garde de bande de fissuration est alors **conservative** (elle
+  peut refuser trop, jamais laisser passer un snap-back structurel).
+- **Deux sources de phase.** (a) `mesh = voronoi` en fem3d : **réutilise la tessellation du FEMDEM**
+  (`Tessellation3`, mêmes clés, même graine) ; la seule différence est en aval — le FEMDEM **dédouble**
+  les nœuds pour poser ses joints, le continuum prend les sommets **tels quels**, donc maillage à
+  **nœuds partagés** et frontière de grain = simple **saut de propriétés**. (b) `mesh = file` +
+  `$PhysicalNames` dim 3 : le lecteur Gmsh de fem3d **lisait les ntags puis les jetait** — il garde
+  désormais le tag physique ; phase homonyme ou `groupPhase.<groupe> = <phase>`.
+  Divergence **assumée** avec fdem3d : un groupe sans phase est une **ERREUR** en fem3d (fdem3d retombe
+  sur la phase 0 avec un WARNING) — en continuum la phase EST le matériau, un nom mal tapé effacerait
+  silencieusement le contraste élastique, c'est-à-dire l'effet même que l'on mesure.
+- **Tout ce qui devient par phase**, sous peine de chiffres faux en silence : masse nodale condensée
+  (les **deux** sites), pas de temps critique (`hmin / max_p c_P` — sur `mat_.cP()` le dt aurait été
+  29 % trop grand avec du quartz au-dessus d'une fiche à 50 GPa, et le schéma ne serait pas devenu
+  instable mais **bruyant**, bruit qui se lit comme de la fissuration), pénalité de contact outil
+  (`max_p E`), **impédances de Lysmer** prises sur la phase de l'élément **propriétaire** de la face
+  (les deux boucles, boîte et cylindre ; `G` descendu dans les boucles), viscosité de volume
+  (`rho_p`, `rho_p c_d,p`, tables précalculées).
+- **Gardes ajoutées** (une clé lue et sans effet est le motif interdit n° 1) : `phases` sur
+  `mesh = grid` refusé ; `phases` sur `mesh = file` sans `$PhysicalNames` refusé ; clés de **joint**
+  (`gb.<a>.<b>.*`, `gbAlpha*`, `gbHeteroFactor`, `groupBond.<A>.<B>`, `contactMu.<phase>`, `groupVel.`,
+  `gauge.`) refusées en fem3d avec la raison (nœuds partagés = aucun joint) ; audit complet de la
+  famille `phase.<nom>.<propriété>` (quatre fautes distinguées, quatre messages : nom de phase
+  inconnu, clé de **loi** écrite par phase, `phase.<nom>.law`, et fiche de phase posée **sans** clé
+  `phases` — sans elle `PhaseSet` nomme sa fiche unique « rock » et `phase.rock.E` serait acceptée,
+  consommée et parfaitement inerte) ; `groupPhase.<groupe>` hors `mesh = file` refusée ;
+  `phaseWeibull` posée sans objet (pas de `matWeibullM`, ou une seule phase) refusée ; **audit de masse** `sum(m)` contre `sum_p rho_p V_p` recalculé indépendamment
+  (seuil 1e-9, lève) ; en `mesh = voronoi`, aire des faces extérieures = aire de la boîte, refus des
+  faces vues plus de deux fois (elles étaient **avalées en silence**), refus si aucune face n'est
+  partagée entre grains distincts ; en `mesh = file` multi-groupes, refus si aucune face conforme
+  entre groupes (deux corps disjoints se traverseraient — fem3d n'a **pas** de contact entre corps) ;
+  compactage **déterministe** des sommets orphelins de la tessellation (jamais d'épinglage FIXED
+  silencieux, qui donnerait des broches fantômes encastrées dans le bloc).
+- **`phaseWeibull` (false, nouvelle clé)** : la composition `matWeibullM` × phases est **refusée par
+  défaut**. Les deux hétérogénéités se multiplient et un run qui localise ne serait plus attribuable —
+  or c'est précisément le constat qui motive tout le chantier.
+- **Sorties.** Champs cellulaires `.vtu` `phase`, `grain`, `matE`, `matRho`, `matFt` (propriétés
+  **réellement vues** par l'élément, `ftScale` compris : la seule façon de vérifier que le contraste
+  est arrivé jusqu'à la **loi**, pas seulement jusqu'à la couleur), activés automatiquement dès qu'il
+  y a une microstructure — condition **fausse** pour tous les decks existants, `.vtu` inchangés.
+  Console : table des phases, fractions **réalisées vs visées**, bilan érosion / endommagement /
+  dissipation **par phase**, qualité des tets. Verdict PASS/FAIL du scénario `tension` **supprimé** en
+  multiphase (la résistance du bloc n'est celle d'aucune phase ; un chiffre sous l'intitulé
+  « vérification » y serait pire qu'une absence de chiffre). **Aucune colonne** ajoutée à
+  `history.csv`.
+- **Limites dites d'avance, pas des bugs** : ce n'est **pas** un GBM cohésif (aucun joint, donc aucune
+  frontière intrinsèquement faible — la frontière concentre, elle ne s'ouvre pas) ; **verrouillage
+  volumique** des tets linéaires sans B-bar, corrélé à la phase si `nu` varie (avertissement imprimé,
+  il **sous-estime** le contraste) ; `lc = V0^(1/3)` sur les tets en cône de la tessellation, plats
+  surtout aux frontières de grain (`lc` médian et rapport diamètre inscrit / lc imprimés).
+- **Fichiers** : `include/rockim/Fem3dSolver.hpp`, `src/Fem3dSolver.cpp`, `src/main.cpp` (deux
+  barrières élargies à fem3d), `include/rockim/KeysByMode.hpp` **régénéré**
+  (`grainSize`/`grainJitter`/`grainSeeding`/`lloydIters`/`refineLevels`/`vertexMergeFrac` étendus à
+  fem3d, `phaseWeibull` ajoutée). **Aucune** modification de `MatLaw`, `MatState`, `Material`,
+  `Tessellation3`, `Fdem3dSolver` — c'est ce qui borne le risque, et `dpdfh` n'est pas effleurée.
+- **Banc `bench_phases/`** (quelques secondes, aucun run long) : `depouille.py` **9/9** — neutralité
+  **octet à octet** (2 puis 3 phases identiques = deck sans `phases`, sur les chemins fichier **et**
+  voronoï) avec sa variante qui **doit** échouer ; **borne de Reuss** en forme fermée sur une barre à
+  deux couches nommées (E_app 44,158 GPa contre 43,678 attendu, **1,10 %**), le seul contrôle qui
+  distingue une capacité qui **marche** d'une capacité qui **affiche** ; commutativité par
+  `groupPhase` (−1,48 %) ; CFL sur `c_P` **max** (dt ×0,8497 = √(60/83,1), exact).
+  `erreurs.py` **16/16** cas fautifs refusés **avec le bon message** (le test vérifie le **message**,
+  pas seulement le code de retour : un refus qui envoie chercher au mauvais endroit coûte une
+  demi-journée).
+- **Preuves de non-régression.** `tools/bitid.py` **8/8 IDENTIQUE** contre l'ancre w18
+  (`OMP_NUM_THREADS = 4`, exe issu d'une **reconstruction complète** objets supprimés, `.hpp`
+  modifié) : pics retrouvés exactement 7 916,75 / 6 775,14 / 30 390,2 / 19 541,3 / 205 788 N — les
+  trois decks `fem3d` couvrent masse, pénalité, Lysmer cylindre, viscosité de volume et cinématique
+  hencky, et `fdem3d_kuru9` (6 corps, 3 phases, `groupBond`) atteste que le FEMDEM n'a pas bougé.
+  `tools/verify_suite.py` tier fast (`OMP_NUM_THREADS = 1`) : **48/48 avant** (build propre de `HEAD`)
+  et **48/48 après**, test par test et **valeur mesurée par valeur mesurée** — aucun échec de
+  plateforme préexistant, aucun ajouté. Rapports dans `bench_phases/`.
+
+
 ### Corrigé — relecture adverse de l'étape 1 DFH+ (2026-09-06)
 
 Relecture indépendante (autre graine, 10⁵ tirages, implémentation Python écrite depuis les formules

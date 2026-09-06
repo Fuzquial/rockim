@@ -187,6 +187,35 @@ struct PhaseSet {
         auto bad = [&](const std::string& what) {
             throw std::runtime_error("Material (" + who + "): " + what);
         };
+        // ---- FINITUDE (2026-09-06) -------------------------------------
+        // Les tests « > 0 » ci-dessous attrapent NaN par accident (toute
+        // comparaison avec NaN est fausse) mais laissent passer +inf, et un
+        // rho sous-normal passe aussi. Le prix etait mesure : E = inf ou
+        // rho = 1e-300 donnent cP = inf, donc dt = 0, donc
+        // nSteps = (long)ceil(T/0) = (long)+inf — conversion HORS BORNES
+        // (comportement indefini) qui vaut -2147483648 sur MSVC : la boucle
+        // en temps ne tourne JAMAIS et le programme sort en succes, avec un
+        // resume complet et « peak |sigma| = 0 / 0 MPa ». Un script de
+        // campagne enregistre ce run comme termine. Le chemin par phase
+        // multiplie les portes d'entree (un E et un rho par fiche) et la CFL
+        // est prise sur phases_.maxCp() : UNE phase pourrie empoisonne le pas
+        // de temps du bloc entier. Le test de finitude manquait ici.
+        auto fin = [&](double v, const char* nm) {
+            if (!std::isfinite(v))
+                bad(std::string(nm) + " must be fini (ni inf ni nan)");
+        };
+        fin(m.E, "E");            fin(m.rho, "rho");
+        fin(m.nu, "nu");          fin(m.ft, "ft");
+        fin(m.cohesion, "cohesion");  fin(m.Gf, "Gf");
+        fin(m.gfShearFactor, "gfShearFactor");
+        fin(m.phiDeg, "frictionDeg");
+        // rho sous-normal : cP = sqrt(E/rho) deborde en +inf bien avant que
+        // rho n'atteigne zero. On refuse le domaine ou le pas de temps n'est
+        // plus representable, pas seulement le zero exact.
+        if (m.rho > 0.0 && !std::isfinite(std::sqrt(m.E / m.rho)))
+            bad("E / rho deborde (rho trop petit ou E trop grand) : la "
+                "vitesse d'onde n'est pas finie, donc le pas de temps serait "
+                "nul et la boucle en temps ne tournerait jamais");
         if (!(m.E > 0.0))   bad("E must be > 0");
         if (!(m.rho > 0.0)) bad("rho must be > 0");
         if (!(m.nu >= 0.0 && m.nu < 0.5)) bad("nu must be in [0, 0.5)");
@@ -228,6 +257,23 @@ struct PhaseSet {
         std::string nm;
         double fsum = 0.0;
         while (ss >> nm) {
+            // ---- nom REPETE (2026-09-06) -------------------------------
+            // `phases = dur dur` etait accepte sans un mot : deux fiches
+            // homonymes, un tableau materiau et un bilan par phase qui
+            // impriment deux lignes indiscernables, la fraction voulue pour
+            // un mineral scindee en deux populations, et un
+            // groupPhase.<groupe> = dur qui resout vers le DERNIER homonyme
+            // (la boucle de resolution ecrase sans test). Le depouillement
+            // par phase devient illisible et la microstructure n'est plus
+            // celle que le deck decrit.
+            for (const auto& prev : ps.name)
+                if (prev == nm)
+                    throw std::runtime_error("PhaseSet: la phase '" + nm
+                        + "' est nommee deux fois dans la cle `phases` — les "
+                          "deux fiches seraient homonymes et indiscernables "
+                          "(fraction scindee, bilan par phase illisible, "
+                          "groupPhase resolu vers la derniere). Donner un nom "
+                          "distinct a chaque phase.");
             std::string k = "phase." + nm + ".";
             Material m = base;
             m.rho = c.getd(k + "rho", m.rho);
@@ -240,9 +286,17 @@ struct PhaseSet {
             m.gfShearFactor = c.getd(k + "gfShearFactor", m.gfShearFactor);
             validate(m, "phase " + nm);
             double f = c.reqd(k + "fraction");
-            if (f <= 0.0)
+            // `if (f <= 0.0)` etait FAUX pour NaN comme pour +inf : les deux
+            // passaient. Le prix, mesure sur mesh = voronoi : une fraction
+            // nan renvoie 100 % du volume a UNE phase et 0 % aux autres — le
+            // deck a trois mineraux devient le bloc homogene SANS contraste
+            // elastique, c'est-a-dire exactement le cas temoin que tout ce
+            // chantier existe pour eviter — et le run sort en succes avec un
+            // pic annonce comme un resultat.
+            if (!(f > 0.0) || !std::isfinite(f))
                 throw std::runtime_error("PhaseSet: fraction of phase '" + nm
-                                         + "' must be positive");
+                                         + "' must be positive and finite "
+                                           "(ni inf ni nan)");
             ps.mat.push_back(m);
             ps.fraction.push_back(f);
             ps.name.push_back(nm);
@@ -250,6 +304,9 @@ struct PhaseSet {
         }
         if (ps.mat.empty())
             throw std::runtime_error("PhaseSet: 'phases' key present but empty");
+        if (!(fsum > 0.0) || !std::isfinite(fsum))
+            throw std::runtime_error("PhaseSet: la somme des fractions n'est "
+                                     "pas finie et positive");
         for (double& f : ps.fraction) f /= fsum;
 
         // ---- surcharges par paire de phases (voir GbPair ci-dessus) ------

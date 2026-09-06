@@ -1,0 +1,11 @@
+﻿[OK  ] F2 neutralite (2 phases = globale) history.csv identique octet a octet : True
+[OK  ] F2 variante qui DOIT echouer       le contraste change bien history.csv : True
+[OK  ] F3 meme deformation imposee        epsAxGrip = 8.749410e-05 (dur) 8.749930e-05 (mou) 8.749410e-05 (serie) 8.749410e-05 (permutee)
+[OK  ] F3 borne de Reuss (serie)          E_app mesure 44.158 GPa contre 43.678 GPa attendu (1.10 %) ; homogenes 84.055 / 29.505 GPa
+[OK  ] F3 le contraste EST vu par la loi  E_app(serie) / E_app(dur) = 0.5253 — vaudrait 1 exactement si laws_[e.phase] n'etait pas branche
+[OK  ] F3d commutativite (groupPhase)     permutee 43.503 GPa contre 44.158 GPa (-1.48 %)
+[OK  ] F5 voronoi : 3 phases egales       history.csv identique octet a octet au deck sans `phases`
+[OK  ] F5 voronoi : variante qui DOIT echouer le contraste quartz/feldspath/biotite change history.csv
+[OK  ] F4 CFL sur c_P MAX des phases      dt 9.5477e-09 -> 8.1129e-09 (rapport 0.8497, attendu 0.8497 = sqrt(60/83,1))
+
+VERDICT GLOBAL : TOUS LES CONTROLES PASSENT

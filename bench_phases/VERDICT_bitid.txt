@@ -1,0 +1,14 @@
+[bitid] exe = C:\Users\fuzquianoalricabi\simulations\FDEM\rockim_g0\build\rockim.exe
+[bitid] exe_sha256 = 4fa8e13a647c54928989822491c050c0bf723efe58ae806ec059f7f2fdf42794
+[bitid] ancre C:\Users\fuzquianoalricabi\simulations\FDEM\rockim_g0\tools\bitid_refs.json : 8 decks, threads 4 — ancre = rockim_f2w18.exe (655a87329c68b0d8..., 2026-09-05 18:34:44)
+[bitid] 8 decks, OMP_NUM_THREADS = [4], sorties C:\Users\FUZQUI~1\AppData\Local\Temp\rockim_bitid_rockim_omp4_2q76oa1z
+  IDENTIQUE  fem3d_cdp_PQ_court               106.5 s  omp4  pic 7916.75 N
+  IDENTIQUE  fem3d_dpr_T1_court               206.0 s  omp4  pic 6775.14 N
+  IDENTIQUE  fem3d_sk2011_cyl_court            86.4 s  omp4  pic 30390.2 N
+  IDENTIQUE  fdem3d_kuru9_court               181.5 s  omp4  pic 0 N
+  IDENTIQUE  fdem3d_cut3d_heilman_court        70.8 s  omp4  pic 19541.3 N
+  IDENTIQUE  fdem3d_visc_yan_3d               135.2 s  omp4  pic n/a
+  IDENTIQUE  fdem_toolcontact_signorini        46.3 s  omp4  pic 205788 N
+  IDENTIQUE  fdem_ucs_yan_adaptive_court       86.7 s  omp4  pic n/a
+[bitid] 8/8 IDENTIQUE
+BITID_RC=0

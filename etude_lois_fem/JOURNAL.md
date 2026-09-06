@@ -532,3 +532,134 @@ total ≈ 5 h de machine. À valider phase par phase (liste exacte des clés dan
 - 20:56 — `run_cles.py --suite 20` : **47/47 PASS** (A 21 + C 6 + B 20). 21:15 — **bitid w22 : 8/8 IDENTIQUE** (ancre w18, 4 fils,
   mêmes pics que w20/w21 : 7 916,75 / 6 775,14 / 30 390,2 / 19 541,3 / 205 788 N). Decks adverses du relecteur rejoués sur w22
   (`bitid_w22/adverse_w21_sur_w22.txt`) : a1 rc 1 (D1 fermé), a2-a10/r2 inchangés.
+
+## 2026-09-06 — matériau PAR PHASE en éléments finis (`mode = fem3d`) — chantier « tessellation FEMDEM réutilisée »
+
+**Demande de Fernando** : « utiliser le matériel qu'on a déjà côté femdem pour la tessellation Voronoï,
+puis corriger et améliorer rockim pour qu'il puisse associer en fonction des phases un matériau plutôt
+qu'un autre » — c'est-à-dire un essai **en éléments finis** (milieu continu, pas de joints discrets)
+sur une microstructure de grains où chaque grain porte les propriétés de sa phase minérale.
+
+**Pourquoi ce n'est pas un confort.** Le champ de Weibull des campagnes (`matWeibullM`) fait varier la
+**résistance** sur un bloc de raideur parfaitement **uniforme** : il n'y a donc aucun contraste
+élastique, donc aucune raison mécanique qu'une contrainte se concentre quelque part, donc le calcul ne
+**pouvait pas** localiser. Un contraste de raideur — quartz 83,1 / feldspath 70 / biotite 29,3 GPa —
+est ce qui concentre les contraintes aux frontières de grain. La capacité rend l'expérience possible.
+
+### Ce qui a été écrit
+
+- `include/rockim/Fem3dSolver.hpp` — `Elem` gagne `int phase, grain` ; `PhaseSet phases_` ;
+  `std::vector<std::unique_ptr<MatLaw>> laws_` (une instance **par phase**, même clé `law`) avec
+  `law_` conservé en **pointeur non propriétaire** sur `laws_[0]` (les sites qui n'appellent que
+  `name()` / `sigmaCdp()` / `viscousOverstress()` sont inchangés) ; tables chaudes `rhoP_`, `rhoCdP_` ;
+  `tetPhase_` / `tetGrain_` ; `phaseWeibull_`.
+- `src/Fem3dSolver.cpp` — `phaseKeyGuards()` (clés de **joint** refusées, avec la raison),
+  `auditPhaseKeys()` (famille `phase.<nom>.<propriété>`, deux messages distincts : nom de phase
+  inconnu **vs** clé de loi écrite par phase), `buildMeshVoronoi()` (Tessellation3 **réutilisée**,
+  compactage déterministe des sommets orphelins), lecture des `$PhysicalNames` + `groupPhase` dans
+  `buildMeshFile()` (le lecteur **lisait les ntags et les jetait**), `checkMassAudit()`, masse
+  condensée / CFL / pénalité / Lysmer / viscosité de volume **par phase**,
+  `laws_[e.phase]->stress(...)`, champs `.vtu` `phase`/`grain`/`matE`/`matRho`/`matFt`, bilan par
+  phase, qualité des tets, avertissement de verrouillage volumique, verdict `tension` supprimé en
+  multiphase.
+- `src/main.cpp` — deux barrières élargies à `fem3d` (`mesh = voronoi`, `phases`).
+- `include/rockim/KeysByMode.hpp` — **régénéré** par `tools/gen_keys_by_mode.py` (le registre est une
+  **sortie** du scan des sources, pas une entrée à éditer).
+- `bench_phases/` — `make_bar2.py` (barre à deux couches nommées, avec ou sans `$PhysicalNames`),
+  8 decks, `depouille.py` (9 contrôles), `erreurs.py` (13 cas fautifs).
+
+### Le contrôle qui compte
+
+Le mode de défaillance le plus grave est **silencieux** : câbler `Elem.phase`, les champs `.vtu`, les
+bilans de fractions… et oublier `laws_[e.phase]->stress`. La figure est parfaite, la carte de grains
+est colorée, et tous les chiffres sont ceux d'un bloc homogène. Aucun banc « trois phases identiques =
+bit-identique » ne le détecte (le contraste changerait quand même la masse et la CFL).
+
+**Le banc de Reuss le détecte.** Barre à deux couches en série (`dur` E₁ = 83,1 GPa en bas, `mou`
+E₂ = 29,3 GPa en haut, interface à H/2, nœuds partagés), `law = elastic`, 384 tets, 0,6 s de calcul.
+La solution est fermée : `1/E_app = f₁/E₁ + f₂/E₂`. Les mors raidissent les extrémités, on calibre
+donc sur les **deux runs homogènes du même maillage**, ce qui élimine l'effet de mors au premier
+ordre. **Mesuré 44,158 GPa contre 43,678 attendu : 1,10 %.** `E_app(série)/E_app(dur) = 0,5253` — il
+vaudrait **1 exactement** si la loi n'était pas indexée par la phase.
+
+### Résultats du banc (2026-09-06)
+
+| contrôle | verdict |
+|---|---|
+| F2 neutralité, `mesh = file` : 2 phases identiques = deck sans `phases` | `history.csv` **octet à octet** |
+| F2 variante qui **doit** échouer (contraste) | diffère ✔ |
+| F3 borne de **Reuss** | 44,158 contre 43,678 GPa, **1,10 %** |
+| F3 le contraste est vu par la **loi** | rapport 0,5253 (vaudrait 1 si non branché) |
+| F3d commutativité par `groupPhase` | −1,48 % |
+| F5 voronoï : 3 phases identiques = deck sans `phases` | **octet à octet** |
+| F5 variante qui **doit** échouer (Red Bohus) | diffère ✔ |
+| F4 CFL sur `c_P` **max** | dt ×0,8497 = √(60/83,1), exact |
+| `erreurs.py` | **16/16** refusés avec le bon message |
+
+Chemin voronoï en fem3d, cube 6 mm, `grainSize` 2 mm : 40 grains, 1514 tets, **391 nœuds partagés**,
+aire extérieure = aire de la boîte à **6·10⁻¹⁶**, 609 faces intérieures entre grains distincts, audit
+de masse à **3,7·10⁻¹⁶**, fractions réalisées 34,2 / 45,8 / 20,0 % pour 35 / 45 / 20 % visées, qualité
+des tets : rapport diamètre inscrit / lc médian **0,734** (min 0,418 ; tétraèdre régulier 0,833).
+
+### Preuves de non-régression (2026-09-06)
+
+- **`tools/bitid.py` : 8/8 IDENTIQUE** contre l'ancre w18 (`rockim_f2w18.exe`, 655a87329c68b0d8…),
+  `OMP_NUM_THREADS = 4`, exe `4fa8e13a647c5492…` issu d'une **reconstruction complète** (objets
+  supprimés, `.hpp` modifié). Pics retrouvés **exactement** : 7 916,75 / 6 775,14 / 30 390,2 /
+  19 541,3 / 205 788 N. Les trois decks `fem3d` exercent tous les chemins touchés — `cdp_PQ` (mesh =
+  file, masse du chemin fichier, pénalité, quarterModel, confinement), `dpr_T1` (98 342 tets,
+  **viscosité de volume** + hencky + signorini : c'est lui qui mesure la descente de `bvRhoC` dans
+  `processElem`, et il porte une colonne `wBulk` dans `history.csv`), `sk2011_cyl` (chemin **grille**
+  + **Lysmer cylindre**, la seconde boucle, celle qu'on oublie). `fdem3d_kuru9` (6 corps, **3 phases**,
+  `groupBond`) prouve que le FEMDEM n'a pas bougé. Rapport : `bench_phases/VERDICT_bitid.txt`,
+  `bench_phases/bitid_phases_fem3d.json`.
+- **`tools/verify_suite.py` (tier fast, `OMP_NUM_THREADS = 1`) : 48/48 PASS avant et 48/48 après**,
+  test par test et **valeur mesurée par valeur mesurée** (seules les durées diffèrent). La référence
+  « avant » a été prise sur un build propre de `HEAD` (`build_base/`, `f2e90c78090d2812…`) : rien
+  n'était en échec avant, rien ne l'est après — **aucun échec de plateforme préexistant à cacher**.
+  `bench_phases/suite_avant_HEAD.txt` et `bench_phases/suite_apres_phases.txt`.
+- **Piège de plateforme rencontré** : `verify_suite.py --exe <chemin RELATIF>` échoue
+  (`FileNotFoundError` au premier test — c'est le « `--exe` relatif » déjà consigné le 05/09), et
+  Apex One retient quelques secondes un exe fraîchement lié. Passer un chemin **absolu** et relancer.
+
+### Limites, à écrire dans tout livrable qui s'appuie dessus
+
+1. **Ce n'est pas un GBM cohésif.** Nœuds partagés = aucun joint = aucune frontière de grain
+   intrinsèquement faible. La frontière **concentre** la contrainte, elle ne **s'ouvre pas** en tant
+   que surface. Les clés de joint sont refusées, pas ignorées.
+2. **Verrouillage volumique.** Tétraèdres linéaires, un point d'intégration, ni B-bar ni intégration
+   sélective (vérifié). Ils sur-raidissent d'autant plus que `nu` est grand : si `nu` varie d'une phase
+   à l'autre, l'artefact est **corrélé à la phase** et **sous-estime** le contraste — c'est-à-dire
+   qu'il pousse vers la conclusion « le contraste fait moins que prévu ». Le solveur avertit.
+3. **`lc = V0^(1/3)` sur des tets en cône.** La tessellation produit des éventails plats, surtout aux
+   frontières de grain, là où l'étude regarde. Tant que ce point n'est pas mesuré contre le `lc_c`
+   dépendant du taux (`OUTILS/compute_lc.py`), faire l'essai physique sur `mesh = file` (Gmsh) et ne
+   garder `mesh = voronoi` que pour la géométrie.
+4. **Contrainte de pointe à l'interface.** Le désaccord élastique à un coin de grain est singulier :
+   site et instant d'amorçage restent dépendants du maillage. « La fissure suit les frontières de
+   grain » n'est pas une preuve en soi.
+5. **Clés d'option de loi globales.** Une seule loi pour toutes les phases ; `erodeD`, `dfh*`, `cdp*`,
+   `meridian`… valent pour tout le bloc. Écrites par phase, elles sont refusées avec ce message.
+
+### Trois trous fermés à la relecture de mon propre code (le même jour)
+
+1. **`phase.rock.E` sans clé `phases`.** Sans `phases`, `PhaseSet::from` rend **une** fiche qu'il
+   nomme « rock » et ne lit **aucune** clé `phase.*`. Une fiche `phase.rock.E = 70e9` passait donc
+   l'audit (le nom « rock » existe !), était **consommée** par `keysWithPrefix`, jugée légitime — et
+   restait parfaitement **inerte**. C'est exactement le motif interdit. Refusée en nommant la cause.
+2. **`groupPhase.<groupe>` hors `mesh = file`.** Sans groupes physiques il n'y a personne à associer :
+   la tessellation nomme ses grains par leur phase, la grille n'a aucun groupe. La clé était lue pour
+   personne. Refusée.
+3. **`phaseWeibull` posée sans objet** (pas de `matWeibullM`, ou une seule phase) : la permission
+   n'autorisait rien. Refusée, comme les autres « satellites orphelins » du dépôt.
+
+### Défaut PRÉEXISTANT relevé au passage (non corrigé ici, à trancher)
+
+Sur le chemin `mesh = grid` de fem3d, `hmin_` est le pas **nominal** `min(dx, dy, dz)`
+(`Fem3dSolver.cpp` l. 356) alors que le chemin fichier prend le **diamètre inscrit** 6V/A. Or
+`Fdem3dSolver.cpp` l. 2457-2464 documente exactement ce piège et son prix : le découpage de Kuhn donne
+un 6V/A médian ≈ 0,4 × arête (pire ≈ 0,2), le `hmin` nominal **surestime donc le dt stable jusqu'à
+5 fois**, et c'est ce qui a produit 2,4 MJ d'énergie de bloc pour 16 J incidents le 2026-08-07 côté
+FEMDEM. En fem3d seul `dtFactor = 0,3` masque l'écart, et à 0,2 d'aspect le rapport monte à 1,5 > 1.
+**Ce chantier n'y touche pas** (aucune phase n'est admise sur le chemin grille), mais le défaut est
+réel et indépendant.

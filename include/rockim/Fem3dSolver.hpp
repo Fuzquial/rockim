@@ -60,6 +60,15 @@ private:
         // PRECEDENT, memoire du taux volumique (J_n+1 - J_n)/(dt J_n+1) ;
         // lue et mise a jour seulement quand la cle est active
         double Jbv = 1.0;
+        // ---- materiau PAR PHASE (2026-09-06, opt-in, defaut bit-identique) --
+        // phase : indice dans PhaseSet (0 = la fiche materiau globale quand la
+        // cle `phases` est absente, donc chemin historique inchange) ; grain :
+        // cellule de Voronoi (mesh = voronoi) ou groupe physique (mesh = file).
+        // Miroir litteral de Fdem3dSolver.hpp l. 100-101. Ces deux indices sont
+        // poses DANS la boucle de construction des elements (jamais dans une
+        // seconde passe indexee) : finishMesh conserve l'ordre des tets
+        // d'entree mais rien ne le garantirait apres un futur tri.
+        int phase = 0, grain = 0;
         MatState st;
     };
     struct BFace { int elem; std::array<int, 3> n; };
@@ -94,7 +103,10 @@ private:
 
     void buildMesh();
     void buildMeshFile();                        // mesh = file (Gmsh MSH 2.2)
+    void buildMeshVoronoi();                     // mesh = voronoi (grains + phases)
     void finishMesh(const std::vector<std::array<int, 4>>& tets);
+    void checkMassAudit(const char* tag);        // sum(m) == sum_p rho_p V_p
+    void phaseKeyGuards();                       // cles de JOINT refusees en fem3d
     void checkFinite();                          // C4 (w20) : NaN/Inf reel
     void placeTool();
     void setupBoundaries();
@@ -114,7 +126,53 @@ private:
     Config cfg_;
     std::string out_;
     Material mat_;
-    std::unique_ptr<MatLaw> law_;
+    // ---- materiau par phase (2026-09-06) -----------------------------------
+    // phases_ contient TOUJOURS au moins une fiche : sans la cle `phases`,
+    // PhaseSet::from rend {Material::from(cfg)} = mat_ champ par champ, donc
+    // phases_.mat[0] est le MEME objet que mat_ et toute substitution
+    // mat_.X -> phases_.mat[0].X rend le meme double, bit pour bit. C'est le
+    // pivot de la bit-identite : un SEUL chemin de code, jamais deux.
+    PhaseSet phases_;
+    // Une INSTANCE DE LOI PAR PHASE, meme cle `law` pour toutes. Impose par le
+    // code, pas par gout : MatLaw fige lam_, G_, K_, adp_, kdp_ dans son
+    // CONSTRUCTEUR a partir de la fiche recue (MatLaw.hpp) et stress() ne
+    // recoit PAS de materiau — un objet unique ne peut pas porter trois
+    // modules d'Young, et un simple champ `phase` sur l'element ne changerait
+    // STRICTEMENT RIEN a l'elasticite. Les options de loi (erodeD, dfh*, cdp*,
+    // meridian...) sont lues dans le Config GLOBAL par MatLaw::make : elles
+    // restent donc communes a toutes les phases (documente, refuse si ecrit
+    // par phase).
+    std::vector<std::unique_ptr<MatLaw>> laws_;
+    // pointeur NON PROPRIETAIRE sur laws_[0] : les sites qui n'appellent que
+    // name() / sigmaCdp() / viscousOverstress() restent ecrits comme avant
+    // (diff minimal). stress() est const et tout l'etat mutable vit dans
+    // MatState : un vecteur de lois partage en lecture par N fils est sur.
+    const MatLaw* law_ = nullptr;
+    // tables CHAUDES par phase (modele Fdem3dSolver.cpp l. 410-418) : rho pour
+    // la masse condensee et la viscosite de volume, rho c_d pour sa part
+    // lineaire. cP() contient un sqrt : on ne l'appelle pas par element et par
+    // pas.
+    std::vector<double> rhoP_, rhoCdP_;
+    // phase / grain par tet, remplis par le front-end de maillage AVANT
+    // finishMesh. VIDES = comportement historique (tout en phase 0).
+    std::vector<int> tetPhase_, tetGrain_;
+    std::vector<std::string> groupName_;         // mesh = file : volumes physiques
+    int nGrains_ = 0;
+    bool meshVoronoi_ = false;                   // chemin mesh = voronoi actif
+    // La cle `phases` est-elle POSEE dans le deck ? A distinguer de
+    // phases_.n() > 1 (correction du 2026-09-06) : avec `phases = dur`, une
+    // seule fiche est declaree et phases_.n() vaut 1 — toutes les gardes
+    // conditionnees par n() > 1 etaient alors muettes, alors que le deck
+    // AFFIRME decrire une microstructure. C'est l'intention du deck qui doit
+    // armer les gardes, pas le nombre de fiches qu'il a fini par produire.
+    bool phasesDeclared_ = false;
+    // phaseWeibull (opt-in) : autorise explicitement la COMPOSITION du champ
+    // de Weibull (matWeibullM, qui ecrit ftScale par element) avec les phases.
+    // Refusee par defaut : les deux heterogeneites se multiplient et un run
+    // qui localise ne serait plus attribuable — or le constat qui motive tout
+    // ce chantier est justement qu'un Weibull sur une raideur UNIFORME ne
+    // pouvait pas localiser.
+    bool phaseWeibull_ = false;
     Scenario scen_ = Scenario::PERCUSSION;
 
     double W_ = 0.1, D_ = 0.1, H_ = 0.08;

@@ -1,0 +1,29 @@
+﻿[FEM3D] audit de masse (mesh = voronoi) : sum(m) = 0.000580793 kg contre sum_p rho_p V_p = 0.000580793 kg, ecart relatif 3.73352e-16
+[FEM3D]   phase quartz : rho = 2650 kg/m3, V = 7.38727e-08 m3, m = 0.000195763 kg
+[FEM3D]   phase feldspath : rho = 2560 kg/m3, V = 9.8894e-08 m3, m = 0.000253169 kg
+[FEM3D]   phase biotite : rho = 3050 kg/m3, V = 4.32333e-08 m3, m = 0.000131862 kg
+[FEM3D] voronoi : aire exterieure 0.000216 m^2 contre 0.000216 m^2 (boite), ecart relatif 6.27432e-16 ; 609 faces interieures entre grains distincts
+[FEM3D] mesh = voronoi : 40 grains, 1514 tets, 391 noeuds, boite 0.006 x 0.006 x 0.006 m, h_min (diametre inscrit) = 0.000165891 m, lc max = 0.000800093 m
+[FEM3D] voronoi, qualite des tets : lc median = 0.000509 m, rapport diametre inscrit / lc median = 0.733903 (min 0.417888) — le tetraedre REGULIER vaut 0,833 (6V/A = 0,408 a, lc = 0,490 a) ; en dessous de ~0,1 la bande de fissuration lc = V0^(1/3) n'est plus la largeur normale a la fissure et l'energie dissipee par unite de surface est fausse du rapport d'aspect (bouton : vertexMergeFrac)
+[FEM3D] fractions volumiques realisees / visees : quartz 34.2003 % / 35 % feldspath 45.7843 % / 45 % biotite 20.0154 % / 20 %
+[FEM3D] tool penalty kp = 1.37855e+07 N/m (contactPenaltyFactor 1 x E hmin, hmin = 0.000165891 m), m_min = 8.79403e-08 kg, omega_p = sqrt(kp/m_min) = 1.25204e+07 rad/s, omega_p/(2/dt) = 0.0507882 (dt = 8.11288e-09 s, CFL 2.70429e-08 s, 2 sqrt(m_min/kp) = 1.5974e-07 s) ; omega_el/(2/dt) = dt/CFL = 0.3, rapport combine sqrt(omega_el^2 + omega_p^2)/(2/dt) = 0.304269
+[FEM3D] law = elastic, 1514 tets, 391 nodes, dt = 8.11288e-09 s, steps = 247
+[FEM3D] materiau PAR PHASE (3 phases, loi commune 'elastic', cles de loi GLOBALES) :
+[FEM3D]   quartz : E = 83.1 GPa, nu = 0.25, rho = 2650 kg/m3, ft = 10 MPa, c = 30 MPa, phi = 40 deg, Gf = 60 J/m2, c_P = 6134.35 m/s, E Gf / ft^2 = 0.04986 m (lcMax = 0.000800093 m)
+[FEM3D]   feldspath : E = 70 GPa, nu = 0.25, rho = 2560 kg/m3, ft = 10 MPa, c = 30 MPa, phi = 40 deg, Gf = 60 J/m2, c_P = 5728.22 m/s, E Gf / ft^2 = 0.042 m (lcMax = 0.000800093 m)
+[FEM3D]   biotite : E = 29.3 GPa, nu = 0.25, rho = 3050 kg/m3, ft = 10 MPa, c = 30 MPa, phi = 40 deg, Gf = 60 J/m2, c_P = 3395.27 m/s, E Gf / ft^2 = 0.01758 m (lcMax = 0.000800093 m)
+[FEM3D]   CFL sur c_P max = 6134.35 m/s, penalite de contact sur E max = 83.1 GPa
+[rockim] cles : 166 consommees (34 du deck, 132 au defaut), 0 du deck non lues -> bench_phases\out_f5c_voronoi_3phases_contrastees/config_effective.cfg
+  10%   20%   30%   40%   50%   60%   70%   80%   90%   100%
+
+[FEM3D] ---- summary (law = elastic) ----
+[FEM3D] block kinetic energy at end: 4.97753e-05 J
+[FEM3D] eroded elements: 0 / 1514 (crater vol 0 m^3)
+[FEM3D] max equiv viscoplastic strain: 0, min pressure: 0 MPa, max cap pc: 0 MPa
+[FEM3D] bilan par phase (fraction volumique realisee, erosion, endommagement, dissipation) :
+[FEM3D]   quartz : 34.2003 % du volume (35 % vise, 506 el.), erode 0 el. (0 mm^3, 0 % de la phase), D moyen 0, D max 0, dissipation 0 J
+[FEM3D]   feldspath : 45.7843 % du volume (45 % vise, 696 el.), erode 0 el. (0 mm^3, 0 % de la phase), D moyen 0, D max 0, dissipation 0 J
+[FEM3D]   biotite : 20.0154 % du volume (20 % vise, 312 el.), erode 0 el. (0 mm^3, 0 % de la phase), D moyen 0, D max 0, dissipation 0 J
+[FEM3D]   rappel : la LOI est commune a toutes les phases (cles de loi globales), seules les proprietes materielles varient ; en noeuds partages il n'y a AUCUN joint, donc aucune frontiere de grain intrinsequement faible — c'est un GBM a contraste ELASTIQUE seul
+[FEM3D] peak |sigma| grip / mid-specimen = 16.1622 / 11.3667 MPa (tension)
+[rockim] wall time: 0.4459 s, output in 'bench_phases\out_f5c_voronoi_3phases_contrastees'

@@ -279,8 +279,9 @@ la dernière gagne (pratique pour surcharger une config de base par ajout en fin
 fichier). Les valeurs numériques sont parsées STRICTEMENT (virgule décimale ou
 suffixe parasite → erreur nommant la clé). ⚠️ Les clés inconnues sont **ignorées
 silencieusement** — relire l'orthographe en cas de comportement par défaut inattendu.
-Les combinaisons incohérentes (ex. `phases` sans `mesh = voronoi`, `scenario =
-brazilian` sans `geometry = disc`) arrêtent le run avec un message explicite.
+Les combinaisons incohérentes (ex. `phases` sans source de phase — ni
+`mesh = voronoi`, ni groupes physiques nommés —, `scenario = brazilian` sans
+`geometry = disc`) arrêtent le run avec un message explicite.
 
 ## 5. Référence des clés
 
@@ -314,7 +315,8 @@ Bloc global : `rho` (2650), `E` (50e9), `nu` (0.25), `ft` (10e6), `cohesion` (25
 `frictionDeg` (40), `Gf` (70), `gfShearFactor` (10 ; Gf_II = facteur × Gf_I).
 Validation stricte : E, rho, ft, cohesion, Gf > 0 ; nu ∈ [0, 0.5) ; frictionDeg < 89.
 
-Phases (fdem/fdem3d + `mesh = voronoi`) :
+Phases (fdem/fdem3d + `mesh = voronoi` ; **fem3d depuis le 2026-09-06**, voir
+§5.2 bis) :
 
 ```
 phases = quartz feldspar biotite          # déclare les noms
@@ -329,7 +331,103 @@ frontières hétérophases : × `gbHeteroFactor` (1.0) en plus sur les résistan
 ⚠️ un ft de joint nul rendrait le joint incassable — modéliser une frontière
 pré-fissurée par un petit α (1e-3), jamais 0.
 
-### 5.3 Maillage Voronoï / GBM (`mesh = voronoi`, fdem et fdem3d)
+### 5.2 bis Matériau PAR PHASE en éléments finis (`mode = fem3d`, 2026-09-06)
+
+Le mode `fem3d` accepte désormais `phases` : chaque élément porte sa phase et
+la loi voit **les propriétés de cette phase**. C'est ce que la campagne de
+Weibull ne pouvait pas produire — `matWeibullM` fait varier la **résistance**
+sur un bloc de raideur parfaitement **uniforme**, donc sans contraste
+élastique il n'existe aucune raison mécanique qu'une contrainte se concentre
+quelque part. Un contraste de raideur (quartz 83,1 / feldspath 70 /
+biotite 29,3 GPa), lui, concentre les contraintes aux frontières de grain.
+
+**Une seule loi (`law`) pour toutes les phases, des propriétés par phase.**
+Ce n'est pas un choix de confort : `MatLaw` fige `lam_`, `G_`, `K_`, `adp_`,
+`kdp_` dans son **constructeur** à partir de la fiche reçue, et
+`stress(eps, MatState&, dt, lc)` ne reçoit **pas** de matériau — un champ
+`phase` sur l'élément ne changerait donc **rien** à l'élasticité. Le solveur
+construit **une instance de loi par phase** (`MatLaw::make(law, fiche_p, …)`)
+et appelle `laws_[e.phase]->stress(...)`. Corollaire à connaître : les **clés
+d'option de loi** (`erodeD`, `dfh*`, `cdp*`, `meridian`, `compDamage`,
+`capP0`…) sont lues une fois dans le deck **global** et valent pour toutes les
+phases ; les écrire par phase est **refusé** avec ce message.
+
+Deux **sources de phase**, l'une ou l'autre obligatoire :
+
+| source | clé | qui décide de la phase |
+|---|---|---|
+| tessellation de Voronoï | `mesh = voronoi` | la cellule de grain (mêmes clés que fdem3d, §5.3) ; les fractions `phase.<nom>.fraction` pilotent réellement l'affectation |
+| maillage importé | `mesh = file` + `$PhysicalNames` dim 3 | le volume physique : phase **homonyme**, ou `groupPhase.<groupe> = <phase>`. Les `fraction` sont alors **inopérantes** (le solveur le dit et imprime les fractions RÉALISÉES) |
+
+`phases` avec `mesh = grid` est **refusé** : la grille de Kuhn ne porte aucune
+source de phase, tous les éléments resteraient en phase 0 et la clé serait lue
+sans effet.
+
+`mesh = voronoi` en fem3d **réutilise la tessellation du FEMDEM**
+(`Tessellation3`, mêmes clés, même graine) : la seule différence est en aval —
+là où le FEMDEM **dédouble** les nœuds tet par tet pour poser ses joints
+cohésifs, le continuum prend les sommets virtuels **tels quels**. Le maillage
+est donc à **nœuds partagés**, conforme d'un grain à l'autre, et la frontière
+de grain est un simple **saut de propriétés**.
+
+> ⚠️ **Ce n'est pas un GBM cohésif.** En nœuds partagés il n'y a aucun joint,
+> donc aucune frontière de grain intrinsèquement faible : la frontière
+> **concentre** la contrainte, elle ne **s'ouvre pas** en tant que surface.
+> Les clés `gb.<a>.<b>.*`, `gbAlpha*`, `gbHeteroFactor`, `groupBond.<A>.<B>`,
+> `contactMu.<phase>` sont des propriétés de **joint** : elles sont **refusées**
+> en fem3d (elles seraient sinon lues, validées et parfaitement inertes).
+> Tout livrable qui s'appuie sur ce mode doit l'écrire.
+
+Ce qui devient par phase, sous peine de chiffres faux **en silence** :
+masse nodale condensée (`rho_p`), pas de temps critique (`hmin / max_p c_P`),
+pénalité de contact outil (`max_p E`), impédances de Lysmer (phase de
+l'élément **propriétaire** de la face), viscosité de volume (`rho_p`,
+`rho_p c_d,p`), et bien sûr la loi. Le solveur **audite** la masse à l'init
+(`sum(m)` contre `sum_p rho_p V_p`, seuil 1e-9) et lève si l'égalité tombe.
+
+Clés nouvelles, toutes **opt-in**, absentes = comportement strictement
+inchangé :
+
+| clé (défaut) | rôle |
+|---|---|
+| `phaseWeibull` (false) | autorise explicitement la **composition** de `matWeibullM` avec les phases. Sans elle la combinaison est **refusée** : les deux hétérogénéités se multiplient (le champ multiplie le `ft` de chaque phase) et un run qui localise ne serait plus attribuable au contraste de raideur ni aux défauts. Faire tourner Weibull seul, puis phases seules, puis la combinaison. |
+
+Sorties, **automatiques** dès que le maillage porte une microstructure
+(plusieurs phases, ou plusieurs grains/groupes) — donc **inchangées** pour
+tous les decks existants : champs cellulaires `.vtu` `phase`, `grain`, et
+surtout `matE`, `matRho`, `matFt` (les propriétés **réellement vues** par
+l'élément, `ftScale` de Weibull compris). Ces trois derniers sont la seule
+manière de vérifier à la lecture du fichier que le contraste est bien arrivé
+jusqu'à la **loi**, et non seulement jusqu'à la couleur. Console : table des
+phases, fractions **réalisées vs visées**, bilan d'érosion / endommagement /
+dissipation **par phase** en fin de run, qualité des tets (voronoï). Aucune
+colonne n'est ajoutée à `history.csv`.
+
+**Limites à écrire dans les livrables** (elles ne sont pas des bugs) :
+
+- **verrouillage volumique** — tétraèdres linéaires à un point d'intégration,
+  sans B-bar ni intégration sélective. Ils sur-raidissent d'autant plus que
+  `nu` est grand ; si `nu` varie d'une phase à l'autre, l'artefact est
+  **corrélé à la phase** et **sous-estime** le contraste mesuré. Le solveur
+  avertit dès que `nu` varie entre phases.
+- **`lc = V0^(1/3)` sur des tets en cône** — la tessellation produit des
+  éventails plats, surtout **aux frontières de grain**, c'est-à-dire là où
+  l'étude regarde ; `lc` n'y est plus la largeur de bande normale à la
+  fissure. Le solveur imprime `lc` médian et le rapport diamètre inscrit / lc
+  (tétraèdre régulier : 0,833). Tant que ce point n'est pas mesuré, faire
+  l'essai physique sur `mesh = file` (Gmsh, tets sains) et ne garder
+  `mesh = voronoi` que pour la géométrie de microstructure.
+- **contrainte de pointe à l'interface** — le désaccord élastique à un coin de
+  grain est singulier : avec un critère d'initiation en contrainte, le **site**
+  et l'**instant** d'amorçage restent dépendants du maillage même quand la
+  branche adoucissante est régularisée en énergie. « La fissure suit les
+  frontières de grain » n'est donc pas une preuve en soi.
+
+Banc de validation : `bench_phases/` (`depouille.py` = 9 contrôles dont la
+**borne de Reuss** en forme fermée ; `erreurs.py` = 16 cas fautifs qui doivent
+tous être refusés avec un message explicatif).
+
+### 5.3 Maillage Voronoï / GBM (`mesh = voronoi`, fdem, fdem3d et fem3d)
 
 | clé (défaut) | rôle |
 |---|---|
@@ -2505,7 +2603,8 @@ cible ft exacte). **UCS par platines** : `scenario = tension`, `loading = platen
       rockim (registre + lecteurs + obsolètes ; les clés dynamiques et les lectures conditionnelles ne sont pas
       jugeables) sur `rockim_f2` + `CONTINUUM/calib_bohus_triax/cdp_rockim` → `tools/scan_decks_<date>.md`. w22 : il
       modélise aussi les **gardes pré-init** de `main.cpp` (`thermal`/`beddingDip` hors fdem, `law` hors
-      fem3d/fdem/fdem3d, `phases`/`mesh = voronoi` hors fdem/fdem3d, `mesh = file` hors fdem/fdem3d/fem3d, `hydro*`
+      fem3d/fdem/fdem3d, `phases`/`mesh = voronoi` hors fdem/fdem3d/**fem3d** (depuis le 2026-09-06, §5.2 bis),
+      `mesh = file` hors fdem/fdem3d/fem3d, `hydro*`
       hors fdem, mode inconnu) et met à part les fichiers **sans clé de solveur** (decks `matpoint` à clés `mp*`, cartes
       matériau `law = cdp` + constantes, decks temporaires de selftest : ils ne passent jamais par l'audit) ; il ne voit
       **pas** les gardes de maillage C3 (nœud orphelin, tet plat : il faudrait lire le `.msh`, ex. `tunnel_schisto/

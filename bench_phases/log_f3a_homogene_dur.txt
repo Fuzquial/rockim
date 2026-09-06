@@ -1,0 +1,14 @@
+﻿[FEM3D] groupes physiques : 2 corps — dur (phase rock) mou (phase rock)
+[FEM3D] 2 corps SOUDES par 8 faces conformes (noeuds partages : l'interface ne peut ni glisser ni s'ouvrir)
+[FEM3D] mesh = file: 'bench_phases/bar2.msh' — 153 nodes, 384 tets, box 0.002 x 0.002 x 0.016 m, h_min (diametre inscrit) = 0.000414214 m, lc max = 0.000550321 m
+[FEM3D] tool penalty kp = 3.44211e+07 N/m (contactPenaltyFactor 1 x E hmin, hmin = 0.000414214 m), m_min = 2.20833e-07 kg, omega_p = sqrt(kp/m_min) = 1.24848e+07 rad/s, omega_p/(2/dt) = 0.126453 (dt = 2.02571e-08 s, CFL 6.75237e-08 s, 2 sqrt(m_min/kp) = 1.60195e-07 s) ; omega_el/(2/dt) = dt/CFL = 0.3, rapport combine sqrt(omega_el^2 + omega_p^2)/(2/dt) = 0.325561
+[FEM3D] law = elastic, 384 tets, 153 nodes, dt = 2.02571e-08 s, steps = 1975
+[rockim] cles : 81 consommees (18 du deck, 63 au defaut), 0 du deck non lues -> bench_phases\out_f3a_homogene_dur/config_effective.cfg
+  10%   20%   30%   40%   50%   60%   70%   80%   90%   100%
+
+[FEM3D] ---- summary (law = elastic) ----
+[FEM3D] block kinetic energy at end: 6.26952e-08 J
+[FEM3D] eroded elements: 0 / 384 (crater vol 0 m^3)
+[FEM3D] max equiv viscoplastic strain: 0, min pressure: 0 MPa, max cap pc: 0 MPa
+[FEM3D] peak |sigma| grip / mid-specimen = 7.2856 / 7.35429 MPa (tension)
+[rockim] wall time: 0.622525 s, output in 'bench_phases\out_f3a_homogene_dur'

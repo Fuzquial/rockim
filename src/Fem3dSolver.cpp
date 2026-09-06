@@ -19,6 +19,7 @@
 #include <stdexcept>
 
 #include "rockim/RandomField.hpp"
+#include "rockim/Tessellation3.hpp"
 #include "rockim/VtkWriter.hpp"
 
 #ifdef _OPENMP
@@ -30,9 +31,185 @@ namespace rockim {
 Fem3dSolver::Fem3dSolver(const Config& cfg, std::string outDir)
     : cfg_(cfg), out_(std::move(outDir)) {}
 
+// ---------------------------------------------------------------------------
+// Cles de JOINT refusees en fem3d (2026-09-06). Le mode fem3d est un continuum
+// a NOEUDS PARTAGES : il n'a aucun joint cohesif, la frontiere de grain y est
+// un simple saut de proprietes. Or PhaseSet::from LIT gbAlphaTen/Coh/Gf/E/Fric,
+// gbHeteroFactor et les gb.<a>.<b>.* : elles seraient donc CONSOMMEES, jugees
+// legitimes par l'audit des cles, et parfaitement INERTES — un deck GBM porte
+// depuis fdem3d qui affaiblit ses joints quartz-feldspath a 2 MPa tournerait a
+// raideur pleine sans le moindre message. C'est le motif interdit numero 1 du
+// depot : une cle lue et sans effet, en silence.
+// ---------------------------------------------------------------------------
+void Fem3dSolver::phaseKeyGuards() {
+    const char* why =
+        " : c'est une propriete de JOINT (frontiere cohesive). Le mode fem3d "
+        "est un continuum a NOEUDS PARTAGES — il n'existe aucun joint, la "
+        "frontiere de grain y est un simple saut de proprietes (contraste de "
+        "raideur et de resistance). La cle serait lue, validee et sans le "
+        "moindre effet : utiliser mode = fdem3d pour une interface cohesive.";
+    for (const char* k : {"gbAlphaTen", "gbAlphaCoh", "gbAlphaGf", "gbAlphaE",
+                          "gbAlphaFric", "gbHeteroFactor"})
+        if (cfg_.has(k))
+            throw std::runtime_error(std::string("fem3d : '") + k + "'" + why);
+    for (const char* pref : {"gb.", "groupBond.", "contactMu.", "groupVel.",
+                             "gauge."}) {
+        auto ks = cfg_.keysWithPrefix(pref);
+        if (!ks.empty()) {
+            if (std::string(pref) == "groupBond.")
+                throw std::runtime_error(
+                    "fem3d : '" + ks.front() + "' — en fem3d l'interface "
+                    "conforme entre deux groupes physiques est deja SOUDEE "
+                    "(les deux volumes partagent leurs noeuds) : il n'y a "
+                    "aucun joint a poser, et rien ne peut ni glisser ni "
+                    "s'ouvrir. Retirer la cle (l'interface reste soudee) ou "
+                    "passer en mode = fdem3d pour une interface cohesive.");
+            if (std::string(pref) == "groupVel." || std::string(pref) == "gauge.")
+                throw std::runtime_error(
+                    "fem3d : '" + ks.front() + "' est une cle de metrologie "
+                    "des CORPS du mode fdem3d (vitesse imposee par groupe, "
+                    "jauge de tranche) ; elle n'est pas portee en fem3d et "
+                    "serait sans effet.");
+            throw std::runtime_error("fem3d : '" + ks.front() + "'" + why);
+        }
+    }
+}
+
+// Audit COMPLET de la famille `phase.<nom>.<propriete>` (2026-09-06), appele
+// APRES PhaseSet::from. Deux fautes a distinguer, que l'audit generique des
+// cles confondait sous « nom de phase / groupe inconnu ? » :
+//   - un nom de phase mal orthographie (la fiche est lue... pour personne) ;
+//   - une cle de LOI ecrite par phase (erodeD, dfh*, cdp*, meridian...) : ces
+//     cles sont lues UNE FOIS dans le Config GLOBAL par chaque MatLaw::make,
+//     elles sont donc communes a toutes les phases, par construction.
+// ATTENTION : keysWithPrefix MARQUE les cles rendues comme consommees — cette
+// fonction doit donc etre exhaustive, c'est elle qui remplace l'audit generique
+// sur cette famille.
+static void auditPhaseKeys(const Config& cfg, const PhaseSet& ps) {
+    static const char* kProps[] = {"fraction", "E", "nu", "rho", "ft",
+                                   "cohesion", "frictionDeg", "Gf",
+                                   "gfShearFactor", nullptr};
+    // SANS la cle `phases`, PhaseSet::from rend UNE fiche qu'il nomme « rock »
+    // et ne lit AUCUNE cle phase.* : une fiche `phase.rock.E = 70e9` serait
+    // alors consommee ici, jugee legitime, et parfaitement INERTE. C'est le
+    // motif interdit — on la refuse en nommant la vraie cause.
+    const bool declared = cfg.has("phases");
+    std::string known;
+    for (const auto& nm : ps.name) known += " " + nm;
+    for (const std::string& k : cfg.keysWithPrefix("phase.")) {
+        if (!declared)
+            throw std::runtime_error("fem3d : cle '" + k + "' sans cle "
+                "`phases` — aucune phase n'est declaree, donc AUCUNE fiche de "
+                "phase n'est lue et celle-ci resterait sans le moindre effet "
+                "(le materiau global s'appliquerait partout). Declarer les "
+                "phases : `phases = <noms separes par des espaces>`, avec une "
+                "source de phase (mesh = voronoi, ou mesh = file a "
+                "$PhysicalNames de dimension 3).");
+        const auto dot = k.rfind('.');
+        if (dot == std::string::npos || dot <= 6)
+            throw std::runtime_error("fem3d : cle '" + k + "' malformee — la "
+                "syntaxe est phase.<nom>.<propriete>");
+        const std::string nm = k.substr(6, dot - 6);
+        const std::string prop = k.substr(dot + 1);
+        bool okName = false;
+        for (const auto& p : ps.name) if (p == nm) okName = true;
+        if (!okName)
+            throw std::runtime_error("fem3d : cle '" + k + "' — la phase '" + nm
+                + "' n'est pas declaree. Phases declarees par la cle `phases` :"
+                + (known.empty() ? std::string(" (aucune)") : known)
+                + ". Une fiche de phase lue pour personne laisserait le "
+                  "materiau global partout, en silence.");
+        bool okProp = false;
+        for (const char** p = kProps; *p; ++p) if (prop == *p) okProp = true;
+        if (okProp) continue;
+        if (prop == "law")
+            throw std::runtime_error(
+                "fem3d : '" + k + "' — une SEULE loi de volume (cle `law`) "
+                "s'applique a toutes les phases. Le contraste mineral de la "
+                "these est E, nu, rho, ft, Gf, c, phi — pas la forme de la "
+                "surface de charge ; si la forme constitutive changeait aussi "
+                "d'une phase a l'autre, plus rien ne serait attribuable au "
+                "contraste de raideur.");
+        throw std::runtime_error(
+            "fem3d : '" + k + "' — '" + prop + "' n'est pas une propriete de "
+            "phase. Proprietes admises : fraction, E, nu, rho, ft, cohesion, "
+            "frictionDeg, Gf, gfShearFactor. Les cles de LOI (erodeD, dfh*, "
+            "cdp*, meridian, compDamage...) sont GLOBALES : elles sont lues "
+            "une fois dans le deck et valent pour toutes les phases.");
+    }
+}
+
 void Fem3dSolver::init() {
     mat_ = Material::from(cfg_);
     PhaseSet::validate(mat_, "global");
+    // ---- materiau par phase (2026-09-06) : la garde des cles de JOINT AVANT
+    // PhaseSet::from (qui les consommerait), puis le jeu de phases. Sans la
+    // cle `phases`, phases_ = {mat_} et TOUT ce qui suit est bit-identique.
+    phaseKeyGuards();
+    phases_ = PhaseSet::from(cfg_);
+    phasesDeclared_ = cfg_.has("phases");
+    auditPhaseKeys(cfg_, phases_);
+    // groupPhase.<groupe> ne veut dire quelque chose que si des GROUPES
+    // existent (mesh = file avec des $PhysicalNames) ET si des PHASES sont
+    // declarees. Posee ailleurs elle serait lue pour personne : la
+    // tessellation nomme ses grains par leur phase, la grille n'a pas de
+    // groupe du tout.
+    // CORRECTION du 2026-09-06 : la garde ne couvrait que « mesh != file » et
+    // laissait passer le cas le plus PLAUSIBLE — le bon nom de groupe, la cle
+    // `phases` oubliee. La cle etait alors LUE plus bas (donc marquee
+    // consommee, donc invisible pour l'audit generique des cles), puis jetee
+    // par le repli `ph = 0` : rc = 0, « 0 du deck non lues », et un pic
+    // identique au chiffre pres a celui du meme deck sans la cle. Motif
+    // interdit numero 1 du depot, et jumeau exact du trou phase.rock.E.
+    // Asymetrie qui achevait la demonstration : la MEME cle sur un groupe
+    // INEXISTANT etait refusee (l'audit generique la voyait, faute d'avoir
+    // ete lue) — seule la faute plausible passait.
+    {
+        const bool file = cfg_.gets("mesh", "grid") == "file";
+        if (!file || !phasesDeclared_) {
+            auto gp = cfg_.keysWithPrefix("groupPhase.");
+            if (!gp.empty())
+                throw std::runtime_error("fem3d : '" + gp.front() + "' "
+                    + (file
+                       ? std::string("sans cle `phases` — aucune phase n'est "
+                         "declaree, donc tous les groupes recevraient le "
+                         "materiau global et l'association resterait sans le "
+                         "moindre effet. Declarer les phases : `phases = "
+                         "<noms separes par des espaces>`.")
+                       : std::string("n'a de sens qu'avec mesh = file : elle "
+                         "associe une phase a un VOLUME PHYSIQUE nomme du "
+                         "maillage ($PhysicalNames, dimension 3). En mesh = "
+                         "voronoi la phase vient de la tessellation "
+                         "(fractions), en mesh = grid il n'y a aucune source "
+                         "de phase.")));
+        }
+    }
+    // ---- cles de TESSELLATION hors mesh = voronoi (2026-09-06) ------------
+    // Ces six cles ne sont lues que par buildMeshVoronoi. Le registre par mode
+    // les a etendues a fem3d (correct : le mode les lit desormais), mais rien
+    // ne verifiait que le deck est bien sur le chemin voronoi — posees avec
+    // mesh = file ou mesh = grid, elles etaient acceptees en silence et
+    // inertes. Le cas est realiste et couteux : un deck GBM ou l'on oublie
+    // `mesh = voronoi` tourne comme un maillage homogene en ayant l'air de
+    // decrire une microstructure.
+    if (!(cfg_.gets("mesh", "grid") == "voronoi")) {
+        for (const char* k : {"grainSize", "grainJitter", "grainSeeding",
+                              "lloydIters", "refineLevels", "vertexMergeFrac"})
+            if (cfg_.has(k))
+                throw std::runtime_error(std::string("fem3d : '") + k
+                    + "' n'est lue que par mesh = voronoi (tessellation de "
+                      "grains) ; avec mesh = " + cfg_.gets("mesh", "grid")
+                    + " elle serait sans le moindre effet — le maillage vient "
+                      "du fichier ou de la grille. Poser mesh = voronoi, ou "
+                      "retirer la cle.");
+    }
+    rhoP_.clear();
+    rhoCdP_.clear();
+    for (const Material& m : phases_.mat) {
+        rhoP_.push_back(m.rho);
+        rhoCdP_.push_back(m.rho * m.cP());     // MEME expression qu'a l'ancienne
+    }                                          // ligne bvRhoC = mat_.rho * mat_.cP()
+    phaseWeibull_ = cfg_.getb("phaseWeibull", false);
 
     std::string sc = cfg_.gets("scenario", "percussion");
     if      (sc == "percussion") scen_ = Scenario::PERCUSSION;
@@ -58,10 +235,45 @@ void Fem3dSolver::init() {
     // essai dont la reponse est un trajet de fissure ou une energie de bande)
     {
         std::string mesh = cfg_.gets("mesh", "grid");
+        meshVoronoi_ = mesh == "voronoi";
+        // `phases` sur la GRILLE de Kuhn : aucun mecanisme n'y affecte les
+        // phases, tous les elements resteraient en phase 0 — le deck declare
+        // trois mineraux et le calcul est homogene, avec des chiffres
+        // parfaitement plausibles. Miroir de Fdem3dSolver.cpp l. 1080-1084.
+        // CORRECTION 2026-09-06 : arme par la DECLARATION, plus par le nombre
+        // de fiches. `phases = dur` (une seule) passait ici sans un mot alors
+        // que `phases = dur mou` etait refuse par six lignes — et sans meme le
+        // tableau « materiau PAR PHASE » en console, qui ne s'imprime qu'a
+        // n > 1 : le deck affirmait une microstructure, le calcul etait
+        // homogene, rien ne le disait.
+        if (phasesDeclared_ && mesh == "grid")
+            throw std::runtime_error(
+                "'phases' avec mesh = grid : la grille de Kuhn ne porte AUCUNE "
+                "source de phase (ni grains, ni groupes physiques) — tous les "
+                "elements seraient en phase 0 et la cle serait lue sans effet. "
+                "Utiliser mesh = voronoi (tessellation de grains) ou mesh = "
+                "file avec des $PhysicalNames de dimension 3.");
         if (mesh == "file") buildMeshFile();
+        else if (meshVoronoi_) buildMeshVoronoi();
         else buildMesh();
     }
-    law_ = MatLaw::make(cfg_.gets("law", "dpr"), mat_, cfg_, lcMax_);
+    // ---- UNE INSTANCE DE LOI PAR PHASE (2026-09-06) -----------------------
+    // Meme cle `law`, meme Config, seule la fiche Material change. A une
+    // phase : un seul appel, memes arguments et meme ordre qu'auparavant,
+    // donc meme objet et meme etat interne (lam_, G_, K_, adp_, kdp_).
+    // lcMax_ reste GLOBAL (le plus gros element du maillage) pour toutes les
+    // phases : la garde de bande de fissuration kf = Gf/(lcMax ft) - k0/2 > 0
+    // et les gardes G1-G4 de cdp sont alors CONSERVATIVES (elles ne peuvent
+    // que refuser trop, jamais laisser passer un snap-back structurel). Un
+    // lcMax par phase serait plus petit, donc la garde plus LACHE : refuse.
+    {
+        const std::string kind = cfg_.gets("law", "dpr");
+        laws_.clear();
+        laws_.reserve(phases_.mat.size());
+        for (const Material& m : phases_.mat)
+            laws_.push_back(MatLaw::make(kind, m, cfg_, lcMax_));
+        law_ = laws_[0].get();
+    }
     fixedDam_ = cfg_.gets("tensionDamage", "scalar") == "fixed";   // validee par make
 
     // initial element centroids: dpdfh seeds its deterministic Weibull
@@ -86,6 +298,26 @@ void Fem3dSolver::init() {
         if (mW <= 1.0)
             throw std::runtime_error("matWeibullM must be > 1 (the paper "
                                      "uses 3)");
+        // Weibull x phases : DEUX heterogeneites qui se MULTIPLIENT (le champ
+        // ecrit e.st.ftScale, et la loi de chaque phase multiplie SON ft par
+        // ce facteur). C'est legitime, mais non dit c'est indechiffrable : le
+        // constat qui motive ce chantier est qu'un champ de Weibull sur un
+        // bloc de raideur UNIFORME ne POUVAIT pas localiser, faute de
+        // contraste elastique. Combinees d'entree, un run qui localise n'est
+        // plus attribuable a l'un ou a l'autre. Refus par defaut ; la cle
+        // phaseWeibull autorise la composition en connaissance de cause.
+        if (phases_.n() > 1 && !phaseWeibull_)
+            throw std::runtime_error(
+                "matWeibullM avec plusieurs phases : les deux heterogeneites "
+                "se COMPOSENT (le champ de Weibull multiplie le ft de CHAQUE "
+                "phase) et un run qui localise ne serait plus attribuable au "
+                "contraste de raideur ni aux defauts. Faire tourner le run a "
+                "Weibull seul et le run a phases seules d'abord, puis poser "
+                "phaseWeibull = true pour autoriser la composition.");
+        if (phases_.n() > 1)
+            std::cout << "[FEM3D] phaseWeibull : le champ de Weibull (ftScale) "
+                         "MULTIPLIE le ft de chaque phase — deux "
+                         "heterogeneites composees, a dire dans le rapport\n";
         unsigned fseed = (unsigned)cfg_.geti("fieldSeed",
                                              cfg_.geti("seed", 12345) + 777);
         double gam = std::tgamma(1.0 + 1.0 / mW);
@@ -121,8 +353,26 @@ void Fem3dSolver::init() {
                   << ", factor mean/min/max = " << sum / el_.size() << "/"
                   << mn << "/" << mx << "\n";
     }
+    // `phaseWeibull` n'AUTORISE qu'une chose : la composition du champ de
+    // Weibull avec les phases. Posee sans l'une ou l'autre, elle n'autorise
+    // rien et resterait une permission sans objet — meme regle que les autres
+    // « satellites orphelins » du depot.
+    if (cfg_.has("phaseWeibull") && !(mW > 0.0 && phases_.n() > 1))
+        throw std::runtime_error("fem3d : 'phaseWeibull' n'autorise qu'une "
+            "chose — la COMPOSITION du champ de Weibull (matWeibullM) avec "
+            "plusieurs phases. Ici "
+            + std::string(mW > 0.0 ? "" : "matWeibullM est absente")
+            + std::string(mW > 0.0 || phases_.n() > 1 ? "" : " et ")
+            + std::string(phases_.n() > 1 ? "" : "il n'y a qu'une phase")
+            + " : la cle n'autoriserait rien et resterait sans effet.");
 
-    kp_ = mat_.E * hmin_;                              // tool penalty [N/m]
+    // Penalite de contact outil : module MAXIMAL sur les phases, miroir
+    // litteral de Fdem3dSolver.cpp l. 665. Sur un grain de quartz (83 GPa),
+    // une penalite calibree sur un E moyen laisse l'outil S'ENFONCER dans le
+    // grain le plus raide : l'interpenetration devient de l'ordre de
+    // l'indentation et le pic de force — la grandeur que la these mesure —
+    // est ecrete, sans un mot. A une phase : maxE() == mat_.E, meme double.
+    kp_ = phases_.maxE() * hmin_;                      // tool penalty [N/m]
     // toolContact = penalty | signorini (port du 2026-09-04 par la session
     // parallele, ToolSignorini.hpp ; defaut penalty = bit-identique)
     {
@@ -276,7 +526,8 @@ void Fem3dSolver::init() {
         std::cout << "[FEM3D] viscosite de volume (bulkViscosity) : b1 = " << bvB1_
                   << " (lineaire, p1 = b1 rho c_d L_e edot), b2 = " << bvB2_
                   << " (quadratique, p2 = rho (b2 L_e edot)^2, compression seule) ; "
-                     "c_d = " << mat_.cP() << " m/s, L_e = lc = V0^(1/3) (max "
+                     "c_d = " << phases_.maxCp() << " m/s max sur les phases"
+                     " (par phase dans la boucle), L_e = lc = V0^(1/3) (max "
                   << lcMax_ << " m) ; dt CFL x (sqrt(1 + b1^2) - b1) = "
                   << std::sqrt(1.0 + xi * xi) - xi << " (part lineaire seule, "
                      "la part quadratique -b2^2 L_e edot/c_d n'est pas appliquee)\n";
@@ -298,7 +549,7 @@ void Fem3dSolver::init() {
             if (m_[i] > 0.0) mMin = std::min(mMin, m_[i]);
         const double omegaP = std::sqrt(kp_ / mMin);
         const double ratio = omegaP * dt_ / 2.0;
-        const double cflDt = hmin_ / mat_.cP();
+        const double cflDt = hmin_ / phases_.maxCp();   // meme borne que computeStableDt
         const double ratioEl = dt_ / cflDt;                       // omega_el dt / 2
         const double ratioTot = std::sqrt(ratio * ratio + ratioEl * ratioEl);
         std::cout << "[FEM3D] tool penalty kp = " << kp_ << " N/m (contactPenaltyFactor "
@@ -340,9 +591,78 @@ void Fem3dSolver::init() {
     std::cout << "[FEM3D] law = " << law_->name() << ", " << el_.size()
               << " tets, " << X0_.size() << " nodes, dt = " << dt_
               << " s, steps = " << (long)std::ceil(T_ / dt_) << "\n";
-    if (law_->name() != "elastic")
+    if (phases_.n() > 1) {
+        // Table des phases : la LOI est commune, seules les PROPRIETES varient.
+        // On imprime aussi la longueur cohesive E Gf / ft^2 de chaque phase
+        // contre lcMax. La garde de bande de fissuration de MatLaw::make est
+        // verifiee a lcMax GLOBAL pour toutes les phases : CONSERVATIVE (elle
+        // peut refuser un gros element de quartz au nom du Gf faible de la
+        // biotite, jamais laisser passer un snap-back structurel). Un lcMax
+        // par phase serait plus petit, donc la garde plus lache : refuse.
+        std::cout << "[FEM3D] materiau PAR PHASE (" << phases_.n()
+                  << " phases, loi commune '" << law_->name()
+                  << "', cles de loi GLOBALES) :\n";
+        for (int p = 0; p < phases_.n(); ++p) {
+            const Material& m = phases_.mat[p];
+            std::cout << "[FEM3D]   " << phases_.name[p] << " : E = " << m.E / 1e9
+                      << " GPa, nu = " << m.nu << ", rho = " << m.rho
+                      << " kg/m3, ft = " << m.ft / 1e6 << " MPa, c = "
+                      << m.cohesion / 1e6 << " MPa, phi = " << m.phiDeg
+                      << " deg, Gf = " << m.Gf << " J/m2, c_P = " << m.cP()
+                      << " m/s, E Gf / ft^2 = " << m.E * m.Gf / (m.ft * m.ft)
+                      << " m (lcMax = " << lcMax_ << " m)\n";
+        }
+        std::cout << "[FEM3D]   CFL sur c_P max = " << phases_.maxCp()
+                  << " m/s, penalite de contact sur E max = "
+                  << phases_.maxE() / 1e9 << " GPa\n";
+        // ---- VERROUILLAGE VOLUMIQUE, avertissement honnete ----------------
+        // Le tetraedre lineaire a un seul point d'integration et ce solveur
+        // n'a ni B-bar, ni integration selective, ni anti-sablier (verifie).
+        // Il SUR-RAIDIT d'autant plus que nu est grand. Si nu varie d'une
+        // phase a l'autre, l'artefact est CORRELE A LA PHASE : il supprime
+        // precisement la concentration de deformation que l'essai cherche a
+        // reveler, et dans le sens « le contraste fait moins que prevu ».
+        // Ce n'est pas un bug a corriger ici, c'est une limite de validite —
+        // mais elle doit etre dite, sinon on publie un contraste sous-estime
+        // en croyant mesurer la physique.
+        {
+            double nuMin = 1e300, nuMax = -1e300;
+            for (const Material& m : phases_.mat) {
+                nuMin = std::min(nuMin, m.nu);
+                nuMax = std::max(nuMax, m.nu);
+            }
+            if (nuMax - nuMin > 1e-12)
+                std::cout << "[FEM3D]   AVERTISSEMENT verrouillage volumique : "
+                             "nu varie de " << nuMin << " a " << nuMax
+                          << " entre les phases. Les tetraedres lineaires de "
+                             "ce solveur (un point d'integration, sans B-bar) "
+                             "sur-raidissent d'autant plus que nu est grand : "
+                             "l'artefact est alors CORRELE A LA PHASE et "
+                             "SOUS-ESTIME le contraste mesure. Verifier sur "
+                             "un banc a nu commun avant de conclure.\n";
+        }
+        if (cfg_.gets("mesh", "grid") == "file")
+            std::cout << "[FEM3D]   AVERTISSEMENT : avec mesh = file, "
+                         "phase.<nom>.fraction est OBLIGATOIRE mais INOPERANTE "
+                         "— ce sont les groupes physiques du maillage qui "
+                         "decident ; comparer aux fractions REALISEES du resume\n";
+    }
+    if (law_->name() != "elastic") {
+        if (phases_.n() > 1) {
+            // en multiphase la resistance du bloc n'est celle d'aucune phase :
+            // on imprime la table, jamais un scalaire unique qui aurait
+            // l'apparence d'une verification
+            std::cout << "[FEM3D] DP uniaxial compressive strength (analytic), "
+                         "PAR PHASE :";
+            for (int p = 0; p < phases_.n(); ++p)
+                std::cout << " " << phases_.name[p] << " "
+                          << laws_[p]->sigmaCdp() / 1e6 << " MPa";
+            std::cout << "\n";
+        } else {
         std::cout << "[FEM3D] DP uniaxial compressive strength (analytic) = "
                   << law_->sigmaCdp() / 1e6 << " MPa\n";
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -482,7 +802,7 @@ void Fem3dSolver::buildMesh() {
     flag_.assign(X0_.size(), FREE);
     for (const auto& e : el_)
         for (int a = 0; a < 4; ++a)
-            m_[e.n[a]] += mat_.rho * e.V0 / 4.0;
+            m_[e.n[a]] += rhoP_[e.phase] * e.V0 / 4.0;
     // carved geometries leave unused grid nodes: pin them (zero mass would
     // otherwise divide the integrator)
     {   // C3 (w20) : les seuls noeuds sans element toleres sont ceux de la
@@ -538,6 +858,12 @@ void Fem3dSolver::buildMeshFile() {
     std::map<long, int> id2idx;
     std::vector<Eigen::Vector3d> vpos;
     std::vector<std::array<int, 4>> tets;
+    // ---- groupes physiques (2026-09-06, porte de Fdem3dSolver.cpp
+    // l. 1171-1183 et 1240-1313) : le lecteur LISAIT les ntags de chaque
+    // element PUIS LES JETAIT — l'information de groupe existait dans le
+    // fichier et etait perdue. On garde le PREMIER tag (le tag physique).
+    std::vector<long> tetPhys;             // tag physique par tet (0 = aucun)
+    std::map<long, std::string> physVol;   // id physique (dim 3) -> nom
     bool sawFormat = false;
     while (std::getline(in, line)) {
         if (line.rfind("$MeshFormat", 0) == 0) {
@@ -547,6 +873,19 @@ void Fem3dSolver::buildMeshFile() {
                 throw std::runtime_error("meshFile: MSH version "
                     + std::to_string(ver) + " unsupported — export ASCII 2.2");
             sawFormat = true;
+        } else if (line.rfind("$PhysicalNames", 0) == 0) {
+            long n = 0;
+            in >> n;
+            for (long k = 0; k < n; ++k) {
+                int dim; long id; std::string nm;
+                in >> dim >> id;
+                std::getline(in, nm);
+                auto q0 = nm.find('"');
+                auto q1 = nm.rfind('"');
+                if (q0 != std::string::npos && q1 > q0)
+                    nm = nm.substr(q0 + 1, q1 - q0 - 1);
+                if (dim == 3) physVol[id] = nm;        // surfaces : ignorees
+            }
         } else if (line.rfind("$Nodes", 0) == 0) {
             long n = 0; in >> n;
             for (long k = 0; k < n; ++k) {
@@ -561,8 +900,11 @@ void Fem3dSolver::buildMeshFile() {
             for (long k = 0; k < n; ++k) {
                 long id; int type, ntags;
                 in >> id >> type >> ntags;
-                long tag;
-                for (int t = 0; t < ntags; ++t) in >> tag;
+                long tag, phys = 0;
+                for (int t = 0; t < ntags; ++t) {
+                    in >> tag;
+                    if (t == 0) phys = tag;            // 1er tag = physique
+                }
                 int nn = type == 15 ? 1 : type == 1 ? 2 : type == 2 ? 3
                        : type == 4 ? 4 : -1;
                 if (nn < 0)
@@ -580,7 +922,10 @@ void Fem3dSolver::buildMeshFile() {
                         vv[q] = it->second;
                     }
                 }
-                if (nn == 4) tets.push_back(vv);
+                if (nn == 4) {                         // points/lignes/tris :
+                    tets.push_back(vv);                // bords — ignores
+                    tetPhys.push_back(phys);
+                }
             }
         }
     }
@@ -596,11 +941,309 @@ void Fem3dSolver::buildMeshFile() {
     if (!(W_ > 0 && D_ > 0 && H_ > 0))
         throw std::runtime_error("meshFile: degenerate bounding box");
     X0_ = vpos;
+    // ---- groupes physiques -> PHASES (2026-09-06) -------------------------
+    // Un groupe par volume physique ; le materiau du groupe est la phase de
+    // MEME NOM, ou celle nommee par groupPhase.<nom du groupe>. Divergence
+    // ASSUMEE avec fdem3d (l. 1305-1311, qui retombe sur la phase 0 avec un
+    // simple WARNING) : en continuum la phase EST le materiau, un nom mal tape
+    // transformerait silencieusement tout un corps en un autre mineral et le
+    // contraste elastique — l'effet meme qu'on cherche a mesurer — serait
+    // efface. Ici c'est une ERREUR, pas un avertissement perdu dans la console.
+    groupName_.clear();
+    std::map<long, int> phys2grp;
+    if (!physVol.empty()) {
+        for (const auto& [pid, nm] : physVol) {
+            phys2grp[pid] = (int)groupName_.size();
+            groupName_.push_back(nm);
+        }
+    } else {
+        groupName_.push_back("all");
+    }
+    if (phasesDeclared_ && groupName_.size() <= 1)
+        throw std::runtime_error("'phases' avec mesh = file exige des groupes "
+            "physiques nommes ($PhysicalNames, dimension 3, un groupe par "
+            "mineral) : sans groupes le maillage est un seul corps et une "
+            "seule phase s'appliquerait, en silence.");
+    tetGrain_.assign(tets.size(), 0);
+    if (!physVol.empty()) {
+        // Tag physique sans volume declare (Gmsh Mesh.SaveAll : tag 0, ou un
+        // maillage qui melange volumes groupes et non groupes). CORRECTION du
+        // 2026-09-06 : c'etait une ERREUR FATALE NEUVE pour un deck sans cle
+        // `phases` — avant ce chantier le lecteur jetait les tags, aucun
+        // groupe n'existait, le run passait. Croissance par addition : sans
+        // phases declarees on AVERTIT et l'on retombe sur le premier groupe
+        // (le materiau est global de toute facon, la carte des groupes n'a
+        // aucun effet mecanique) ; des que le deck declare des phases, la
+        // carte DEVIENT le materiau et l'ambiguite redevient fatale.
+        bool warned = false;
+        for (std::size_t k = 0; k < tets.size(); ++k) {
+            auto it = phys2grp.find(tetPhys[k]);
+            if (it == phys2grp.end()) {
+                if (phasesDeclared_)
+                    throw std::runtime_error("meshFile: un tet porte le tag "
+                        "physique " + std::to_string(tetPhys[k]) + " sans "
+                        "volume physique declare, alors que le deck declare "
+                        "des phases — la phase de ce tet serait arbitraire. "
+                        "Nommer TOUS les volumes ou aucun.");
+                if (!warned) {
+                    warned = true;
+                    std::cout << "[FEM3D] ATTENTION : des tets portent le tag "
+                                 "physique " << tetPhys[k] << " sans volume "
+                                 "physique declare ; sans cle `phases` la "
+                                 "carte des groupes n'a aucun effet mecanique "
+                                 "(materiau global partout) et ils sont "
+                                 "ranges dans le premier groupe\n";
+                }
+                tetGrain_[k] = 0;
+                continue;
+            }
+            tetGrain_[k] = it->second;
+        }
+    }
+    {
+        std::vector<int> grpPhase(groupName_.size(), 0);
+        for (std::size_t g = 0; g < groupName_.size(); ++g) {
+            // Sans phases declarees, groupPhase.* est deja REFUSEE par la
+            // garde de init() : on ne lit donc la cle que quand elle peut
+            // avoir un effet, et le materiau global s'applique partout.
+            const std::string want =
+                phasesDeclared_ ? cfg_.gets("groupPhase." + groupName_[g],
+                                            groupName_[g])
+                                : groupName_[g];
+            int ph = -1;
+            for (int p = 0; p < phases_.n(); ++p)
+                if (phases_.name[p] == want) ph = p;
+            if (ph < 0) {
+                // arme par la DECLARATION (correction 2026-09-06) : avec
+                // `phases = dur` sur un maillage a deux groupes, le groupe
+                // « mou » recevait la phase « dur » par le repli ph = 0 —
+                // exactement ce que le commentaire ci-dessous declare
+                // inadmissible.
+                if (phasesDeclared_) {
+                    std::string known;
+                    for (const auto& nm : phases_.name) known += " " + nm;
+                    throw std::runtime_error("mesh = file : le groupe physique '"
+                        + groupName_[g] + "' n'a pas de phase (cherchee : '"
+                        + want + "', phases declarees :" + known + "). Poser "
+                        "groupPhase." + groupName_[g] + " = <nom de phase>, ou "
+                        "nommer le volume physique comme la phase. En "
+                        "continuum la phase EST le materiau : un groupe qui "
+                        "recevrait la phase 0 par defaut effacerait le "
+                        "contraste elastique sans un mot.");
+                }
+                ph = 0;                        // mono-phase : le materiau global
+            }
+            grpPhase[g] = ph;
+        }
+        tetPhase_.assign(tets.size(), 0);
+        for (std::size_t k = 0; k < tets.size(); ++k)
+            tetPhase_[k] = grpPhase[(std::size_t)tetGrain_[k]];
+        nGrains_ = (int)groupName_.size();
+        if (groupName_.size() > 1) {
+            std::cout << "[FEM3D] groupes physiques : " << groupName_.size()
+                      << " corps —";
+            for (std::size_t g = 0; g < groupName_.size(); ++g)
+                std::cout << " " << groupName_[g] << " (phase "
+                          << phases_.name[grpPhase[g]] << ")";
+            std::cout << "\n";
+        }
+    }
     finishMesh(tets);
     std::cout << "[FEM3D] mesh = file: '" << path << "' — " << X0_.size()
               << " nodes, " << el_.size() << " tets, box " << W_ << " x " << D_
               << " x " << H_ << " m, h_min (diametre inscrit) = " << hmin_
               << " m, lc max = " << lcMax_ << " m\n";
+}
+
+// ---------------------------------------------------------------------------
+// mesh = voronoi en fem3d (2026-09-06) : on REUTILISE la tessellation du
+// FEMDEM (Tessellation3, celle de Fdem3dSolver::buildMeshVoronoi, memes cles,
+// meme graine) — aucune tessellation nouvelle n'est ecrite. La seule
+// difference est en AVAL, et c'est tout l'interet : la ou le FEMDEM DEDOUBLE
+// les noeuds tet par tet pour pouvoir poser ses joints cohesifs
+// (Fdem3dSolver::buildFromTets), le continuum prend les sommets virtuels TELS
+// QUELS. Le maillage est alors a NOEUDS PARTAGES, conforme d'un grain a
+// l'autre (les centroides de face sont partages entre les deux cellules), et
+// la frontiere de grain devient un simple SAUT DE PROPRIETES.
+//
+// LIMITE, a ecrire dans tout livrable qui s'appuie dessus : il n'y a aucun
+// joint, donc aucune frontiere de grain intrinsequement faible. C'est un GBM
+// a CONTRASTE ELASTIQUE (et de resistance) seul, pas un GBM cohesif : la
+// frontiere concentre la contrainte, elle ne s'ouvre pas en tant que surface.
+// ---------------------------------------------------------------------------
+void Fem3dSolver::buildMeshVoronoi() {
+    const double d = cfg_.reqd("grainSize");
+    const double jit = cfg_.getd("grainJitter", 0.5);
+    const int lloyd = cfg_.geti("lloydIters", 2);
+    const double mf = cfg_.getd("vertexMergeFrac", 0.12);
+    const int refine = cfg_.geti("refineLevels", 0);
+    const std::string seeding = cfg_.gets("grainSeeding", "hex");
+    if (seeding != "hex" && seeding != "random")
+        throw std::runtime_error("grainSeeding must be hex | random (got '"
+                                 + seeding + "')");
+    if (!(d > 0.0))
+        throw std::runtime_error("grainSize doit etre > 0 (diametre moyen de "
+                                 "grain vise, en metres)");
+    std::mt19937 rng(cfg_.geti("seed", 12345));
+
+    Tessellation3 T = Tessellation3::build(W_, D_, H_, d, jit, lloyd, mf,
+                                           refine, phases_.fraction, rng,
+                                           seeding == "random");
+    nGrains_ = T.nGrains;
+
+    // ---- COMPACTAGE DES SOMMETS, indispensable ici et absent du chemin
+    // FEMDEM. La tessellation cree une entree de vtx par composante d'union-
+    // find et ABANDONNE les faces qui s'effondrent sous le triangle : des
+    // sommets peuvent n'etre references par AUCUN tet. Le FEMDEM ne l'a jamais
+    // vu parce qu'il dedouble les noeuds (un sommet virtuel non reference ne
+    // devient jamais un noeud). En noeuds partages, ces sommets deviennent des
+    // noeuds de MASSE NULLE. On les retire par un remap DETERMINISTE (ordre
+    // croissant de l'ancien indice) — jamais d'epinglage FIXED, qui donnerait
+    // des broches fantomes encastrees dans le bloc, invisibles, raidissant la
+    // reponse et reflechissant les ondes.
+    std::vector<std::array<int, 4>> tets;
+    tets.reserve(T.tet.size());
+    tetGrain_.clear();
+    tetPhase_.clear();
+    tetGrain_.reserve(T.tet.size());
+    tetPhase_.reserve(T.tet.size());
+    for (const auto& t : T.tet) {
+        tets.push_back(t.v);
+        tetGrain_.push_back(t.grain);
+        if (t.grain < 0 || t.grain >= (int)T.phaseOfGrain.size())
+            throw std::runtime_error("mesh = voronoi : tet sans grain valide");
+        tetPhase_.push_back(T.phaseOfGrain.empty() ? 0
+                                                   : T.phaseOfGrain[t.grain]);
+    }
+    std::vector<char> used = guards::referencedMask(T.vtx.size(), tets);
+    std::vector<int> remap(T.vtx.size(), -1);
+    X0_.clear();
+    X0_.reserve(T.vtx.size());
+    std::size_t nDrop = 0;
+    for (std::size_t i = 0; i < T.vtx.size(); ++i) {
+        if (!used[i]) { ++nDrop; continue; }
+        remap[i] = (int)X0_.size();
+        X0_.push_back(T.vtx[i]);
+    }
+    if (nDrop > 0) {
+        const double frac = (double)nDrop / (double)T.vtx.size();
+        std::cout << "[FEM3D] voronoi : " << nDrop << " sommets sur "
+                  << T.vtx.size() << " (" << 100.0 * frac
+                  << " %) n'appartiennent a aucun tet (face effondree a la "
+                     "contraction d'aretes) — retires par remap deterministe\n";
+        if (frac > 5e-3)
+            throw std::runtime_error("mesh = voronoi : " + std::to_string(nDrop)
+                + " sommets orphelins (" + std::to_string(100.0 * frac)
+                + " % > 0,5 %) — la contraction d'aretes a effondre trop de "
+                  "faces : baisser vertexMergeFrac ou augmenter grainSize.");
+        for (auto& tt : tets)
+            for (int& v : tt) v = remap[(std::size_t)v];
+    }
+    gmshNodeId_.clear();                       // pas d'ids d'origine ici
+    finishMesh(tets);
+    // fractions volumiques REALISEES contre visees (miroir de
+    // Fdem3dSolver.cpp l. 5062-5069) : l'affectation des phases est un
+    // glouton par volume sur des grains melanges — sur peu de grains l'ecart
+    // est important, et sans cette ligne la « composition modale » annoncee
+    // dans un rapport serait celle du deck, pas celle du calcul.
+    std::cout << "[FEM3D] mesh = voronoi : " << nGrains_ << " grains, "
+              << el_.size() << " tets, " << X0_.size() << " noeuds, boite "
+              << W_ << " x " << D_ << " x " << H_ << " m, h_min (diametre "
+                 "inscrit) = " << hmin_ << " m, lc max = " << lcMax_ << " m\n";
+    // ---- QUALITE DES TETS, a mesurer AVANT de dimensionner une campagne ---
+    // Les tets de la tessellation sont des CONES (centre de cellule, centre
+    // de face, arete) : plats par construction, et d'autant plus plats aux
+    // frontieres de grain — c'est-a-dire exactement la ou l'etude regarde.
+    // Deux consequences, toutes deux silencieuses si on ne les imprime pas :
+    //   (a) hmin_ = min du diametre inscrit 6V/A pilote la CFL ; un unique
+    //       sliver effondre le pas de temps d'un facteur 5 sans autre signe
+    //       que la duree du run. Le bouton est vertexMergeFrac (0,12 par
+    //       defaut ; 0,25 recommande par l'en-tete de Tessellation3).
+    //   (b) lc = V0^(1/3) n'est PAS la largeur de bande normale a la fissure
+    //       pour un element aplati : l'energie dissipee par unite de surface
+    //       de fissure est alors fausse du rapport d'aspect. Le rapport
+    //       h_inscrit / lc en donne la mesure — s'il s'effondre, faire
+    //       l'essai sur un maillage Gmsh a groupes nommes (mesh = file) et
+    //       ne garder la tessellation que pour la geometrie.
+    {
+        std::vector<double> lcs, asp;
+        lcs.reserve(el_.size());
+        asp.reserve(el_.size());
+        for (const auto& e : el_) {
+            lcs.push_back(e.lc);
+            double A = 0.0;                    // aire des 4 faces
+            for (int f = 0; f < 4; ++f) {
+                const Eigen::Vector3d& A0 = X0_[e.n[(f + 1) % 4]];
+                const Eigen::Vector3d& B0 = X0_[e.n[(f + 2) % 4]];
+                const Eigen::Vector3d& C0 = X0_[e.n[(f + 3) % 4]];
+                A += 0.5 * (B0 - A0).cross(C0 - A0).norm();
+            }
+            asp.push_back(A > 0.0 ? (6.0 * e.V0 / A) / e.lc : 0.0);
+        }
+        auto med = [](std::vector<double>& v) {
+            std::nth_element(v.begin(), v.begin() + v.size() / 2, v.end());
+            return v[v.size() / 2];
+        };
+        const double lcMed = med(lcs);
+        std::vector<double> aspCopy = asp;
+        const double aspMed = med(aspCopy);
+        const double aspMin = *std::min_element(asp.begin(), asp.end());
+        std::cout << "[FEM3D] voronoi, qualite des tets : lc median = " << lcMed
+                  << " m, rapport diametre inscrit / lc median = " << aspMed
+                  << " (min " << aspMin << ") — le tetraedre REGULIER vaut "
+                     "0,833 (6V/A = 0,408 a, lc = 0,490 a) ; en dessous de "
+                     "~0,1 la bande de fissuration lc = V0^(1/3) n'est plus "
+                     "la largeur normale a la fissure et l'energie dissipee "
+                     "par unite de surface est fausse du rapport d'aspect "
+                     "(bouton : vertexMergeFrac)\n";
+    }
+    if (phases_.n() > 1) {
+        std::vector<double> vPh(phases_.n(), 0.0);
+        double vTot = 0.0;
+        for (const auto& e : el_) { vPh[e.phase] += e.V0; vTot += e.V0; }
+        std::cout << "[FEM3D] fractions volumiques realisees / visees :";
+        for (int p = 0; p < phases_.n(); ++p)
+            std::cout << " " << phases_.name[p] << " "
+                      << 100.0 * vPh[p] / vTot << " % / "
+                      << 100.0 * phases_.fraction[p] << " %";
+        std::cout << "\n";
+    }
+}
+
+// ---------------------------------------------------------------------------
+// AUDIT DE MASSE (2026-09-06) : la somme des masses nodales condensees doit
+// valoir sum_p rho_p V_p, recalcule ici INDEPENDAMMENT de l'assemblage. La
+// faute qu'il ferme (masse laissee au rho global sur un bloc multiphase) est
+// silencieuse et son total reste plausible ; toutes ses consequences —
+// vitesses d'onde locales, inertie de la zone d'impact, bilan d'impulsion
+// outil/roche, energie cinetique — sont fausses sans un message. Le seuil
+// 1e-9 est trois ordres au-dessus de l'arrondi d'une somme de quelques
+// millions de termes.
+// ---------------------------------------------------------------------------
+void Fem3dSolver::checkMassAudit(const char* tag) {
+    double mSum = 0.0;
+    for (double m : m_) mSum += m;
+    std::vector<double> vPh(phases_.mat.size(), 0.0);
+    double mRef = 0.0;
+    for (const auto& e : el_) vPh[(std::size_t)e.phase] += e.V0;
+    for (std::size_t p = 0; p < vPh.size(); ++p) mRef += rhoP_[p] * vPh[p];
+    const double rel = mRef > 0.0 ? std::abs(mSum - mRef) / mRef : 1.0;
+    if (phases_.n() > 1) {
+        std::cout << "[FEM3D] audit de masse (" << tag << ") : sum(m) = " << mSum
+                  << " kg contre sum_p rho_p V_p = " << mRef
+                  << " kg, ecart relatif " << rel << "\n";
+        for (int p = 0; p < phases_.n(); ++p)
+            std::cout << "[FEM3D]   phase " << phases_.name[p] << " : rho = "
+                      << rhoP_[p] << " kg/m3, V = " << vPh[(std::size_t)p]
+                      << " m3, m = " << rhoP_[p] * vPh[(std::size_t)p] << " kg\n";
+    }
+    if (!(rel < 1e-9))
+        throw std::runtime_error(std::string("fem3d : audit de masse (") + tag
+            + ") — la masse condensee " + std::to_string(mSum)
+            + " kg ne vaut pas sum_p rho_p V_p = " + std::to_string(mRef)
+            + " kg (ecart relatif " + std::to_string(rel) + ") : la masse "
+              "nodale n'a pas ete assemblee avec le rho de la PHASE de chaque "
+              "element.");
 }
 
 // elements, registre de faces, masses et drapeaux a partir d'une liste de
@@ -611,9 +1254,26 @@ void Fem3dSolver::finishMesh(const std::vector<std::array<int, 4>>& tetsIn) {
     hmin_ = 1e30;
     el_.clear();
     el_.reserve(tetsIn.size());
+    // phase / grain par tet : VIDES = chemin historique (tout en phase 0).
+    // L'indexation 1:1 avec tetsIn tient parce que cette boucle fait un seul
+    // push_back par tet d'entree et ne REORDONNE jamais les elements (elle
+    // permute au besoin n[2] et n[3] pour redresser un volume negatif). La
+    // phase est posee DANS la boucle, jamais dans une seconde passe indexee :
+    // si un tri d'elements etait introduit un jour, la phase se decalerait
+    // d'un cran et l'on obtiendrait une microstructure fausse mais plausible.
+    if (!tetPhase_.empty() && tetPhase_.size() != tetsIn.size())
+        throw std::runtime_error("fem3d : tetPhase (" + std::to_string(tetPhase_.size())
+            + ") et tets (" + std::to_string(tetsIn.size()) + ") desalignes");
+    if (!tetGrain_.empty() && tetGrain_.size() != tetsIn.size())
+        throw std::runtime_error("fem3d : tetGrain et tets desalignes");
+    long nFaceInter = 0;        // faces interieures entre deux GRAINS/groupes
+    long nFaceNonManifold = 0;  // faces vues plus de deux fois
     for (auto nn : tetsIn) {
+        const std::size_t k = el_.size();
         Elem e;
         e.n = nn;
+        e.phase = tetPhase_.empty() ? 0 : tetPhase_[k];
+        e.grain = tetGrain_.empty() ? 0 : tetGrain_[k];
         Eigen::Matrix3d J;
         J.col(0) = X0_[e.n[1]] - X0_[e.n[0]];
         J.col(1) = X0_[e.n[2]] - X0_[e.n[0]];
@@ -653,7 +1313,15 @@ void Fem3dSolver::finishMesh(const std::vector<std::array<int, 4>>& tetsIn) {
             std::sort(key.begin(), key.end());
             auto it = faces.find(key);
             if (it == faces.end()) faces[key] = {id, fn};
-            else it->second.first = -1;
+            else {
+                // une face vue une 3e fois etait AVALEE en silence (le
+                // proprietaire est deja -1) : on la compte pour pouvoir la
+                // refuser sur le chemin voronoi, ou la topologie est produite
+                // par le code et non par un mailleur.
+                if (it->second.first < 0) ++nFaceNonManifold;
+                else if (el_[it->second.first].grain != e.grain) ++nFaceInter;
+                it->second.first = -1;
+            }
         }
     }
     exterior_.clear();
@@ -674,7 +1342,12 @@ void Fem3dSolver::finishMesh(const std::vector<std::array<int, 4>>& tetsIn) {
     m_.assign(X0_.size(), 0.0);
     flag_.assign(X0_.size(), FREE);
     for (const auto& e : el_)
-        for (int a = 0; a < 4; ++a) m_[e.n[a]] += mat_.rho * e.V0 / 4.0;
+        // masse condensee AU RHO DE LA PHASE : oublier l'indice ici donne la
+        // densite de la fiche globale a tout le bloc — vitesses d'onde locales,
+        // inertie de la zone d'impact et bilan d'impulsion outil/roche tous
+        // faux, avec un total de masse qui reste PLAUSIBLE. checkMassAudit()
+        // ferme le trou. MEME expression, MEME associativite qu'avant.
+        for (int a = 0; a < 4; ++a) m_[e.n[a]] += rhoP_[e.phase] * e.V0 / 4.0;
     {   // C3 (w20) : sliver (< 1e-6 x mediane) et masse nulle = erreurs
         // nommees ; plus jamais d'epinglage FIXED silencieux (broche fantome)
         std::vector<double> vols;
@@ -685,6 +1358,90 @@ void Fem3dSolver::finishMesh(const std::vector<std::array<int, 4>>& tetsIn) {
         guards::checkDegenerate("fem3d mesh = file", vols, conn, X0_, gmshNodeId_);
         guards::checkMasses("fem3d mesh = file", m_, X0_, guards::kNoMask,
                             gmshNodeId_);
+    }
+    // ---- gardes du materiau par phase (2026-09-06) ------------------------
+    // (a) La masse totale condensee doit valoir sum_p rho_p V_p, recalcule
+    //     INDEPENDAMMENT : c'est trois lignes, et cela ferme definitivement le
+    //     trou « masse laissee au rho global », dont le total reste plausible
+    //     (rho_global x V au lieu de sum rho_p V_p, deux nombres du meme ordre)
+    //     pendant que l'impedance, l'inertie et le bilan d'impulsion sont faux.
+    checkMassAudit(meshVoronoi_ ? "mesh = voronoi" : "mesh = file");
+    // (b) Topologie : sur le chemin VORONOI la connectivite est produite par
+    //     le code (Tessellation3), pas par un mailleur — une face vue plus de
+    //     deux fois y est un defaut de soudure, pas un maillage exotique
+    //     legitime. Le chemin fichier garde son comportement d'origine.
+    if (meshVoronoi_) {
+        if (nFaceNonManifold > 0)
+            throw std::runtime_error("mesh = voronoi : " + std::to_string(nFaceNonManifold)
+                + " face(s) partagee(s) par plus de deux tetraedres — la "
+                  "tessellation a produit une topologie non variete ; "
+                  "augmenter vertexMergeFrac (0,12 par defaut, 0,25 recommande) "
+                  "ou changer de graine.");
+        // Aire des faces EXTERIEURES = aire de la boite. En continuum a noeuds
+        // partages, deux sommets coincidents d'ids differents laisseraient une
+        // fissure ouverte que rien ne signale (le registre verrait deux faces
+        // a un seul proprietaire, les classerait « exterieures » et le bloc
+        // deviendrait un tas de grains libres, avec des contraintes plausibles
+        // et une resistance effondree). Filet de securite, pas parade a un
+        // defaut certain : les sommets sont soudes par union-find et les
+        // centroides de face partages entre les deux cellules.
+        double aExt = 0.0;
+        for (const auto& bf : exterior_) {
+            const Eigen::Vector3d& A = X0_[bf.n[0]];
+            const Eigen::Vector3d& B = X0_[bf.n[1]];
+            const Eigen::Vector3d& C = X0_[bf.n[2]];
+            aExt += 0.5 * (B - A).cross(C - A).norm();
+        }
+        const double aBox = 2.0 * (W_ * D_ + W_ * H_ + D_ * H_);
+        const double rel = std::abs(aExt - aBox) / aBox;
+        std::cout << "[FEM3D] voronoi : aire exterieure " << aExt
+                  << " m^2 contre " << aBox << " m^2 (boite), ecart relatif "
+                  << rel << " ; " << nFaceInter
+                  << " faces interieures entre grains distincts\n";
+        if (rel > 1e-9)
+            throw std::runtime_error("mesh = voronoi : l'aire des faces "
+                "exterieures (" + std::to_string(aExt) + " m^2) ne vaut pas "
+                "l'aire de la boite (" + std::to_string(aBox) + " m^2, ecart "
+                + std::to_string(100.0 * rel) + " %) — des faces interieures "
+                "sont vues comme exterieures : les grains ne sont pas soudes "
+                "et le bloc est un tas de grains libres.");
+        if (nGrains_ > 1 && nFaceInter == 0)
+            throw std::runtime_error("mesh = voronoi : aucune face partagee "
+                "entre deux grains distincts alors que la tessellation en "
+                "compte " + std::to_string(nGrains_) + " — les grains ne sont "
+                "pas conformes entre eux.");
+    }
+    // (c) mesh = file a plusieurs groupes physiques : en fem3d les corps sont
+    //     SOUDES par leurs noeuds partages. Si les deux volumes ne sont PAS
+    //     conformes a l'interface (noeuds non partages), on obtient deux corps
+    //     DISJOINTS qui se traversent — il n'y a aucun contact entre corps en
+    //     fem3d — avec des forces plausibles et pas une ligne d'erreur.
+    //     CORRECTION du 2026-09-06 : la garde etait FATALE meme sans cle
+    //     `phases`, et c'etait une ERREUR NEUVE — avant ce chantier le lecteur
+    //     jetait les tags physiques, aucun groupe n'existait, et un deck fem3d
+    //     ordinaire sur un maillage a plusieurs volumes nommes (par ex.
+    //     meshes/bench1_insert.msh, rock + insert) passait. Le refus violait
+    //     donc la croissance par addition : il n'etait pas opt-in, et l'ancre
+    //     bitid ne pouvait pas le voir (aucun de ses decks fem3d n'a de bloc
+    //     $PhysicalNames). Le fond reste vrai, alors on le DIT toujours ; il
+    //     n'est fatal que quand le deck declare des phases, c'est-a-dire quand
+    //     la carte des groupes porte le materiau et qu'un corps flottant
+    //     fausserait la mesure meme.
+    if (!meshVoronoi_ && groupName_.size() > 1) {
+        std::cout << "[FEM3D] " << groupName_.size() << " corps SOUDES par "
+                  << nFaceInter << " faces conformes (noeuds partages : "
+                     "l'interface ne peut ni glisser ni s'ouvrir)\n";
+        if (nFaceInter == 0) {
+            const std::string msg = "mesh = file : "
+                + std::to_string(groupName_.size())
+                + " groupes physiques mais AUCUNE face conforme entre deux "
+                  "groupes — les corps sont disjoints et se traverseraient "
+                  "(le mode fem3d n'a pas de contact entre corps). Mailler les "
+                  "volumes en conformite (Gmsh : fragments/coherence) ou "
+                  "passer en mode = fdem3d.";
+            if (phasesDeclared_) throw std::runtime_error(msg);
+            std::cout << "[FEM3D] ATTENTION : " << msg << "\n";
+        }
     }
     if (scen_ == Scenario::TENSION) {
         for (int i = 0; i < (int)X0_.size(); ++i) {
@@ -907,7 +1664,15 @@ void Fem3dSolver::setupBoundaries() {
     if (ab != "none" && ab != "sides" && ab != "all")
         throw std::runtime_error("absorbing must be none | sides | all");
 
-    double G  = mat_.G();
+    // IMPEDANCE DE LYSMER PAR PHASE (2026-09-06, miroir de Fdem3dSolver.cpp
+    // l. 2275 « impedances of the LOCAL phase ») : l'amortisseur vaut rho c
+    // par face. Pose avec le rho et les celerites GLOBAUX sur une face dont
+    // l'element proprietaire est de la biotite, l'impedance ne correspond pas
+    // au milieu et la frontiere REFLECHIT au lieu d'absorber ; l'onde revient
+    // plus tard et se superpose a la fissuration, et l'on attribue a la
+    // physique un artefact de bord (le mecanisme deja diagnostique sur la
+    // plaque trouee). G etait hisse HORS des deux boucles : il descend dedans.
+    // BFace porte deja `elem`, le proprietaire de la face.
     double sF = cfg_.getd("absorbSpringFactor", 1.0);
     double Rx = cfg_.getd("absorbSpringR", 0.5 * W_);
     double Ry = cfg_.getd("absorbSpringR", 0.5 * D_);
@@ -939,11 +1704,13 @@ void Fem3dSolver::setupBoundaries() {
             double At3 = 0.5 * A2 / 3.0;
             nrm /= A2;
             double R = bottom ? Rz : Rc;
+            const Material& mp = phases_.mat[el_[bf.elem].phase];
+            const double G = mp.G();
             for (int nid : bf.n)
                 for (int a = 0; a < 3; ++a) {
                     double w = std::abs(nrm(a));
-                    double c = mat_.cP() * w + mat_.cS() * (1.0 - w);
-                    cAbs_[nid](a) += mat_.rho * c * At3;
+                    double c = mp.cP() * w + mp.cS() * (1.0 - w);
+                    cAbs_[nid](a) += mp.rho * c * At3;
                     kAbs_[nid](a) += sF * G
                                      / (w * R + (1.0 - w) * 2.0 * R) * At3;
                 }
@@ -965,19 +1732,21 @@ void Fem3dSolver::setupBoundaries() {
         if (symQ_ && ((nAxis == 0 && xlo) || (nAxis == 1 && ylo))) continue;   // quart de bloc
         double R = nAxis == 0 ? Rx : (nAxis == 1 ? Ry : Rz);
         bool lateral = nAxis != 2;
+        const Material& mp = phases_.mat[el_[bf.elem].phase];
+        const double G = mp.G();
         for (int nid : bf.n) {
             if (lateral && ab != "none") {
                 for (int a = 0; a < 3; ++a) {
-                    double c = (a == nAxis ? mat_.cP() : mat_.cS());
-                    cAbs_[nid](a) += mat_.rho * c * At3;
+                    double c = (a == nAxis ? mp.cP() : mp.cS());
+                    cAbs_[nid](a) += mp.rho * c * At3;
                     kAbs_[nid](a) += sF * G / (a == nAxis ? R : 2.0 * R) * At3;
                 }
             }
             if (nAxis == 2) {
                 if (ab == "all") {
                     for (int a = 0; a < 3; ++a) {
-                        double c = (a == 2 ? mat_.cP() : mat_.cS());
-                        cAbs_[nid](a) += mat_.rho * c * At3;
+                        double c = (a == 2 ? mp.cP() : mp.cS());
+                        cAbs_[nid](a) += mp.rho * c * At3;
                         kAbs_[nid](a) += sF * G / (a == 2 ? R : 2.0 * R) * At3;
                     }
                 } else if (!bottomFree_) {     // percussion AND shear: the
@@ -990,7 +1759,13 @@ void Fem3dSolver::setupBoundaries() {
 }
 
 void Fem3dSolver::computeStableDt() {
-    double cfl = hmin_ / mat_.cP();
+    // CFL sur la vitesse d'onde MAXIMALE des phases (miroir de
+    // Fdem3dSolver.cpp l. 2467) : avec du quartz a 83,1 GPa au-dessus d'une
+    // fiche globale a 50 GPa, c_P serait sous-estimee de 29 % et dt 29 % trop
+    // grand — le schema centre n'explose pas forcement, il devient BRUYANT et
+    // ce bruit se lit comme de la fissuration. Borne conservative : pour tout
+    // element h_e >= hmin_ et c_e <= maxCp, donc h_e/c_e >= hmin_/maxCp.
+    double cfl = hmin_ / phases_.maxCp();
     // viscosite de volume (bulkViscosity, 2026-09-05) : Abaqus/Explicit reduit
     // le pas stable de l'element du facteur sqrt(1 + xi^2) - xi, xi = b1 -
     // b2^2 L_e edot/c_d ; on applique la part LINEAIRE xi = b1 (le terme
@@ -1125,9 +1900,14 @@ void Fem3dSolver::elementForces() {
         long errEl = -1; double errLc = 0.0, errFt = 1.0; std::string err;
         double wBv = 0.0;                      // dissipation de la viscosite de volume (J)
     };
-    // viscosite de volume : rho c_d (non endommage) et rho, lus une fois
-    const double bvRhoC = bv_ ? mat_.rho * mat_.cP() : 0.0;
-    const double bvRho = mat_.rho;
+    // viscosite de volume : rho c_d (non endommage) et rho, PAR PHASE.
+    // Auparavant deux constantes hissees hors de la boucle sur la fiche
+    // globale ; les laisser globales rendrait la pression visqueuse fausse du
+    // rapport des densites et des celerites dans tout grain dont la phase
+    // n'est pas la 0 — et wBulk, colonne de history.csv, serait un bilan
+    // d'energie faux. Les tables rhoCdP_/rhoP_ sont calculees a l'init avec
+    // exactement l'expression d'origine (rho * cP()) : a une phase, la MEME
+    // valeur, et l'arithmetique ci-dessous n'est pas touchee.
     // sondes de point materiel (probes, 2026-09-05, w18) : sans la cle prb =
     // false et aucun test n'est fait par element ; avec, un element sonde
     // (probeSlot_ >= 0) depose la contrainte de la loi et la deformation qu'elle
@@ -1200,7 +1980,12 @@ void Fem3dSolver::elementForces() {
         const double wPrev = e.wEl;
         Eigen::Matrix3d sig;
         try {
-            sig = law_->stress(eps, e.st, dt_, e.lc);
+            // LE point d'accroche central : la loi de la PHASE de
+            // l'element. Cabler le champ `phase`, le VTU et les bilans en
+            // oubliant cette indexation donnerait une belle carte de grains
+            // et des chiffres tous ceux d'un bloc homogene, sans un message :
+            // c'est ce que le banc de Reuss (F3) est la pour falsifier.
+            sig = laws_[e.phase]->stress(eps, e.st, dt_, e.lc);
         } catch (const std::exception& ex) {
             acc.errEl = (long)(&e - el_.data());
             acc.errLc = e.lc;
@@ -1247,6 +2032,8 @@ void Fem3dSolver::elementForces() {
             // n'agit qu'en compression volumique (edot < 0).
             const double edot = (det - e.Jbv) / (dt_ * det);
             e.Jbv = det;
+            const double bvRhoC = rhoCdP_[e.phase];   // rho c_d de la phase
+            const double bvRho = rhoP_[e.phase];      // rho de la phase
             double q = bvB1_ * bvRhoC * e.lc * edot;
             if (edot < 0.0) {
                 const double b2Le = bvB2_ * e.lc * edot;
@@ -1532,6 +2319,45 @@ void Fem3dSolver::writeFrame(int frame) {
         kdp[e] = el_[e].st.kappa;
         fts[e] = el_[e].st.ftScale;
     }
+    // ---- microstructure au VTU (2026-09-06) --------------------------------
+    // Sans carte de phases, une figure de GBM n'est pas un resultat mais une
+    // affirmation : on ne peut ni relire la microstructure, ni verifier a
+    // l'oeil que la localisation suit bien les frontieres de grain. Les cinq
+    // champs sont ajoutes des que le maillage porte une microstructure
+    // (plusieurs phases, ou plusieurs grains/groupes) — condition FAUSSE pour
+    // tous les decks existants, donc .vtu inchanges. matE / matRho / matFt
+    // sont les proprietes REELLEMENT vues par l'element : c'est la seule
+    // maniere de verifier a la lecture du fichier que le contraste est bien
+    // arrive jusqu'a la loi, et non seulement jusqu'a la couleur.
+    // CORRECTION du 2026-09-06 : la condition etait
+    // `phases_.n() > 1 || nGrains_ > 1`, et sur le chemin FICHIER nGrains_
+    // vaut le nombre de groupes physiques MEME EN MONO-PHASE. Le declencheur
+    // etait donc le MAILLAGE, pas le deck : n'importe quel maillage Gmsh a
+    // plusieurs volumes nommes changeait le format de sortie sans qu'aucune
+    // cle nouvelle soit posee, et tout extracteur qui suppose un jeu de champs
+    // fixe l'aurait decouvert a l'usage. On conditionne desormais sur le deck
+    // (plusieurs phases) ou sur le chemin NEUF (mesh = voronoi, qui n'existait
+    // pas en fem3d avant ce chantier : aucun deck existant ne peut y etre).
+    // Tous les decks preexistants retrouvent leur .vtu a l'octet pres.
+    const bool phFields = phases_.n() > 1 || meshVoronoi_;
+    std::vector<double> phId, grId, phE, phRho, phFt;
+    if (phFields) {
+        phId.resize(el_.size()); grId.resize(el_.size());
+        phE.resize(el_.size()); phRho.resize(el_.size()); phFt.resize(el_.size());
+        for (std::size_t e = 0; e < el_.size(); ++e) {
+            const Material& mp = phases_.mat[(std::size_t)el_[e].phase];
+            phId[e] = (double)el_[e].phase;
+            grId[e] = (double)el_[e].grain;
+            phE[e] = mp.E;
+            phRho[e] = mp.rho;
+            phFt[e] = mp.ft * el_[e].st.ftScale;   // ft REELLEMENT vu (Weibull compris)
+        }
+    }
+    auto addPhaseFields = [&](vtk::ScalarField& sf) {
+        if (!phFields) return;
+        sf["phase"] = &phId;   sf["grain"] = &grId;
+        sf["matE"] = &phE;     sf["matRho"] = &phRho;  sf["matFt"] = &phFt;
+    };
     char name[64];
     std::snprintf(name, sizeof(name), "/fem3d_%04d.vtu", frame);
     if (fixedDam_) {
@@ -1570,6 +2396,7 @@ void Fem3dSolver::writeFrame(int frame) {
             sf["omegaC"] = &omc; sf["detF"] = &detF;
             sf["erodedBy"] = &eby; sf["sigLat"] = &slat;
         }
+        addPhaseFields(sf);
         vtk::writeTetMesh(out_ + name, pts, tets, sf, {{"velocity", &vel}});
     } else
     if (vtkCap_) {
@@ -1602,6 +2429,7 @@ void Fem3dSolver::writeFrame(int frame) {
             sf["omegaC"] = &omc; sf["detF"] = &detF;
             sf["erodedBy"] = &eby; sf["sigLat"] = &slat;
         }
+        addPhaseFields(sf);
         vtk::writeTetMesh(out_ + name, pts, tets, sf, {{"velocity", &vel}});
     } else
     if (stats_) {
@@ -1615,19 +2443,20 @@ void Fem3dSolver::writeFrame(int frame) {
             eby[e] = el_[e].erodedBy == 2 ? 5.0 : (double)el_[e].st.eroCode;
             slat[e] = el_[e].slat;
         }
-        vtk::writeTetMesh(out_ + name, pts, tets,
-                          {{"vonMises", &svm}, {"pressure", &pm},
-                           {"damage", &dmg}, {"eroded", &ero}, {"epvEq", &epv},
-                           {"kapDP", &kdp}, {"ftScale", &fts},
-                           {"omegaC", &omc}, {"detF", &detF},
-                           {"erodedBy", &eby}, {"sigLat", &slat}},
-                          {{"velocity", &vel}});
-    } else
-    vtk::writeTetMesh(out_ + name, pts, tets,
-                      {{"vonMises", &svm}, {"pressure", &pm},
-                       {"damage", &dmg}, {"eroded", &ero}, {"epvEq", &epv},
-                       {"kapDP", &kdp}, {"ftScale", &fts}},
-                      {{"velocity", &vel}});
+        vtk::ScalarField sf{{"vonMises", &svm}, {"pressure", &pm},
+                            {"damage", &dmg}, {"eroded", &ero}, {"epvEq", &epv},
+                            {"kapDP", &kdp}, {"ftScale", &fts},
+                            {"omegaC", &omc}, {"detF", &detF},
+                            {"erodedBy", &eby}, {"sigLat", &slat}};
+        addPhaseFields(sf);
+        vtk::writeTetMesh(out_ + name, pts, tets, sf, {{"velocity", &vel}});
+    } else {
+        vtk::ScalarField sf{{"vonMises", &svm}, {"pressure", &pm},
+                            {"damage", &dmg}, {"eroded", &ero}, {"epvEq", &epv},
+                            {"kapDP", &kdp}, {"ftScale", &fts}};
+        addPhaseFields(sf);
+        vtk::writeTetMesh(out_ + name, pts, tets, sf, {{"velocity", &vel}});
+    }
 
     std::ofstream fm(out_ + "/frames.csv",
                      frame == 0 ? std::ios::trunc : std::ios::app);
@@ -1936,6 +2765,49 @@ void Fem3dSolver::finalize() {
               << "[FEM3D] max equiv viscoplastic strain: " << epvMax
               << ", min pressure: " << pMin / 1e6 << " MPa, max cap pc: "
               << pcMax / 1e6 << " MPa\n";
+    // ---- bilan PAR PHASE (2026-09-06) --------------------------------------
+    // Sans ces compteurs la capacite marcherait sans repondre a la question
+    // qui la motive : « quel mineral casse en premier, et l'endommagement se
+    // loge-t-il dans le quartz, dans la biotite, ou aux frontieres ? ».
+    // craterVol() et nErodedLaw_/nErodedGeo_ sont GLOBAUX, donc aveugles a la
+    // phase. Sortie CONSOLE seulement (elle n'est pas hachee par bitid) et
+    // seulement en multiphase : aucun fichier de sortie ne change de forme.
+    if (phases_.n() > 1) {
+        const int np = phases_.n();
+        std::vector<double> vTot(np, 0.0), vEro(np, 0.0), dSum(np, 0.0),
+                            dMax(np, 0.0), wDis(np, 0.0);
+        std::vector<long> nTot(np, 0), nEro(np, 0);
+        for (const auto& e : el_) {
+            const int p = e.phase;
+            vTot[p] += e.V0;
+            ++nTot[p];
+            dSum[p] += e.st.D * e.V0;
+            dMax[p] = std::max(dMax[p], e.st.D);
+            wDis[p] += (e.st.wPlas + e.st.wDamT + e.st.wDamC) * e.V0;
+            if (e.st.eroded) { vEro[p] += e.V0; ++nEro[p]; }
+        }
+        std::cout << "[FEM3D] bilan par phase (fraction volumique realisee, "
+                     "erosion, endommagement, dissipation) :\n";
+        double vAll = 0.0;
+        for (int p = 0; p < np; ++p) vAll += vTot[p];
+        for (int p = 0; p < np; ++p) {
+            std::cout << "[FEM3D]   " << phases_.name[p] << " : "
+                      << 100.0 * vTot[p] / vAll << " % du volume ("
+                      << 100.0 * phases_.fraction[p] << " % vise, "
+                      << nTot[p] << " el.), erode " << nEro[p] << " el. ("
+                      << vEro[p] * 1e9 << " mm^3, "
+                      << (vTot[p] > 0.0 ? 100.0 * vEro[p] / vTot[p] : 0.0)
+                      << " % de la phase), D moyen "
+                      << (vTot[p] > 0.0 ? dSum[p] / vTot[p] : 0.0)
+                      << ", D max " << dMax[p] << ", dissipation " << wDis[p]
+                      << " J\n";
+        }
+        std::cout << "[FEM3D]   rappel : la LOI est commune a toutes les "
+                     "phases (cles de loi globales), seules les proprietes "
+                     "materielles varient ; en noeuds partages il n'y a AUCUN "
+                     "joint, donc aucune frontiere de grain intrinsequement "
+                     "faible — c'est un GBM a contraste ELASTIQUE seul\n";
+    }
     // etude briques : lignes supplementaires seulement si une cle est posee
     if (confP_ > 0.0 || topP_ > 0.0)
         std::cout << "[FEM3D] confinement: vise " << confP_ / 1e6
@@ -1974,7 +2846,28 @@ void Fem3dSolver::finalize() {
         std::cout << "[FEM3D] peak |sigma| grip / mid-specimen = "
                   << sigmaPeak_ / 1e6 << " / " << sigMidPeak_ / 1e6
                   << " MPa (" << (comp ? "compression" : "tension") << ")\n";
-        if (law_->name() == "dpr") {
+        // En MULTIPHASE la resistance du bloc n'est celle d'aucune phase : ni
+        // le ft du quartz, ni le cone DP de la biotite. Imprimer un PASS/FAIL
+        // calcule sur la phase 0 sous l'intitule « reference » serait pire
+        // qu'une absence de chiffre — cela a l'apparence d'une verification.
+        // On imprime alors l'encadrement des references par phase, et on dit
+        // pourquoi il n'y a pas de verdict.
+        if (law_->name() == "dpr" && phases_.n() > 1) {
+            double lo = 1e300, hi = 0.0;
+            for (int p = 0; p < phases_.n(); ++p) {
+                const double r = comp ? laws_[p]->sigmaCdp() : phases_.mat[p].ft;
+                lo = std::min(lo, r);
+                hi = std::max(hi, r);
+            }
+            std::cout << "[FEM3D]   reference ("
+                      << (comp ? "DP cone, analytic" : "ft")
+                      << ") : pas de verdict en multiphase — la resistance du "
+                         "bloc n'est celle d'aucune phase ; les references par "
+                         "phase s'echelonnent de " << lo / 1e6 << " a "
+                      << hi / 1e6 << " MPa, et la valeur du bloc depend de "
+                         "l'ARRANGEMENT des phases autant que de leurs "
+                         "proprietes\n";
+        } else if (law_->name() == "dpr") {
             double ref = comp ? law_->sigmaCdp() : mat_.ft;
             double err = 100.0 * (sigMidPeak_ - ref) / ref;
             bool pass = std::abs(err) < 5.0;
@@ -1983,6 +2876,31 @@ void Fem3dSolver::finalize() {
                       << ref / 1e6 << " MPa, deviation = " << err
                       << " %  [" << (pass ? "PASS" : "FAIL")
                       << "] (band 5 %, mid gauge)\n";
+        } else if (law_->name() == "saksala" && comp && phases_.n() > 1) {
+            // MEME raison que la branche dpr ci-dessus, et le trou etait
+            // MESURE (2026-09-06) : cette branche utilisait law_ = laws_[0],
+            // c'est-a-dire la PHASE 0, donc le chiffre du verdict dependait de
+            // l'ORDRE D'ECRITURE des noms dans la cle `phases`. Sur le meme
+            // bloc physique (dur c = 60 MPa, mou c = 15 MPa, 50/50, meme
+            // maillage, meme pic 13,8056 / 0,610222 MPa) : « phases = dur mou »
+            // annoncait measured -257,066 MPa ratio -24,93 [FAIL], et
+            // « phases = mou dur » measured -64,060 MPa ratio -6,213 [FAIL].
+            // Une permutation d'ecriture multipliait le chiffre par 4 — sous
+            // l'intitule d'une VERIFICATION.
+            double epdot = std::abs(pullV_) / H_;
+            double lo = 1e300, hi = -1e300;
+            for (int p = 0; p < phases_.n(); ++p) {
+                const double r = laws_[p]->viscousOverstress(epdot);
+                lo = std::min(lo, r);
+                hi = std::max(hi, r);
+            }
+            std::cout << "[FEM3D]   viscous overstress : pas de verdict en "
+                         "multiphase — la reponse du bloc n'est celle "
+                         "d'aucune phase ; la prediction de Perzyna par phase "
+                         "s'echelonne de " << lo / 1e6 << " a " << hi / 1e6
+                      << " MPa a epdot = " << epdot << " /s, et la valeur du "
+                         "bloc depend de l'ARRANGEMENT des phases autant que "
+                         "de leurs proprietes\n";
         } else if (law_->name() == "saksala" && comp) {
             double epdot = std::abs(pullV_) / H_;
             double pred = law_->viscousOverstress(epdot);

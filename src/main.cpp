@@ -193,17 +193,31 @@ int main(int argc, char** argv) {
         if (mesh != "grid" && mesh != "voronoi" && mesh != "file")
             throw std::runtime_error("unknown mesh '" + mesh
                                      + "' (grid | voronoi | file)");
-        if (mesh == "voronoi" && mode != "fdem" && mode != "fdem3d")
+        // mesh = voronoi en fem3d (2026-09-06) : la MEME tessellation que le
+        // FEMDEM (Tessellation3), mais les sommets virtuels sont pris tels
+        // quels comme noeuds PARTAGES au lieu d'etre dedoubles pour poser des
+        // joints — on obtient un continuum maille par grains, ou la frontiere
+        // de grain est un simple saut de proprietes.
+        if (mesh == "voronoi" && mode != "fdem" && mode != "fdem3d"
+            && mode != "fem3d")
             throw std::runtime_error("mesh = voronoi (grains + phases) is only "
-                                     "implemented for mode = fdem | fdem3d");
+                                     "implemented for mode = fdem | fdem3d | "
+                                     "fem3d");
         if (mesh == "file" && mode != "fdem" && mode != "fdem3d"
             && mode != "fem3d")
             throw std::runtime_error("mesh = file (unstructured import) is "
                                      "only implemented for mode = fdem | "
                                      "fdem3d | fem3d");
-        if (cfg.has("phases") && mode != "fdem" && mode != "fdem3d")
+        // `phases` en fem3d (2026-09-06) : materiau par phase en ELEMENTS
+        // FINIS (une instance de loi par phase, meme cle `law`). La source de
+        // phase est soit la tessellation (mesh = voronoi), soit les groupes
+        // physiques du maillage (mesh = file, $PhysicalNames de dimension 3) ;
+        // le solveur refuse la cle sur mesh = grid, ou rien ne l'affecterait.
+        if (cfg.has("phases") && mode != "fdem" && mode != "fdem3d"
+            && mode != "fem3d")
             throw std::runtime_error("'phases' (mineral phases) is only "
-                                     "implemented for mode = fdem | fdem3d");
+                                     "implemented for mode = fdem | fdem3d | "
+                                     "fem3d");
         if (cfg.has("law") && mode != "fem3d" && mode != "fdem"
             && mode != "fdem3d")
             throw std::runtime_error("'law' (bulk constitutive law) is "
@@ -296,7 +310,32 @@ int main(int argc, char** argv) {
             cfg.seal();
         }
 
-        long nSteps = (long)std::ceil(solver->duration() / solver->dt());
+        // ---- pas de temps representable (2026-09-06) ---------------------
+        // Deuxieme filet, apres la validation de finitude du materiau : un dt
+        // nul ou non fini faisait (long)ceil(T/0) = (long)+inf, conversion
+        // HORS BORNES (comportement indefini) qui vaut -2147483648 sur MSVC.
+        // La boucle en temps ne tournait alors JAMAIS et le programme sortait
+        // en SUCCES, resume complet a l'appui (« dt = 0 s, steps =
+        // -2147483648 », puis « peak |sigma| = 0 / 0 MPa ») : un script de
+        // campagne enregistrait le run comme termine. Ici on refuse, en
+        // nommant la cause.
+        const double dt0 = solver->dt();
+        if (!(dt0 > 0.0) || !std::isfinite(dt0))
+            throw std::runtime_error("pas de temps non representable (dt = "
+                + std::to_string(dt0) + " s) : la boucle en temps ne "
+                "tournerait jamais et le run sortirait en succes avec des "
+                "champs nuls. Verifier E, rho et nu (une vitesse d'onde "
+                "infinie donne dt = 0).");
+        const double nStepsD = std::ceil(solver->duration() / dt0);
+        // borne : nSteps est un `long` (32 bits sur MSVC), le depassement de
+        // conversion serait le meme comportement indefini qu'on ferme ici.
+        if (!(nStepsD >= 1.0) || nStepsD > 2.0e9)
+            throw std::runtime_error("nombre de pas non representable ("
+                + std::to_string(nStepsD) + " pour T = "
+                + std::to_string(solver->duration()) + " s et dt = "
+                + std::to_string(dt0) + " s) : le pas de temps ou la duree "
+                "sont incoherents.");
+        long nSteps = (long)nStepsD;
         long outEvery  = std::max(1L, nSteps / std::max(1, nFrames));
         long histEvery = std::max(1L, nSteps / 2000);
 
