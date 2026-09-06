@@ -28,6 +28,7 @@
 #include "rockim/KeysByMode.hpp"
 #include "rockim/PotentialContact.hpp"
 #include "rockim/Solver.hpp"
+#include "rockim/ThermoBench.hpp"
 #include "rockim/ToolSignorini.hpp"
 #include "rockim/ToolPdc3d.hpp"
 
@@ -39,7 +40,10 @@ int main(int argc, char** argv) {
                      "       rockim selftest-saksala2011 [out.csv]\n"
                      "       rockim selftest-cdp [out.csv]\n"
                      "       rockim selftest-fixed [out.csv]\n"
-                     "       rockim matpoint <cfg> [out.csv]\n";
+                     "       rockim matpoint <cfg> [out.csv]\n"
+                     "       rockim thermobench <loi> [out.csv] "
+                     "[--ref <loi>] [--deck <cfg>] [--draws N] [--seed S] "
+                     "[--max-rows N]\n";
         return 1;
     }
 
@@ -81,6 +85,43 @@ int main(int argc, char** argv) {
             std::cout << "[rockim] fixed-crack selftest traces written to " << csv
                       << "\n";
             return rc;
+        }
+        // Banc THERMODYNAMIQUE generique (2026-09-06) : symetrie majeure de la
+        // tangente, positivite de la dissipation, reduction, objectivite,
+        // continuite — sur des etats et des chemins TIRES AU HASARD (graine
+        // fixe). Ecrit AVANT la loi dfhplus pour prouver le cadre. Ne touche
+        // a aucune loi : il n'utilise que MatLaw::stress. Voir
+        // include/rockim/ThermoBench.hpp et src/ThermoBench.cpp.
+        if (std::string(argv[1]) == "thermobench") {
+            if (argc < 3)
+                throw std::runtime_error(
+                    "usage: rockim thermobench <loi> [out.csv] [--ref <loi>] "
+                    "[--deck <cfg>] [--draws N] [--seed S] [--max-rows N]");
+            ThermoBenchOpts opt;
+            opt.law = argv[2];
+            opt.csv = "thermobench_" + opt.law + ".csv";
+            int i = 3;
+            if (argc > 3 && std::string(argv[3]).rfind("--", 0) != 0) {
+                opt.csv = argv[3];
+                i = 4;
+            }
+            for (; i < argc; ++i) {
+                std::string a = argv[i];
+                auto need = [&](const char* what) {
+                    if (i + 1 >= argc)
+                        throw std::runtime_error(std::string("thermobench: ")
+                                                 + what + " attend une valeur");
+                    return std::string(argv[++i]);
+                };
+                if (a == "--ref")            opt.refLaw = need("--ref");
+                else if (a == "--deck")      opt.deck = need("--deck");
+                else if (a == "--draws")     opt.nDraws = std::stoi(need("--draws"));
+                else if (a == "--seed")      opt.seed = std::stoull(need("--seed"));
+                else if (a == "--max-rows")  opt.maxRows = std::stoi(need("--max-rows"));
+                else throw std::runtime_error("thermobench: option inconnue '"
+                                              + a + "'");
+            }
+            return thermoBench(opt);
         }
         if (std::string(argv[1]) == "matpoint") {
             if (argc < 3)

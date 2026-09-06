@@ -55,6 +55,7 @@ tourne en sériel sans).
 ./rockim <config.cfg> [dossier_sortie]     # dossier par défaut : clé outputDir, sinon "out"
 ./rockim selftest-saksala2011 [out.csv]    # rejoue le harnais VUMAT (réf. Fortran, 8e-14)
 ./rockim selftest-dpdfh       [out.csv]    # idem DP-DFH (4.7e-12, tirages bit-identiques)
+./rockim thermobench <loi>    [out.csv]    # banc THERMODYNAMIQUE générique (§3.5)
 ```
 
 Le run affiche : bannière d'init (éléments, joints, dt, nombre de pas), progression
@@ -84,7 +85,85 @@ Références en dur (baseline Linux 2026-08-11 — re-baseliner une fois sous MS
 tolérances par nature de test, contrôles à charge nulle et dampWork ≤ 0 inclus.
 **À lancer après toute modification du code.**
 
-### 3.4 Interface graphique
+### 3.4 Banc thermodynamique des lois — `rockim thermobench`
+
+```bash
+./rockim thermobench <loi> [sortie.csv] [--ref <loi>] [--deck <cfg>] \
+                           [--draws N] [--seed S] [--max-rows N]
+```
+
+Vérifie **au point matériel**, sur des états et des chemins **tirés au hasard**
+(graine fixe, 12 000 tirages par défaut, < 1 s à `OMP_NUM_THREADS = 4`), les
+cinq propriétés qu'une loi construite sur une **énergie libre postulée unique**
+doit posséder. Écrit le 2026-09-06, **avant** la loi `dfhplus` : c'est
+l'instrument de mesure, il devait exister avant la mesure. Il n'utilise que
+l'interface publique `MatLaw::stress` — **aucune loi n'est modifiée**.
+Sources : `include/rockim/ThermoBench.hpp`, `src/ThermoBench.cpp` (l'en-tête du
+`.cpp` porte la définition complète de chaque test et de ses tolérances).
+
+| test | ce qui est mesuré | tolérance | verdict |
+|---|---|---|---|
+| **1** symétrie majeure | `max\|C_ab − C_ba\| / max\|C\|`, `C` par différences finies **centrées** (h = 1e-8) sur les 6 composantes, depuis une **copie** de l'état, **à temps gelé** | 1e-4 | seulement sur les incréments **élastiques** (signature irréversible inchangée au bit) ; les incréments inélastiques sont comptés à part — un écoulement **non associé** donne une tangente non symétrique, et c'est de la physique |
+| **2** dissipation ≥ 0 | `D = σ_mid : dε − d(ρψ)`, `ρψ` estimée par **sonde de décharge élastique à temps gelé** (voir ci-dessous) | rel. 1e-6 | incréments « contaminés » (un mécanisme bouge pendant la sonde) et « non relâchés » exclus et comptés |
+| **3** réduction | avec `--ref <loi>` : les deux lois sur les **mêmes** chemins, écart relatif ; sans : réduction **élastique** (amplitude ≤ 0,3 f_t/E, σ doit valoir λ tr(ε) I + 2G ε) | 1e-12 | c'est le test qui prouvera qu'une loi neuve à **paramètres neutres** rend *exactement* la loi de référence |
+| **4** objectivité | rotation rigide superposée `ε → Q ε Qᵀ` (même `x0`) : écart sur les **invariants** (contraintes principales triées) rapporté à max\|σ\| ; l'écart **tensoriel** `‖σ_tourné − Q σ Qᵀ‖` est donné en information | 1e-8 | |
+| **5** continuité | `r = ‖dσ‖ / (M ‖dε‖)`, `M = max(3K, 2G)`, sur l'incrément entier **puis découpé en 8** : un transitoire raide voit `r` chuter, une vraie discontinuité la garde | r ≤ 1,05 sur la valeur **raffinée** | note si un mécanisme s'est activé sur l'incrément |
+
+**Tirages.** Six familles en parts égales — traction, compression uniaxiale,
+**triaxial 0–300 MPa**, cisaillement, chemins **non coaxiaux** (les directions
+principales tournent en cours de chemin), états **fortement endommagés**
+(pré-charge poussée, D atteint 0,9999). Chaque tirage porte son propre `dt`
+(log-uniforme 1e-9 – 1e-5 s), son propre `lc` (0,5 – 2 mm), sa propre position
+`x0` (donc son propre tirage de Weibull là où la loi en fait) et un repère
+aléatoire uniforme. Un générateur **par tirage** : le résultat est
+**indépendant du nombre de fils** (vérifié : CSV identique à 1, 4 et 8 fils).
+
+**La sonde d'énergie libre, et sa limite.** Aucune loi du dépôt n'expose son
+énergie libre. Le banc l'estime en déchargeant l'état, sur une copie et à temps
+gelé, dans la direction `d = −(1+ν)/E σ + ν/E tr(σ) I` (pour la loi élastique
+elle ramène exactement à ε = 0), par pas de τ = 1/16 jusqu'au changement de
+signe de `σ:d`, et prend `ρψ = −∫ σ:dε`. Quatre limites, toutes instrumentées :
+**(L1)** seule la part **récupérable** est mesurée, donc la grandeur rendue vaut
+`D̃ = D + d(ρψ_stockée)/dt ≥ D` : une valeur **négative prouve** une dissipation
+négative (pas de faux positif de ce chef), mais le test peut **manquer** une
+violation ; **(L2)** si un mécanisme évolue pendant la sonde, l'incrément est
+marqué *contaminé* et exclu ; **(L3)** si l'état n'est pas relâché (τ > 4, ou
+projection qui s'annule alors que ‖σ‖ > 15 % de ‖σ₀‖ — la contrainte a *tourné*
+sous une décharge de direction figée), incrément *non relâché*, exclu ;
+**(L4)** pour une loi visqueuse la sonde rend le potentiel **à temps gelé**, et
+la surcontrainte visqueuse apparaît intégralement dans `D̃`, où elle est
+positive en charge.
+
+**Carte matériau.** Red Bohus par défaut (E 77,66 GPa, ν 0,29, f_t 9 MPa,
+c 22,77 MPa, φ 50,4°, G_f 100 J/m², **érosion désarmée** : `erodeD = 2`,
+`erodeEpv = 0` — le banc mesure la loi, pas la suppression d'élément).
+`--deck <cfg>` ajoute un deck **après** celle-ci (dernière valeur gagnante),
+pour changer la carte ou poser des clés de loi. Le deck effectivement utilisé
+est laissé à côté du CSV sous `<sortie.csv>.deck.cfg` — c'est la trace de la
+carte exacte du run, à joindre à toute mesure citée.
+
+**Code de retour** : 0 sans violation, 1 avec, 2 si la loi ne se construit pas.
+Le CSV liste chaque violation retenue (jusqu'à `--max-rows`, défaut 20 000)
+avec l'état complet (ε, σ, D, ε_v^p), la valeur, la tolérance et deux colonnes
+`aux1/aux2` en **absolu** (test 2 : dissipation et ρψ en J/m³ ; test 5 : ‖dσ‖
+en Pa et ‖dε‖).
+
+#### 3.4.1 Les deux contrôles du banc (2026-09-06)
+
+Un banc qui ne réussit rien, ou qui n'échoue jamais, ne mesure rien. Les deux
+bornes ont donc été prises :
+
+- **`thermobench elastic` → PASS**, 0 violation sur les cinq tests, toutes les
+  mesures au bruit machine (symétrie 1,8e-10, dissipation −8,8e-10 relatif soit
+  −2,0e-8 J/m³, objectivité 5,5e-15, réduction 0,0 **exactement**, continuité
+  r = 0,999998 ≤ 1). Le banc sait donc reconnaître une loi thermodynamiquement
+  exacte.
+- **`thermobench dpdfh` → ÉCHEC**, code 1. Les chiffres sont au §8, point 11.
+- Contrôle du test 3 seul : `--ref dpdfh` sur `dpdfh` rend **0 / 480 000, pire
+  écart 0,0 exactement** ; `--ref elastic` rend **125 567 / 480 000**. Le test
+  discrimine.
+
+### 3.5 Interface graphique
 
 ```bash
 python tools/rockim_gui.py     # tkinter+matplotlib : édition de configs, lancement,
@@ -2345,6 +2424,46 @@ cible ft exacte). **UCS par platines** : `scenario = tension`, `loading = platen
       4 WARNING) ; **partie C** : rejeu des six témoins depuis leur `config_effective.cfg` → rc 0 et `history.csv`
       bit-identique ; partie B : les 20 tests les plus courts du tier fast (rc 0 + `config_effective.cfg` cohérent :
       actives = n + k − f, commentées = m).
+11. **Ce que le banc thermodynamique mesure sur les lois du dépôt (2026-09-06, `rockim thermobench`, §3.4).**
+    12 000 tirages, graine 20260906, carte Red Bohus, érosion désarmée. **Aucune loi n'a été modifiée** :
+    ce sont des mesures, pas des défauts à corriger dans l'immédiat — elles fixent la barre pour la loi
+    `dfhplus` à venir. `elastic` **passe** (0 violation, tout au bruit machine) : le banc n'est pas un
+    détecteur de fumée.
+
+    | loi | 1 symétrie (élastique) | 2 dissipation ≥ 0 | 3 réduction | 4 objectivité | 5 continuité (raffinée) |
+    |---|---|---|---|---|---|
+    | `elastic` | 0 / 12 000 (1,8e-10) | 0 / 120 000 | 0 (0,0 exact) | 0 (5,5e-15) | 0 (r ≤ 0,999998) |
+    | `dpdfh` | **0** / 3 574 (2,9e-11) | **7 172 / 59 483** (12,1 %) | 0 (7,7e-16) | 0 (5,1e-14) | **84 / 120 000**, r = 9,08 |
+    | `dpr` | 0 / 2 951 | 2 374 / 75 947 | 0 | 0 (3,5e-10) | 280, r = 1,31 |
+    | `mc` | 0 / 5 290 | 4 / 119 958 | 0 | 0 (1,3e-13) | 310, r = 1,31 |
+    | `saksala` | 0 / 1 789 | 1 873 / 53 719 | 0 | **2 354** (1,3e-3) | 1 649, r = 5,90 |
+    | `saksala2011` | **438 / 4 712** (0,40) | 2 523 / 42 126 | 0 (3,5e-15) | 2 (4,9e-8) | 916, r = 16,5 |
+    | `cdp` | 0 / 4 025 | 6 309 / 119 748 | 0 | 0 (3,3e-13) | **0** (r ≤ 0,999998) |
+
+    Lectures, dans l'ordre d'importance :
+    - **DP-DFH produit de l'énergie sur les chemins non coaxiaux.** Les cinq plus gros déficits du test 2
+      sont *tous* de la famille **non coaxiale**, à D = 0,9999 : **−15,2 kJ/m³** au pire (tirage 3538,
+      pas 9, ℓ_c = 1,15 mm), soit **17,6 % de G_f/ℓ_c**, pour ρψ = 31,7 kJ/m³. Sur les 7 172 violations,
+      **1 124 dépassent 1 % de G_f/ℓ_c** (médiane 1,72 kJ/m³, p90 3,87). C'est **exactement** la pathologie
+      que la relecture adverse de `loi_DFH_plus.pdf` annonçait : un repère d'endommagement **figé** que les
+      directions principales quittent en cours de chemin, dans un cadre où la contrainte n'est pas la
+      dérivée d'un potentiel unique. C'est le motif chiffré de la refonte sur énergie libre postulée.
+    - **DP-DFH a une discontinuité de σ(ε) à saturation de l'endommagement en traction.** Les 84 cas sont
+      des états D = 0,98–0,9999 ; le pire (tirage 6192) saute **109,3 MPa** sur un incrément de
+      ‖dε‖ = 6,5e-5 dont la prédiction élastique vaut 12 MPa. **Découper l'incrément en 8 ne change rien**
+      (9,0791 → 9,0792) : c'est une discontinuité de la loi, pas un transitoire de pas de temps.
+    - **La tangente élastique de DP-DFH est symétrique** (0 / 3 574, écart 2,9e-11) : le défaut n'est pas
+      dans l'élasticité endommagée mais dans le **couplage** des mécanismes. En revanche la tangente
+      élasto-plastique est asymétrique dans 2 069 cas sur 8 426, jusqu'à **41 %** — c'est l'écoulement
+      **non associé** (β = 51,7° contre ψ = 15°), physique attendue, comptée à part et **sans verdict**.
+    - **DP-DFH est objectif et se réduit exactement à l'élasticité** : 0 / 480 000 (5e-14) et 0 / 96 000
+      (7,7e-16). Le hachage spatial de Weibull ne casse pas l'objectivité.
+    - `saksala2011` est la seule loi à violer la symétrie de la tangente **sans qu'aucune variable
+      dissipative n'ait bougé** (438 cas, jusqu'à 0,40) : sa contrainte dépend de l'**état d'essai**
+      (confinement gelé pour la dégradation de cohésion) par un chemin que la signature d'état ne voit
+      pas. À confirmer avant d'en conclure quoi que ce soit.
+    - `cdp` ne viole **que** le test 2, et une seule fois de façon significative : c'est la loi la mieux
+      posée du lot sur les quatre autres critères.
 
 ## 9. Post-traitement fourni
 

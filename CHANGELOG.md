@@ -7,6 +7,48 @@ reçoit les lignes exigées par les règles déjà en vigueur — dont **toute a
 
 ## [Non publié]
 
+### Ajouté — `rockim thermobench` : banc thermodynamique générique des lois (2026-09-06)
+
+Étape 1 du chantier **DFH+**. La relecture adverse de
+`CONTINUUM/loi_dfh_plus/loi_DFH_plus.pdf` (66 p., 146 équations) a établi que le cadre de DP-DFH est
+**sur-déterminé** — contrainte effective à la Lemaitre *plus* équivalence en énergie *plus* énergie
+libre écrite indépendamment : trois énoncés pour deux libertés — et que plusieurs dissipations peuvent
+y devenir négatives. Décision de Fernando : reconstruire la loi sur une **énergie libre postulée
+unique** (σ = ∂ρψ/∂ε^e, Y_k = −∂ρψ/∂D_k, décomposition spectrale de la déformation). Un tel cadre se
+**prouve** au point matériel — donc le banc s'écrit **avant** la loi, comme l'exige la règle « banc
+court avant run long ».
+
+- **Nouveaux fichiers** `include/rockim/ThermoBench.hpp` et `src/ThermoBench.cpp`, câblés dans
+  `main.cpp` à côté des `selftest-*` et ajoutés à `CMakeLists.txt`. **Aucune loi n'est touchée** : le
+  banc n'utilise que `MatLaw::stress(eps, MatState&, dt, lc)`. `dpdfh` est inchangé — code, clés et
+  résultats.
+- **Cinq tests** sur des états et chemins **tirés au hasard** (graine fixe, 12 000 tirages par défaut,
+  six familles : traction, compression, **triaxial 0–300 MPa**, cisaillement, chemins **non
+  coaxiaux**, états **fortement endommagés** jusqu'à D = 0,9999 ; dt 1e-9 – 1e-5 s, ℓ_c 0,5 – 2 mm,
+  repère et position aléatoires) : (1) **symétrie majeure** de la tangente numérique centrée, avec
+  séparation des incréments élastiques (verdict) et inélastiques (information — un écoulement non
+  associé est légitimement asymétrique) ; (2) **positivité de la dissipation**, ρψ estimée par sonde
+  de **décharge élastique à temps gelé**, avec détection et exclusion des incréments contaminés ou non
+  relâchés ; (3) **réduction** — `--ref <loi>` compare deux lois sur les mêmes chemins à 1e-12, sans
+  `--ref` c'est la réduction élastique ; (4) **objectivité** sous rotation rigide superposée ;
+  (5) **continuité** — ‖dσ‖ / (M‖dε‖) sur l'incrément puis découpé en 8. Détail, tolérances et
+  **limites explicites de l'estimateur d'énergie libre** : en-tête de `src/ThermoBench.cpp` et
+  DOCUMENTATION §3.4.
+- **Déterminisme** : un générateur par tirage → CSV **identique à 1, 4 et 8 fils** (vérifié).
+  0,7 s pour 12 000 tirages à `OMP_NUM_THREADS = 4`.
+- **Les deux contrôles du banc.** `thermobench elastic` → **PASS**, 0 violation, tout au bruit machine
+  (réduction 0,0 exactement, continuité r ≤ 0,999998). `thermobench dpdfh` → **ÉCHEC**, code 1 :
+  **7 172 / 59 483** violations de dissipation (12,1 %), dont **1 124 dépassent 1 % de G_f/ℓ_c**, pire
+  cas **−15,2 kJ/m³ = 17,6 % de G_f/ℓ_c** sur un chemin **non coaxial** à D = 0,9999 ; et **84 /
+  120 000** violations de continuité, pire cas un saut de **109,3 MPa** en un incrément, **inchangé au
+  raffinement ×8**. Objectivité et réduction élastique **exactes** (5e-14, 8e-16) ; tangente
+  **élastique symétrique** (2,9e-11) — le défaut est dans le couplage des mécanismes, pas dans
+  l'élasticité endommagée. Contrôle du test 3 : `--ref dpdfh` sur `dpdfh` → 0 / 480 000, écart 0,0
+  exactement ; `--ref elastic` → 125 567 / 480 000. Relevé des sept lois du dépôt : DOCUMENTATION §8,
+  point 11.
+- **Bit-identité** : `python tools/bitid.py --exe build/rockim.exe --threads 4` → **8/8 IDENTIQUE**
+  (le banc n'ajoute qu'une commande ; ancre inchangée).
+
 ### Ajouté — port de la branche orpheline `insertion-pointe` (décision 3)
 
 Quatre commits de `insertion-pointe` (2ead636), jamais fusionnés, dont **aucune des six clés

@@ -90,6 +90,7 @@ add_executable(rockim
   src/MatLaw.cpp
   src/Tessellation.cpp
   src/Tessellation3.cpp
+  src/ThermoBench.cpp
   src/ToolPdc3d.cpp
   src/VtkWriter.cpp
 )
