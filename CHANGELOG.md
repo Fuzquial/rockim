@@ -7,6 +7,110 @@ reçoit les lignes exigées par les règles déjà en vigueur — dont **toute a
 
 ## [Non publié]
 
+### Corrigé — lot A/B du guide de correction du 2026-09-06
+
+Trois verrous étaient annoncés ; **deux sont levés**, le troisième (`CDP-06`,
+tessellation portable) ne l'est pas — son test d'acceptation demande une seconde
+plateforme. Le **ré-ancrage unique** des empreintes attend donc `CDP-06` : en
+l'état, `python tools/bitid.py --exe rockim_fix.exe` rend **5/8**, les trois cas
+`fem3d` ayant changé par les seules colonnes ajoutées (forces de pic inchangées
+à la précision affichée : 7916,75 / 6775,14 / 30390,2 N), les cinq cas `fdem`
+étant restés **identiques**.
+
+#### `HET-03` — le ressort absorbant avalait le confinement (A1)
+
+`Fem3dSolver` mémorise l'état de référence `uConf_` et le ressort de
+Deeks–Randolph travaille sur `u - uConf` au lieu de `u`.
+
+**Le correctif du guide, pris à la lettre, ne passe pas son propre test.** Figer
+`uConf_` à `confineGaugeTime` en laissant le ressort actif *avant* ne change
+rien à la jauge (mesuré : toujours −75,31 MPa) : le ressort a déjà mangé sa part
+pendant la rampe, et l'état figé est l'état dégradé. Il faut que le ressort soit
+**inerte pendant la mise en pression** — `uConf_` suit `u_` tant que
+`confineGaugeTime` n'est pas franchi, puis se fige. C'est aussi ce que dit la
+physique : le massif environnant subit la même compression statique que le bloc.
+
+- **Test d'acceptation : PASSE.** Banc T3 (`B1_T3_springs_DOIT_ECHOUER.cfg`,
+  bloc 48 × 48 × 32, P = 100 MPa, sans outil) avec `absorbSpringFactor = 1` :
+  jauge **−99,983 MPa** contre une consigne de −100, identique au témoin sans
+  ressorts (−99,983). Avant : −75,31 MPa.
+- **Non-régression à P = 0 : PASSE.** Percussion 30 µs, `absorbing = all`,
+  `absorbSpringFactor = 1`, `confiningPressure = 0` : 625 lignes d'historique,
+  **zéro écart** sur les 27 colonnes préexistantes, trois VTU **bit-identiques**
+  au binaire de référence. La garde est explicite : sans confinement,
+  `uConfSet_` passe à vrai au premier pas avec `uConf_ = u_ = 0`.
+- L'avertissement « confinement + ressorts : poser absorbSpringFactor = 0 » est
+  levé dans le solveur, et le refus correspondant dans
+  `etude_lois_fem/make_cfgs.py` aussi ; les deux `absorbSpringFactor = 0` codés
+  en dur y sont retirés (le défaut du code, 1, redevient le défaut des decks).
+
+#### `HET-15` — le bilan d'énergie du bloc (A2)
+
+Les deux compteurs de `Fdem3dSolver` sont portés en `fem3d` — énergie élastique
+**stockée** dans les ressorts (sur `u - uConf`, cohérent avec A1) et travail
+**cumulé** des amortisseurs de Lysmer — **plus un troisième que le guide n'avait
+pas identifié** : le travail de l'amortissement local `dampingLocal`.
+
+Sur le run de référence (`matrice_v2/C_T1_R_P000`, 300 µs, 98 342 tétraèdres),
+rejoué ici et reproduisant le symptôme au millième près :
+
+| postes comptés | résidu | % du travail de l'outil |
+|---|---|---|
+| dissipations de loi seules (état antérieur) | 3,069 J | **21,29 %** |
+| + ressorts (0 J) et Lysmer (2,271 J) | 0,798 J | 5,54 % |
+| + amortissement local (0,168 J) | 0,630 J | **4,37 %** |
+
+**Le critère d'acceptation du guide (résidu < 1 %) n'est pas atteint.** Il reste
+0,63 J sans compteur, et l'explication la plus plausible est l'énergie élastique
+encore **stockée** dans le bloc à 300 µs — un quatrième poste, absent des deux
+solveurs. À traiter séparément.
+
+Trois colonnes sont ajoutées à `history.csv`, **en toute fin de ligne et sous
+condition** : `uSpring`, `wLysmer` si `absorbing` est posé, `wDampLocal` si
+`dampingLocal > 0`. Les decks de `bench_phases` n'emploient ni l'un ni l'autre :
+leur `history.csv` reste **bit-identique**, contrairement à ce que le guide
+annonçait.
+
+#### Lot B — les six items triviaux
+
+- **B1 (`CDP-04`)** — `Material.hpp` : les contrôles de signe passent **avant**
+  le contrôle de finitude de `sqrt(E/rho)`. *Réserve mesurée* : le symptôme
+  décrit (message accusant `rho` alors que `E` est négatif) **n'est pas
+  reproductible** au HEAD — les deux binaires rendent
+  `Material (global): E must be > 0`, et `bench_phases/erreurs.py` donne
+  **16/16 avant comme après**. La correction reste juste sur le fond (les signes
+  avant les grandeurs dérivées) ; elle ne corrige pas un symptôme observable.
+- **B2 (`CDP-03`)** — `ThermoBench.cpp` : la déformation du pas est conservée
+  (`epsSeq`) et versée dans les colonnes `e11..e13` du test 4, à la place de
+  `sgA[k]` qui est une **contrainte**. *Réserve* : aucune loi ne produit
+  aujourd'hui de violation du test 4, donc aucune ligne n'exerce ce chemin.
+- **B3 (`ORCH-02`, `HET-16`)** — `--help` et `-h` sont reconnus (ils rendaient
+  `Config: cannot open '--help'`), et l'usage liste les **onze** sous-commandes
+  `selftest-*` au lieu de quatre.
+- **B4 (`CDP-15`)** — sans objet : `LISEZ_MOI.md`, `CHANGELOG.md`,
+  `DOCUMENTATION_rockim.md` et `bench_phases/LISEZ_MOI.md` disent déjà **seize**.
+  Seul le message du commit `10344ec` dit quatorze, et il est immuable.
+- **B5 (`CDP-16`)** — les cinq `*.w0` sont retirés du dépôt (`git rm --cached`,
+  fichiers conservés sur disque) et `*.w0` est ajouté au `.gitignore`.
+- **B6** — `FemSolver::Elem::B` reçoit un initialiseur par défaut (les quatre
+  `missing field 'B' initializer` de clang), `oxm` et `kbn_` inutilisés sont
+  retirés. *Non fait* : `Tessellation.cpp:40 polyArea`, dont la suppression n'est
+  pas sûre — une lambda homonyme la masque plus bas et trois sites l'appellent
+  hors de la portée de la lambda. À reprendre sous clang, seul compilateur qui
+  lève ces avertissements (MSVC n'en émet aucun).
+
+#### Lot C — `dfhplus` : la prémisse ne tient plus
+
+Le guide écarte `dfhplus` parce que `thermobench dfhplus` rendrait **ÉCHEC** avec
+dix violations (pire cas 8,88·10⁻²). **Non reproductible au HEAD** : la commande
+rend **PASS, zéro violation**, y compris avec `--draws 400 --seed 7`. Les huit
+commits qui séparent le tag `g0-0.1.0` du HEAD contiennent la relecture adverse
+`3277033` (« un défaut MAJEUR, quatre mineurs »), qui l'a vraisemblablement
+corrigé. La variante V3 n'a donc pas lieu d'être codée sur ce motif ; la
+saturation de l'endommagement de traction sous compression triaxiale, elle, n'a
+pas été recontrôlée.
+
+
 ### Ajouté — matériau PAR PHASE en éléments finis (`mode = fem3d`, 2026-09-06)
 
 Capacité **opt-in** : sans la clé `phases`, le comportement est **strictement inchangé** (le banc

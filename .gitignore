@@ -117,6 +117,7 @@ old/
 
 # --- sauvegardes manuelles de source : git EST la sauvegarde ---
 *.bak
+*.w0
 *.bak_*
 *.orig
 versions/v*/

@@ -34,17 +34,45 @@
 
 using namespace rockim;
 
+// B3 / ORCH-02 et HET-16 (2026-09-06). Deux defauts corriges ici : « --help »
+// etait traite comme un chemin de deck (« Config: cannot open '--help' »)
+// alors que le LISEZ_MOI le propose comme controle de bon fonctionnement ; et
+// l'usage n'annoncait que quatre des ONZE sous-commandes selftest-*.
+static void usage(std::ostream& os) {
+    os << "usage: rockim <config.cfg> [output_dir]\n"
+          "       rockim --help | -h\n"
+          "\n"
+          "  bancs point-materiel et geometriques (onze sous-commandes) :\n"
+          "       rockim selftest-saksala2011 [out.csv]\n"
+          "       rockim selftest-mc          [out.csv]\n"
+          "       rockim selftest-triax       [out.csv]\n"
+          "       rockim selftest-cdp         [out.csv]\n"
+          "       rockim selftest-dpdfh       [out.csv]\n"
+          "       rockim selftest-dfhplus     [out.csv]\n"
+          "       rockim selftest-fixed       [out.csv]\n"
+          "       rockim selftest-toolcontact [out.csv]\n"
+          "       rockim selftest-pdc3d       [out.csv]\n"
+          "       rockim selftest-potential2d [out.csv]\n"
+          "       rockim selftest-potential3d [out.csv]\n"
+          "\n"
+          "  pilotes :\n"
+          "       rockim matpoint <cfg> [out.csv]\n"
+          "       rockim thermobench <loi> [out.csv] "
+          "[--ref <loi>] [--deck <cfg>] [--draws N] [--seed S] "
+          "[--max-rows N] [--probe]\n";
+}
+
 int main(int argc, char** argv) {
     if (argc < 2) {
-        std::cerr << "usage: rockim <config.cfg> [output_dir]\n"
-                     "       rockim selftest-saksala2011 [out.csv]\n"
-                     "       rockim selftest-cdp [out.csv]\n"
-                     "       rockim selftest-fixed [out.csv]\n"
-                     "       rockim matpoint <cfg> [out.csv]\n"
-                     "       rockim thermobench <loi> [out.csv] "
-                     "[--ref <loi>] [--deck <cfg>] [--draws N] [--seed S] "
-                     "[--max-rows N] [--probe]\n";
+        usage(std::cerr);
         return 1;
+    }
+    {
+        const std::string a1(argv[1]);
+        if (a1 == "--help" || a1 == "-h") {
+            usage(std::cout);
+            return 0;
+        }
     }
 
     std::string outDir;                    // connu apres la lecture du deck

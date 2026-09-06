@@ -185,6 +185,20 @@ private:
     std::vector<Elem> el_;
     std::vector<BFace> exterior_;
     std::vector<Eigen::Vector3d> cAbs_, kAbs_;
+    // A1 / HET-03 (2026-09-06). Le ressort de Deeks-Randolph ne doit s'opposer
+    // qu'a la part DYNAMIQUE rayonnee, pas au deplacement statique produit par
+    // la pression de confinement suiveuse. On memorise donc l'etat de
+    // reference a confineGaugeTime et le ressort travaille sur (u - uConf).
+    // A confinement nul, uConf_ reste nul : le comportement est inchange.
+    std::vector<Eigen::Vector3d> uConf_;   // deplacement au temps de jauge
+    bool uConfSet_ = false;
+    // A2 / HET-15 (2026-09-06). Les deux postes que Fdem3dSolver comptait et
+    // que fem3d ignorait : l'energie elastique STOCKEE dans les ressorts de
+    // champ lointain, et le travail CUMULE retire par les amortisseurs de
+    // Lysmer. Sans eux, 21,3 % du travail de l'outil restaient non attribues.
+    bool absOn_ = false;                   // frontieres absorbantes actives
+    double lysWork_ = 0.0;                 // travail cumule des amortisseurs [J]
+    double locWork_ = 0.0;                 // travail cumule de dampingLocal [J]
 
     Tool3 tool_;
     double toolKE0_ = 0.0;

@@ -1188,7 +1188,6 @@ inline void updatePoint(double dt, const V6& deps, const Props& P,
     double alam = P.E * P.nu / ((1.0 + P.nu) * (1.0 - 2.0 * P.nu));
     double tanb = std::tan(P.betaDeg * M_PI / 180.0);
     double tanp = std::tan(P.psiDeg * M_PI / 180.0);   // ecrase si psiVar
-    double oxm = 1.0 / P.m;
 
     if (st.dead) {
         for (int j = 0; j < 6; ++j) snomOut[j] = 0.0;

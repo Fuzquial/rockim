@@ -94,7 +94,6 @@ private:
 
     // contact / bond micro-parameters
     double knC_ = 0, ksC_ = 0, mu_ = 0.5, xiC_ = 0.1;
-    double kbn_ = 0;                  // bond modulus per length: E / L0 (per bond, via knA)
     double ksRatio_ = 0.4;
     double tanPhiB_ = 0;
     double lambda_ = 1.0;             // bond radius factor: Rb = lambda*min(ri,rj)

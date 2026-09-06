@@ -690,8 +690,13 @@ void runDraw(int idx, const Draw& d, const Card& c, const MatLaw& law,
         sa.x0 = d.x0; sb.x0 = d.x0;
         double smax = 1.0e-30;
         std::vector<M3> sgA, sgB;
+        // B2 / CDP-03 (2026-09-06) : la deformation du pas doit etre conservee
+        // pour etre versee dans les colonnes e11..e13 du CSV. Sans elle on y
+        // ecrivait sgA[k], une CONTRAINTE, d'ou des valeurs de 1e7 a 1e8.
+        std::vector<M3> epsSeq;
         sgA.reserve(d.nPre + d.nPath);
         sgB.reserve(d.nPre + d.nPath);
+        epsSeq.reserve(d.nPre + d.nPath);
         M3 e = M3::Zero(), rot = M3::Identity();
         for (int k = 1; k <= d.nPre + d.nPath; ++k) {
             if (k <= d.nPre) {
@@ -708,6 +713,7 @@ void runDraw(int idx, const Draw& d, const Card& c, const MatLaw& law,
             M3 b = law.stress(Qo * e * Qo.transpose(), sb, d.dt, d.lc);
             sgA.push_back(a);
             sgB.push_back(b);
+            epsSeq.push_back(e);
             smax = std::max(smax, a.cwiseAbs().maxCoeff());
         }
         for (std::size_t k = 0; k < sgA.size(); ++k) {
@@ -720,7 +726,7 @@ void runDraw(int idx, const Draw& d, const Card& c, const MatLaw& law,
             o.objTen = std::max(o.objTen, et);
             if (ei > tolObj) {
                 o.objBad++;
-                push(4, (int)k, ei, tolObj, 0, 0, sgA[k], sgB[k], sa);
+                push(4, (int)k, ei, tolObj, 0, 0, epsSeq[k], sgB[k], sa);
             }
         }
     }

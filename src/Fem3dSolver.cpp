@@ -1554,12 +1554,11 @@ void Fem3dSolver::setupConfinement() {
     std::string cf = cfg_.gets("confineFaces", "lateral");
     if (cf != "lateral" && cf != "all")
         throw std::runtime_error("confineFaces must be lateral | all");
-    if (cfg_.gets("absorbing", "none") != "none"
-        && cfg_.getd("absorbSpringFactor", 1.0) > 0.0)
-        std::cout << "[FEM3D] WARNING: confinement + ressorts de Lysmer "
-                     "(absorbSpringFactor > 0) — les ressorts rappellent les "
-                     "faces vers u = 0 et avalent une part de la pression ; "
-                     "poser absorbSpringFactor = 0\n";
+    // L'avertissement « les ressorts avalent une part de la pression » est
+    // leve depuis A1 / HET-03 (2026-09-06) : le ressort est desormais
+    // reference a l'etat statique de confinement (uConf_ fige a
+    // confineGaugeTime), il ne rappelle plus les faces vers u = 0. La
+    // combinaison confinement + absorbSpringFactor > 0 est donc licite.
     double tol = 1e-9;
     for (int k = 0; k < (int)exterior_.size(); ++k) {
         const auto& bf = exterior_[k];
@@ -1658,11 +1657,14 @@ void Fem3dSolver::refreshActiveNodes() {
 void Fem3dSolver::setupBoundaries() {
     cAbs_.assign(X0_.size(), Eigen::Vector3d::Zero());
     kAbs_.assign(X0_.size(), Eigen::Vector3d::Zero());
+    uConf_.assign(X0_.size(), Eigen::Vector3d::Zero());   // A1 / HET-03
+    uConfSet_ = false;
     if (scen_ == Scenario::TENSION) return;
 
     std::string ab = cfg_.gets("absorbing", "none");
     if (ab != "none" && ab != "sides" && ab != "all")
         throw std::runtime_error("absorbing must be none | sides | all");
+    absOn_ = (ab != "none");               // A2 / HET-15 : gouverne les colonnes
 
     // IMPEDANCE DE LYSMER PAR PHASE (2026-09-06, miroir de Fdem3dSolver.cpp
     // l. 2275 « impedances of the LOCAL phase ») : l'amortisseur vaut rho c
@@ -1784,6 +1786,28 @@ void Fem3dSolver::computeStableDt() {
 void Fem3dSolver::step() {
     for (auto& fi : f_) fi.setZero();
     tool_.F.setZero();
+
+    // A1 / HET-03 : etat de reference des ressorts de champ lointain.
+    //
+    // Le massif environnant subit la MEME compression statique que le bloc
+    // quand on etablit le confinement : le ressort ne doit donc rien opposer
+    // pendant la mise en pression, puis s'opposer au seul ecart a l'etat
+    // ainsi atteint. Tant que uConfSet_ est faux, uConf_ suit u_ et la force
+    // de rappel est identiquement nulle ; a confineGaugeTime l'etat est fige
+    // et le ressort reprend son role dynamique.
+    //
+    // Il ne suffit PAS de figer uConf_ a confineGaugeTime en laissant le
+    // ressort actif avant : il aurait deja mange une part de la pression
+    // pendant la rampe, et la jauge lirait l'etat degrade (mesure : -75,3 MPa
+    // pour une consigne de -100, banc T3).
+    //
+    // Sans confinement, uConfSet_ passe a vrai des le premier pas avec
+    // uConf_ = u_ = 0 : les runs P = 0 sont strictement inchanges.
+    if (!uConfSet_) {
+        uConf_ = u_;
+        const bool hasConf = (confP_ > 0.0 || topP_ > 0.0 || bottomP_ > 0.0);
+        if (!hasConf || t_ >= confGaugeT_) uConfSet_ = true;
+    }
 
     elementForces();
     toolContact();
@@ -2271,16 +2295,37 @@ void Fem3dSolver::integrate() {
             u_[i] += dt_ * v_[i];
             continue;
         }
+        double fLoc[3] = {0.0, 0.0, 0.0};   // A2 : force d'amortissement local
         for (int a = 0; a < 3; ++a) {
-            if (kAbs_[i](a) > 0) f_[i](a) -= kAbs_[i](a) * u_[i](a);
-            if (damping_ > 0)
-                f_[i](a) -= damping_ * std::abs(f_[i](a))
-                            * (v_[i](a) > 0 ? 1.0 : (v_[i](a) < 0 ? -1.0 : 0.0));
+            // A1 / HET-03 : le ressort s'oppose au deplacement RELATIF a
+            // l'etat statique de confinement, pas au deplacement total.
+            if (kAbs_[i](a) > 0)
+                f_[i](a) -= kAbs_[i](a) * (u_[i](a) - uConf_[i](a));
+            if (damping_ > 0) {
+                fLoc[a] = -damping_ * std::abs(f_[i](a))
+                          * (v_[i](a) > 0 ? 1.0 : (v_[i](a) < 0 ? -1.0 : 0.0));
+                f_[i](a) += fLoc[a];       // strictement « -= x » : f + (-x)
+            }
         }
         v_[i] += (dt_ / m_[i]) * f_[i];
-        for (int a = 0; a < 3; ++a)
-            if (cAbs_[i](a) > 0)
+        for (int a = 0; a < 3; ++a) {
+            if (cAbs_[i](a) > 0) {
                 v_[i](a) /= 1.0 + dt_ * cAbs_[i](a) / m_[i];
+                // A2 / HET-15 : l'amortisseur agit par division implicite de
+                // la vitesse. L'impulsion retiree sur le pas vaut
+                // m (v_avant - v_apres) = c dt v_apres, donc le travail retire
+                // au bloc est c v_apres^2 dt — avec v_ DEJA divise.
+                lysWork_ += cAbs_[i](a) * v_[i](a) * v_[i](a) * dt_;
+            }
+            // A2, TROISIEME poste (2026-09-06) : l'amortissement local
+            // `dampingLocal` retire lui aussi du travail au bloc, et il
+            // n'etait compte nulle part. Sur le run de reference il pese
+            // 0,80 J, soit 5,5 % du travail de l'outil : les deux compteurs
+            // du guide (ressorts + Lysmer) ne suffisent pas a fermer le
+            // bilan sans lui. Travail = -f_loc . (dt v_apres), positif car
+            // la force est opposee a la vitesse.
+            if (damping_ > 0) locWork_ -= fLoc[a] * dt_ * v_[i](a);
+        }
         if (symY_) v_[i].y() = 0.0;            // tranche plane
         if (symQ_) {                           // quart de bloc : plans de symetrie
             if (X0_[i].x() < 1e-9) v_[i].x() = 0.0;
@@ -2475,13 +2520,23 @@ static void extraHeader(std::ostream& os, bool conf, bool stats) {
                      "nEroSpall,nEroCrush,nEroWc";
 }
 
+// A2 / HET-15 : les deux postes de frontiere, en TOUTE FIN de ligne et
+// seulement si des frontieres absorbantes sont posees — les runs sans
+// `absorbing` gardent un history.csv bit-identique, et les extracteurs
+// positionnels des autres colonnes (wBulk compris) ne bougent pas.
+static void absorbHeader(std::ostream& os, bool on, bool loc) {
+    if (on) os << ",uSpring,wLysmer";
+    if (loc) os << ",wDampLocal";
+}
+
 void Fem3dSolver::historyHeader(std::ostream& os) const {
     const bool conf = confP_ > 0.0 || topP_ > 0.0;
     if (scen_ == Scenario::TENSION) {
         os << "t,sigma,sigmaPeak,nEroded";
         extraHeader(os, conf, stats_);
         if (triax_) os << ",sigZZmid,sigXXmid,sigYYmid,epsAxMid,epsVolMid,epsAxGrip";
-        if (bv_) os << ",wBulk";               // viscosite de volume : derniere colonne
+        if (bv_) os << ",wBulk";               // viscosite de volume
+        absorbHeader(os, absOn_, damping_ > 0);  // A2 / HET-15
         os << "\n";
         return;
     }
@@ -2492,7 +2547,8 @@ void Fem3dSolver::historyHeader(std::ostream& os) const {
           "toolFx,toolX";
     extraHeader(os, conf, stats_);
     if (triax_) os << ",sigZZmid,sigXXmid,sigYYmid,epsAxMid,epsVolMid,epsAxGrip";
-    if (bv_) os << ",wBulk";                   // viscosite de volume : derniere colonne
+    if (bv_) os << ",wBulk";                   // viscosite de volume
+    absorbHeader(os, absOn_, damping_ > 0);    // A2 / HET-15
     os << "\n";
 }
 
@@ -2564,6 +2620,21 @@ void Fem3dSolver::historyRow(std::ostream& os) const {
            << (n > 0 ? uz / (double)n / H_ : 0.0);
     }
     if (bv_) os << "," << wBulk_;              // dissipation cumulee de la viscosite de volume (J)
+    if (absOn_) {
+        // A2 / HET-15 : energie elastique STOCKEE dans les ressorts de champ
+        // lointain, sur le deplacement RELATIF a l'etat de confinement (A1) —
+        // sans cette coherence le compteur inclurait l'energie du confinement
+        // statique. Puis le travail cumule retire par les amortisseurs.
+        double uSpr = 0.0;
+        for (std::size_t i = 0; i < X0_.size(); ++i)
+            for (int a = 0; a < 3; ++a)
+                if (kAbs_[i](a) > 0) {
+                    const double du = u_[i](a) - uConf_[i](a);
+                    uSpr += 0.5 * kAbs_[i](a) * du * du;
+                }
+        os << "," << uSpr << "," << lysWork_;
+    }
+    if (damping_ > 0) os << "," << locWork_;
     os << "\n";
     // sondes de point materiel : une ligne de probes.csv a la meme cadence
     // (history.csv lui-meme n'est pas touche ; rien sans la cle probes)

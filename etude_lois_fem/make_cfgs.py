@@ -62,8 +62,10 @@ def check(keys):
         raise ValueError("capP0 sur dpr exige dprCap = true")
     if keys.get("meridian") == "power" and law not in ("dpr", "saksala"):
         raise ValueError("meridian = power n'existe que pour dpr/saksala")
-    if float(keys.get("confiningPressure", 0)) > 0 and float(keys.get("absorbSpringFactor", 1)) > 0:
-        raise ValueError("confinement : poser absorbSpringFactor = 0")
+    # Le refus « confinement : poser absorbSpringFactor = 0 » est leve
+    # depuis A1 / HET-03 (2026-09-06) : le ressort de champ lointain est
+    # desormais reference a l'etat statique de confinement, il n'avale
+    # plus la pression (banc T3 : -99,98 MPa pour -100 avec les ressorts).
     return True
 
 
@@ -86,13 +88,13 @@ def deck(name, common, overrides, out_dir, comment=""):
 BOHUS = {"rho": 2620, "E": "77.66e9", "nu": 0.29, "ft": "9e6", "cohesion": "22.77e6",
          "frictionDeg": 50.4, "Gf": 100, "gfShearFactor": 10}
 
-# T1 percussion 48 x 48 x 32 mm, Gmsh Delaunay gradue (0,5 mm dans r < 8 mm -> 3 mm a 30 mm ; convergence W_abs 6,7/9,5/12,0/12,9 J a 1,5/1,0/0,75/0,5 mm), R 7,94 mm, 16 J, Lysmer partout, ressorts nuls
+# T1 percussion 48 x 48 x 32 mm, Gmsh Delaunay gradue (0,5 mm dans r < 8 mm -> 3 mm a 30 mm ; convergence W_abs 6,7/9,5/12,0/12,9 J a 1,5/1,0/0,75/0,5 mm), R 7,94 mm, 16 J, Lysmer partout, ressorts au defaut du code (1) depuis A1 / HET-03
 COMMON_T1 = dict(mode="fem3d", scenario="percussion", T="3.0e-4", frames=6,
                  mesh="file", meshFile="../meshes/T1_c05.msh",
                  **BOHUS,
                  toolShape="sphere", toolRadius="7.94e-3", toolMass=0.5, impactSpeed=8.0,
                  toolGap="1e-4", contactMu=0.5, contactXi=0.05,
-                 absorbing="all", absorbSpringFactor=0, dampingLocal=0.05, dtFactor=0.7,
+                 absorbing="all", dampingLocal=0.05, dtFactor=0.7,
                  fieldStats="true", activeNodes="true", erodeDetMin=0.3, erodeStrainMax=0.3, erodeEpv=0, erodeD=2, erodeWfrac=0.98)
 
 # T2 coupe en tranche 22 x 2 x 10 mm, Gmsh Delaunay uniforme 0,5 mm, lame rake 20, 1,5 mm, 4 m/s
@@ -101,7 +103,7 @@ COMMON_T2 = dict(mode="fem3d", scenario="shear", T="3.5e-3", frames=6,
                  **BOHUS,
                  toolShape="blade", backRakeDeg=20, clearanceDeg=10, bladeHeight=0.02,
                  cutDepth="1.5e-3", cutSpeed=4.0, toolX="-1e-4", contactMu=0.4, contactXi=0.05,
-                 absorbing="sides", absorbSpringFactor=0, dampingLocal=0.05, dtFactor=0.7,
+                 absorbing="sides", dampingLocal=0.05, dtFactor=0.7,
                  fieldStats="true", activeNodes="true", erodeDetMin=0.3, erodeStrainMax=0.3, erodeEpv=0, erodeD=2, erodeWfrac=0.98)
 
 # mesh = file : hmin = plus petit diametre inscrit (0,39 h_in ~ h/2,6 pour un tet de Kuhn) -> dtFactor 0,7

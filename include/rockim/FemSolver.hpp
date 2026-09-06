@@ -37,7 +37,11 @@ private:
         double A = 0;                        // reference area
         double lc = 0;                       // characteristic length (crack band)
         double hMin = 0;                     // smallest altitude (time-step length)
-        Eigen::Matrix<double, 3, 6> B;       // constant strain-displacement matrix
+        // B6 (2026-09-06) : initialiseur par defaut. Sans lui, les quatre
+        // el_.push_back({{a, b, c}}) de FemSolver.cpp laissaient B non
+        // initialise et clang levait « missing field 'B' initializer ».
+        Eigen::Matrix<double, 3, 6> B =
+            Eigen::Matrix<double, 3, 6>::Zero();  // constant strain-displacement matrix
         double kappaT = 0, kappaS = 0;       // damage history variables
         double D = 0;                        // scalar damage
         bool eroded = false;

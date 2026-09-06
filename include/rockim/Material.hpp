@@ -209,15 +209,19 @@ struct PhaseSet {
         fin(m.cohesion, "cohesion");  fin(m.Gf, "Gf");
         fin(m.gfShearFactor, "gfShearFactor");
         fin(m.phiDeg, "frictionDeg");
+        // Les SIGNES avant les grandeurs derivees (B1 / CDP-04, 2026-09-06).
+        // Avec E = -1 et rho = 2650, sqrt(E/rho) vaut NaN : le controle de
+        // finitude levait toujours en premier et accusait rho ou la grandeur
+        // de E, alors que le defaut est le signe de E.
+        if (!(m.E > 0.0))   bad("E must be > 0");
+        if (!(m.rho > 0.0)) bad("rho must be > 0");
         // rho sous-normal : cP = sqrt(E/rho) deborde en +inf bien avant que
         // rho n'atteigne zero. On refuse le domaine ou le pas de temps n'est
         // plus representable, pas seulement le zero exact.
-        if (m.rho > 0.0 && !std::isfinite(std::sqrt(m.E / m.rho)))
+        if (!std::isfinite(std::sqrt(m.E / m.rho)))
             bad("E / rho deborde (rho trop petit ou E trop grand) : la "
                 "vitesse d'onde n'est pas finie, donc le pas de temps serait "
                 "nul et la boucle en temps ne tournerait jamais");
-        if (!(m.E > 0.0))   bad("E must be > 0");
-        if (!(m.rho > 0.0)) bad("rho must be > 0");
         if (!(m.nu >= 0.0 && m.nu < 0.5)) bad("nu must be in [0, 0.5)");
         if (!(m.ft > 0.0))       bad("ft must be > 0");
         if (!(m.cohesion > 0.0)) bad("cohesion must be > 0");
