@@ -148,7 +148,7 @@ Même banc, même lecture à 100 µs (`tools/bench_compare.py`) :
 
 | | adaptatif (référence §5) | + `law = dpr` sur la roche (`lawPhase`) | + `dpr` + cap de compaction (`capP0` 235 MPa) | **+ `facetAverage = max`** |
 |---|---|---|---|---|
-| binaire | g1y3 | g1y6 | g1y6 | **g1y7** |
+| binaire (ancre bit-identité) | g1y3 (8/8) | g1y6 (8/8) | g1y6 (8/8) | **g1y7 (8/8)** |
 | premier joint (µs) | 90 | 100 | 101 | **79** |
 | joints rompus à 100 µs | 27 | 2 | 0 | **412** |
 | facettes insérées à 110 µs | 728 | 197 | 195 | **2 781 (14 %)** |

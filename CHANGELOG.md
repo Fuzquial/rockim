@@ -91,7 +91,7 @@ rien ne s'insère (premier joint à 90 µs contre 64 en intrinsèque, 27 joints 
 Mesuré : premier joint à **79 µs**, **412** rompus à 100 µs (×15), 2 781 facettes insérées (×4),
 cône à 8 mm de profondeur au lieu d'une peau de 2 mm, bilan fermé (KE 31,5 → 30,1 J). Ni la loi
 de volume `dpr` ni le cap de compaction n'avaient bougé ces chiffres. Opt-in ; `facetStress()`
-servie ailleurs reste la moyenne. Ancre : `results/bitid_g1y7.log`. 2D : à porter.
+servie ailleurs reste la moyenne. Ancre : **8/8 IDENTIQUE** (`results/bitid_g1y7.log`). 2D : à porter.
 
 ### Ajouté — `lawPhase = <phase>` (`rockim_g1y6.exe`, nuit)
 
