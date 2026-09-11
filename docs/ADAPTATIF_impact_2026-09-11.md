@@ -179,8 +179,45 @@ intrinsèque. Encore 6× moins de ruptures que l'intrinsèque à 100 µs — le 
 ratcheting diffus des joints de pénalité (×3,24 mesuré le 30/08), qui n'existe pas dans un
 continuum. C'est la première fois qu'un réglage rapproche vraiment les deux zones broyées.
 
-**Suite** : porter `facetAverage = max` au 2D (`FdemSolver`) ; les deux schémas à 300 µs sur le
-banc ; le critère de Camacho-Ortiz par partition nodale des forces (la traction réellement
-transmise par la facette liée) comme forme définitive — `max` en est l'approximation par
-excès ; puis la loi de volume de la note, qui reste nécessaire pour la compaction à long terme
-mais n'est pas ce qui manquait ici.
+## 8. Le critère exact de Camacho et Ortiz — implémenté, validé, et il insère MOINS
+
+Demande de Fernando (« go critère exact ») : `facetAverage = nodal` (`rockim_g1y9.exe`). La
+traction transmise par la facette liée est reconstruite par partition des forces nodales : à
+chaque sommet, forces internes des copies du côté A du plan de la facette, **moins l'inertie**
+(accélération du pas précédent, `accN_`), forme symétrique ½[Σ_A (f − m a) − Σ_B (f − m a)] pour
+que la charge extérieure d'un sommet de surface (le contact de l'insert) soit partagée entre les
+deux côtés et non lue comme une traction transmise ; attribuée à la facette au prorata de son
+aire tributaire ; t = −F/A_f. Pré-filtre : évaluée là où `max` dépasse 50 % du seuil.
+
+**Validation sur un champ uniforme** (`configs/tension3d_adaptive_{arith,max,nodal}.cfg`, cube
+40 mm en traction, adaptatif) : pic 9,98 / 9,80 / 9,72 MPa pour ft = 10, première rupture à
+282,4 / 281,6 / 282,8 µs, 200 joints rompus dans les trois cas. Le signe et l'échelle de la
+partition sont justes.
+
+**Sur l'impact** (banc s = 2,5, 110 µs) :
+
+| critère | facettes insérées | joints rompus à 100 µs | premier joint |
+|---|---|---|---|
+| `arith` (moyenne des deux) | 728 | 27 | 90 µs |
+| `max` (le plus chargé des deux) | 2 781 | 412 | 79 µs |
+| `nodal`, partition statique (g1y8) | 79 | 0 | — |
+| **`nodal`, partition dynamique symétrique (g1y9)** | **33** | **0** | — |
+
+**Pourquoi le critère exact insère le moins.** Dans un continuum à nœuds liés, la force
+transmise par une facette est l'équilibre de tout le patch d'éléments autour de ses sommets :
+un élément tendu entouré d'éléments comprimés ne transmet presque rien à travers ses faces,
+ses voisins tiennent les nœuds. C'est la mesure la plus **lisse** qui existe, plus lisse encore
+que la moyenne de deux éléments. Le joint intrinsèque, lui, n'est chargé que par l'élément dont
+les nœuds de face lui appartiennent : il lit la contrainte de **cet** élément, pas celle du
+patch. Son analogue dans un schéma adaptatif est donc le critère par élément, `max`, et non la
+traction transmise. Autrement dit : la nucléation de l'assemblage intrinsèque — celle sur laquelle
+Yang a calibré — est une propriété de sa discrétisation à nœuds dédoublés ; un continuum ne la
+retrouve qu'en lisant les éléments un par un.
+
+**Décision** : `max` reste le critère recommandé pour les impacts adaptatifs ; `nodal` est
+conservé comme option, documenté avec sa mesure, parce qu'il est la référence physique pour un
+champ régulier (tunnel, traction, brésilien) où l'écart entre les trois vaut quelques pour cent.
+
+**Suite** : porter `max` au 2D (`FdemSolver`) ; les deux schémas à 300 µs sur le banc ; puis la
+loi de volume de la note, nécessaire pour la compaction à long terme mais qui n'est pas ce qui
+manquait ici.

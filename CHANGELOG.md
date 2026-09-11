@@ -80,6 +80,21 @@ penalty` retirés — le second pour le triplet interdit du 02/09) ; `yang2026_b
 reste porté par la loi de joint au lieu de devenir une paire de contact). dt s = 1 en adaptatif :
 **2,43 ns** contre 1,00 ns en intrinsèque. `tools/bench_compare.py` : tableau des bancs côte à côte.
 
+### Ajouté — `facetAverage = nodal` (`rockim_g1y9.exe`, 2026-09-12) — le critère de Camacho-Ortiz, et il insère MOINS
+
+Traction transmise par la facette liée, par partition des forces nodales (Camacho & Ortiz 1996,
+Pandolfi & Ortiz 2002) : forces internes des copies du côté A du plan, **moins l'inertie**
+(accélération du pas précédent, `accN_`, écrite dans `integrate()` sous la clé), forme symétrique
+½[Σ_A − Σ_B] pour partager la charge extérieure d'un sommet de surface, attribuée à la facette au
+prorata de son aire tributaire, t = −F/A_f, pré-filtre `max` ≥ 50 % du seuil, exige `insertion =
+adaptive`. **Validé** sur un champ uniforme (`configs/tension3d_adaptive_*.cfg` : pic 9,72 MPa
+pour ft = 10, même instant de rupture que `arith` et `max`). **Sur l'impact il insère le moins de
+tous** : 33 facettes, 0 rompue (g1y8 sans inertie : 79 / 0 ; `arith` 728 / 27 ; `max` 2 781 /
+412) — la force transmise est l'équilibre de tout le patch nodal, la mesure la plus lisse ; le
+joint intrinsèque lit l'élément seul, dont l'analogue est `max`. Conservé comme option de
+référence pour les champs réguliers ; `max` reste le critère des impacts
+(`docs/ADAPTATIF_impact_2026-09-11.md` §8). Défaut inchangé ; ancre `results/bitid_g1y9.log`.
+
 ### Ajouté — `facetAverage = max` (`rockim_g1y7.exe`, nuit) — LA correction de l'adaptatif en impact
 
 Le critère d'insertion évaluait la traction sur la MOYENNE des contraintes des deux tétraèdres

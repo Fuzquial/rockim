@@ -731,15 +731,33 @@ void Fdem3dSolver::init() {
     // =====================================================================
     {   // ---- facetAverage — §2.1 eq. 10 ---------------------------------
         std::string fa = cfg_.gets("facetAverage", "arith");
-        if (fa != "arith" && fa != "volume" && fa != "max")
+        if (fa != "arith" && fa != "volume" && fa != "max" && fa != "nodal")
             throw std::runtime_error("facetAverage must be arith | volume | max "
-                                     "(got '" + fa + "') — volume = "
+                                     "| nodal (got '" + fa + "') — volume = "
                                      "sigma_F = (V+ sigma+ + V- sigma-)/"
                                      "(V+ + V-), §2.1 eq. 10 de la note ; max = "
                                      "le critere d insertion retient le plus "
-                                     "charge des deux tetraedres");
+                                     "charge des deux tetraedres ; nodal = "
+                                     "traction transmise par partition des "
+                                     "forces nodales (Camacho-Ortiz 1996)");
         facetVolAvg_ = fa == "volume";
         facetMaxIns_ = fa == "max";
+        facetNodal_  = fa == "nodal";
+        if (facetNodal_) {
+            if (cfg_.gets("insertion", "intrinsic") != "adaptive")
+                throw std::runtime_error("facetAverage = nodal n a de sens que "
+                                         "sous insertion = adaptive (c est le "
+                                         "critere d insertion qu il change)");
+            std::cout << "[FDEM3D] facetAverage = nodal (Camacho & Ortiz 1996) : "
+                         "le critere d insertion lit la traction TRANSMISE par "
+                         "la facette liee — a chaque sommet, forces internes "
+                         "des copies du cote A du plan, attribuees a la facette "
+                         "au prorata de son aire tributaire, t = -F/A_f. "
+                         "Pre-filtre : facettes dont le plus charge des deux "
+                         "tetraedres depasse 50 % du seuil. La contrainte de "
+                         "facette servie ailleurs reste la moyenne "
+                         "arithmetique.\n";
+        }
         if (facetMaxIns_)
             std::cout << "[FDEM3D] facetAverage = max : le critere d insertion "
                          "evalue sig_n et |tau| sur CHAQUE tetraedre de la "
@@ -2658,6 +2676,54 @@ void Fdem3dSolver::facetRates(const Joint& J, const Eigen::Vector3d& n,
     gam   = 2.0 * (t - epsEq * n).norm();          // cisaillement d ingenieur
 }
 
+// ---------------------------------------------------------------------------
+// facetAverage = nodal — la traction transmise par une facette LIEE, par
+// partition des forces nodales (Camacho & Ortiz, IJNME 1996 ; Pandolfi &
+// Ortiz, Eng. Comput. 2002). Appele au balayage, APRES elementForces et
+// bodyForces et AVANT jointForces / contacts : f_ ne contient alors que les
+// forces internes des elements (+ pesanteur), exactement ce que la partition
+// doit sommer. Le cote A est celui de eA (n est sortante de A) : un element
+// est « cote A » si son centroide courant est du cote -n du plan de la
+// facette. Au sommet v, la force interne des copies du cote A est attribuee
+// a la facette au prorata A_f/3 / (somme des A_g/3 des facettes de v qui
+// separent les deux cotes). Signe : pour un tetraedre A sous contrainte
+// uniforme sigma, la somme des forces internes sur les trois noeuds de sa
+// face f vaut -sigma.n A_f/3 ; d ou t = -F/A_f (traction positive = ouverture).
+// ---------------------------------------------------------------------------
+bool Fdem3dSolver::facetTractionNodal(const Joint& J, const Eigen::Vector3d& n,
+                                      Eigen::Vector3d& t) const {
+    Eigen::Vector3d cf = Eigen::Vector3d::Zero();
+    for (int k = 0; k < 3; ++k) cf += X0_[J.a[k]] + u_[J.a[k]];
+    cf /= 3.0;
+    auto sideA = [&](int e) { return (elCenNow_[e] - cf).dot(n) < 0.0; };
+    Eigen::Vector3d F = Eigen::Vector3d::Zero();
+    for (int k = 0; k < 3; ++k) {
+        const int v = vOf_[J.a[k]];
+        // Partition DYNAMIQUE et SYMETRIQUE : F_v = 1/2 [ sum_A (f - m a)
+        // - sum_B (f - m a) ]. Sans charge exterieure sur le sommet les deux
+        // sommes sont opposees et F_v = sum_A (f - m a) ; avec une charge
+        // exterieure (contact de l insert) la forme symetrique en attribue
+        // la moitie a chaque cote au lieu de la lire entierement comme une
+        // traction transmise. a = acceleration du pas precedent (accN_).
+        Eigen::Vector3d FA = Eigen::Vector3d::Zero(), FB = FA;
+        for (int i : copiesOfVert_[v]) {
+            const Eigen::Vector3d fi = f_[i] - m_[i] * accN_[i];
+            if (sideA(elemOf_[i])) FA += fi; else FB += fi;
+        }
+        const Eigen::Vector3d Fv = 0.5 * (FA - FB);
+        double Av = 0.0;
+        for (int g : jointsOfVert_[v]) {
+            const Joint& G = jt_[g];
+            if (sideA(G.eA) != sideA(G.eB)) Av += G.A0 / 3.0;
+        }
+        if (!(Av > 0.0)) return false;
+        F += Fv * ((J.A0 / 3.0) / Av);
+    }
+    if (!(J.A0 > 0.0)) return false;
+    t = -F / J.A0;
+    return true;
+}
+
 void Fdem3dSolver::insertionSweep() {
     // `n` : la normale de facette au pas d activation. Elle etait recalculee
     // — a l identique — dans activateJoint ; on la transporte desormais, le
@@ -2665,6 +2731,22 @@ void Fdem3dSolver::insertionSweep() {
     // deux besoin.
     struct Hit { int jI; double sig, fs; Eigen::Vector3d tauV, n; };
     std::vector<Hit> hits;
+    // facetAverage = nodal : centroides courants, une fois par balayage
+    if (facetNodal_) {
+        if (accN_.size() != X0_.size())
+            accN_.assign(X0_.size(), Eigen::Vector3d::Zero());
+        elCenNow_.resize(el_.size());
+        const int nE = (int)el_.size();
+#ifdef _OPENMP
+#pragma omp parallel for schedule(static)
+#endif
+        for (int e = 0; e < nE; ++e) {
+            Eigen::Vector3d c = Eigen::Vector3d::Zero();
+            for (int a = 0; a < 4; ++a)
+                c += X0_[el_[e].n[a]] + u_[el_[e].n[a]];
+            elCenNow_[e] = 0.25 * c;
+        }
+    }
     // pointes de fissure (opt-in) — miroir du 2D, cf. Fdem3dSolver.hpp
     const bool tipBias = tipFactor_ > 1.0;
     if (tipBias) {
@@ -2737,24 +2819,47 @@ void Fdem3dSolver::insertionSweep() {
         // max(sig/ft_dyn, |tau|/fs) est le plus grand. sig, tauV et fs sont
         // REMPLACES : l offset de continuite de l insertion (dn0 = sig/pj)
         // porte alors la traction de l element qui declenche.
-        if (facetMaxIns_) {
-            double best = -1.0;
+        if (facetMaxIns_ || facetNodal_) {
+            // seuil de cisaillement pour une traction normale donnee (meme
+            // DIF, meme enveloppe que la branche historique)
+            auto fsOf = [&](double s) {
+                double v = fricMob_
+                    ? dC * J.coh
+                    : dC * J.coh
+                      + J.tanPhi * rockim::mcFrictionTerm(s, J.ft, yangEnv_);
+                return v < 0.0 ? 0.0 : v;
+            };
+            auto ratioOf = [&](double s, double tn, double fsv) {
+                return std::max(s / std::max(dT * J.ft, 1e-300),
+                                tn / std::max(fsv, 1e-300));
+            };
+            double best = -1.0, sigB = sig, fsB = fs;
+            Eigen::Vector3d tauB = tauV;
             for (int side = 0; side < 2; ++side) {
                 const Eigen::Matrix3d& Se = (side == 0) ? el_[J.eA].sigG
                                                         : el_[J.eB].sigG;
                 Eigen::Vector3d te = Se * n;
                 double sige = n.dot(te);
                 Eigen::Vector3d taue = te - sige * n;
-                double fse = fricMob_
-                    ? dC * J.coh
-                    : dC * J.coh
-                      + J.tanPhi * rockim::mcFrictionTerm(sige, J.ft, yangEnv_);
-                if (fse < 0.0) fse = 0.0;
-                double ratio = std::max(sige / std::max(dT * J.ft, 1e-300),
-                                        taue.norm() / std::max(fse, 1e-300));
+                double fse = fsOf(sige);
+                double ratio = ratioOf(sige, taue.norm(), fse);
                 if (ratio > best) {
                     best = ratio;
-                    sig = sige; tauV = taue; fs = fse;
+                    sigB = sige; tauB = taue; fsB = fse;
+                }
+            }
+            if (facetMaxIns_) { sig = sigB; tauV = tauB; fs = fsB; }
+            // ---- facetAverage = nodal : la traction transmise ------------
+            // Evaluee seulement la ou le plus charge des deux tetraedres
+            // depasse 50 % du seuil : ailleurs la facette est loin de
+            // s inserer et la partition (3 sommets x ~25 copies) serait
+            // payee pour rien. La traction nodale REMPLACE sig / tau / fs.
+            if (facetNodal_ && best >= 0.5) {
+                Eigen::Vector3d tN;
+                if (facetTractionNodal(J, n, tN)) {
+                    sig = n.dot(tN);
+                    tauV = tN - sig * n;
+                    fs = fsOf(sig);
                 }
             }
         }
@@ -5732,6 +5837,10 @@ void Fdem3dSolver::integrate() {
                         vn(a) /= 1.0 + dt_ * cS(a) / M;
                         lw -= cS(a) * vn(a) * vn(a) * dt_;  // V2/B4 amortisseur
                     }
+                if (facetNodal_ && !accN_.empty()) {   // partition dynamique
+                    const Eigen::Vector3d acc = (vn - v_[i0]) / dt_;
+                    for (int i : g) accN_[i] = acc;
+                }
                 for (int i : g) {
                     v_[i] = vn;
                     u_[i] += dt_ * vn;

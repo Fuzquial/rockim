@@ -576,6 +576,25 @@ private:
     // s = 2,5), dix fois moins de facettes inserees. Opt-in ; la contrainte
     // de facette servie ailleurs (facetStress) reste la moyenne.
     bool facetMaxIns_ = false;
+    // facetAverage = nodal (2026-09-12) : le critere d insertion lit la
+    // traction REELLEMENT transmise par la facette liee, reconstruite par
+    // partition des forces nodales internes (Camacho & Ortiz 1996, Pandolfi &
+    // Ortiz 2002) : a chaque sommet, somme des forces internes des copies
+    // situees du cote A du plan de la facette, attribuee a la facette au
+    // prorata de son aire tributaire, puis t = -F / A_f. Ni moyenne de
+    // deux elements, ni maximum : la force que le cote A pousse a travers
+    // l interface. Opt-in ; elCenNow_ = centroides courants des elements,
+    // remplis au debut de chaque balayage.
+    bool facetNodal_ = false;
+    std::vector<Eigen::Vector3d> elCenNow_;
+    // Acceleration nodale du pas PRECEDENT (copie par copie, ecrite dans
+    // integrate() sous facetNodal_) : la partition dynamique retranche
+    // l inertie, F_A->B = sum_A (f_i - m_i a_i), sans quoi la reaction
+    // interne des elements a une charge de contact sur le sommet (l insert,
+    // ~1 GPa) serait lue comme une traction transmise a l interface.
+    std::vector<Eigen::Vector3d> accN_;
+    bool facetTractionNodal(const Joint& J, const Eigen::Vector3d& n,
+                            Eigen::Vector3d& t) const;
     // ---- facetRate = scalar (defaut) | tensor — §2.1 eq. 11 -------------
     bool facetTensor_ = false;
     // ---- insertionCriterion = or (defaut) | elliptic — §2.2 eq. 12 ------
