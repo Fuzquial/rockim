@@ -93,7 +93,7 @@ tous** : 33 facettes, 0 rompue (g1y8 sans inertie : 79 / 0 ; `arith` 728 / 27 ; 
 412) — la force transmise est l'équilibre de tout le patch nodal, la mesure la plus lisse ; le
 joint intrinsèque lit l'élément seul, dont l'analogue est `max`. Conservé comme option de
 référence pour les champs réguliers ; `max` reste le critère des impacts
-(`docs/ADAPTATIF_impact_2026-09-11.md` §8). Défaut inchangé ; ancre `results/bitid_g1y9.log`.
+(`docs/ADAPTATIF_impact_2026-09-11.md` §8). Défaut inchangé ; ancre **8/8 IDENTIQUE** (`results/bitid_g1y9.log`).
 
 ### Ajouté — `facetAverage = max` (`rockim_g1y7.exe`, nuit) — LA correction de l'adaptatif en impact
 
