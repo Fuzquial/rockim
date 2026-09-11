@@ -226,11 +226,16 @@ int main(int argc, char** argv) {
         // quels comme noeuds PARTAGES au lieu d'etre dedoubles pour poser des
         // joints — on obtient un continuum maille par grains, ou la frontiere
         // de grain est un simple saut de proprietes.
+        // 2026-09-07 : le meme chemin existe desormais en `fem` (2D). Il sert
+        // a poser la question « FEM ou FEMDEM ? » a MICROSTRUCTURE EGALE —
+        // meme tessellation, meme germe, meme maillage intra-grain, memes
+        // fiches de phase, et pour seule difference le traitement de la
+        // discontinuite (joint cohesif contre endommagement continu).
         if (mesh == "voronoi" && mode != "fdem" && mode != "fdem3d"
-            && mode != "fem3d")
+            && mode != "fem3d" && mode != "fem")
             throw std::runtime_error("mesh = voronoi (grains + phases) is only "
-                                     "implemented for mode = fdem | fdem3d | "
-                                     "fem3d");
+                                     "implemented for mode = fem | fdem | "
+                                     "fdem3d | fem3d");
         if (mesh == "file" && mode != "fdem" && mode != "fdem3d"
             && mode != "fem3d")
             throw std::runtime_error("mesh = file (unstructured import) is "
@@ -242,10 +247,10 @@ int main(int argc, char** argv) {
         // physiques du maillage (mesh = file, $PhysicalNames de dimension 3) ;
         // le solveur refuse la cle sur mesh = grid, ou rien ne l'affecterait.
         if (cfg.has("phases") && mode != "fdem" && mode != "fdem3d"
-            && mode != "fem3d")
+            && mode != "fem3d" && mode != "fem")
             throw std::runtime_error("'phases' (mineral phases) is only "
-                                     "implemented for mode = fdem | fdem3d | "
-                                     "fem3d");
+                                     "implemented for mode = fem | fdem | "
+                                     "fdem3d | fem3d");
         if (cfg.has("law") && mode != "fem3d" && mode != "fdem"
             && mode != "fdem3d")
             throw std::runtime_error("'law' (bulk constitutive law) is "

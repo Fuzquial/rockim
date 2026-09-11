@@ -211,6 +211,54 @@ struct BrickOpts {
     bool compDam = false;            // compDamage = crackband
     double Ac = 0.98, GIIc = 1.0e4;  // omega_c = Ac (1 - exp(-b_c epvEq)), b_c = fc0 h/GIIc
     double erodeDc = 0.0;            // erosion sur omega_c / Ac (0 = off)
+    // ---- DILATANCE : POTENTIEL NON ASSOCIE (2026-09-07, opt-in) ------------
+    // Le noyau historique rend nfl = dev / (2 sqrtJ2), de TRACE NULLE :
+    // l'ecoulement plastique est isochore, donc psi = 0 EN DUR. Ce n'est pas
+    // un reglage par defaut, c'est l'absence du terme volumique du potentiel.
+    // Les deux VUMAT de reference du projet l'ont, chacune sous sa forme, et
+    // c'est cette forme-la qu'on porte — pas une dilatance generique :
+    //
+    //   MERIDIEN LINEAIRE — vumat_saksala_2011.f90:556-580 (dp_gradients) :
+    //       nf = dev/(2q) + alpha I   (critere)
+    //       ng = dev/(2q) + beta  I   (potentiel)
+    //     beta = alpha -> associe ; beta = 0 -> isochore. C'est le meme
+    //     schema que skBetaDP, deja porte pour law = saksala2011.
+    //
+    //   MERIDIEN PUISSANCE — vumat_mh_v2.f:942 et 976-981 :
+    //       f = (smax - smin) -          B <-smax>^n - fc0
+    //       g = (smax - smin) - sin(psi) B <-smax>^n
+    //     d'ou mvol = d g / d I1 = sin(psi) B n p_conf^(n-1). Comme n < 1,
+    //     l'exposant est NEGATIF : la dilatance decroit d'elle-meme quand le
+    //     confinement croit. C'est une consequence de la forme puissance du
+    //     critere, pas un psi(p) ajoute apres coup — verifie sur les sorties
+    //     Abaqus du projet (0,60/0,45/0,32/0,27/0,24 mesures a s3 =
+    //     1/20/50/75/100 MPa contre 0,89/0,43/0,31/0,26/0,23 predits).
+    //
+    // psiDeg = 0 (defaut) laisse dilVol_ = 0 dans les deux cas : le terme
+    // n'est jamais ajoute et le chemin est BIT-IDENTIQUE.
+    double psiDeg = 0.0;             // dilationDeg, en degres, 0 <= psi <= phi
+    // ---- psi PILOTE PAR L'ENDOMMAGEMENT (2026-09-07, opt-in) --------------
+    // dpDilationDamage = omega : psi_eff = psi * omega^dilExp, omega = max(D, Dc).
+    //
+    // POURQUOI omega ET NON gamma_p. Dans un granite la dilatance EST
+    // l'ouverture de microfissures : la variable qui la controle est la
+    // DENSITE DE FISSURES, pas la deformation plastique. Trois faits mesures
+    // le 2026-09-07 sur les 12 triaxiaux Red Bohus (colonne
+    // eps_volumetric_microstrain) appuient ce choix :
+    //   - le rapport dilatant croit d'un facteur 10 a 30 DANS UN MEME ESSAI
+    //     (0,19 -> 5,71 a sigma3 = 20 MPa entre 40-60 % et 95-100 % du pic) :
+    //     une constante ne peut pas le rendre ;
+    //   - il demarre vers 60-75 % du pic (journal cdp_rockim), c'est-a-dire au
+    //     seuil d'AMORCAGE DE L'ENDOMMAGEMENT et non a un seuil de plasticite ;
+    //   - il ACCELERE pres du pic, comme omega, alors que gamma_p croit
+    //     regulierement.
+    // omega est deja calcule par la loi : aucune variable d'etat en plus.
+    //
+    // RESERVE HONNETE : omega est celui du pas PRECEDENT (la direction
+    // d'ecoulement est calculee avant la mise a jour de l'endommagement).
+    // En schema explicite ce retard d'un pas est le decalage usuel.
+    bool dilDam = false;
+    double dilExp = 1.0;             // psi_eff = psi * omega^dilExp
     // spall sur l'ENERGIE dissipee : wDamT >= erodeWfrac * Gf / lc (0 = off).
     // Le seuil erodeD = 0,98 sur D supprime l'element a kappa ~ 50 k0, ou
     // il porte encore 78 % de ft (D = 1 - k0/kappa mesure la perte de
@@ -251,6 +299,42 @@ struct BrickOpts {
     // (tensionShearRetention, 1 = pas de retention).
     bool fixedCrack = false;
     double shearRet = 1.0;
+    // ---- §1.4 de la note 2026 : bulkTensionDamage = on (defaut) | off ------
+    // « PAS DE COUPURE DE RANKINE DANS LA MATRICE : en insertion adaptative
+    // c'est le critere d'insertion des joints qui joue le role de coupure en
+    // traction. Aucune variable d'endommagement de traction. » (eq. 8)
+    //
+    // C'est le DOUBLE COMPTAGE n.1 de l'audit du 2026-09-11 (§3) : le bloc de
+    // Rankine s'executait inconditionnellement, de sorte que la matrice
+    // dissipait en traction EN MEME TEMPS que les joints cohesifs — deux fois
+    // la meme physique, ce que la note interdit (« un mecanisme par physique »).
+    // Le seul contournement etait bulkFt = 1e12, qui eteignait au passage
+    // erodeD et laissait le compteur wDamT muet.
+    //
+    // `off` : le bloc de Rankine (et son cut-off, et ses deux gardes de bande
+    // EN TRACTION) ne s'execute plus ; s.D et s.wDamT restent 0 et la
+    // contrainte nominale se reduit a sigma = sigma_barre_+ + (1 - omega_c)
+    // sigma_barre_-, exactement l'eq. 8. Defaut `on` = chemin historique,
+    // BIT-IDENTIQUE.
+    bool tensionNone = false;
+    // ---- §1.2 eq. 2 : mhForm = dp (defaut) | principal ---------------------
+    // `principal` : le critere de Mohr-Hoek est evalue en CONTRAINTES
+    // PRINCIPALES, f = sigma_1 - sigma_3 - B <sigma_3>^n - sigma_c (cone
+    // HEXAGONAL), au lieu du cone CIRCULAIRE en invariants (p, sqrt J2) que
+    // rockim_g0 resout par retour radial. Les deux ne coincident qu'en
+    // compression triaxiale (sigma_2 = sigma_3) — c'est le controle falsifiant
+    // du lot. Exige meridian = power (la loi puissance EST l'enveloppe de
+    // l'eq. 2). Defaut `dp` = chemin historique, BIT-IDENTIQUE.
+    bool mhPrincipal = false;
+    // ---- §1.2 eq. 3 : dpFlowForm = dp (defaut) | mc ------------------------
+    // `mc` : potentiel NON ASSOCIE de la note, g = sigma_1 - m_psi sigma_3
+    // avec m_psi = (1 + sin psi)/(1 - sin psi), de gradient (1, 0, -m_psi) en
+    // base principale — la composante INTERMEDIAIRE est NULLE, ce qu'un
+    // potentiel lisse en (p, sqrt J2) ne peut pas rendre. Sous cette cle
+    // kappa_point est calcule sur le tenseur COMPLET (eq. 4,
+    // kappa_point = sqrt(2/3 eps_point_vp : eps_point_vp)) et non sur la seule
+    // part deviatorique. Defaut `dp` = chemin historique, BIT-IDENTIQUE.
+    bool flowMC = false;
 };
 
 class PlasticDamageLaw : public MatLaw {
@@ -259,7 +343,63 @@ public:
                      double erodeD, double erodeEpv,
                      const BrickOpts& br = BrickOpts())
         : MatLaw(m), eta_(eta), capP0_(capP0), capH_(capH), erodeD_(erodeD),
-          erodeEpv_(erodeEpv), br_(br) {}
+          erodeEpv_(erodeEpv), br_(br) {
+        // beta du potentiel LINEAIRE, tire de psi par la MEME relation que
+        // alpha l'est de phi (Material::dpParams l. 58-63) : psi = phi rend
+        // donc beta = alpha, c'est-a-dire l'ecoulement ASSOCIE exactement.
+        // C'est le controle du banc falsifiant.
+        if (br_.psiDeg > 0.0) {
+            const double t = std::tan(br_.psiDeg * M_PI / 180.0);
+            betaDil_ = t / std::sqrt(9.0 + 12.0 * t * t);
+        }
+        // §1.2 eq. 3 : m_psi = (1 + sin psi) / (1 - sin psi), le SEUL endroit
+        // ou psi entre dans le potentiel de la note. A psi = 0, m_psi = 1 et
+        // g = sigma_1 - sigma_3 est isochore — c'est-a-dire exactement le
+        // defaut isochore du noyau historique. psi <= phi < 89 deg est deja
+        // garanti a la lecture de dpDilationDeg, donc sin psi < 1.
+        sinPsi_ = std::sin(br_.psiDeg * M_PI / 180.0);
+        mPsi_ = (sinPsi_ < 1.0) ? (1.0 + sinPsi_) / (1.0 - sinPsi_) : 1.0;
+    }
+
+    // ---- DILATANCE : d g / d I1, les DEUX formes de reference -------------
+    // Meridien LINEAIRE (vumat_saksala_2011.f90:556-580) : ng = nf|dev + beta I,
+    // donc d g / d I1 = beta. On prend beta de la MEME facon que alpha est
+    // tire de phi dans Material::dpParams — c'est-a-dire la meme relation
+    // appliquee a psi — pour que psi = phi redonne exactement l'ecoulement
+    // ASSOCIE (beta = alpha), qui est le controle du banc.
+    //
+    // Meridien PUISSANCE (vumat_mh_v2.f:942, 976-981) :
+    //   g = (smax - smin) - sin(psi) B <-smax>^n
+    //   mvol = mm1 + mm3 = sin(psi) B n p_conf^(n-1)
+    // p_conf est la pression de confinement au sens de la VUMAT : max(-smax, 0),
+    // soit ici la pseudo-sigma3 du meridien, s3 = -p - q/3 avec q = sqrt(3) sj2.
+    // n < 1 rend l'exposant negatif : la dilatance DECROIT quand le
+    // confinement croit, sans aucun psi(p).
+    double mhDilation(double p, double sj2) const {
+        const double q = std::sqrt(3.0) * sj2;
+        const double s3 = -p - q / 3.0;                 // pseudo-sigma3 [Pa]
+        if (!(s3 > 0.0)) return betaDil_;               // cote tractif : cone
+        // B est en MPa^(1-n) : on travaille en MPa puis on revient en SI.
+        const double s3M = s3 / 1.0e6;
+        const double mv = std::sin(br_.psiDeg * M_PI / 180.0) * br_.B * br_.n
+                        * std::pow(std::max(s3M, 1.0e-9), br_.n - 1.0);
+        // ---- MAPPING VERS NOTRE REGLE D'ECOULEMENT, exact ------------------
+        // La VUMAT travaille en contraintes principales : son increment
+        // plastique axial vaut dlam*mm1 = dlam*(1 + mv) et son increment
+        // volumique dlam*mvol = dlam*mv, d'ou le rapport de dilatance
+        //     R = mv / (1 + mv).
+        // Ici la direction est nfl = dev/(2 sqrtJ2) + dvol I. En compression
+        // triaxiale la composante axiale du deviateur normalise vaut -1/sqrt3
+        // et la trace de I vaut 3, donc
+        //     d eps_ax  = dlam (dvol - 1/sqrt3),   d eps_vol = 3 dlam dvol,
+        //     R = -d eps_vol / d eps_ax = 3 dvol / (1/sqrt3 - dvol).
+        // On INVERSE cette relation pour que rockim rende le R de la VUMAT :
+        //     dvol = R / (sqrt3 (3 + R)).
+        // Un simple mv/3 aurait donne un rapport trop grand d'un facteur
+        // sqrt(3) environ — l'erreur que le banc a attrapee.
+        const double R = mv / (1.0 + mv);
+        return R / (std::sqrt(3.0) * (3.0 + R));
+    }
 
     // q de la surface puissance a p (trial) fixe : q = fc0 + B s3^n avec la
     // pseudo-sigma3 s3 = -p - q/3 (exacte en compression triaxiale). Rend < 0
@@ -287,6 +427,283 @@ public:
             s3 = sn;
         }
         return -3.0 * p - 3.0 * s3;                     // q = 3 (-p - s3)
+    }
+
+    // =====================================================================
+    //  §1.2 eq. 2-4 de la note 2026 — RETOUR EN CONTRAINTES PRINCIPALES
+    //
+    //  Branche OPT-IN, atteinte seulement sous `mhForm = principal` ou
+    //  `dpFlowForm = mc`. Le chemin historique (retour radial deviatorique en
+    //  invariants) n'est pas touche : il est ENCADRE, pas remplace.
+    //
+    //  CONVENTION. rockim travaille en TRACTION POSITIVE, la section 1 de la
+    //  note en compression positive. Avec le tri DECROISSANT s1 >= s2 >= s3 :
+    //      sigma_barre_1 (note, la plus COMPRIMEE) = -s3
+    //      sigma_barre_3 (note, le CONFINEMENT)    = -s1
+    //  donc  sigma_barre_1 - sigma_barre_3 = s1 - s3  et  <sigma_barre_3> =
+    //  <-s1>. L'eq. 2 s'ecrit ici, a viscoplasticite PARFAITE (sigma_c = fc0,
+    //  aucun ecrouissage — la dependance a la vitesse est portee par la seule
+    //  surcontrainte de Perzyna F = eta dlam/dt, eq. 9) :
+    //
+    //      f(s) = s1 - s3 - B <-s1>^n - fc0 <= 0.
+    //
+    //  VERIFICATION DE COHERENCE avec le cone circulaire existant : en
+    //  compression triaxiale (s1 = s2 = -sigma_conf, s3 = axial), la
+    //  pseudo-sigma3 = -p - q/3 de yieldQPower vaut EXACTEMENT -s1 et
+    //  q = s1 - s3 ; les deux criteres coincident donc terme a terme. Hors de
+    //  ce chemin (s2 != s3) ils different — hexagone contre cercle. C'est la
+    //  double signature que le banc du lot exige.
+    // =====================================================================
+
+    // D : v  pour un isotrope, en base principale (v deja diagonal)
+    Eigen::Vector3d elasticP(const Eigen::Vector3d& v) const {
+        const double tr = v.sum();
+        return Eigen::Vector3d(lam_ * tr + 2.0 * G_ * v(0),
+                               lam_ * tr + 2.0 * G_ * v(1),
+                               lam_ * tr + 2.0 * G_ * v(2));
+    }
+
+    // Critere de la surface (ia, ib) : ia porte le role sigma_barre_3 de la
+    // note (le moins comprime), ib le role sigma_barre_1 (le plus comprime).
+    // Le crochet de Macaulay est rendu par Bpow, qui ecrete deja a 0 : pour
+    // s(ia) >= 0 (confinement nul ou traction) il reste f = s_ia - s_ib - fc0,
+    // c'est-a-dire un PRISME DE TRESCA — et surtout PAS un repli sur le cone
+    // lineaire, contrairement a yieldQPower qui rend -1 cote tractif.
+    double yieldMH(const Eigen::Vector3d& sv, int ia, int ib) const {
+        return sv(ia) - sv(ib) - Bpow(-sv(ia)) - br_.fc0;
+    }
+    // d f / d s. La courbure de l'enveloppe (n < 1) ajoute dPhi/d(-s_ia) au
+    // gradient du cote confine : c'est elle qui porte SEULE la dependance au
+    // confinement (§1, « pas de cap, pas d'indice de degradation »).
+    Eigen::Vector3d gradMH(const Eigen::Vector3d& sv, int ia, int ib) const {
+        Eigen::Vector3d a = Eigen::Vector3d::Zero();
+        a(ia) = 1.0 + (sv(ia) < 0.0 ? dBpow(-sv(ia)) : 0.0);
+        a(ib) = -1.0;
+        return a;
+    }
+
+    // Le cone CIRCULAIRE existant, mais ecrit en base principale : c'est le
+    // critere utilise quand seule la cle dpFlowForm = mc est posee (le
+    // critere reste celui de rockim_g0, seul l'ECOULEMENT change).
+    double yieldDPp(const Eigen::Vector3d& sv) const {
+        const double pp = sv.sum() / 3.0;
+        const Eigen::Vector3d d = sv - Eigen::Vector3d::Constant(pp);
+        const double j2 = std::sqrt(0.5 * d.squaredNorm());
+        if (br_.power) {
+            const double qy = yieldQPower(pp);
+            if (qy > 0.0) return j2 - qy / std::sqrt(3.0);
+        }
+        return j2 + adp_ * 3.0 * pp - kdp_;
+    }
+    Eigen::Vector3d gradDPp(const Eigen::Vector3d& sv) const {
+        const double pp = sv.sum() / 3.0;
+        const Eigen::Vector3d d = sv - Eigen::Vector3d::Constant(pp);
+        const double j2 = std::sqrt(0.5 * d.squaredNorm());
+        double dvolTerm = adp_;                    // meridien LINEAIRE
+        if (br_.power) {
+            const double qy = yieldQPower(pp);
+            if (qy > 0.0) {
+                // F = sqrt(J2) - q_y(p)/sqrt(3) ; q_y est defini implicitement
+                // par q = fc0 + Phi(s3), s3 = -p - q/3, d'ou
+                //   dq/dp = -Phi' / (1 + Phi'/3)   et   dF/ds_i |_vol =
+                //   -(1/3 sqrt3) dq/dp.  Le cone lineaire donne dvolTerm =
+                //   adp_ par la meme algebre (q = sqrt3 kdp - 3 sqrt3 adp p).
+                const double s3 = -pp - qy / 3.0;
+                const double dphi = (s3 > 0.0) ? dBpow(s3) : 0.0;
+                const double dqdp = -dphi / (1.0 + dphi / 3.0);
+                dvolTerm = -dqdp / (3.0 * std::sqrt(3.0));
+            }
+        }
+        if (!(j2 > 1.0e-12)) return Eigen::Vector3d::Constant(dvolTerm);
+        return d / (2.0 * j2) + Eigen::Vector3d::Constant(dvolTerm);
+    }
+
+    double yieldAny(const Eigen::Vector3d& sv, int ia, int ib) const {
+        return br_.mhPrincipal ? yieldMH(sv, ia, ib) : yieldDPp(sv);
+    }
+    Eigen::Vector3d gradAny(const Eigen::Vector3d& sv, int ia, int ib) const {
+        return br_.mhPrincipal ? gradMH(sv, ia, ib) : gradDPp(sv);
+    }
+
+    // ---- DIRECTION D'ECOULEMENT, en base principale ----------------------
+    // dpFlowForm = mc : eq. 3, g = sigma_barre_1 - m_psi sigma_barre_3, de
+    // gradient (1, 0, -m_psi) dans la base de la note ; en traction positive
+    // et tri decroissant cela devient b = (m_psi, 0, -1) — composante
+    // INTERMEDIAIRE nulle, trace m_psi - 1 >= 0 (dilatant, nulle a psi = 0).
+    // dpFlowForm = dp : la direction lisse du noyau historique, recopiee ici
+    // telle quelle (l. ~437-457 : le bloc d'origine n'est pas factorise, pour
+    // que la branche historique reste bit-a-bit ce qu'elle etait).
+    Eigen::Vector3d flowDirP(const Eigen::Vector3d& pv, const MatState& s) const {
+        // modulation psi(omega) commune aux deux formes (dpDilationDamage)
+        double fdam = 1.0;
+        if (br_.psiDeg > 0.0 && br_.dilDam) {
+            const double om = std::max(s.D, s.Dc);      // pas precedent
+            fdam = (om <= 0.0) ? 0.0
+                 : (br_.dilExp == 1.0 ? om : std::pow(om, br_.dilExp));
+        }
+        if (br_.flowMC) {
+            // psi_eff : on module sin(psi), la grandeur ou psi entre dans
+            // l'eq. 3 — a fdam = 1 on retrouve m_psi exactement.
+            const double sp = fdam * sinPsi_;
+            const double mp = (sp < 1.0) ? (1.0 + sp) / (1.0 - sp) : mPsi_;
+            return Eigen::Vector3d(mp, 0.0, -1.0);
+        }
+        const double pp = pv.sum() / 3.0;
+        const Eigen::Vector3d d = pv - Eigen::Vector3d::Constant(pp);
+        const double j2 = std::sqrt(0.5 * d.squaredNorm());
+        Eigen::Vector3d b = d / (2.0 * j2);
+        if (br_.psiDeg > 0.0 && fdam > 0.0) {
+            const double dvol = fdam * (br_.power ? mhDilation(pp, j2) : betaDil_);
+            if (dvol != 0.0) b += Eigen::Vector3d::Constant(dvol);
+        }
+        return b;
+    }
+
+    // Direction de la SECONDE surface active sur une arete. Koiter demande une
+    // direction par surface ; la seconde surface se deduit de la premiere par
+    // la TRANSPOSITION des deux composantes qui coalescent, et la direction
+    // suit la meme transposition. C'est exactement ce que fait MohrCoulombLaw
+    // ::edgeReturn (b2 = b1 permute) ; ecrit ainsi, le procede vaut aussi pour
+    // la direction LISSE de dpFlowForm = dp, qui n'a pourtant pas de coin.
+    static Eigen::Vector3d swap2(const Eigen::Vector3d& b, int i, int j) {
+        Eigen::Vector3d r = b;
+        r(i) = b(j);
+        r(j) = b(i);
+        return r;
+    }
+
+    // ---------------------------------------------------------------------
+    //  Le retour lui-meme. Met a jour sig, p, s.epsP, s.epvEq et dEpsP.
+    //  La VISCOSITE PARFAITE est preservee : a convergence chaque surface
+    //  active verifie f_k = eta dlam_k / dt, c'est-a-dire exactement la
+    //  structure dlam = F / (H + eta/dt) du noyau (l. ~428) — la premiere
+    //  iteration de Newton depuis dlam = 0 EST cette formule fermee, les
+    //  suivantes ne font que rattraper la non-linearite de l'enveloppe
+    //  puissance (que le noyau historique, lui, laisse au pas suivant).
+    // ---------------------------------------------------------------------
+    void principalReturn(Eigen::Matrix3d& sig, double& p, MatState& s,
+                         double dt, Eigen::Matrix3d& dEpsP) const {
+        Eigen::SelfAdjointEigenSolver<Eigen::Matrix3d> es(sig);
+        const Eigen::Vector3d ev = es.eigenvalues();        // croissant
+        const Eigen::Matrix3d V = es.eigenvectors();
+        const Eigen::Vector3d pv(ev(2), ev(1), ev(0));      // s1 >= s2 >= s3
+        Eigen::Matrix3d Q;
+        Q.col(0) = V.col(2); Q.col(1) = V.col(1); Q.col(2) = V.col(0);
+
+        if (yieldAny(pv, 0, 2) <= 0.0) return;              // elastique
+
+        const double dti = 1.0 / std::max(dt, 1.0e-30);
+        const double tol = 1.0e-10 * std::max(br_.fc0, kdp_);
+        const Eigen::Vector3d b1 = flowDirP(pv, s);
+        const Eigen::Vector3d Db1 = elasticP(b1);
+
+        // ---- (1) RETOUR SUR LA SURFACE PRIMAIRE (ia, ib) = (0, 2) --------
+        // Newton BORNE, meme patron que yieldQPower (l. ~369-385) : sous la
+        // loi puissance (n < 1) l'enveloppe a une TANGENTE VERTICALE en
+        // sigma_3 = 0, ou dPhi/dsigma_3 -> l'infini. Un Newton nu y fait des
+        // pas nuls et s'arrete loin de la racine (mesure : 2,4 % de
+        // depassement sur le pic uniaxial). On encadre donc la racine et on
+        // se replie sur la bissection des que le pas de Newton sort du
+        // crochet. r(x) = f(s_tr - x Db) - eta x/dt est DECROISSANTE.
+        const Eigen::Vector3d aT(1.0, 0.0, -1.0);      // gradient de TRESCA
+        const double HT = aT.dot(Db1);                 // 2 G (b_1 - b_3) > 0
+        const double F0 = yieldAny(pv, 0, 2);
+        auto res = [&](double x) {
+            return yieldAny(pv - x * Db1, 0, 2) - eta_ * x * dti;
+        };
+        double lo = 0.0;
+        double hi = F0 / (std::max(HT, 1.0e-30) + eta_ * dti);
+        for (int k = 0; k < 200 && res(hi) > 0.0; ++k) hi *= 2.0;
+        // PREMIER ITERE = la formule fermee du noyau, dlam = F / (H + eta/dt)
+        // (l. ~428) : la viscosite garde exactement sa structure, les iteres
+        // suivants ne font que rattraper la non-linearite de l'enveloppe.
+        double dl = F0 / (gradAny(pv, 0, 2).dot(Db1) + eta_ * dti);
+        if (!(dl > lo && dl < hi)) dl = 0.5 * (lo + hi);
+        Eigen::Vector3d sv = pv - dl * Db1;
+        for (int it = 0; it < 80; ++it) {
+            const double r = yieldAny(sv, 0, 2) - eta_ * dl * dti;
+            if (r > 0.0) lo = dl; else hi = dl;
+            if (std::abs(r) <= tol) break;
+            const double den = gradAny(sv, 0, 2).dot(Db1) + eta_ * dti;
+            double dn = (den > 0.0) ? dl + r / den : 0.5 * (lo + hi);
+            if (!(dn > lo && dn < hi)) dn = 0.5 * (lo + hi);
+            dl = dn;
+            sv = pv - dl * Db1;
+        }
+        Eigen::Vector3d dEpsPv = dl * b1;
+        double dlSum = dl;
+
+        // ---- (2) ARETES (sigma_1 = sigma_2 et sigma_2 = sigma_3) ---------
+        // Le tri s1 >= s2 >= s3 viole => le point appartient a une arete du
+        // cone HEXAGONAL : deux surfaces actives, systeme 2x2 de Koiter,
+        // repris DEPUIS L'ETAT D'ESSAI comme le fait MohrCoulombLaw.
+        if (br_.mhPrincipal && !(sv(0) >= sv(1) && sv(1) >= sv(2))) {
+            const int l = (sv(0) < sv(1)) ? 1 : 2;
+            const int ia2 = (l == 1) ? 1 : 0;
+            const int ib2 = (l == 1) ? 2 : 1;
+            const Eigen::Vector3d b2 = (l == 1) ? swap2(b1, 0, 1)
+                                                : swap2(b1, 1, 2);
+            const Eigen::Vector3d Db2 = elasticP(b2);
+            Eigen::Vector2d x(0.0, 0.0);
+            Eigen::Vector3d sw = pv;
+            for (int it = 0; it < 60; ++it) {
+                const Eigen::Vector2d r(
+                    yieldMH(sw, 0, 2) - eta_ * x(0) * dti,
+                    yieldMH(sw, ia2, ib2) - eta_ * x(1) * dti);
+                if (r.cwiseAbs().maxCoeff() <= tol) break;
+                const Eigen::Vector3d a1 = gradMH(sw, 0, 2);
+                const Eigen::Vector3d a2 = gradMH(sw, ia2, ib2);
+                Eigen::Matrix2d A;
+                A << a1.dot(Db1) + eta_ * dti, a1.dot(Db2),
+                     a2.dot(Db1),              a2.dot(Db2) + eta_ * dti;
+                const Eigen::Vector2d dx = A.fullPivLu().solve(r);
+                if (!dx.allFinite()) break;
+                x(0) = std::max(0.0, x(0) + dx(0));
+                x(1) = std::max(0.0, x(1) + dx(1));
+                sw = pv - x(0) * Db1 - x(1) * Db2;
+            }
+            sv = sw;
+            dEpsPv = x(0) * b1 + x(1) * b2;
+            dlSum = x(0) + x(1);
+        }
+
+        // ---- (3) TRI DE SECURITE ET SOMMET -------------------------------
+        // Le critere de l'eq. 2 n'a PAS d'apex du cote tractif : sur l'axe
+        // hydrostatique s1 = s2 = s3 il vaut f = -B<-s1>^n - fc0 < 0, donc le
+        // prisme est ouvert a l'infini en traction (la traction est l'affaire
+        // des joints, §1.4). Il reste le SOMMET DEVIATORIQUE : quand les trois
+        // surfaces sont actives a la fois, ou quand le systeme d'arete n'a pas
+        // converge, l'etat admissible le plus proche sur la normale au coin
+        // est l'etat hydrostatique — strictement interieur d'apres ce qui
+        // precede. Filet de securite, jamais atteint sur les bancs.
+        {
+            double v[3] = {sv(0), sv(1), sv(2)};
+            std::sort(v, v + 3, std::greater<double>());
+            sv = Eigen::Vector3d(v[0], v[1], v[2]);
+            const double fEnd = br_.mhPrincipal ? yieldMH(sv, 0, 2)
+                                                : yieldDPp(sv);
+            if (!(fEnd <= 1.0e-6 * std::max(br_.fc0, kdp_) + eta_ * dlSum * dti)) {
+                const double mHyd = sv.sum() / 3.0;
+                sv = Eigen::Vector3d::Constant(mHyd);
+            }
+        }
+
+        // ---- (4) RECOMPOSITION ET COMPTEURS ------------------------------
+        sig = Q * sv.asDiagonal() * Q.transpose();
+        p = sv.sum() / 3.0;
+        const Eigen::Matrix3d dEp = Q * dEpsPv.asDiagonal() * Q.transpose();
+        s.epsP += dEp;
+        dEpsP += dEp;
+        if (br_.flowMC) {
+            // §1.2 eq. 4 : kappa_point = sqrt(2/3 eps_point_vp : eps_point_vp),
+            // sur le tenseur COMPLET. Le noyau historique ajoute dlam/sqrt(3),
+            // qui EST cette meme norme tant que l'ecoulement est deviatorique
+            // (||dev/(2 sqrtJ2)|| = 1/sqrt2, et sqrt(2/3)/sqrt(2) = 1/sqrt3)
+            // mais IGNORE la part volumique des que psi > 0.
+            s.epvEq += std::sqrt(2.0 / 3.0 * dEpsPv.squaredNorm());
+        } else {
+            s.epvEq += dlSum / std::sqrt(3.0);          // convention du noyau
+        }
     }
 
     Eigen::Matrix3d stress(const Eigen::Matrix3d& eps, MatState& s,
@@ -321,17 +738,63 @@ public:
         }
         // dpApex : pas de retour au-dela de l'apex (k_eff <= 0) ; dpTension =
         // off : pas de retour en traction (p > 0) — voir BrickOpts
-        if ((br_.apex && kdp_ - adp_ * 3.0 * p <= 0.0)
-            || (br_.tensionOff && p > 0.0)) F = -1.0;
+        const bool gated = (br_.apex && kdp_ - adp_ * 3.0 * p <= 0.0)
+                           || (br_.tensionOff && p > 0.0);
+        if (gated) F = -1.0;
         Eigen::Matrix3d dEpsP = Eigen::Matrix3d::Zero();   // increment (compteur)
         if (capDv > 0.0) dEpsP -= (capDv / 3.0) * Eigen::Matrix3d::Identity();
-        if (F > 0.0 && sj2 > 1e-12) {
+        if (br_.mhPrincipal || br_.flowMC) {
+            // ---- §1.2 : retour en CONTRAINTES PRINCIPALES (opt-in) --------
+            // Branche NOUVELLE, a cote de l'ancienne : les deux cles sont
+            // fausses par defaut et le `else if` ci-dessous reste alors le
+            // seul chemin, inchange. Les deux verrous dpApex / dpTension
+            // gardent leur definition d'origine (cone LINEAIRE, pression) :
+            // ce sont des cles a elles, on ne les reinterprete pas ici.
+            // sj2 > 1e-12 : meme garde que le noyau (la direction lisse est
+            // indefinie sur l'axe hydrostatique ; le critere de l'eq. 2 y est
+            // de toute facon strictement negatif).
+            if (!gated && sj2 > 1e-12)
+                principalReturn(sig, p, s, dt, dEpsP);
+        } else if (F > 0.0 && sj2 > 1e-12) {
             // linear Perzyna: F_{n+1} = eta dlam/dt with radial deviatoric
             // return sqrtJ2 -> sqrtJ2 - G dlam  =>  closed form
             double dlam = F / (G_ + eta_ / std::max(dt, 1e-30));
             Eigen::Matrix3d nfl = dev / (2.0 * sj2);   // flow direction
+            // ---- terme VOLUMIQUE du potentiel non associe (2026-09-07) ----
+            // dilVol_ = d g / d I1. A psiDeg = 0 il vaut 0 : nfl reste de
+            // trace nulle, le retour reste purement deviatorique et le chemin
+            // est bit-identique. Sinon on ajoute (dilVol_) I a la direction,
+            // et la pression relaxe de K dlam tr(n) = 3 K dlam dilVol_ —
+            // meme structure que ng = nf + beta I de la VUMAT 2011, et que
+            // mvol = mm1 + mm3 de la VUMAT MH.
+            double dvol = 0.0;
+            if (br_.psiDeg > 0.0) {
+                // psi(omega) : facteur multiplicatif sur la dilatance. Les
+                // deux formes (beta lineaire, mvol puissance) sont lineaires
+                // en sin(psi) au premier ordre, donc moduler le TERME
+                // VOLUMIQUE revient a moduler psi — et c'est exact pour le
+                // meridien lineaire, ou beta est proportionnel a tan(psi)
+                // au premier ordre.
+                double fdam = 1.0;
+                if (br_.dilDam) {
+                    const double om = std::max(s.D, s.Dc);   // pas precedent
+                    fdam = (om <= 0.0) ? 0.0
+                         : (br_.dilExp == 1.0 ? om
+                                              : std::pow(om, br_.dilExp));
+                }
+                if (fdam > 0.0) {
+                    dvol = fdam * (br_.power ? mhDilation(p, sj2) : betaDil_);
+                    if (dvol != 0.0)
+                        nfl += dvol * Eigen::Matrix3d::Identity();
+                }
+            }
             s.epsP += dlam * nfl;
             dev *= (1.0 - G_ * dlam / sj2);
+            // La part volumique du retour agit sur p, donc sur la pression
+            // de la contrainte rendue. Sans cette ligne la deformation
+            // plastique serait dilatante mais la contrainte l'ignorerait :
+            // l'ecoulement ne serait pas celui du potentiel.
+            if (dvol != 0.0) p -= 3.0 * K_ * dlam * dvol;
             sig = dev + p * Eigen::Matrix3d::Identity();
             s.epvEq += dlam / std::sqrt(3.0);
             dEpsP += dlam * nfl;
@@ -351,15 +814,29 @@ public:
         // qui est le comportement attendu d'un materiau dont seuls les defauts
         // sont distribues.
         const double ftLoc = mat_.ft * s.ftScale;
+        // GfLoc reste calcule HORS du bloc conditionnel ci-dessous : il est
+        // relu plus bas par erodeWfrac (spall sur l'energie de bande). Le
+        // sortir du bloc est la solution retenue (l'autre etait de desarmer
+        // erodeWfrac) ; erodeWfrac > 0 avec bulkTensionDamage = off est de
+        // toute facon refuse a la lecture des cles, faute de wDamT.
         const double GfLoc = wScaleGf_ ? mat_.Gf * s.ftScale : mat_.Gf;
+        const double Dold = s.D;
+        double dOldF[3] = {0.0, 0.0, 0.0};             // tensionDamage = fixed
+        // ---- §1.4 : bulkTensionDamage = off -> la matrice ne porte AUCUN
+        // endommagement de traction (eq. 8, « pas de coupure de Rankine dans
+        // la matrice »). Le bloc entier est saute, s.D et s.kappa restent a
+        // leur valeur (0), et AVEC EUX LES DEUX GARDES DE BANDE EN TRACTION :
+        // la limite lc < E Gf / ft^2 est la condition de non-snap-back de la
+        // bande de Rankine, elle n'a plus d'objet quand cette bande n'existe
+        // pas (l'autre garde, celle de la construction, est levee de la meme
+        // facon dans MatLaw::make). Defaut `on` = chemin historique.
+        if (!br_.tensionNone) {
         double k0 = ftLoc / mat_.E;
         double kf = GfLoc / (lc * ftLoc) - 0.5 * k0;
         if (kf <= 0.05 * k0)
             throw std::runtime_error("MatLaw: element size " + std::to_string(lc)
                 + " m exceeds the crack-band limit E Gf / ft^2 — refine the "
                   "mesh or raise Gf");
-        const double Dold = s.D;
-        double dOldF[3] = {0.0, 0.0, 0.0};             // tensionDamage = fixed
         if (!br_.fixedCrack) {
         double e1 = maxPrincipal(eps - s.epsP);        // driving strain
         if (br_.rankineStress)                         // pilotage en contrainte
@@ -375,13 +852,22 @@ public:
             // cinetique (k0, kf) ; s.D = max d_i, s.kappa = max kappa_i
             fixedCrackUpdate(eps, sig, s, k0, kf, dOldF);
         }
+        }
 
         // ---- endommagement COMPRESSIF crack-band (compDamage = crackband) --
         // omega_c = Ac (1 - exp(-b_c epvEq)), b_c = fc0 h_e / G_IIc, monotone ;
         // porte sur la partie spectrale negative (brique omega_c de MH 2018)
         const double DcOld = s.Dc;
         if (br_.compDam) {
-            double bc = br_.fc0 * lc / br_.GIIc;
+            // §1.3 eq. 6 : b_c = sigma_c0 h_e / G_c^bulk, avec h_e la
+            // longueur de bande de la COMPRESSION. Le solveur la renseigne
+            // dans s.lcComp (= (12 V_e/sqrt2)^(1/3), l'arete du tetraedre
+            // regulier, sous compBandLength = tetEdge) ; lcComp <= 0 signifie
+            // « non renseignee » et on retombe sur lc, c'est-a-dire sur le
+            // comportement de rockim_g0, BIT-IDENTIQUE. La bande de TRACTION
+            // (k0, kf ci-dessus) garde lc dans tous les cas : les deux
+            // longueurs sont deux grandeurs distinctes de la note.
+            double bc = br_.fc0 * (s.lcComp > 0.0 ? s.lcComp : lc) / br_.GIIc;
             double wc = br_.Ac * (1.0 - std::exp(-bc * s.epvEq));
             if (wc > s.Dc) s.Dc = wc;
         }
@@ -583,6 +1069,9 @@ private:
     }
 
     double eta_, capP0_, capH_, erodeD_, erodeEpv_;
+    double betaDil_ = 0.0;           // d g / d I1 du potentiel LINEAIRE
+    double sinPsi_ = 0.0;            // sin(psi) — §1.2 eq. 3
+    double mPsi_ = 1.0;              // (1 + sin psi)/(1 - sin psi), eq. 3
     BrickOpts br_;
 };
 
@@ -4574,6 +5063,33 @@ std::unique_ptr<MatLaw> MatLaw::make(const std::string& kind,
         if (br.compDam && (!(br.Ac > 0.0 && br.Ac <= 1.0) || !(br.GIIc > 0.0)))
             throw std::runtime_error("compDamage = crackband requires "
                                      "0 < compAc <= 1 and compGIIc > 0 [J/m^2]");
+        // ---- dilatance du potentiel non associe (2026-09-07, opt-in) -------
+        // Nom en DEGRES, homogene avec mcDilationDeg et cdpDilationDeg qui
+        // existent deja. 0 (defaut) = ecoulement isochore = chemin
+        // bit-identique. La borne psi <= phi est la condition d'admissibilite
+        // thermodynamique du cadre non associe (dissipation >= 0) ; psi = phi
+        // redonne l'ecoulement associe.
+        br.psiDeg = c.getd("dpDilationDeg", 0.0);
+        if (!(br.psiDeg >= 0.0) || br.psiDeg > m.phiDeg)
+            throw std::runtime_error("dpDilationDeg must be in [0, frictionDeg]"
+                " (associe si psi = phi ; 0 = ecoulement isochore, le defaut "
+                "historique). frictionDeg = " + std::to_string(m.phiDeg));
+        // psi pilote par l'endommagement (opt-in). « none » = psi constant,
+        // le comportement de la cle seule ; « omega » = psi * omega^dilExp.
+        {
+            const std::string dd = c.gets("dpDilationDamage", "none");
+            if (dd != "none" && dd != "omega")
+                throw std::runtime_error("dpDilationDamage must be none | omega "
+                                         "(got '" + dd + "')");
+            br.dilDam = dd == "omega";
+            br.dilExp = c.getd("dpDilationExp", 1.0);
+            if (!(br.dilExp > 0.0) || br.dilExp > 5.0)
+                throw std::runtime_error("dpDilationExp must be in ]0, 5]");
+            if (br.dilDam && !(br.psiDeg > 0.0))
+                throw std::runtime_error("dpDilationDamage = omega sans "
+                    "dpDilationDeg > 0 : psi_eff = psi * omega vaudrait 0 "
+                    "partout, la cle serait lue et sans effet.");
+        }
         br.erodeDc = c.getd("erodeDc", 0.0);
         if (br.erodeDc < 0.0 || br.erodeDc > 1.0)
             throw std::runtime_error("erodeDc is a NORMALISED threshold on "
@@ -4616,6 +5132,80 @@ std::unique_ptr<MatLaw> MatLaw::make(const std::string& kind,
             if (!(br.shearRet >= 0.0 && br.shearRet <= 1.0))
                 throw std::runtime_error("tensionShearRetention (beta) must be in "
                                          "[0, 1] (1 = no shear retention)");
+        }
+        // ---- §1.2 eq. 2 : mhForm = dp (defaut) | principal ----------------
+        // Le critere en CONTRAINTES PRINCIPALES (cone hexagonal) au lieu du
+        // cone circulaire en invariants. Exige meridian = power : la loi
+        // puissance EST l'enveloppe meridienne de l'eq. 2, et `principal` sur
+        // un meridien lineaire serait un Mohr-Coulomb — c'est law = mc, qui
+        // existe deja.
+        {
+            const std::string mf = c.gets("mhForm", "dp");
+            if (mf != "dp" && mf != "principal")
+                throw std::runtime_error("mhForm must be dp | principal (got '"
+                                         + mf + "')");
+            br.mhPrincipal = mf == "principal";
+            if (br.mhPrincipal && !br.power)
+                throw std::runtime_error("mhForm = principal exige meridian = power "
+                                         "(l'eq. 2 de la note est f = s1 - s3 - "
+                                         "B <s3>^n - sigma_c ; sur un meridien "
+                                         "lineaire le critere principal est "
+                                         "Mohr-Coulomb, c'est-a-dire law = mc)");
+            if (br.mhPrincipal && kind != "dpr" && kind != "saksala")
+                throw std::runtime_error("mhForm = principal is implemented for "
+                                         "law = dpr | saksala only (les autres lois "
+                                         "ignorent BrickOpts : la cle serait lue et "
+                                         "inerte)");
+        }
+        // ---- §1.2 eq. 3 : dpFlowForm = dp (defaut) | mc -------------------
+        // Potentiel g = sigma_1 - m_psi sigma_3, gradient (1, 0, -m_psi) : la
+        // composante INTERMEDIAIRE est nulle. psi vient de dpDilationDeg, deja
+        // lue ci-dessus ; a psi = 0 le potentiel est isochore, comme le defaut
+        // du noyau, mais la direction reste differente de celle du potentiel
+        // lisse (qui, elle, charge les trois composantes) : la cle n'est donc
+        // jamais inerte.
+        {
+            const std::string ff = c.gets("dpFlowForm", "dp");
+            if (ff != "dp" && ff != "mc")
+                throw std::runtime_error("dpFlowForm must be dp | mc (got '"
+                                         + ff + "')");
+            br.flowMC = ff == "mc";
+            if (br.flowMC && kind != "dpr" && kind != "saksala")
+                throw std::runtime_error("dpFlowForm = mc is implemented for "
+                                         "law = dpr | saksala only (les autres lois "
+                                         "ignorent BrickOpts : la cle serait lue et "
+                                         "inerte)");
+        }
+        // ---- §1.4 de la note 2026 : bulkTensionDamage = on | off ----------
+        // `off` supprime l'endommagement de TRACTION de la matrice (le double
+        // comptage n.1 de l'audit du 2026-09-11). Refusee sur les lois qui
+        // ignorent BrickOpts, sur le modele EXACT de la garde de
+        // tensionDamage = fixed ci-dessus : sans ce refus la cle serait lue,
+        // inerte, et KeyGuard resterait muet — le piege n.1 du depot.
+        {
+            const std::string bt = c.gets("bulkTensionDamage", "on");
+            if (bt != "on" && bt != "off")
+                throw std::runtime_error("bulkTensionDamage must be on | off "
+                                         "(got '" + bt + "')");
+            br.tensionNone = bt == "off";
+            if (br.tensionNone && kind != "dpr" && kind != "saksala")
+                throw std::runtime_error("bulkTensionDamage = off is implemented for "
+                                         "law = dpr | saksala only (mc : pas "
+                                         "d'endommagement du tout ; saksala2011, "
+                                         "dpdfh, dfhplus, cdp : ports fideles, "
+                                         "endommagement de traction propre, hors "
+                                         "bande (ft, Gf, lc))");
+            if (br.tensionNone && br.fixedCrack)
+                throw std::runtime_error("bulkTensionDamage = off et tensionDamage = "
+                                         "fixed se contredisent : la premiere "
+                                         "supprime l'endommagement de traction de la "
+                                         "matrice, la seconde en choisit la forme "
+                                         "directionnelle");
+            if (br.tensionNone && br.erodeWfrac > 0.0)
+                throw std::runtime_error("erodeWfrac est un seuil sur wDamT, que "
+                                         "bulkTensionDamage = off laisse a 0 : la "
+                                         "cle serait lue et INERTE. Retirer l'une "
+                                         "des deux");
         }
     }
 
@@ -4742,7 +5332,12 @@ std::unique_ptr<MatLaw> MatLaw::make(const std::string& kind,
     // crack-band feasibility check at the coarsest element (dpr/saksala
     // only: saksala2011 deliberately has NO fracture-energy regularization,
     // like the published law — its results are mesh-sensitive by design)
-    if (kind == "dpr" || kind == "saksala") {
+    // §1.4 : sous bulkTensionDamage = off il n'y a plus de bande de TRACTION,
+    // donc plus de limite E Gf / ft^2 a verifier — la garde est levee, comme
+    // celle de PlasticDamageLaw::stress. La bande de COMPRESSION a sa propre
+    // condition de non-snap-back (eq. 7, h_e < 2 E G_c^bulk / sigma_c0^2),
+    // que jtsl::compBandLimit expose au solveur.
+    if ((kind == "dpr" || kind == "saksala") && !br.tensionNone) {
         double k0 = m.ft / m.E;
         double kf = m.Gf / (lcMax * m.ft) - 0.5 * k0;
         if (kf <= 0.05 * k0)
@@ -4753,6 +5348,60 @@ std::unique_ptr<MatLaw> MatLaw::make(const std::string& kind,
                 + " m — refine the mesh or raise Gf");
     }
     if (law) law->wScaleGf_ = (wsc == "strengthGf");
+
+    // ---- §1.2 / §1.5 : AVERTISSEMENTS, jamais des refus -------------------
+    // Deux pieges que l'audit du 2026-09-11 a mesures sur des decks corrects,
+    // et qu'aucune garde ne peut refuser sans casser un deck existant.
+    if (kind == "saksala" && br.power) {
+        // (a) le CAP VOLUMIQUE ECROUISSANT est arme PAR DEFAUT sous
+        //     law = saksala (capP0 = 8 c, s.pc += capH |deps_v^p|). L'eq. 2 de
+        //     la note pose une viscoplasticite PARFAITE : pas de cap, pas
+        //     d'ecrouissage. Et le cap est INVISIBLE en triaxial (il n'agit
+        //     qu'au-dela de la pression de broyage), donc une calibration
+        //     triaxiale ne le revele pas — il n'apparait que sous l'insert.
+        if (!c.has("capP0"))
+            std::cout << "[MATLAW] AVERTISSEMENT : law = saksala arme un CAP "
+                         "VOLUMIQUE ECROUISSANT par defaut (capP0 = 8 c = "
+                      << 8.0 * m.cohesion / 1.0e6 << " MPa, capH = "
+                      << c.getd("capH", m.K()) / 1.0e9
+                      << " GPa). L'eq. 2 de la note (meridian = power) est une "
+                         "viscoplasticite PARFAITE : poser capP0 = 0 dans le "
+                         "deck pour l'eteindre. Le cap est invisible en "
+                         "triaxial.\n";
+        // (b) saksalaEta est une VISCOSITE eta [Pa.s], pas la pente s_MH
+        //     [MPa.s] de l'eq. 9 : les deux different du facteur
+        //     sqrt(3)/(1/sqrt(3) - alpha) (6,6 a 9,7 selon phi). On imprime
+        //     donc la loi sigma_c(epsdot) en clair, telle que la loi la
+        //     realisera.
+        const double eta = c.getd("saksalaEta", 0.05e6);
+        const double sc0 = br.power ? br.fc0 : (law ? law->sigmaCdp() : 0.0);
+        // s_MH [Pa.s] = d(q_pic)/d(epsdot_axial) en compression triaxiale
+        // ETABLIE. Elle depend de la FORME du critere et du potentiel, et il
+        // serait faux d'imprimer partout la formule du cone lineaire :
+        //   - mhForm = dp        : f est en unites de sqrt(J2), la conversion
+        //     en q donne sqrt(3) eta / (1/sqrt(3) - alpha) — c'est
+        //     viscousOverstress(1), verifie par les bancs du depot ;
+        //   - mhForm = principal : f EST deja q, et au regime etabli
+        //     dlam_point = sqrt(3) epsdot (ecoulement lisse) ou epsdot
+        //     (ecoulement de l'eq. 3, dont la composante axiale vaut -1),
+        //     d'ou s_MH = sqrt(3) eta ou eta. Mesure au banc (T4) :
+        //     0,0866 MPa.s pour eta = 5e4 Pa.s, contre 0,486 MPa.s pour la
+        //     formule du cone — un facteur 5,6 de malentendu possible.
+        const double sMH = br.mhPrincipal
+                           ? (br.flowMC ? eta : std::sqrt(3.0) * eta)
+                           : (law ? law->viscousOverstress(1.0) : 0.0);
+        std::cout << "[MATLAW] saksala : eta = " << eta
+                  << " Pa.s -> sigma_c(epsdot) = " << sc0 / 1.0e6
+                  << " MPa + " << sMH / 1.0e6 << " MPa.s * epsdot"
+                     "  (s_MH de l'eq. 9, pente du pic triaxial etabli ; "
+                     "saksalaEta est une VISCOSITE [Pa.s], pas s_MH)\n";
+    }
+    if (br.tensionNone && erodeD <= 1.0)
+        std::cout << "[MATLAW] AVERTISSEMENT : bulkTensionDamage = off laisse "
+                     "s.D a 0, donc le canal de spall erodeD = " << erodeD
+                  << " est INERTE (aucun element ne sera erode en traction). "
+                     "En FDEM c'est le comportement voulu : la traction est "
+                     "l'affaire des joints (§1.4).\n";
     return law;
 }
 

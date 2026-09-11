@@ -1,42 +1,13 @@
 {
  "_meta": {
-  "date": "2026-09-05 18:34:44",
-  "exe": "rockim_f2w18.exe",
-  "exe_mtime": "2026-09-05 13:45:12",
-  "exe_path": "C:\\Users\\fuzquianoalricabi\\simulations\\FDEM\\rockim_f2\\rockim_f2w18.exe",
-  "exe_sha256": "655a87329c68b0d88e499a6eebfa73543d5869d9373685ea6430d7c5f1e8c008",
-  "exe_size": 1878528,
+  "date": "2026-09-11 09:15:26",
+  "exe": "rockim_g1ref.exe",
+  "exe_mtime": "2026-09-11 08:55:18",
+  "exe_path": "C:\\Users\\fuzquianoalricabi\\simulations\\FDEM\\rockim_g1\\rockim_g1ref.exe",
+  "exe_sha256": "76a3dbf1a283729d1abcbfc263f67f95c1a27e2f9972bd241ac8ec9c62e2fdf8",
+  "exe_size": 2263040,
   "hash": "sha256 du contenu de history.csv, frames.csv, probes.csv (si present) et des .vtu de la derniere trame ; comparable au MEME nombre de fils seulement",
   "host": "PCP-103720",
-  "partial_updates": [
-   {
-    "date": "2026-09-05 18:37:31",
-    "decks": [
-     "fdem3d_visc_yan_3d"
-    ],
-    "exe": "rockim_f2w18.exe",
-    "exe_sha256": "655a87329c68b0d88e499a6eebfa73543d5869d9373685ea6430d7c5f1e8c008",
-    "only": "fdem3d_visc"
-   },
-   {
-    "date": "2026-09-05 18:42:56",
-    "decks": [
-     "fdem3d_visc_yan_3d"
-    ],
-    "exe": "rockim_f2w18.exe",
-    "exe_sha256": "655a87329c68b0d88e499a6eebfa73543d5869d9373685ea6430d7c5f1e8c008",
-    "only": "fdem3d_visc"
-   },
-   {
-    "date": "2026-09-05 19:33:32",
-    "decks": [
-     "fem3d_cdp_PQ_court"
-    ],
-    "exe": "rockim_f2w18.exe",
-    "exe_sha256": "655a87329c68b0d88e499a6eebfa73543d5869d9373685ea6430d7c5f1e8c008",
-    "only": "fem3d_cdp_PQ_court"
-   }
-  ],
   "platform": "Windows-11-10.0.26200-SP0",
   "python": "3.12.10",
   "regle": "toute ancre changee = ligne CHANGELOG.md « ancre bitid changee : raison » + commit du json",
@@ -46,10 +17,10 @@
   "fdem3d_cut3d_heilman_court": {
    "apex_retries": 0,
    "cfg": "tests_f2/bitid/fdem3d_cut3d_heilman_court.cfg",
-   "date": "2026-09-05 18:34:44",
+   "date": "2026-09-11 09:15:26",
    "dt_s": 1.54296e-09,
-   "exe": "rockim_f2w18.exe",
-   "exe_sha256": "655a87329c68b0d88e499a6eebfa73543d5869d9373685ea6430d7c5f1e8c008",
+   "exe": "rockim_g1ref.exe",
+   "exe_sha256": "76a3dbf1a283729d1abcbfc263f67f95c1a27e2f9972bd241ac8ec9c62e2fdf8",
    "hashes": {
     "fdem3d_0003.vtu": "a8922a4e3d7c02e969e64ced9272064507a52aba69a00a39e000c40cdfbabe00",
     "fdem3d_joints_0003.vtu": "1c8a348e8113179d3ef5bf3a8cefd69fb24dd7995a8f71e3d4aca941861877d9",
@@ -61,15 +32,15 @@
    "peak_force_N": 19541.3,
    "steps": 3889,
    "threads": 4,
-   "wall_s": 93.6073
+   "wall_s": 21.591
   },
   "fdem3d_kuru9_court": {
    "apex_retries": 0,
    "cfg": "tests_f2/bitid/fdem3d_kuru9_court.cfg",
-   "date": "2026-09-05 18:34:44",
+   "date": "2026-09-11 09:15:26",
    "dt_s": 3.61373e-09,
-   "exe": "rockim_f2w18.exe",
-   "exe_sha256": "655a87329c68b0d88e499a6eebfa73543d5869d9373685ea6430d7c5f1e8c008",
+   "exe": "rockim_g1ref.exe",
+   "exe_sha256": "76a3dbf1a283729d1abcbfc263f67f95c1a27e2f9972bd241ac8ec9c62e2fdf8",
    "hashes": {
     "fdem3d_0002.vtu": "e44b5aa3d1fd8f857bf3e8e7c77b18cf5b0c6019241305a23cbcef74532ecf15",
     "fdem3d_joints_0002.vtu": "56d504dfee1e8a722d34766ee1b4420e250f739f3bbd76ce8b564b484b6cace4",
@@ -81,15 +52,15 @@
    "peak_force_N": 0.0,
    "steps": 2768,
    "threads": 4,
-   "wall_s": 233.837
+   "wall_s": 78.1583
   },
   "fdem3d_visc_yan_3d": {
    "apex_retries": 0,
    "cfg": "tests_f2/bitid/fdem3d_visc_yan_3d.cfg",
-   "date": "2026-09-05 18:42:56",
+   "date": "2026-09-11 09:15:26",
    "dt_s": 7.15193e-09,
-   "exe": "rockim_f2w18.exe",
-   "exe_sha256": "655a87329c68b0d88e499a6eebfa73543d5869d9373685ea6430d7c5f1e8c008",
+   "exe": "rockim_g1ref.exe",
+   "exe_sha256": "76a3dbf1a283729d1abcbfc263f67f95c1a27e2f9972bd241ac8ec9c62e2fdf8",
    "hashes": {
     "fdem3d_0002.vtu": "3feb409709a875b5ee7b0b93005aadc90b38166a9fa78e78f500cf6e92aa5c12",
     "fdem3d_joints_0002.vtu": "af143536820122cd7c5805b51b08a3f5a8d9c11bf288fac66c33148b3bc9e718",
@@ -101,15 +72,15 @@
    "peak_force_N": null,
    "steps": 19576,
    "threads": 4,
-   "wall_s": 207.482
+   "wall_s": 73.0326
   },
   "fdem_toolcontact_signorini": {
    "apex_retries": 0,
    "cfg": "tests_f2/bitid/fdem_toolcontact_signorini.cfg",
-   "date": "2026-09-05 18:34:44",
+   "date": "2026-09-11 09:15:26",
    "dt_s": 1.46053e-09,
-   "exe": "rockim_f2w18.exe",
-   "exe_sha256": "655a87329c68b0d88e499a6eebfa73543d5869d9373685ea6430d7c5f1e8c008",
+   "exe": "rockim_g1ref.exe",
+   "exe_sha256": "76a3dbf1a283729d1abcbfc263f67f95c1a27e2f9972bd241ac8ec9c62e2fdf8",
    "hashes": {
     "fdem_0007.vtu": "e3de044d793467285f489989d45406d99803728f6121b0962d031c8c490c368a",
     "fdem_joints_0007.vtu": "86d5b2b945f1c4606030a71b80fd5626f57bb8d0c362e3f650db90bae151b0ae",
@@ -121,15 +92,15 @@
    "peak_force_N": 205788.0,
    "steps": 205405,
    "threads": 4,
-   "wall_s": 99.5137
+   "wall_s": 13.1359
   },
   "fdem_ucs_yan_adaptive_court": {
    "apex_retries": 0,
    "cfg": "tests_f2/bitid/fdem_ucs_yan_adaptive_court.cfg",
-   "date": "2026-09-05 18:34:44",
+   "date": "2026-09-11 09:15:26",
    "dt_s": 1.46441e-08,
-   "exe": "rockim_f2w18.exe",
-   "exe_sha256": "655a87329c68b0d88e499a6eebfa73543d5869d9373685ea6430d7c5f1e8c008",
+   "exe": "rockim_g1ref.exe",
+   "exe_sha256": "76a3dbf1a283729d1abcbfc263f67f95c1a27e2f9972bd241ac8ec9c62e2fdf8",
    "hashes": {
     "fdem_0002.vtu": "c9ea1942ca9591f1d179bb3304a8fb3443348f3d455646f8379f21a6efa56f6d",
     "fdem_joints_0002.vtu": "7af7122e40eb65abdb260f9ea523500bcde71669679fead52a4a8739e860eed4",
@@ -141,64 +112,64 @@
    "peak_force_N": null,
    "steps": 136574,
    "threads": 4,
-   "wall_s": 179.971
+   "wall_s": 27.5501
   },
   "fem3d_cdp_PQ_court": {
    "apex_retries": 0,
    "cfg": "tests_f2/bitid/fem3d_cdp_PQ_court.cfg",
-   "date": "2026-09-05 19:33:32",
+   "date": "2026-09-11 09:15:26",
    "dt_s": 1.23807e-08,
-   "exe": "rockim_f2w18.exe",
-   "exe_sha256": "655a87329c68b0d88e499a6eebfa73543d5869d9373685ea6430d7c5f1e8c008",
+   "exe": "rockim_g1ref.exe",
+   "exe_sha256": "76a3dbf1a283729d1abcbfc263f67f95c1a27e2f9972bd241ac8ec9c62e2fdf8",
    "hashes": {
     "fem3d_0003.vtu": "e2e42e15c8fbdf2d58d9e1fb3865a7acd78e3b6c577fc80df4bdd370fd8ffa96",
     "frames.csv": "6670a60ed53648e0962f3a40fdbea15400eab92b18a8bd7c5d4f106b596bbca6",
-    "history.csv": "e43ca95062fbc58b7c0d1c43d3754b225f650d3598f5e43015e67ca7eb90291c"
+    "history.csv": "b94eab939d501b29486be019e935c70924bec4d34657b2bd3b4de182d02c59f7"
    },
    "law": "cdp",
    "mode": "fem3d",
    "peak_force_N": 7916.75,
    "steps": 10501,
    "threads": 4,
-   "wall_s": 106.444
+   "wall_s": 34.1681
   },
   "fem3d_dpr_T1_court": {
    "apex_retries": 0,
    "cfg": "tests_f2/bitid/fem3d_dpr_T1_court.cfg",
-   "date": "2026-09-05 18:34:44",
+   "date": "2026-09-11 09:15:26",
    "dt_s": 1.27045e-08,
-   "exe": "rockim_f2w18.exe",
-   "exe_sha256": "655a87329c68b0d88e499a6eebfa73543d5869d9373685ea6430d7c5f1e8c008",
+   "exe": "rockim_g1ref.exe",
+   "exe_sha256": "76a3dbf1a283729d1abcbfc263f67f95c1a27e2f9972bd241ac8ec9c62e2fdf8",
    "hashes": {
     "fem3d_0002.vtu": "a091dbf168fb6a8455b3a25134b1be236b7b4e54d36ebb9b8d6fb6aa8f242560",
     "frames.csv": "14d5f7f70b97905dc56b8b80bcc3cb690b162f6444046043c3370d8699164eac",
-    "history.csv": "756bc37d5e33f28680c652255e8464688877dc16280b5a20db2c9e10ee363429"
+    "history.csv": "d228f05a35777e3190b2b821d492c1f87f485f95c7e2a6633ac7a224b4185faa"
    },
    "law": "dpr",
    "mode": "fem3d",
    "peak_force_N": 6775.14,
    "steps": 1968,
    "threads": 4,
-   "wall_s": 221.571
+   "wall_s": 91.7299
   },
   "fem3d_sk2011_cyl_court": {
    "apex_retries": 0,
    "cfg": "tests_f2/bitid/fem3d_sk2011_cyl_court.cfg",
-   "date": "2026-09-05 18:34:44",
+   "date": "2026-09-11 09:15:26",
    "dt_s": 1.77513e-07,
-   "exe": "rockim_f2w18.exe",
-   "exe_sha256": "655a87329c68b0d88e499a6eebfa73543d5869d9373685ea6430d7c5f1e8c008",
+   "exe": "rockim_g1ref.exe",
+   "exe_sha256": "76a3dbf1a283729d1abcbfc263f67f95c1a27e2f9972bd241ac8ec9c62e2fdf8",
    "hashes": {
     "fem3d_0003.vtu": "da88a5ba839b1d628374380fd6bd8a9c496378da64d1173275fa08e7ffc47ef1",
     "frames.csv": "6f4b7a8006182f30f4cc5cbc47d7c684e07f12dc5a2ffd525a6faa14d19bfd06",
-    "history.csv": "1ea51ebd4a9da03116ae9e8e2ecfa467bef5002ce8618bb162caa34d45af1000"
+    "history.csv": "f1f08fe6c8edb2008eb25097f97f0044c997e7b2c49eaa892a0b5a473baa9d65"
    },
    "law": "saksala2011",
    "mode": "fem3d",
    "peak_force_N": 30390.2,
    "steps": 1127,
    "threads": 4,
-   "wall_s": 102.266
+   "wall_s": 41.0761
   }
  }
 }

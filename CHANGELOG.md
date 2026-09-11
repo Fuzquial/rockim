@@ -1,9 +1,176 @@
-# Changelog de rockim (arbre g0)
+# Changelog de rockim (arbre g1)
 
 Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Une section par tag (mesure A3/A5 du
 plan de robustesse du 2026-09-05). L'arbre `g0` est sous git depuis le tag `g0-0.1.0` (mesure A1) ; la section `[Non publié]`
 reçoit les lignes exigées par les règles déjà en vigueur — dont **toute ancre de bit-identité changée**
 (`tools/bitid_refs.json`, règle de `tools/BITID.md`).
+
+## [Non publié] — arbre g1, 2026-09-11 soir : le point sur les impacts Yang/Solidity
+
+Point demandé par Fernando (« à chaque fois une nouvelle erreur, c'est infini »). Document :
+`docs/ETAT_yang2026_2026-09-11.md`. Binaires `rockim_g1y.exe` puis **`rockim_g1y2.exe`** (même
+physique, plus l'impression du nœud qui commande le pas). Bit-identité : `results/bitid_g1y2.log`.
+
+### Ajouté (opt-in, défaut bit-identique)
+
+- **`groupContinuum.<corps> = true`** (fdem3d, mesh = file) : corps sans joints — facettes
+  intérieures `Joint::perm`, jamais évaluées ni insérées, hors budget CFL ; liaison de nœuds par
+  groupes armée en schéma intrinsèque dès qu'il en existe (`integrate()` bascule sur la branche par
+  groupes si `nPerm_ > 0`). Sur le deck Yang s = 1 : 39 803 facettes sur 232 408 retirées des
+  ressorts, acier et carbure continuums EF exacts. Gain mesuré sur dt : ×1,06 seulement — le pas
+  est repris aussitôt par les slivers de la **roche** (diamètre inscrit 0,226 mm, K = 98,6 % de
+  joints), voir ETAT §5.1.
+- `tools/make_impact_mesh.py` : arguments nommés `gap=`, `gapr=` (jeux piston/bit et
+  insert/roche), `opt=N` (passes Netgen + Relocate3D), `algo3d=` (10 = HXT). Défauts inchangés.
+  Mesuré : `opt=2` sans effet sur le sliver (0,227 mm), HXT **pire** (0,183 mm, dt 0,80 ns).
+- `tools/yang_report.py` : les sept critères de Yang et la santé du run depuis `history.csv`.
+- Decks : `configs/yang2026_impact.cfg` **v2** (onze écarts de la v1 corrigés, ETAT §3),
+  `configs/yang2026_bench_s25.cfg` et `_court.cfg` (banc court s = 2,5, 10 563 tets, toute la
+  chronologie en minutes). Maillages `meshes/impact_yang_s1_pose.msh` (120 185 tets, jeux 0,02 mm)
+  et `impact_yang_s2.5_pose.msh`.
+- Registre `tools/keys_by_mode.json` régénéré (préfixe `groupContinuum.`) ; ligne dans
+  `DOCUMENTATION_rockim.md`.
+
+### Avertissements nouveaux (impression seule)
+
+- Outil analytique **fantôme** : `groupVel.<corps>` posé et `toolShape ≠ none`.
+- **Résistances héritées** : `phase.<x>.E` posé sans `.ft` ni `.cohesion` quand E > 1,5 E_global
+  (un carbure dont les joints cassent à 11 MPa).
+- Translation du maillage et **étendue en z de chaque corps** dans le repère solveur ; jauge hors de
+  la moitié centrale d'un corps.
+- **Nœud qui commande le pas de temps** : corps, phase, h inscrit, part élément / joints / contact.
+
+### Mesuré (ETAT §5-7)
+
+- Coût par pas v1 (14 fils, 120 k tets) : éléments 11 ms, joints 32 ms, contact 50 ms — joints et
+  contact **ne scalent pas** avec les fils (×1,05 et ×1,04 de 7 à 14).
+- dt v1 0,942 ns (joints du carbure) → v2 1,00 ns (slivers de la roche) ; CFL seule 4,67 ns ;
+  pf 10 : 1,37 ns.
+- Banc court s = 2,5 : voir ETAT §7.
+
+## [Non publié] — arbre g1, portage de la loi de la note 2026
+
+Ouverture de l'arbre `g1` (copie conforme de `g0` le 2026-09-11) pour porter la loi de la note de
+travail *« Lois constitutives proposées pour un FDEM hybride à insertion adaptative »* (septembre
+2026) : matrice viscoplastique de Mohr-Hoek parfaite + endommagement de **compression seul**, joints
+cohésifs **extrinsèques** initialement rigides, mode mixte de Benzeggagh-Kenane, dépendants de la
+vitesse. Contrat d'implémentation : `docs/SPEC_loi_note_2026.md`. Audit de départ :
+`../rockim_g0/AUDIT_loi_adaptative_2026-09-11.md`.
+
+Règle du lot : **croissance par addition** (principe VIII). Toute capacité nouvelle arrive par une clé
+opt-in dont le défaut reproduit `g0` bit pour bit ; aucun défaut existant n'est modifié — `capP0`,
+`jointXi`, `dampingLocal` et `erodeD` s'éteignent **dans le deck**, pas dans le code.
+
+### Ajouté
+
+- `include/rockim/JointTsl.hpp` — noyau **partagé** de la loi cohésive extrinsèque, fonctions pures,
+  appelées à l'identique par le solveur 2D et le solveur 3D de sorte que la loi ne puisse pas diverger
+  entre les deux par recopie : critère elliptique Φ_F (eq. 12), DIF (eq. 13), séparation et traction
+  effectives de Camacho-Ortiz (eq. 16), tampon d'insertion avec G_C de Benzeggagh-Kenane **gelé au
+  ratio de mode à l'insertion** (eq. 17-18), partition (eq. 19), cap de cisaillement
+  `(1−D)·cohésion + D·μ⟨−t_n⟩`, `h_e = (12 V_e/√2)^(1/3)` et borne de snap-back (eq. 6-7).
+- `MatState::lcComp` — longueur de bande de la **compression**, seul point de contact inter-fichiers
+  du lot. `≤ 0` = comportement de `g0` (β_c prend `lc`), bit-identique.
+
+### Ajouté — les 21 clés de la loi (lots A/B/C du 2026-09-11)
+
+Matrice (`MatLaw`) : `bulkTensionDamage`, `mhForm`, `dpFlowForm`. Solveurs FDEM 2D et 3D, mêmes
+noms : `facetAverage`, `facetRate`, `insertionCriterion`, `insertionHoldSteps`, `difExpT`, `difExpS`,
+`jointTSL`, `jointMixLaw`, `jointBKEta`, `jointFrictionMobilised`, `jointEtaN`, `jointEtaS`,
+`jointViscousInCriterion`, `gbCombine`, `jointWeibullXu`, `jointWeibullScale`, `compBandLength`,
+`energyBreakdown`. Toutes opt-in, défaut = `g0`. Registre régénéré (`tools/gen_keys_by_mode.py`,
+422 clés). **Bit-identité : 8/8 IDENTIQUE** (`tools/bitid.py --exe rockim_g1.exe`, ancre `g1ref`),
+plus un neuvième contrôle hors ancre : `configs/fdem3d_percussion.cfg` (outil libre) rend
+24 754,2 N / 1 259 joints / 1,90983e6 J/m³ avec les deux binaires. Trois refus nouveaux, tous sur
+des clés jusqu'ici inertes : `erodeD/erodeEpv/erodeDc` en FDEM ; `jointTSL = camacho` sans
+`insertion = adaptive` ; `strainRateDIF` armé avec `jointEtaN/S > 0`.
+Deck de la loi complète : `configs/loi_note_2026.cfg` (0 clé non lue, 21 482 tets, 408 grains).
+Trois points où les lots ont eu raison contre le contrat : `difExpS` (voir SPEC §2) ; le Newton du
+méridien puissance en σ₃ = 0 (tangente verticale, dépassement de 2,4 % corrigé par un Newton borné) ;
+l'affichage de s_MH (facteur 5,6 d'unités attrapé au banc avant livraison).
+
+### Corrigé — la loi initialement rigide était instable (seconde passe, 2026-09-11)
+
+**Ce qui a été observé.** `configs/loi_note_2026.cfg` explose à ~91 µs : bloc de 40 mm, nœuds à 18 m
+(`out_note2026`). Le résidu d'énergie affichait `[OK] 9,2e-6 %` — c'est une identité comptable, le
+poste « éléments » absorbait l'énergie créée. Deux contre-essais : `jointFrictionMobilised = off`
+explose plus tôt (`_fricoff`, trame 8) ; `dtFactor = 0,043` (le pas historique, ÷3,49) explose à
+la **même trame**, moins violemment (1 m, `_dtsafe`). Une instabilité CFL ordinaire est binaire :
+ce n'en était pas une. Mesure à la trame 9 de `_dtsafe`, joints insérés : raideur sécante
+t_ins/(D·δ_f) p99,9 = **210 × pj**, max **549 × pj** ; 651 joints à 0 < D < 1e-3 ; `eGc` de −45 J
+à −1 707 J entre 84 et 100 µs pour 3,2 J injectés par l'outil.
+
+**Diagnostic.** Une loi initialement rigide a une raideur de charge/décharge **non bornée**
+(t_ins/δ_max → ∞ pour un joint qui s'est ouvert d'un rien puis recharge), hors de tout budget CFL
+quel que soit dt ; et à l'insertion `jtsl::split()` rendait 0 à δ_m = 0 là où la facette liée
+transmettait t_ins — un Dirac de −t_ins par insertion, ×30 000. Pathologie classique des lois
+extrinsèques en explicite (Papoulia, Sam & Vavasis 2003), anticipée par la note au §2.4.
+
+**Correctif** (`include/rockim/JointTsl.hpp`, `YangDif.hpp`, puis câblage 2D/3D) : branche
+ascendante courte `jointTSLRise` (défaut 1e-3 sous `camacho`, la valeur de la note) — décalage
+δ_0 = rise·δ_f posé dans la direction de la traction tamponnée, raideur bornée k₀ = t_ins²/(2·rise·G_C),
+traction continue à l'insertion, ∫t dδ inchangé = G_C (banc `tests_f2/check_jointtsl_header.cpp`,
+14/15 puis 15/15 après correction d'un seuil du banc). Budget CFL : **toutes** les facettes, liées
+comprises, pèsent max(k₀, kPara·pj)·A0/3.
+
+**Retrait.** Le « gain ×3,49 sur dt, saturé » annoncé par le lot B est retiré : il venait d'exclure
+les facettes liées du budget, ce que le lot C avait refusé en 2D avec la bonne raison. Le ×1,96 de
+l'audit comparait à `insertion = none` (aucun joint) et n'était pas une comparaison valide.
+
+**Recette de la seconde passe** : build 2 352 128 o, registre 423 clés (`jointTSLRise` → fdem, fdem3d),
+`tools/bitid.py --exe rockim_g1.exe` → **8/8 IDENTIQUE** (`results/bitid_g1_rise.json`).
+
+**Troisième passe (même jour) — le vrai mécanisme de l'explosion, et son correctif.** La branche
+ascendante était nécessaire (raideur bornée, plus de Dirac) mais **pas suffisante** : avec elle, le
+deck explose encore (0,66 m). Cinq isolations sur `configs/loi_note_2026.cfg` ont désigné la source
+(détail : `docs/RETOUR_v3_2026-09-11.md` §1.4 à 1.4 quater) : (b) matrice de la note + joints
+**pénalisés** de g0 → 100 µs sains, 3,3 % d'insertions ; (a) volume **purement élastique** + joints
+Camacho → **explose**, 67 GPa, 97 % d'insertions ; (c) cône DP de g0 → même trajectoire ; (d) η ÷ 1000
+et (e) φ_j = 0 en cours. La matrice — viscosité et retour principal compris — est innocentée ; la
+source est la branche Camacho : **le frottement de Coulomb y était appliqué comme une traction de
+magnitude constante [D]·μ⟨−t_n⟩ dirigée par le déplacement de glissement** (3D : `tau = (lim/dsEffN)·
+dsEffV` avec `lim = tauCoh + D·μ⟨−t_n⟩` ; 2D : `tau ± fr` selon le signe de `dtg`) — un ressort sec à
+force constante, discontinu à l'origine, sur chaque joint inséré ou rompu comprimé. La v2 le
+suggérait (*« s'ajoute »*), les deux lots l'ont implémenté littéralement ; la v3 §3.4 écrit la bonne
+forme (opposé à la **vitesse**, régularisé). **Correctif** (opt-in, branche pénalisée intacte au
+caractère près) : la part frottante devient un **cap sur une traction d'essai de collage avec retour
+de glissement**, le mécanisme de g0 — `rockim::camachoFrictionSlider` (3D, `Fdem3dSolver.hpp:72-136`,
+banc `tests_f2/check_camacho_friction3d.cpp` 13/13 : dissipation par cycle = 2·f_cap·(P − 2f_cap/pj),
+jamais négative, continue en δ_s = 0) et `rockim::jfric::capReturn` (2D, `FdemSolver.hpp:93-155`, banc
+`tests_f2/check_camacho_friction.cpp`). Build `rockim_g1fix.exe` 2 353 664 o ; **bit-identité 8/8 IDENTIQUE**
+(`results/bitid_g1fix.json`). Validation du correctif sur les mini-bancs 4×4×4 (384 tétraèdres,
+`configs/mini/`) : `elas_cam_T80` passe de 8,15 mm / 6 812 MPa / 663 rompues / **+402 J créés** à
+**6,008 mm / 79,7 MPa / 50 rompues / 0,21 J** (bloc initial 6,000 mm) ; `note_camnobk`, qui explosait
+à ~9 µs, termine. Contrôle 2D (`configs/_ucs2d_camacho_check.cfg`, UCS adaptatif + camacho corrigé) :
+pic 41,7 MPa — la valeur de l'ancre — résidu d'énergie **2,5·10⁻¹³ %**.
+
+**Lecture finale du mécanisme (six isolations).** La divergence demande DEUX ingrédients :
+(1) la **source**, le terme frottant non conservatif — le retirer (`frictionDeg = 0`, isolation e)
+suffit à stabiliser ; (2) le **gain**, l'incapacité de la matrice à céder — l'amarre vaut
+`D·μ ×` pression de contact, donc sa puissance créée croît comme le carré de cette pression : matrice
+qui plafonne ⇒ création sous la dissipation (isolation d, `saksalaEta` ÷ 1000 : **saine**, joints qui
+dissipent −13,3 J, 15,9 % d'insertions) ; matrice élastique (a), cône inatteignable (c) ou
+sur-contrainte `s_MH·κ̇` non saturée au-delà de 10³ /s ⇒ emballement exponentiel. Les isolations (a)
+et (c) ne dissociaient donc pas « viscosité » de « matrice qui ne cède pas » : elles les confondaient
+(un solide élastique est le cas limite d'une viscosité infinie).
+
+**Résorbé au passage** : `difCompressionYang(edot, n)` dans `YangDif.hpp` (les deux transcriptions
+locales des lots sont supprimées — une seule dans le dépôt, comme l'en-tête l'exige) ;
+`jtsl::shearCap` porte l'enveloppe de Yang (les deux duplications manuelles du facteur D sont
+supprimées).
+
+### Modifié — ancre de bit-identité
+
+**Ancre reprise sur `rockim_g1ref.exe`** (sha256 `76a3dbf1a283729d…`, 2 263 040 octets, build de
+référence de l'arbre `g1` à sources inchangées), 8/8 decks à OMP 4. Raison : l'ancre héritée datait de
+`rockim_f2w18.exe` (2026-09-05) et ne valait déjà plus pour `g0` — ce CHANGELOG le consignait lui-même
+(« rend 5/8, les trois cas `fem3d` ayant changé par les seules colonnes ajoutées, forces de pic
+inchangées : 7916,75 / 6775,14 / 30390,2 N ; les cinq cas `fdem` restés identiques »). Mesure refaite
+le 2026-09-11 : **identique au mot près**, ce qui confirme que la divergence est bien de la métrologie
+et non de la physique, et que le **chemin FDEM — celui que ce lot modifie — n'avait pas bougé**.
+L'ancre héritée est conservée sous `tools/bitid_refs_w18_herite.json` pour la traçabilité.
+Le maillage `etude_lois_fem/meshes/T1_c05_clean.msh`, absent de la copie initiale, a été rapatrié
+(sans lui le deck `fem3d_dpr_T1_court` échouait au lieu de se comparer).
 
 ## [Non publié]
 

@@ -1,6 +1,6 @@
 {
  "_meta": {
-  "generated": "2026-09-06 15:33:09",
+  "generated": "2026-09-11 19:11:43",
   "generator": "tools/gen_keys_by_mode.py (voir la docstring : methode)",
   "rule": "cle lue par UN SEUL solveur = cle de ce mode, refusee dans les autres modes ; lue par le code partage ou par >= 2 solveurs = commune, jamais refusee ; cle absente du registre (construite dynamiquement) = jamais refusee",
   "files_scanned": [
@@ -28,6 +28,7 @@
    "include\\rockim\\Fem3dKinematics.hpp",
    "include\\rockim\\Fem3dSolver.hpp",
    "include\\rockim\\FemSolver.hpp",
+   "include\\rockim\\JointTsl.hpp",
    "include\\rockim\\KeyGuard.hpp",
    "include\\rockim\\MatLaw.hpp",
    "include\\rockim\\MatLawDfhPlus.hpp",
@@ -65,9 +66,9 @@
    "scenario",
    "seed"
   ],
-  "n_keys": 398,
-  "n_common": 247,
-  "n_mode_specific": 151,
+  "n_keys": 423,
+  "n_common": 277,
+  "n_mode_specific": 146,
   "n_obsolete": 1,
   "rule_c1": "C1 (w21) : cle du deck NON consommee ET hors registre (ni commune, ni du mode, ni famille dynamique lue) = faute ; cle du registre non consommee (lecture conditionnelle) = legitime ; cle obsolete = « remplacee par » ; cle d'un autre mode = « sans effet en mode » ; source des obsoletes : tools/obsolete_keys.json",
   "rule_w22": "w22 (relecture D1) : une cle du deck NON consommee est legitime ssi le mode courant figure dans ses lecteurs (readers) ou si 'shared' y figure (code partage, ALWAYS_COMMON) ; sinon « cle X sans effet en mode Y : cles des modes Z1, Z2 » (kReaders dans KeysByMode.hpp)"
@@ -112,10 +113,6 @@
    "gcCell",
    "gcSurfaceRefresh",
    "gcXwindow",
-   "grainElemSize",
-   "grainMesh",
-   "grainMeshRandom",
-   "grainSizeSpread",
    "gripsStopAfterPeak",
    "gripsStopDelay",
    "historyStrains",
@@ -218,7 +215,6 @@
    "erodeDetMin",
    "erodeStrainMax",
    "fieldStats",
-   "gripSection",
    "kinematics",
    "matWeibullM",
    "meshMirror",
@@ -267,6 +263,7 @@
   "bulkFt",
   "bulkGf",
   "bulkModel",
+  "bulkTensionDamage",
   "bulkViscosity",
   "bulkViscosityXi",
   "capH",
@@ -292,6 +289,7 @@
   "chamferLen",
   "cohesion",
   "compAc",
+  "compBandLength",
   "compDamage",
   "compGIIc",
   "confineFaces",
@@ -326,16 +324,25 @@
   "dfhZeff",
   "dfhpPsiClamp",
   "dfhpVolInteg",
+  "difExpS",
+  "difExpT",
   "dpApex",
+  "dpDilationDamage",
+  "dpDilationDeg",
+  "dpDilationExp",
+  "dpFlowForm",
   "dpTension",
   "dprCap",
   "dtFactor",
   "energyBodyForces",
+  "energyBreakdown",
   "erodeD",
   "erodeDc",
   "erodeEpv",
   "erodeWfrac",
   "extraContacts",
+  "facetAverage",
+  "facetRate",
   "fieldSeed",
   "fragBrushAccel",
   "fragBrushBeta",
@@ -352,6 +359,7 @@
   "gbAlphaFric",
   "gbAlphaGf",
   "gbAlphaTen",
+  "gbCombine",
   "gbHeteroFactor",
   "gcActEvery",
   "gcActMargin",
@@ -365,23 +373,35 @@
   "gcXi",
   "geometry",
   "gfShearFactor",
+  "grainElemSize",
   "grainJitter",
+  "grainMesh",
+  "grainMeshRandom",
   "grainSeeding",
   "grainSize",
+  "grainSizeSpread",
   "gravity",
   "gripLateralFree",
+  "gripSection",
   "historyFlush",
   "impactSpeed",
   "insertion",
+  "insertionCriterion",
+  "insertionHoldSteps",
   "insertionPenaltyFactor",
   "insertionTipDamage",
   "insertionTipFactor",
+  "jointBKEta",
   "jointContactPenalty",
   "jointDeath",
   "jointDeltaC",
   "jointElastic",
+  "jointEtaN",
+  "jointEtaS",
   "jointFailRule",
+  "jointFrictionMobilised",
   "jointFrictionScaled",
+  "jointMixLaw",
   "jointPenaltyFactor",
   "jointPrebrokenFrac",
   "jointQuadrature",
@@ -393,7 +413,12 @@
   "jointSizeEffectClamp",
   "jointSizeEffectM",
   "jointSoftening",
+  "jointTSL",
+  "jointTSLRise",
+  "jointViscousInCriterion",
   "jointWeibullM",
+  "jointWeibullScale",
+  "jointWeibullXu",
   "jointXi",
   "jointZeff",
   "knFactor",
@@ -412,6 +437,7 @@
   "mesh",
   "meshFile",
   "meshJitter",
+  "mhForm",
   "mode",
   "mpConfineFirst",
   "mpDt",
@@ -496,6 +522,7 @@
   "gauge.",
   "gb.",
   "groupBond.",
+  "groupContinuum.",
   "groupPhase.",
   "groupVel.",
   "phase."
@@ -712,6 +739,9 @@
    "fdem",
    "fdem3d"
   ],
+  "bulkTensionDamage": [
+   "shared"
+  ],
   "bulkViscosity": [
    "fdem",
    "fdem3d",
@@ -799,6 +829,10 @@
   ],
   "compAc": [
    "shared"
+  ],
+  "compBandLength": [
+   "fdem",
+   "fdem3d"
   ],
   "compDamage": [
    "shared"
@@ -905,6 +939,7 @@
    "dem3d",
    "fdem",
    "fdem3d",
+   "fem",
    "fem3d"
   ],
   "dampingLocalAfter": [
@@ -967,6 +1002,14 @@
   "diametralBand": [
    "fdem"
   ],
+  "difExpS": [
+   "fdem",
+   "fdem3d"
+  ],
+  "difExpT": [
+   "fdem",
+   "fdem3d"
+  ],
   "discFlattenDeg": [
    "fdem"
   ],
@@ -974,6 +1017,18 @@
    "fdem"
   ],
   "dpApex": [
+   "shared"
+  ],
+  "dpDilationDamage": [
+   "shared"
+  ],
+  "dpDilationDeg": [
+   "shared"
+  ],
+  "dpDilationExp": [
+   "shared"
+  ],
+  "dpFlowForm": [
    "shared"
   ],
   "dpTension": [
@@ -1000,6 +1055,10 @@
    "fdem"
   ],
   "energyBodyForces": [
+   "fdem",
+   "fdem3d"
+  ],
+  "energyBreakdown": [
    "fdem",
    "fdem3d"
   ],
@@ -1034,6 +1093,14 @@
   "extraContacts": [
    "dem",
    "dem3d",
+   "fdem",
+   "fdem3d"
+  ],
+  "facetAverage": [
+   "fdem",
+   "fdem3d"
+  ],
+  "facetRate": [
    "fdem",
    "fdem3d"
   ],
@@ -1115,6 +1182,10 @@
   "gbAlphaTen": [
    "shared"
   ],
+  "gbCombine": [
+   "fdem",
+   "fdem3d"
+  ],
   "gbHeteroFactor": [
    "shared"
   ],
@@ -1178,31 +1249,38 @@
    "shared"
   ],
   "grainElemSize": [
-   "fdem"
+   "fdem",
+   "fem"
   ],
   "grainJitter": [
    "fdem",
    "fdem3d",
+   "fem",
    "fem3d"
   ],
   "grainMesh": [
-   "fdem"
+   "fdem",
+   "fem"
   ],
   "grainMeshRandom": [
-   "fdem"
+   "fdem",
+   "fem"
   ],
   "grainSeeding": [
    "fdem",
    "fdem3d",
+   "fem",
    "fem3d"
   ],
   "grainSize": [
    "fdem",
    "fdem3d",
+   "fem",
    "fem3d"
   ],
   "grainSizeSpread": [
-   "fdem"
+   "fdem",
+   "fem"
   ],
   "gravity": [
    "fdem",
@@ -1212,9 +1290,11 @@
    "dem3d",
    "fdem",
    "fdem3d",
+   "fem",
    "fem3d"
   ],
   "gripSection": [
+   "fem",
    "fem3d"
   ],
   "gripsStopAfterPeak": [
@@ -1271,6 +1351,14 @@
    "fdem",
    "fdem3d"
   ],
+  "insertionCriterion": [
+   "fdem",
+   "fdem3d"
+  ],
+  "insertionHoldSteps": [
+   "fdem",
+   "fdem3d"
+  ],
   "insertionPenaltyFactor": [
    "fdem",
    "fdem3d"
@@ -1292,6 +1380,10 @@
   "insituSxy": [
    "fdem"
   ],
+  "jointBKEta": [
+   "fdem",
+   "fdem3d"
+  ],
   "jointContactPenalty": [
    "fdem",
    "fdem3d"
@@ -1308,11 +1400,27 @@
    "fdem",
    "fdem3d"
   ],
+  "jointEtaN": [
+   "fdem",
+   "fdem3d"
+  ],
+  "jointEtaS": [
+   "fdem",
+   "fdem3d"
+  ],
   "jointFailRule": [
    "fdem",
    "fdem3d"
   ],
+  "jointFrictionMobilised": [
+   "fdem",
+   "fdem3d"
+  ],
   "jointFrictionScaled": [
+   "fdem",
+   "fdem3d"
+  ],
+  "jointMixLaw": [
    "fdem",
    "fdem3d"
   ],
@@ -1363,7 +1471,27 @@
    "fdem",
    "fdem3d"
   ],
+  "jointTSL": [
+   "fdem",
+   "fdem3d"
+  ],
+  "jointTSLRise": [
+   "fdem",
+   "fdem3d"
+  ],
+  "jointViscousInCriterion": [
+   "fdem",
+   "fdem3d"
+  ],
   "jointWeibullM": [
+   "fdem",
+   "fdem3d"
+  ],
+  "jointWeibullScale": [
+   "fdem",
+   "fdem3d"
+  ],
+  "jointWeibullXu": [
    "fdem",
    "fdem3d"
   ],
@@ -1402,6 +1530,7 @@
   "lloydIters": [
    "fdem",
    "fdem3d",
+   "fem",
    "fem3d"
   ],
   "loadArcDeg": [
@@ -1444,6 +1573,7 @@
   "mesh": [
    "fdem",
    "fdem3d",
+   "fem",
    "fem3d",
    "shared"
   ],
@@ -1460,6 +1590,9 @@
   ],
   "meshMirror": [
    "fem3d"
+  ],
+  "mhForm": [
+   "shared"
   ],
   "microseismic": [
    "fdem"
@@ -1537,6 +1670,7 @@
    "fem3d"
   ],
   "phases": [
+   "fem",
    "fem3d",
    "shared"
   ],
@@ -1581,6 +1715,7 @@
    "dem3d",
    "fdem",
    "fdem3d",
+   "fem",
    "fem3d"
   ],
   "pullV": [
@@ -1588,6 +1723,7 @@
    "dem3d",
    "fdem",
    "fdem3d",
+   "fem",
    "fem3d"
   ],
   "quarterModel": [
@@ -1599,6 +1735,7 @@
   "refineLevels": [
    "fdem",
    "fdem3d",
+   "fem",
    "fem3d"
   ],
   "rho": [
@@ -1621,6 +1758,7 @@
    "dem3d",
    "fdem",
    "fdem3d",
+   "fem",
    "fem3d",
    "shared"
   ],
@@ -1925,6 +2063,7 @@
   "vertexMergeFrac": [
    "fdem",
    "fdem3d",
+   "fem",
    "fem3d"
   ],
   "viscousInInsertion": [

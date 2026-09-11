@@ -78,6 +78,12 @@
 #include <Eigen/Dense>
 
 #include "rockim/Config.hpp"
+// Noyau PARTAGE des joints extrinseques de la note de septembre 2026
+// (§2.2 critere elliptique, §2.4 loi de Camacho-Ortiz). Fonctions PURES,
+// appelees a l identique par le solveur 3D : la loi ne peut pas diverger
+// entre les deux dimensions par recopie. Inerte tant qu aucune des cles
+// opt-in insertionCriterion / jointTSL / jointMixLaw n est posee.
+#include "rockim/JointTsl.hpp"
 #include "rockim/MatLaw.hpp"
 #include "rockim/Material.hpp"
 #include "rockim/Solver.hpp"
@@ -85,6 +91,69 @@
 #include "rockim/YanSoftening.hpp"
 
 namespace rockim {
+
+// ---------------------------------------------------------------------------
+//  §2.4 « compression et frottement sur un joint insere » — FROTTEMENT EN CAP
+//  (correctif du 2026-09-11, RETOUR_v3 §1.4 quater).
+//
+//  Fonction PURE, sans etat : elle est appelee par jointForces() sous
+//  jointTSL = camacho et par le banc tests_f2/check_camacho_friction.cpp,
+//  de sorte que le banc exerce le code compile dans le solveur et non une
+//  transcription.
+//
+//  POURQUOI. La premiere ecriture de la branche `camacho` appliquait le
+//  frottement de Coulomb comme une TRACTION de magnitude constante
+//  [D] mu <-t_n>, dirigee par le signe du DEPLACEMENT de glissement (2D :
+//  tau += fr si dtg > 0, tau -= fr si dtg < 0). C'est un ressort sec a force
+//  constante, discontinu en dtg = 0, porte par chaque joint insere comprime
+//  ET par chaque joint rompu comprime (D = 1, que jointDeath = separation ne
+//  tue jamais). RETOUR_v3 §1.4 quater l'a designe par lecture des deux
+//  solveurs et par cinq isolations : le deck loi_note_2026 explose a ~91 us
+//  quelle que soit la matrice (elastique comprise), quel que soit dt, avec
+//  ou sans branche ascendante ; x25 insertions en cascade ; le terme a
+//  pleine valeur des D = 0 (_fricoff) explose PLUS TOT ; les joints
+//  penalises de g0 (frottement en cap avec retour de glissement) tiennent
+//  100 us. La v3 §3.4 ecrit la forme correcte : une force qui s'oppose a la
+//  VITESSE de glissement, regularisee — pas au deplacement.
+//
+//  FORME RETENUE : le mecanisme de la branche penalisee de g0, applique a la
+//  seule part frottante. Traction d'ESSAI de collage sur le glissement
+//  geometrique, tau_tr = pj (delta_s - slip_p), ecretee au cap
+//  f_cap = [D] mu <-t_n> (jtsl::shearCap a cohesion nulle, enveloppe de la
+//  cle comprise), avec RETOUR DE GLISSEMENT slip_p += (tau_tr - tau_fric)/pj.
+//  C'est la regularisation de la v3 : le ressort pj fait office de
+//  penalite de collage, la vitesse de glissement n'est jamais lue, et le
+//  travail du terme est >= 0 par construction (tau_fric et l'increment de
+//  slip_p sont de meme signe). Continue en delta_s = 0 (tau_tr y vaut
+//  -pj slip_p, pas un saut de +-f_cap).
+//
+//  f_cap == 0 (traction, ou D = 0 sous jointFrictionMobilised = damage) :
+//  tau_fric = 0 ET slip_p = delta_s — pas de ressort de collage en
+//  traction, il ajouterait une raideur tangentielle que l'eq. 19 ne prevoit
+//  pas, et le joint qui revient en compression repart sans a-coup depuis
+//  son glissement courant.
+//
+//  Budget CFL : la raideur pj est deja budgetee pour TOUTES les facettes
+//  (computeStableDt, kPara pj) — rien a ajouter. Chemin MORT sous
+//  jointTSL = penalty (defaut) : la branche historique n'appelle pas cette
+//  fonction et n'est touchee par aucun caractere.
+// ---------------------------------------------------------------------------
+namespace jfric {
+inline double capReturn(double pj, double ds, double fCap, double& slipP)
+{
+    if (!(fCap > 0.0)) { slipP = ds; return 0.0; }
+    const double tauTr = pj * (ds - slipP);
+    if (tauTr > fCap) {
+        slipP += (tauTr - fCap) / pj;
+        return fCap;
+    }
+    if (tauTr < -fCap) {
+        slipP += (tauTr + fCap) / pj;
+        return -fCap;
+    }
+    return tauTr;
+}
+} // namespace jfric
 
 class FdemSolver : public Solver {
 public:
@@ -134,6 +203,21 @@ private:
         // le taux axial, sans facteur de convention. Vaut 0 tant que ni
         // bulkViscosity ni strainRateDIF ne sont armes (branche non calculee).
         double edot = 0.0;
+        // ---- §2.1 eq. 11 de la note 2026 : le TENSEUR taux de deformation --
+        // D = sym(Fdot F^-1) dans le repere GLOBAL (et non co-rote : la
+        // normale de facette n vit dans le repere global), passe dans le MEME
+        // filtre passe-bas que le scalaire ci-dessus. Renseigne UNIQUEMENT
+        // sous `facetRate = tensor` ; sans la cle le champ reste a zero et
+        // n est jamais lu — le scalaire edot alimente alors les deux DIF,
+        // exactement comme dans rockim_g0.
+        //
+        // POURQUOI il faut un tenseur. L eq. 11 demande DEUX taux distincts a
+        // l interface, eps_point_eq = n.eps_point.n (mode I) et
+        // gamma_point = 2||eps_point.n - (n.eps_point.n)n|| (mode II), et
+        // l eq. 13 les fait entrer dans DEUX DIF d exposants differents
+        // (a_s < a_t). Un scalaire par element ne peut pas les separer : il
+        // donne la meme mesure aux deux, ce qui rend difExpS sans objet.
+        Eigen::Matrix2d Dg = Eigen::Matrix2d::Zero();
         // WP1 pulverisation (bulkDamage = yang) : endommagement D et max
         // historique de delta_m = h_e * eps_vm. 0 si la cle est absente.
         double bdD = 0.0;
@@ -162,6 +246,11 @@ private:
                                            // secante de l'eq. 18, stampee par
                                            // activateJoint() (0 en intrinseque),
                                            // jamais mise a jour ensuite.
+                                           // jointTSL = camacho : glissement
+                                           // PLASTIQUE de la seule part
+                                           // frottante (jfric::capReturn),
+                                           // 0 a l'insertion ; la part
+                                           // cohesive (eq. 19) ne le lit pas.
         double omax[2] = {0.0, 0.0};       // largest opening ever reached
                                            // (jointSoftening = yan: the omax
                                            // of eq. 17, per integration point)
@@ -273,6 +362,37 @@ private:
         // reconstruit ft = ftB*DIF a chaque pas, sans jamais composer.
         double ftB = 0.0, cohB = 0.0, GfB = 0.0, GfIIB = 0.0;
         bool baseSnapped = false;
+        // ---- §2.2 de la note 2026 : HYSTERESIS D INSERTION (n_h) ----------
+        // Nombre de pas CONSECUTIFS pendant lesquels le critere d insertion
+        // est satisfait. La note : « pour eviter les insertions en rafale sur
+        // des oscillations numeriques, on exige Phi_F >= 1 sur n_h pas
+        // consecutifs (n_h = 2-3) ». Remis a ZERO des que le critere retombe.
+        // Inerte, et jamais ecrit, sous insertionHoldSteps = 1 (defaut).
+        int nPhi = 0;
+        // ---- §2.4 : jointTSL = camacho, ETAT FIGE A L INSERTION -----------
+        // Les quatre doubles de jtsl::Stamp (t_m^ins, beta, G_C, delta_m^f)
+        // sont tamponnes UNE FOIS par activateJoint() a partir de la traction
+        // REELLEMENT TRANSMISE par la facette, puis jamais recalcules : c est
+        // ce gel qui rend l integrale de la loi egale a G_C independamment du
+        // maillage ET du depassement d un pas. Inertes sous jointTSL =
+        // penalty (defaut) : Stamp::ok() est faux et rien ne les lit.
+        jtsl::Stamp tsl;
+        // Plus grande separation effective delta_m atteinte, PAR POINT
+        // d integration (le joint 2D en a deux, comme omax/smax).
+        // Sous jointTSLRise > 0 c est une separation EFFECTIVE (decalee de
+        // dm0, voir jtsl::effOffset) : initialisee a dm0 par activateJoint()
+        // et non a 0, sinon le premier pas lirait une decharge.
+        double dmMax[2] = {0.0, 0.0};
+        // ---- §2.4, branche ascendante courte (2026-09-11) -----------------
+        // DIRECTION TANGENTIELLE de la traction tamponnee a l insertion, dans
+        // le repere de la facette : +1 si tau_ins >= 0 (sens de e), -1 sinon.
+        // En 2D le glissement est un scalaire signe, la direction l est donc
+        // aussi. Necessaire pour poser le decalage dm0 es / beta SUR LE
+        // GLISSEMENT du bon cote : c est ce qui fait que l eq. 19 rend
+        // exactement (t_n^ins, t_s^ins) a separation geometrique nulle, sans
+        // le Dirac de -t_ins que le run du 2026-09-11 a mesure a rise = 0.
+        // Inerte sous jointTSL = penalty et a rise = 0 (es dm0 = 0).
+        double tsDir = 1.0;
     };
 
     struct BEdge {                         // active contact edge (elem face)
@@ -356,12 +476,23 @@ private:
     // inchangee : les reperes dif_yang_* de la suite verrouillent la
     // bit-identite du chemin adaptatif.
     void stampDif(Joint& J, double er);
+    // §2.1 eq. 11 / §2.2 eq. 13 : formes a DEUX taux (eps_point_eq pour la
+    // traction, gamma_point pour le cisaillement) et DEUX exposants. Les
+    // formes a un taux ci-dessus et ci-dessous s'y reroutent avec
+    // erT = erS : a difExpS absente elles sont bit pour bit celles d'hier.
+    void stampDif(Joint& J, double erT, double erS);
+    // Repere de la facette (normale sortante de A, tangente), reforme
+    // exactement comme dans insertionSweep() — memes points milieux P et Q,
+    // meme orientation. Rend false sur une facette degeneree.
+    bool facetFrame(const Joint& J, Eigen::Vector2d& n,
+                    Eigen::Vector2d& e) const;
     // dnE / dnF / slipF depuis les resistances COURANTES du joint — un seul
     // site, partage par assignJointProps, applyJointStatistics, stampDif et
     // refreshDif (voir jointDeltaC).
     void setJointLengths(Joint& J);
     void snapBase(Joint& J);              // proprietes de base, une fois
     void refreshDif(Joint& J, double er); // strainRateDIFArm = continuous
+    void refreshDif(Joint& J, double erT, double erS);   // eq. 11 + eq. 13
     void setupBrazilianLoad();
     void initPlatens(double xc, double hw);  // geometry + tributary weights
     void setupBoundaries();
@@ -817,6 +948,140 @@ private:
     // 0,1707 = valeur deduite de LEUR PROPRE figure 2(b), qui rend la loi
     // continue a ses deux bornes (voir la note dans FdemSolver.cpp).
     double difExpT_ = 0.07;
+    // =====================================================================
+    //  NOTE DE TRAVAIL DE SEPTEMBRE 2026 — « Lois constitutives proposees
+    //  pour un FDEM hybride a insertion adaptative ». Miroir STRICT du lot
+    //  3D (Fdem3dSolver) : memes noms de cles, meme semantique, memes
+    //  messages. Toutes ces capacites sont OPT-IN et leur defaut reproduit
+    //  rockim_g0 bit pour bit (principe VIII, croissance par addition).
+    //
+    //  PIEGE PROPRE AU 2D : insertionSweep() duplique sa boucle de facette
+    //  en une branche OpenMP et une branche SERIE. Toute modification du
+    //  critere ou du taux doit etre faite DEUX FOIS et les deux copies
+    //  doivent rester strictement identiques, sinon un meme deck rend deux
+    //  resultats selon le nombre de fils.
+    // =====================================================================
+    // §2.1 eq. 10 — facetAverage = arith (defaut) | volume. `volume` pondere
+    // la moyenne de facette par les VOLUMES des deux elements au lieu de
+    // 0,5/0,5. En 2D le volume est A0 * thickness et l epaisseur est
+    // UNIFORME : elle se simplifie exactement, on pondere donc par les AIRES.
+    // S applique a la contrainte ET au taux, comme l exige l eq. 11 (« sur le
+    // MEME patch pondere »).
+    bool facetVol_ = false;
+    // §2.1 eq. 11 — facetRate = scalar (defaut) | tensor. Voir Elem::Dg.
+    bool facetTensor_ = false;
+    // §2.2 eq. 12 — insertionCriterion = or (defaut) | elliptic. `elliptic`
+    // remplace le OU logique (sigma_n >= ft OU |tau| >= fs) par la norme
+    // effective Phi_F = (<t_n>/t_n0)^2 + (t_s/t_s0)^2 >= 1. Une facette
+    // chargee a 80 % en traction ET a 80 % en cisaillement s insere
+    // (Phi = 1,28) la ou le OU la laissait intacte.
+    bool insElliptic_ = false;
+    // §2.2 — insertionHoldSteps = n_h >= 1 (defaut 1 = chemin d origine).
+    int holdN_ = 1;
+    // §2.2 eq. 13 — a_s, exposant du DIF de CISAILLEMENT, separe de a_t.
+    // < 0 = cle absente = chemin d origine (rockim::difCompressionYang, dont
+    // l exposant 0,07 est fige). La note impose a_s < a_t ; le code
+    // AVERTIT si ce n est pas le cas, il ne refuse pas.
+    double difExpS_ = -1.0;
+    // §2.4 — jointTSL = penalty (defaut) | camacho. `camacho` : loi
+    // INITIALEMENT RIGIDE, t_m^ins = traction transmise, delta_f = 2 G_C /
+    // t_m^ins, decharge secante. Exige insertion = adaptive.
+    bool tslCamacho_ = false;
+    // §2.4 « Discontinuite temporelle des lois extrinseques » (Papoulia, Sam
+    // & Vavasis 2003) — jointTSLRise = delta_m^0 / delta_m^f, la longueur de
+    // la TRES COURTE branche ascendante que la note prescrit (1e-3). Lue
+    // SEULEMENT sous jointTSL = camacho, ou son defaut est 1e-3 (la valeur
+    // de la note) : camacho est opt-in et neuf, aucun deck ne depend de
+    // rise = 0, et rise = 0 vient d etre prouve instable (2026-09-11,
+    // out_note2026 / _fricoff / _dtsafe : raideur secante de recharge
+    // t_ins/dm_max non bornee, p99,9 = 210 x pj, max = 549 x pj ; eGc de
+    // -45 a -1707 J en 16 us pour 3,2 J injectes). 0 explicite = accepte
+    // avec AVERTISSEMENT, reglage de banc. Vaut 0 hors camacho : tout le
+    // code qui le lit y est deja mort.
+    double rise_ = 0.0;
+    // §2.4 eq. 18 — eta de Benzeggagh-Kenane. 0 = jointMixLaw = none, et
+    // jtsl::stampInsertion rend alors G_C = G_Ic sans melange.
+    double bkEta_ = 0.0;
+    // §2.4 — jointFrictionMobilised = off (defaut) | damage. `damage` :
+    // la part FROTTANTE du cap de cisaillement est multipliee par D, donc
+    // nulle au joint naissant. Sans elle le frottement vaut mu<-t_n> a
+    // pleine valeur des D = 0 et le cisaillement est compte deux fois (une
+    // fois par la viscoplasticite de la matrice, une fois par le joint).
+    bool fricMob_ = false;
+    // §2.5 eq. 20 — OPTION B, termes visqueux APRES insertion, en Pa.s/m.
+    // Contrairement a jointXi (dont le coefficient est reconstruit depuis la
+    // penalite, l aire et la masse nodale), ce sont des PARAMETRES MATERIAU.
+    // Exclusifs du DIF : « une seule des deux options, jamais les deux ».
+    double etaN_ = 0.0, etaS_ = 0.0;
+    // §2.5 — jointViscousInCriterion = on (defaut, historique) | off.
+    // `off` : le cap de Coulomb est evalue sur la part ELASTIQUE sigEl et
+    // non sur sig, pour que l amortisseur ne cree pas d effet de vitesse sur
+    // le SEUIL (regle (1) de la loi de joint : un terme visqueux ne fixe
+    // jamais une resistance).
+    bool viscInCrit_ = true;
+    // §2.6 eq. 21 — gbCombine = mean (defaut) | min sur les facettes
+    // INTER-granulaires. Les facteurs phases_.aTen / aCoh / aGf SONT les
+    // chi_t et chi_G de l eq. 21 ; seule la combinaison des deux voisins
+    // change (moyenne -> minimum).
+    bool gbMin_ = false;
+    // §2.6 eq. 22 — Weibull a TROIS parametres : x_u, en FRACTION du seuil
+    // de facette. Le facteur devient x_u + (1 - x_u) * W(m), de moyenne 1
+    // exactement — la resistance calibree reste la moyenne d ensemble et
+    // x_u est un plancher garanti. 0 (defaut) = Weibull a deux parametres.
+    double wbXu_ = 0.0;
+    // §2.6 eq. 22 — jointWeibullScale = volume (defaut) | area : l echelle
+    // x_0 suit (A_F/A_ref)^(-1/m) sur l AIRE DE LA FACETTE (L0 * thickness
+    // en 2D) et non sur le volume des deux voisins.
+    bool wbArea_ = false;
+    // §1.3 eq. 6 — compBandLength = solver (defaut) | tetEdge : longueur de
+    // bande de la COMPRESSION passee a MatLaw par MatState::lcComp.
+    bool compBandTet_ = false;
+    // §3.2 eq. 26 — energyBreakdown = off (defaut) | on : colonnes
+    // eVp, eDamT, eDamC ajoutees EN FIN de l en-tete de history.csv.
+    bool eBreak_ = false;
+    // §2.1 — poids de la moyenne de facette (eq. 10 et 11). Inline : appele
+    // dans la boucle chaude de insertionSweep().
+    void facetWeights(int eA, int eB, double& wA, double& wB) const {
+        if (!facetVol_) { wA = 0.5; wB = 0.5; return; }
+        const double vA = el_[eA].A0, vB = el_[eB].A0;
+        const double s = vA + vB;
+        if (!(s > 0.0)) { wA = 0.5; wB = 0.5; return; }
+        wA = vA / s; wB = vB / s;
+    }
+    // §2.1 eq. 11 — les DEUX taux a l interface, sur le MEME patch pondere.
+    // n = normale de la facette, e = tangente. Sous facetRate = scalar les
+    // deux sorties valent le MEME scalaire moyenne (chemin de rockim_g0).
+    void facetRates(const Joint& J, const Eigen::Vector2d& n,
+                    const Eigen::Vector2d& e,
+                    double& epsEq, double& gam) const {
+        double wA, wB; facetWeights(J.eA, J.eB, wA, wB);
+        if (!facetTensor_) {
+            epsEq = gam = wA * el_[J.eA].edot + wB * el_[J.eB].edot;
+            return;
+        }
+        const Eigen::Matrix2d Df = wA * el_[J.eA].Dg + wB * el_[J.eB].Dg;
+        const Eigen::Vector2d Dn = Df * n;
+        epsEq = n.dot(Dn);
+        // Le plan 2D n a qu UNE direction tangentielle : le vecteur de
+        // cisaillement eps_point.n - (n.eps_point.n) n vaut (e.eps_point.n) e,
+        // sa norme est donc |e.eps_point.n| et gamma = 2 |e.eps_point.n|.
+        gam = 2.0 * std::fabs(e.dot(Dn));
+    }
+    // §3.2 eq. 26 — recolte des trois dissipations de VOLUME de la loi
+    // (MatState::wPlas / wDamT / wDamC, en J/m^3), integrees sur A0 * thk.
+    // Rend 0 quand aucune loi de volume n est posee.
+    void energyBreakdown(double& wVp, double& wDamT, double& wDamC) const;
+    // Les trois colonnes de l eq. 26, ecrites EN FIN de ligne d historique
+    // (et l en-tete correspondant). No-op sous energyBreakdown = off, donc
+    // le format de history.csv d hier est intact au caractere pres.
+    void historyEnergyHead(std::ostream&) const;
+    void historyEnergyCols(std::ostream&) const;
+    // Lecture et validation de TOUTES les cles de la note de septembre 2026,
+    // en un seul endroit. Appelee depuis le constructeur, APRES strainRateDIF
+    // (les exclusions du §2.5 en dependent) et AVANT `law` et
+    // assignJointProps() (compBandLength, gbCombine et jointWeibull* y sont
+    // consommees). Aucune cle posee = aucun champ touche.
+    void readNote2026Keys();
     double gravity_ = 0.0;                 // body-force acceleration, -y [m/s^2]
     double pullRamp_ = 0.0;                // grip velocity rise time [s]
     bool gripFree_ = false;                // frictionless tension grips

@@ -824,9 +824,6 @@ void Fem3dSolver::buildMesh() {
                       << " noeuds de grille hors du cylindre (sans element, "
                          "masse nulle) epingles FIXED\n";
     }
-    for (std::size_t i = 0; i < X0_.size(); ++i)
-        if (m_[i] <= 0.0) flag_[i] = FIXED;
-
     if (scen_ == Scenario::TENSION) {
         for (int i = 0; i < (int)X0_.size(); ++i) {
             if (X0_[i].z() < 1e-9)           flag_[i] = FIXED;
@@ -839,6 +836,20 @@ void Fem3dSolver::buildMesh() {
             if (zc > H_ / 3.0 && zc < 2.0 * H_ / 3.0) midEl_.push_back(e);
         }
     }
+    // ---- EPINGLAGE DES NOEUDS SANS MASSE, EN DERNIER (2026-09-07) ---------
+    // Il etait pose AVANT le bloc TENSION, qui le DEFAISAIT : tout noeud a
+    // z > H - 1e-9 etait reclasse PRESCRIBED, y compris les noeuds de grille
+    // hors du cylindre, qui n'appartiennent a aucun tet et ont donc m_ = 0.
+    // La branche des mors divise par m_ ; avec gripLateralFree = true le
+    // premier pas donnait 0/0 = NaN. Mesure du 2026-09-07 : sur un cylindre
+    // D50 x H100 a nx = ny = 20, nz = 40, 3 444 noeuds sont dans ce cas et le
+    // run mourait au PAS 1 (« NaN/Inf detecte au pas 1 ... noeud 0 »), alors
+    // que le meme deck a gripLateralFree = false terminait normalement.
+    // Un noeud sans element ne porte ni masse ni force : le figer est la seule
+    // lecture juste, et cela ne change rien la ou tous les noeuds ont une
+    // masse (grille pleine) — chemin bit-identique.
+    for (std::size_t i = 0; i < X0_.size(); ++i)
+        if (m_[i] <= 0.0) flag_[i] = FIXED;
 }
 
 // ---------------------------------------------------------------------------
@@ -2270,7 +2281,12 @@ void Fem3dSolver::toolContact() {
 void Fem3dSolver::integrate() {
     for (int i = 0; i < (int)X0_.size(); ++i) {
         if (flag_[i] == FIXED) {
-            if (gripFree_) {                   // hold z only, lateral free
+            // m_ > 0 : un noeud SANS ELEMENT (grille hors du cylindre, sommet
+            // orphelin) a une masse nulle et aucune force. Sans ce test,
+            // gripLateralFree = true y calculait 0/0 et empoisonnait le champ
+            // entier des le premier pas (mesure du 2026-09-07 : 3 444 noeuds
+            // sur un cylindre D50 x H100). Le figer est la seule lecture juste.
+            if (gripFree_ && m_[i] > 0.0) {     // hold z only, lateral free
                 v_[i].x() += (dt_ / m_[i]) * f_[i].x();
                 v_[i].y() += (dt_ / m_[i]) * f_[i].y();
                 v_[i].z() = 0.0;
@@ -2283,7 +2299,7 @@ void Fem3dSolver::integrate() {
         // avec la pression de dessus et l'amortissement) ; a pullDelay = 0
         // la condition est fausse des t = 0 et le chemin est inchange
         if (flag_[i] == PRESCRIBED && !(t_ < pullDelay_)) {
-            if (gripFree_) {
+            if (gripFree_ && m_[i] > 0.0) {     // m_ > 0 : voir la branche FIXED
                 v_[i].x() += (dt_ / m_[i]) * f_[i].x();
                 v_[i].y() += (dt_ / m_[i]) * f_[i].y();
             } else { v_[i].x() = 0.0; v_[i].y() = 0.0; }

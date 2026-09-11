@@ -14,6 +14,7 @@
 #include "rockim/Config.hpp"
 #include "rockim/Material.hpp"
 #include "rockim/Solver.hpp"
+#include "rockim/Tessellation.hpp"
 #include "rockim/Tool.hpp"
 
 namespace rockim {
@@ -30,13 +31,19 @@ public:
     void finalize() override;
 
 private:
-    enum class Scenario { PERCUSSION, SHEAR, BAR_WAVE };
+    enum class Scenario { PERCUSSION, SHEAR, BAR_WAVE, TENSION };
 
     struct Elem {
         std::array<int, 3> n{};              // node indices (CCW)
         double A = 0;                        // reference area
         double lc = 0;                       // characteristic length (crack band)
         double hMin = 0;                     // smallest altitude (time-step length)
+        // GBM 2D (2026-09-07) : grain et phase du triangle. En mesh = grid
+        // (defaut) les deux valent 0 et phases_ n'a qu'une fiche = mat_, donc
+        // tous les chemins indexes ci-dessous rendent exactement les anciennes
+        // constantes globales.
+        int phase = 0;
+        int grain = 0;
         // B6 (2026-09-06) : initialiseur par defaut. Sans lui, les quatre
         // el_.push_back({{a, b, c}}) de FemSolver.cpp laissaient B non
         // initialise et clang levait « missing field 'B' initializer ».
@@ -46,10 +53,15 @@ private:
         double D = 0;                        // scalar damage
         bool eroded = false;
         double svm = 0, smean = 0;           // stored for output (nominal stress)
+        double syy = 0;                      // contrainte axiale (jauge de traction)
     };
 
     // --- setup -----------------------------------------------------------
-    void buildMesh();
+    void buildMesh();                    // grille structuree (historique)
+    void buildMeshVoronoi();             // GBM 2D (2026-09-07), opt-in
+    void finishMesh();                   // geometrie / B / masses / gardes
+    void applyBoundaryConditions();      // appuis, mors, frontieres absorbantes
+    void phaseKeyGuards() const;         // cles de JOINT refusees en fem
     void placeTool();
     void computeStableDt();
 
@@ -66,6 +78,10 @@ private:
     Config cfg_;
     std::string out_;
     Material mat_;
+    PhaseSet phases_;                // >= 1 fiche ; sans `phases` = {mat_}
+    bool phasesDeclared_ = false;
+    bool voronoi_ = false;           // mesh = voronoi
+    int  nGrains_ = 1;
     Tool tool_;
     Scenario scen_ = Scenario::PERCUSSION;
 
@@ -81,10 +97,24 @@ private:
     std::vector<Elem> el_;
     bool activeDirty_ = false;
 
-    // material-derived constants
-    Eigen::Matrix3d Dm_;
-    double dpAlpha_ = 0, dpK_ = 0;
-    double kappa0T_ = 0, kappa0S_ = 0;
+    // material-derived constants, UNE ENTREE PAR PHASE (2026-09-07). Sans la
+    // cle `phases` il n'y en a qu'une, egale champ pour champ aux anciennes
+    // constantes globales : le chemin grille est bit-identique.
+    std::vector<Eigen::Matrix3d> DmP_;
+    std::vector<double> dpAlphaP_, dpKP_, kappa0TP_, kappa0SP_;
+
+    // ---- amortissement local de Cundall (2026-09-07, opt-in) -------------
+    // Porte depuis fdem / fem3d, ou il existait deja. Force non visqueuse
+    // -alpha |f| sign(v) par composante : sans dimension, elle ne freine que
+    // ce qui bouge et s'annule a l'equilibre. Le FEM 2D n'en avait AUCUN, ce
+    // qui rendait toute comparaison FEM / FEMDEM « a conditions egales »
+    // fausse par construction (mesure du 2026-09-07 : sur le run de reference
+    // l'amortissement dissipe 3,39 J/m contre 1,38 J/m de travail cohesif —
+    // il travaille PLUS que la fissuration).
+    // Defaut 0 sur les scenarios historiques = chemin bit-identique ; 0,7 en
+    // scenario = tension, qui est ne le meme jour, pour s'aligner sur fdem et
+    // fem3d en quasi-statique.
+    double damping_ = 0.0;
 
     // damage / erosion controls
     bool damageOn_ = true;
@@ -105,6 +135,18 @@ private:
     // bar-wave verification
     std::vector<int> barBcNodes_, gaugeNodes_;
     double barV0_ = 1.0, gaugeX_ = 0, tArrive_ = -1.0;
+
+    // ---- scenario = tension (2026-09-07) --------------------------------
+    // Miroir 2D du scenario TENSION de fem3d : la rangee du bas est encastree
+    // (ou tenue en y seulement si gripLateralFree), celle du haut avance a
+    // pullV. pullV < 0 = COMPRESSION uniaxiale. La contrainte macroscopique
+    // est la reaction des mors divisee par gripSection = W x thk.
+    std::vector<uint8_t> grip_;      // 0 libre, 1 mors bas, 2 mors haut
+    std::vector<int> midEl_;         // tiers central, jauge de contrainte
+    double pullV_ = 0.05, pullRamp_ = 0.0, gripSection_ = 0.0;
+    bool   gripFree_ = false;
+    Eigen::Vector2d gripF_ = Eigen::Vector2d::Zero();
+    double sigmaPeak_ = 0.0, sigMid_ = 0.0;
 };
 
 } // namespace rockim

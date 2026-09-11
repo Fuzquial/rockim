@@ -63,11 +63,22 @@ inline double difTensionYang(double edot, double n) {
     return v < 1.0 ? 1.0 : (v > 1.85 ? 1.85 : v);
 }
 
-inline double difCompressionYang(double edot) {
+// Exposant de la COMPRESSION parametre a son tour (2026-09-11, portage de la
+// note de septembre 2026, eq. 13 : DIF_t et DIF_s a exposants SEPARES, a_s <
+// a_t). La forme a un argument ci-dessous delegue avec le 0,07 litteral de
+// l article — la valeur du double est la meme, l appel a std::pow est le
+// meme : BIT-IDENTIQUE. Cette surcharge remplace les deux transcriptions
+// locales que les lots 2D et 3D avaient du recopier faute de pouvoir toucher
+// ce fichier : il n en existe a nouveau qu UNE dans le depot.
+inline double difCompressionYang(double edot, double n) {
     if (edot <= 5.0e-6) return 1.0;
     if (edot > 1.0e4)   return 1.84;
-    double v = 0.77 + 0.56 * std::pow(edot, 0.07);
+    double v = 0.77 + 0.56 * std::pow(edot, n);
     return v < 1.0 ? 1.0 : (v > 1.84 ? 1.84 : v);
+}
+
+inline double difCompressionYang(double edot) {
+    return difCompressionYang(edot, 0.07);
 }
 
 // ---------------------------------------------------------------------------

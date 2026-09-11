@@ -327,6 +327,56 @@
 //    saksala2011 (port fidele, endommagement pilote par la deformation
 //    viscoplastique, pas de bande (ft, Gf, lc)), cdp (ses propres tables) et
 //    dpdfh (deja directionnel). rockim selftest-fixed [out.csv] : bancs (a)-(e).
+//
+// ---- BRIQUES opt-in de la NOTE DE SEPTEMBRE 2026 (lot A, 2026-09-11 ;
+//      defaut = bit-identique cles absentes, principe VIII) ----------------
+//  * bulkTensionDamage = on (defaut) | off  [§1.4 eq. 8] : `off` supprime
+//    TOUT endommagement de traction de la matrice. Le bloc de Rankine ne
+//    s'execute plus, s.D / s.kappa / s.wDamT restent a 0, et la contrainte
+//    nominale se reduit a sigma = sigma_barre_+ + (1 - omega_c) sigma_barre_-,
+//    mot pour mot l'eq. 8. C'est le DOUBLE COMPTAGE n.1 de l'audit du
+//    2026-09-11 : en FDEM a insertion adaptative la fissuration en traction
+//    est l'affaire des JOINTS, et la matrice la comptait une deuxieme fois.
+//    Le seul contournement etait bulkFt = 1e12, qui eteignait au passage
+//    erodeD et laissait wDamT muet. Consequences assumees : les DEUX gardes de
+//    bande EN TRACTION (lc < E Gf / ft^2, celle de stress() et celle de make())
+//    sont LEVEES — sans bande de traction elles n'ont plus d'objet ; le canal
+//    de spall erodeD devient inerte (avertissement a l'init) ; erodeWfrac et
+//    tensionDamage = fixed sont REFUSES (ils seraient lus et inertes). Refusee
+//    sur mc / saksala2011 / dpdfh / dfhplus / cdp, qui ignorent BrickOpts.
+//  * mhForm = dp (defaut) | principal  [§1.2 eq. 2] : le critere de
+//    Mohr-Hoek en CONTRAINTES PRINCIPALES,
+//        f = sigma_barre_1 - sigma_barre_3 - B <sigma_barre_3>^n - sigma_c,
+//    c'est-a-dire un cone HEXAGONAL, au lieu du cone CIRCULAIRE en (p, sqrt J2)
+//    que rockim_g0 resout par retour radial. Les deux ne coincident qu'en
+//    compression triaxiale (sigma_2 = sigma_3) : mesure 1e-11 d'ecart relatif
+//    en triaxial a 5/20/100 MPa, 69 % en deformation plane. La signature de
+//    l'hexagone est l'INDEPENDANCE a la contrainte intermediaire. Le crochet
+//    de Macaulay est respecte : pour sigma_barre_3 <= 0 il reste
+//    f = sigma_1 - sigma_3 - sigma_c (prisme de Tresca) et NON un repli sur le
+//    cone lineaire, ce que fait yieldQPower (qui rend -1 de ce cote). Retour
+//    plane / arete (Koiter, 2 surfaces) / sommet hydrostatique, Newton BORNE
+//    avec repli bissection — l'enveloppe puissance a une TANGENTE VERTICALE en
+//    sigma_3 = 0 (n < 1) et un Newton nu y depassait le pic de 2,4 %. La
+//    viscosite est conservee : a convergence f = eta dlam/dt exactement
+//    (surcontrainte x10 pour une vitesse x10, mesuree a 2e-12 pres).
+//    Exige meridian = power.
+//  * dpFlowForm = dp (defaut) | mc  [§1.2 eq. 3-4] : potentiel NON ASSOCIE
+//    g = sigma_barre_1 - m_psi sigma_barre_3, m_psi = (1+sin psi)/(1-sin psi),
+//    de gradient (1, 0, -m_psi) en base principale — composante INTERMEDIAIRE
+//    NULLE, ce qu'un potentiel lisse en (p, sqrt J2) ne peut pas rendre. psi
+//    vient de dpDilationDeg ; dpDilationDamage = omega module sin(psi). Sous
+//    cette cle kappa est calcule sur le tenseur COMPLET (eq. 4,
+//    kappa_point = sqrt(2/3 eps_point_vp : eps_point_vp)) et non sur la seule
+//    part deviatorique : a psi = 0 et a deformation plastique axiale egale,
+//    kappa monte de 15,5 % (facteur 2/sqrt(3)), donc omega_c croit d'autant
+//    plus vite. Sur un critere LISSE (mhForm = dp) l'ecoulement de l'eq. 3
+//    n'est pas axisymetrique et un triaxial pilote en deformation cesse de
+//    l'etre en contrainte (+2,1 % sur q, mesure) ; sous mhForm = principal
+//    l'ARETE sigma_2 = sigma_3 retablit l'axisymetrie par la regle de Koiter.
+//  * MatState::lcComp (renseigne par le solveur, cle compBandLength du lot
+//    solveur) : b_c = fc0 * lcComp / compGIIc au lieu de fc0 * lc / compGIIc.
+//    La bande de TRACTION garde lc.
 // ---------------------------------------------------------------------------
 #include <memory>
 #include <string>
@@ -359,6 +409,19 @@ struct MatState {
     // call (Weibull heterogeneity — the sandbox version of the VUMAT's
     // FIELD mechanism); 1 = homogeneous
     double ftScale = 1.0;
+
+    // ---- §1.3 de la note 2026 : longueur de bande de la COMPRESSION ------
+    // b_c = fc0 * h_e / compGIIc, avec h_e = (12 V_e / sqrt(2))^(1/3), soit
+    // l'arete d'un tetraedre REGULIER de volume V_e (jtsl::tetEdgeLength).
+    // rockim_g0 passait a b_c la meme longueur que la traction : V^(1/3) en
+    // fem3d (facteur 0,49 vs la note) et le diametre inscrit 6V/A en fdem3d
+    // (facteur 0,20), de sorte qu'un G_c^bulk identifie avec la convention de
+    // la note y donnait une branche adoucissante 2 a 5 fois trop ductile.
+    //
+    // <= 0 : utiliser lc, c'est-a-dire le comportement de rockim_g0, BIT-
+    // IDENTIQUE. Renseigne par le solveur sous `compBandLength = tetEdge`.
+    // N'affecte QUE omega_c ; la bande de traction garde lc.
+    double lcComp = -1.0;
 
     // initial element centroid, set by the solver after meshing (dpdfh
     // seeds its Weibull draws from a spatial hash of these coordinates,

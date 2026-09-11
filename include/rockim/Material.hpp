@@ -9,6 +9,7 @@
 // ---------------------------------------------------------------------------
 #include <algorithm>
 #include <cmath>
+#include <iostream>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -289,6 +290,21 @@ struct PhaseSet {
             m.Gf       = c.getd(k + "Gf", m.Gf);
             m.gfShearFactor = c.getd(k + "gfShearFactor", m.gfShearFactor);
             validate(m, "phase " + nm);
+            // RESISTANCES HERITEES (mesure du 2026-09-11) : une phase qui
+            // ne pose que rho/E/nu (carbure, acier) herite ft et cohesion du
+            // bloc global — c est-a-dire de la ROCHE. Un insert en carbure
+            // dont les joints cassent a 11 MPa n est pas une fiche materiau,
+            // c est un oubli. On avertit des que le module trahit un autre
+            // materiau (E > 1,5 x le global) ; aucune valeur n est changee.
+            if (c.has(k + "E") && m.E > 1.5 * base.E
+                && !c.has(k + "ft") && !c.has(k + "cohesion"))
+                std::cout << "[Material] *** AVERTISSEMENT *** phase '" << nm
+                          << "' : E = " << m.E / 1e9 << " GPa pose au deck, "
+                             "mais ft et cohesion HERITES du bloc global (ft = "
+                          << m.ft / 1e6 << " MPa, c = " << m.cohesion / 1e6
+                          << " MPa) : ses joints casseront comme la roche. "
+                             "Poser phase." << nm << ".ft / .cohesion (1e12 "
+                             "pour un corps incassable) ou groupContinuum.\n";
             double f = c.reqd(k + "fraction");
             // `if (f <= 0.0)` etait FAUX pour NaN comme pour +inf : les deux
             // passaient. Le prix, mesure sur mesh = voronoi : une fraction

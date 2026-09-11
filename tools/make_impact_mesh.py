@@ -28,6 +28,15 @@ import sys
 
 import gmsh
 
+# arguments NOMMES optionnels (2026-09-11), a n'importe quelle position :
+#   gap=<m>   jeu piston/bit   (defaut 2e-4 : inchange, maillage bit-identique)
+#   gapr=<m>  jeu insert/roche (equivalent du 3e argument positionnel)
+# Mesure : 0,2 mm de jeu piston/bit = 22 us de vol a 9 m/s = 0,8 h de calcul
+# pour zero physique ; 0,2 mm insert/roche = 44 us de plus a ~4,5 m/s. Yang
+# et al. : insert POSE (le poids sur l'outil assied le bit).
+_kw = {a.split("=", 1)[0]: a.split("=", 1)[1] for a in sys.argv[1:] if "=" in a}
+sys.argv = [a for a in sys.argv if "=" not in a]
+
 out = sys.argv[1] if len(sys.argv) > 1 else "impact.msh"
 s = float(sys.argv[2]) if len(sys.argv) > 2 else 1.0
 # jeu insert/roche optionnel (3e argument, m). Defaut 0,2 mm = insert en vol ;
@@ -35,6 +44,7 @@ s = float(sys.argv[2]) if len(sys.argv) > 2 else 1.0
 # poids sur l'outil assied le bit) — c'est elle qui donne la courbe F-p en
 # rampe de leur fig. 7b, l'onde de frappe enfoncant l'insert directement.
 GAPR = float(sys.argv[3]) if len(sys.argv) > 3 else 2.0e-4
+GAPR = float(_kw.get("gapr", GAPR))
 # echelle PROPRE A LA ROCHE (4e argument, defaut = s). Les fissures vivent
 # dans la roche : on peut la mailler a l'echelle de l'article (1,0) en
 # laissant l'acier grossier — le dt reste commande par l'insert.
@@ -44,7 +54,7 @@ SR = float(sys.argv[4]) if len(sys.argv) > 4 else s
 # bit+insert etant lance directement a la vitesse d indentation mesuree.
 LEGER = len(sys.argv) > 5 and sys.argv[5] == "leger"
 
-GAP = 2.0e-4                 # jeu piston/bit [m]
+GAP = float(_kw.get("gap", 2.0e-4))   # jeu piston/bit [m]
 R_ROCK, H_ROCK = 0.125, 0.150
 R_INS, R_SHANK, H_INS = 0.00851, 0.00794, 0.0232
 R_BIT = 0.015
@@ -155,9 +165,22 @@ gmsh.option.setNumber("Mesh.RandomSeed", 1)
 # 2026-08-30 (A/B/C/D/B2, echelle 2) ; RandomFactor et ExtendFromBoundary
 # sont sans effet sur le reseau.
 gmsh.option.setNumber("Mesh.Algorithm", 1)     # MeshAdapt (jamais 5/6 sous champ)
-gmsh.option.setNumber("Mesh.Algorithm3D", 1)   # Delaunay 3D explicite
+# algo3d=N (2026-09-11) : 1 = Delaunay (defaut, inchange), 10 = HXT (Delaunay
+# parallele + optimiseur de qualite propre). Mesure du jour sur s = 1 : le
+# Delaunay laisse des slivers de 0,226 mm de diametre inscrit a la surface de
+# la roche sous l insert (mediane 0,40 dans la zone fine), que deux passes
+# Netgen ne corrigent pas ; ce sont eux qui commandent le pas de temps.
+gmsh.option.setNumber("Mesh.Algorithm3D", int(_kw.get("algo3d", 1)))
 gmsh.option.setNumber("Mesh.OptimizeNetgen", 1)
 gmsh.model.mesh.generate(3)
+# opt=N (2026-09-11) : N passes d'optimisation SUPPLEMENTAIRES (Netgen puis
+# relocalisation des noeuds) contre les slivers. Mesure sur s = 1 : le pas de
+# temps des joints de la roche suit le PLUS PETIT diametre inscrit (0,226 mm
+# pour une mediane de 0,4 mm dans la zone fine) — un sliver sur cent mille
+# commande 20 h de calcul. Defaut 0 = maillage bit-identique.
+for _ in range(int(_kw.get("opt", 0))):
+    gmsh.model.mesh.optimize("Netgen")
+    gmsh.model.mesh.optimize("Relocate3D")
 gmsh.option.setNumber("Mesh.MshFileVersion", 2.2)
 gmsh.write(out)
 ntet = len(gmsh.model.mesh.getElementsByType(4)[0])

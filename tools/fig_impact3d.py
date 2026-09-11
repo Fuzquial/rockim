@@ -71,6 +71,30 @@ def ar(s, nm):
     return np.fromstring(m.group(1), sep=" ") if m else None
 
 
+def crushed(s):
+    """Champ d'ENDOMMAGEMENT DE BROYAGE de l'element, quelle que soit la loi.
+
+    L'outil lisait `bulkD` en dur. Or `bulkDamage` est NEUTRALISE des qu'une
+    loi de volume existe (Fdem3dSolver.cpp:2736) : sous la loi de la note de
+    septembre 2026 (`law = saksala` + `compDamage = crackband`) le champ
+    n'est pas ecrit et `bd[ei]` levait un TypeError sur None.
+
+    Le porteur equivalent y est `omegaC`, l'endommagement de COMPRESSION de
+    l'eq. 6 de la note — exactement la meme grandeur physique (le broyage),
+    ecrit au VTU par le lot du 2026-09-11. On prend donc bulkD s'il existe
+    (comportement inchange, bit-identique sur tous les runs anterieurs),
+    omegaC sinon, et un vecteur nul si aucun des deux n'est present.
+    """
+    bd = ar(s, "bulkD")
+    if bd is not None:
+        return bd
+    wc = ar(s, "omegaC")
+    if wc is not None:
+        return wc
+    n = ar(s, "vonMises")
+    return np.zeros(0 if n is None else len(n))
+
+
 def slice_tets(P, C, y0):
     """Intersection EXACTE des tetraedres avec le plan y = y0."""
     s = P[C][:, :, 1] - y0
@@ -155,13 +179,15 @@ def curves(runs, out):
     done, e, tsep = state(h)
     tag = "SEPARE a %.0f µs" % tsep if done else "contact ENCORE actif"
     A.plot(h["d"][-1], h["F"][-1], "s", ms=9, color=TEAL, zorder=6)
-    A.axvline(D_PUB, color=ERR, lw=1.3, ls="-.")
-    A.annotate("publié %.2f mm" % D_PUB, (D_PUB, 5), textcoords="offset points",
-               xytext=(7, 0), fontsize=9, color=ERR)
+    if ON_YANG_BENCH:                      # cibles du banc de Yang seulement
+        A.axvline(D_PUB, color=ERR, lw=1.3, ls="-.")
+        A.annotate("publié %.2f mm" % D_PUB, (D_PUB, 5), textcoords="offset points",
+                   xytext=(7, 0), fontsize=9, color=ERR)
     A.set_xlabel("pénétration δ (mm)", fontsize=10.5)
     A.set_ylabel("force F (kN)", fontsize=10.5)
     A.set_title("Force–pénétration", fontsize=11.5)
-    A.set_xlim(0, 1.25)
+    if ON_YANG_BENCH:
+        A.set_xlim(0, 1.25)          # echelle du banc ; ailleurs, auto
 
     B.axhline(0, color="k", lw=.8, ls=":")
     B.axhline(V_OUT, color=ERR, lw=1.4, ls="-.")
@@ -252,7 +278,7 @@ def gif(runs, out, tmp="_gif3d"):
             s = rd("%s/fdem3d_%04d.vtu" % (D, kk))
             js = rd("%s/fdem3d_joints_%04d.vtu" % (D, kk))
             P, C = pts(s), cn(s, 4)
-            vm, bd = ar(s, "vonMises") / 1e6, ar(s, "bulkD")
+            vm, bd = ar(s, "vonMises") / 1e6, crushed(s)
             po, ei = slice_tets(P, C, YC)
             pc = PolyCollection(po, array=np.clip(vm[ei], 0, 140), cmap="YlGnBu_r",
                                 edgecolors="#5c686f", linewidths=.32)
@@ -301,13 +327,75 @@ def gif(runs, out, tmp="_gif3d"):
     return len(ims), os.path.getsize(out) // 1024
 
 
+def geometry_override(argv):
+    """Geometrie du banc, surchargeable depuis la ligne de commande.
+
+    Les constantes en tete de ce fichier decrivent le banc de Yang (bloc de
+    100 mm, insert R = 8,51 mm, axe en 75 mm, 5,62 m/s). Elles etaient CODEES
+    EN DUR : le script rendait donc une coupe faussement cadree — et des
+    annotations fausses — sur tout autre deck. Ces drapeaux sont OPTIONNELS et
+    leurs defauts sont les valeurs d'origine : sans eux, comportement inchange.
+
+      --R  rayon de l'outil [m]      --H   hauteur du bloc [m]
+      --XC axe d'impact x [m]        --YC  axe d'impact y [m]
+      --V0 vitesse d'entree [m/s]    --KE0 energie injectee [J]
+      --win XL XR YB YT  fenetre de la coupe [mm]
+      --label "..."      legende du run principal
+    Les cibles publiees (D_PUB, V_OUT, KE_OUT, e = 0,83) ne sont tracees que si
+    --V0 n'est pas pose : hors du banc de Yang elles n'ont aucun sens.
+    """
+    global R, H0, XC, YC, V0, KE0, XL, XR, YB, YT, ON_YANG_BENCH
+    global D_PUB, V_OUT, KE_OUT
+    ON_YANG_BENCH = "--V0" not in argv
+    if not ON_YANG_BENCH:
+        # Hors du banc de Yang, ses cibles publiees n'ont aucun sens. On les
+        # met a NaN plutot que de garder un axvline/axhline a une valeur
+        # etrangere au deck : matplotlib ne trace alors rien, et aucune des
+        # annotations correspondantes n'atterrit sur la figure. C'est le
+        # minimum qui rende l'outil honnete sur un autre bloc.
+        D_PUB = V_OUT = KE_OUT = float("nan")
+    rest, i = [], 0
+    while i < len(argv):
+        a = argv[i]
+        if a == "--win" and i + 4 < len(argv):
+            XL, XR, YB, YT = [float(x) for x in argv[i + 1:i + 5]]
+            i += 5
+        elif a in ("--R", "--H", "--XC", "--YC", "--V0", "--KE0") and i + 1 < len(argv):
+            v = float(argv[i + 1])
+            if a == "--R":   R = v
+            elif a == "--H": H0 = v
+            elif a == "--XC": XC = v
+            elif a == "--YC": YC = v
+            elif a == "--V0": V0 = v
+            else:            KE0 = v
+            i += 2
+        elif a == "--label" and i + 1 < len(argv):
+            rest.append(("label", argv[i + 1]))
+            i += 2
+        else:
+            rest.append(a)
+            i += 1
+    return rest
+
+
+ON_YANG_BENCH = True
+
+
 def main():
-    if len(sys.argv) < 2:
-        raise SystemExit("usage: fig_impact3d.py <run> [reference]")
-    runs = [(sys.argv[1], "1,3 mm · µ 0,18", TEAL, "-")]
-    if len(sys.argv) > 2:
-        runs.append((sys.argv[2], "2,0 mm · µ 0,60", GREY, "--"))
-    D = sys.argv[1]
+    argv = geometry_override(sys.argv[1:])
+    lab = "1,3 mm · µ 0,18"
+    for e in list(argv):
+        if isinstance(e, tuple) and e[0] == "label":
+            lab = e[1]
+            argv.remove(e)
+    if not argv:
+        raise SystemExit("usage: fig_impact3d.py <run> [reference] "
+                         "[--R m --H m --XC m --YC m --V0 m/s --KE0 J "
+                         "--win XL XR YB YT --label txt]")
+    runs = [(argv[0], lab, TEAL, "-")]
+    if len(argv) > 1:
+        runs.append((argv[1], "2,0 mm · µ 0,60", GREY, "--"))
+    D = argv[0]
     done, e = curves(runs, D + "/fp_raffine.png")
     n, ko = gif(runs, D + "/raffine_ab.gif")
     h = hist(D)
