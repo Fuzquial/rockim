@@ -1,6 +1,6 @@
 {
  "_meta": {
-  "generated": "2026-09-11 20:43:15",
+  "generated": "2026-09-12 01:25:51",
   "generator": "tools/gen_keys_by_mode.py (voir la docstring : methode)",
   "rule": "cle lue par UN SEUL solveur = cle de ce mode, refusee dans les autres modes ; lue par le code partage ou par >= 2 solveurs = commune, jamais refusee ; cle absente du registre (construite dynamiquement) = jamais refusee",
   "files_scanned": [
@@ -66,8 +66,8 @@
    "scenario",
    "seed"
   ],
-  "n_keys": 424,
-  "n_common": 277,
+  "n_keys": 425,
+  "n_common": 278,
   "n_mode_specific": 147,
   "n_obsolete": 1,
   "rule_c1": "C1 (w21) : cle du deck NON consommee ET hors registre (ni commune, ni du mode, ni famille dynamique lue) = faute ; cle du registre non consommee (lecture conditionnelle) = legitime ; cle obsolete = « remplacee par » ; cle d'un autre mode = « sans effet en mode » ; source des obsoletes : tools/obsolete_keys.json",
@@ -407,6 +407,7 @@
   "jointPrebrokenFrac",
   "jointQuadrature",
   "jointResidualMu",
+  "jointSecantRatchet",
   "jointShearEnvelope",
   "jointShearRange",
   "jointShearUnload",
@@ -1441,6 +1442,10 @@
    "fdem3d"
   ],
   "jointResidualMu": [
+   "fdem",
+   "fdem3d"
+  ],
+  "jointSecantRatchet": [
    "fdem",
    "fdem3d"
   ],

@@ -70,6 +70,15 @@ DECKS = [
     dict(name="fdem_ucs_yan_adaptive_court", cfg=f"{DECKDIR}/fdem_ucs_yan_adaptive_court.cfg",
          mode="fdem", law="(joints cohesifs yan, insertion adaptative)", threads=None,
          note="UCS de Yan 2023 sur Voronoi/Delaunay, raccourci"),
+    # 9e deck (conseil du 12/09, N1) : le chemin de la loi de joint du deck v2
+    # Yang — intrinseque + munjiza + parabolic + yang + coulomb + origin +
+    # midedge + majority + deltaC + DIF continu — qu aucun des 8 premiers
+    # n exerce. Reference LATERALE tools/bitid_refs_jointlaw.json (--refs),
+    # pour ne pas rouvrir l ancre principale a chaque lot de loi de joint :
+    #   python tools/bitid.py --exe X --only yang_v2 --refs tools/bitid_refs_jointlaw.json
+    dict(name="fdem3d_yang_v2_court", cfg=f"{DECKDIR}/fdem3d_yang_v2_court.cfg",
+         mode="fdem3d", law="(joints cohesifs, conventions Solidity, DIF continu)", threads=None, side=True,
+         note="banc Yang s = 2,5 (10 563 tets), bit lance a 9 m/s, 20 us : la loi de joint v2 sous fracture ; ancre laterale bitid_refs_jointlaw.json"),
 ]
 
 RX_PEAK = re.compile(r"peak tool force\s*:\s*(-?[\d.eE+]+)")
@@ -226,7 +235,13 @@ def main():
     ref_decks = refs.get("decks", {})
     meta = refs.get("_meta", {})
 
-    sel = [d for d in DECKS if args.only is None or args.only in d["name"]]
+    # Les decks `side` (ancre LATERALE, ex. fdem3d_yang_v2_court) ne sont joues
+    # que sur --only ou sur une ancre --refs autre que la principale : la passe
+    # 8/8 par defaut reste ce qu elle etait (ancre principale intacte).
+    sel = [d for d in DECKS
+           if (args.only is None or args.only in d["name"])
+           and (not d.get("side") or args.only is not None
+                or os.path.abspath(args.refs) != os.path.abspath(REFS_DEFAULT))]
     if not sel:
         print(f"[bitid] aucun deck ne contient '{args.only}'")
         return 2

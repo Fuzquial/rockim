@@ -704,18 +704,41 @@ void Fdem3dSolver::init() {
                                      "|sigma_n| a la pression courante — la "
                                      "forme publiee, Guo 2014 eq. 2.24/2.30)");
         shearRangeCoulomb_ = sr == "coulomb";
-        if (shearRangeCoulomb_ && !shearOrigin_)
-            throw std::runtime_error("jointShearRange = coulomb exige "
-                                     "jointShearUnload = origin (le moteur "
-                                     "(smax - sE)/plage est celui de la "
-                                     "branche origin)");
+        // CONSEIL DU 12/09 (M4) : la garde « coulomb exige origin » etait une
+        // erreur de transcription. La normalisation 3 GfII/fs(sigma_n) de
+        // Solidity (Y3Dfd.c l. 1126) est une LONGUEUR DE REFERENCE du moteur
+        // d endommagement, pas une raideur : sur la branche plastic elle
+        // divise |s_p| par max(2 sE, slipF·c/fs) — dissipatif (D ratchet,
+        // pj constant). Levee de la garde ; decks anciens inchanges.
         if (shearRangeCoulomb_)
             std::cout << "[FDEM3D] jointShearRange = coulomb : plage de mode "
                          "II divisee par fs(sigma_n) a chaque pas (plancher "
-                         "2 sE)\n";
+                         "2 sE)" << (shearOrigin_ ? "" : " — branche plastic : "
+                         "le moteur |s_p|/plage lit la plage courante (12/09)")
+                      << "\n";
     }
+    // jointSecantRatchet (conseil du 12/09, M1/M7) : lu ici, agit dans
+    // processJoint sur les secantes des eq. 17 et 18. Defaut off.
+    secRatchet_ = cfg_.getb("jointSecantRatchet", false);
+    if (secRatchet_)
+        std::cout << "[FDEM3D] jointSecantRatchet = on : secantes de decharge "
+                     "NON CROISSANTES (mode I eq. 17 ; mode II eq. 18 sous "
+                     "origin) — ni le DIF continu ni tau_lim(sigma_n) ne "
+                     "peuvent remonter une raideur a ouverture/glissement "
+                     "fixe (Phi >= 0)\n";
     if (shearOrigin_) {
         std::cout << "[FDEM3D] shear unloading: origin secant (Yan eq. 18)\n";
+        if (!secRatchet_)
+            std::cout << "[FDEM3D] AVERTISSEMENT (conseil du 12/09, M1) : "
+                         "jointShearUnload = origin est NON CONSERVATIF — "
+                         "tau = tau_lim(sigma_n)/s_max · s des que le cap est "
+                         "actif, la raideur secante suit la compression "
+                         "courante ; un cycle a glissement fixe cree "
+                         "½(k2 - k1) s² (mesure : 16 J en 81 us sur le banc "
+                         "s = 2,5, 2D V0 vs V19). Poser jointSecantRatchet = on "
+                         "(secante non croissante) ou jointShearUnload = "
+                         "plastic. budgetAbortPct coupe si la creation "
+                         "depasse la tolerance.\n";
         if (!yanFricScaled_)
             std::cout << "[FDEM3D] WARNING: jointShearUnload = origin with "
                          "jointFrictionScaled = 0 — the Coulomb term rides the "
@@ -4377,6 +4400,21 @@ void Fdem3dSolver::jointForces() {
             // de la contrainte normale — non circulaire, independant de D.
             Eigen::Vector3d sEff = Eigen::Vector3d::Zero();
             double smx = 0.0, rsO = 0.0;
+            // jointShearRange = coulomb SUR LA BRANCHE PLASTIC (12/09, M4) :
+            // la plage de mode II qui normalise |s_p| suit fs(sigma_n) comme
+            // chez Solidity ; meme expression que la branche origin ci-dessous
+            // (2 sE de plancher, scale c/fs). slipRef == J.slipF au bit pres
+            // quand la cle est off ou sous origin : bit-identique.
+            double slipRef = J.slipF;
+            if (shearRangeCoulomb_ && !shearOrigin_) {
+                double sEp = (J.coh + J.tanPhi
+                              * rockim::mcFrictionTerm(J.pj * dn, J.ft,
+                                                       yangEnv_)) / J.pj;
+                if (sEp < 0.0) sEp = 0.0;
+                double fsP = J.coh + J.tanPhi * std::max(0.0, -(J.pj * dn));
+                if (fsP > J.coh)
+                    slipRef = std::max(2.0 * sEp, J.slipF * (J.coh / fsP));
+            }
             if (shearOrigin_) {
                 J.slip[k] -= J.slip[k].dot(n) * n;     // origine dans le plan
                 sEff = dt3 - J.slip[k];
@@ -4428,7 +4466,7 @@ void Fdem3dSolver::jointForces() {
                 double rn = (ot > 0.0 && dn > J.dnE) ? (dn - J.dnE) / ot : 0.0;
                 double rs = shearOrigin_
                     ? rsO
-                    : ((J.slipF > 0.0) ? J.slip[k].norm() / J.slipF : 0.0);
+                    : ((slipRef > 0.0) ? J.slip[k].norm() / slipRef : 0.0);
                 double Dnow = std::sqrt(rn * rn + rs * rs);
                 if (Dnow > Dref) Dref = std::min(1.0, Dnow);
                 double fdY = yan::fD(Dref, yanP_);
@@ -4450,6 +4488,18 @@ void Fdem3dSolver::jointForces() {
                     } else envE = J.pj * om;
                     double sMax = std::min(envE, fdY * J.ft);
                     sigEl = (om > 1e-30) ? sMax * dn / om : 0.0;
+                    // jointSecantRatchet (12/09, M7) : la secante sMax/om ne
+                    // remonte jamais. Sous DIF continu, ft(t) reecrit dnE et
+                    // envE a chaque pas ; sans ratchet, une remontee du taux
+                    // a ouverture figee raidit le joint et la decharge rend
+                    // plus que la charge n a stocke. Le DIF garde son role
+                    // sur l ENVELOPPE (sMax) atteinte en charge croissante.
+                    if (secRatchet_ && om > 1e-30) {
+                        double kn = sMax / om;
+                        if (J.knr[k] >= 0.0 && kn > J.knr[k]) kn = J.knr[k];
+                        J.knr[k] = kn;
+                        sigEl = kn * dn;
+                    }
                 } else {
                     // Guo eq. 2.31, premiere ligne : en COMPRESSION la pente
                     // est 2 ft/dnE = 2 pj, continument raccordee a la parabole
@@ -4564,6 +4614,16 @@ void Fdem3dSolver::jointForces() {
                 double tauEnv = std::min(J.pj * smx, tauLim);
                 tau.setZero();
                 if (smx > 1e-30) tau = (tauEnv / smx) * sEff;
+                // jointSecantRatchet (12/09, M1) : la secante tauEnv/smx ne
+                // remonte jamais — tau_lim(sigma_n) ne peut plus raidir le
+                // joint a glissement fixe ; la compression ne fait qu ELEVER
+                // le cap atteignable en charge, pas la raideur stockee.
+                if (secRatchet_ && smx > 1e-30) {
+                    double ks = tauEnv / smx;
+                    if (J.ksr[k] >= 0.0 && ks > J.ksr[k]) ks = J.ksr[k];
+                    J.ksr[k] = ks;
+                    tau = ks * sEff;
+                }
                 // en `yan`, D a deja ete mis a jour par l'eq. 16 au-dessus
                 if (!yanSoft_ && rsO > Dref) Dref = std::min(1.0, rsO);
             } else {
@@ -4579,10 +4639,10 @@ void Fdem3dSolver::jointForces() {
                         double ot = J.dnF - J.dnE;
                         double rn = (ot > 0.0 && dn > J.dnE) ? (dn - J.dnE) / ot
                                                              : 0.0;
-                        double rs = J.slip[k].norm() / J.slipF;
+                        double rs = J.slip[k].norm() / slipRef;
                         Dt2 = std::sqrt(rn * rn + rs * rs);   // eq. 16 / 14
                     } else {
-                        Dt2 = J.slip[k].norm() / J.slipF;
+                        Dt2 = J.slip[k].norm() / slipRef;
                     }
                     if (Dt2 > Dref) Dref = std::min(1.0, Dt2);
                 }

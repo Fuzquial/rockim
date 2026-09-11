@@ -156,6 +156,52 @@ facettes toutes rompues autour : le critère d'insertion fait son travail, c'est
 Correction = loi de volume sur la roche (`lawPhase`, ci-dessus) ; premier essai `law = dpr` au §7
 du document.
 
+### Ajouté — la loi de joint passée au conseil : `jointSecantRatchet`, coulomb sur `plastic`, avertissement `origin` (`rockim_g1y11.exe`, 12/09, 1 h 30)
+
+Fernando : « tout doit être mathématique et physique ; corrige les problèmes mathématiques, écris les
+équations correctement, regarde les vraies équations, puis l'implémentation numérique ». Plan écrit
+(`docs/PLAN_loi_joint_2026-09-12.md` : rockim telle que codée, Solidity `Sigma_tau` transcrite
+verbatim depuis leur source GitHub, Yang 2026 §2, six constats M1-M6), soumis à un conseil de quatre
+critiques + synthèse séparée (verdict REVISE, liste N0-N7 ; sorties dans le plan et ETAT §13).
+
+Ce que le conseil a établi et que le code porte maintenant :
+- **M1 — `jointShearUnload = origin` est non conservatif** : τ = τ_lim(σ_n)/s_max · s dès que le cap
+  est actif, ∂τ/∂δ_n ≠ ∂σ/∂δ_s, un cycle à glissement fixé crée ½(k₂−k₁)s². Mesuré : 16 J en 81 µs
+  (référence), 0,1 J sans les conventions Solidity (B4), sain sous `plastic` (B1). **AVERTISSEMENT**
+  imprimé au démarrage (2D et 3D), formule et chiffre ; rien n'est refusé (principe VIII, 40 decks
+  archivés restent rejouables ; `budgetAbortPct` coupe par la mesure).
+- **M7 (sceptique) — le DIF continu est une raideur, pas seulement un critère** : sous
+  `strainRateDIFArm = continuous`, `refreshDif` réécrit ft et dnE à chaque pas, donc l'enveloppe
+  parabolique de mode I et la sécante de l'éq. 17 suivent ft(t) non monotone — une seconde pompe, en
+  mode I, quelle que soit la branche de cisaillement. D5 du plan (« rien à corriger ») était faux.
+- **`jointSecantRatchet = on | off`** (nouvelle clé commune, défaut off bit-identique) : les sécantes
+  de décharge des éq. 17 (mode I, toutes branches) et 18 (mode II, branche `origin`) deviennent
+  NON CROISSANTES dans le temps (`Joint::knr`, `Joint::ksr` par point d'intégration). C'est la
+  condition Φ ≥ 0 d'une loi d'endommagement : ni la remontée du DIF ni celle de τ_lim avec la
+  compression ne peuvent restituer plus que la charge n'a stocké ; le DIF et la pression continuent
+  d'élever l'ENVELOPPE atteignable en charge croissante. `origin` + ratchet = la forme dissipative de
+  l'éq. 18 (D3 du plan), `plastic` + ratchet = plastic avec le mode I protégé du DIF.
+- **M4 — garde `jointShearRange = coulomb` ⇒ `origin` levée** (2D et 3D) : la normalisation
+  3 G_II/f_s(σ_n) de Solidity est une longueur de référence du moteur, pas une raideur ; sur `plastic`
+  le moteur devient |s_p| / max(2 s_E, s_F·c/f_s) (dissipatif, D ratchet, pj constant). `slipRef`
+  vaut `J.slipF` au bit près quand la clé est absente ou sous `origin`.
+- Registre `tools/keys_by_mode.json` + `KeysByMode.hpp` régénérés (425 clés, `jointSecantRatchet`
+  commune). Build complet dans `obj_g1y11` (jamais de lien partiel après un .hpp).
+
+Décisions du conseil non codées (volontairement) : refus de `origin` sous `budgetAbortPct`
+(cassait 40 decks et l'ancre `cut3d_heilman_court`), `JointLaw.hpp` (le « miroir 2D/3D exact » est
+faux : etaN/etaS, jsOn_, midedge 0,5/0,5 vs (1−tq, tq), majority 3 vs 2 points — à consolider à froid),
+`gcBirth = relay` (seulement si un candidat retenu tue > 500 joints en compression), le pilote
+`joint_cycle` (point-matériel, aveugle à `midedge` — à porter au niveau facette et fondre dans une
+instrumentation ∮τ·dδ_s par facette).
+
+Decks du conseil : `configs/yang2026_bis3d_B4_difins.cfg` / `_difoff.cfg` (N0 : DIF gelé à
+l'enveloppe / désarmé sur B4), `_B4bd.cfg` (chaînon manquant : sans midedge ET majority),
+`configs/yang2026_bench_s25_plastic_coulomb.cfg` (N3, la loi D1 enfin mesurée, 200 µs),
+`configs/yang2026_bench_s25_ratchet.cfg` (N4 : origin + coulomb + ratchet, 200 µs),
+`tests_f2/bitid/fdem3d_yang_v2_court.cfg` (N1 : 9ᵉ deck d'ancre portant les cinq clés du deck v2,
+bit lancé à 9 m/s, 20 µs ; référence latérale `tools/bitid_refs_jointlaw.json`).
+
 ### Ajouté — figures « rien que les joints » (12/09, 0 h - 0 h 30)
 
 Demande de Fernando : valider les fissures à l'œil, joints seuls, arêtes seules, puis des coupes.

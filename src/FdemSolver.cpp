@@ -953,18 +953,29 @@ void FdemSolver::init() {
                                      "|sigma_n| a la pression courante, la "
                                      "convention Solidity Y3Dfd.c l. 1126)");
         shearRangeCoulomb_ = sr == "coulomb";
-        if (shearRangeCoulomb_ && !shearOrigin_)
-            throw std::runtime_error("jointShearRange = coulomb exige "
-                                     "jointShearUnload = origin (le moteur "
-                                     "(smax - sE)/plage est celui de la "
-                                     "branche origin)");
+        // CONSEIL DU 12/09 (M4) : garde « coulomb exige origin » levee — la
+        // plage 3 GfII/fs est une longueur de reference du moteur, pas une
+        // raideur ; sur plastic elle normalise |s_p| (dissipatif).
         if (shearRangeCoulomb_)
             std::cout << "[FDEM] jointShearRange = coulomb : plage de mode II"
                          " divisee par fs(sigma_n) a chaque pas (plancher 2 "
-                         "sE)\n";
+                         "sE)" << (shearOrigin_ ? "" : " — branche plastic : le "
+                         "moteur |s_p|/plage lit la plage courante (12/09)")
+                      << "\n";
     }
+    secRatchet_ = cfg_.getb("jointSecantRatchet", false);
+    if (secRatchet_)
+        std::cout << "[FDEM] jointSecantRatchet = on : secantes de decharge "
+                     "NON CROISSANTES (eq. 17 ; eq. 18 sous origin) — Phi >= 0\n";
     if (shearOrigin_) {
         std::cout << "[FDEM] shear unloading: origin secant (Yan eq. 18)\n";
+        if (!secRatchet_)
+            std::cout << "[FDEM] AVERTISSEMENT (conseil du 12/09, M1) : "
+                         "jointShearUnload = origin est NON CONSERVATIF — la "
+                         "secante suit tau_lim(sigma_n) courant, un cycle a "
+                         "glissement fixe cree ½(k2 - k1) s² (bissection 2D "
+                         "V0..V20). Poser jointSecantRatchet = on ou "
+                         "jointShearUnload = plastic.\n";
         if (!yanFricScaled_)
             std::cout << "[FDEM] WARNING: jointShearUnload = origin with "
                          "jointFrictionScaled = 0 — the Coulomb term rides the "
@@ -5946,6 +5957,19 @@ void FdemSolver::jointForces() {
             //     meme instant que dans le retour radial — d'ou l'accord des
             //     deux modes en charge monotone.
             double smx = 0.0, sEff = 0.0, rsO = 0.0;
+            // jointShearRange = coulomb sur la branche PLASTIC (12/09, M4) :
+            // meme plage que la branche origin ci-dessous ; slipRef == J.slipF
+            // au bit pres quand la cle est off ou sous origin.
+            double slipRef = J.slipF;
+            if (shearRangeCoulomb_ && !shearOrigin_) {
+                double sEp = (J.coh + J.tanPhi
+                              * rockim::mcFrictionTerm(J.pj * dn, J.ft,
+                                                       yangEnv_)) / J.pj;
+                if (sEp < 0.0) sEp = 0.0;
+                double fsP = J.coh + J.tanPhi * std::max(0.0, -(J.pj * dn));
+                if (fsP > J.coh)
+                    slipRef = std::max(2.0 * sEp, J.slipF * (J.coh / fsP));
+            }
             if (shearOrigin_) {
                 sEff = dtg - J.slip[k];
                 double sm = std::abs(sEff);
@@ -6040,7 +6064,7 @@ void FdemSolver::jointForces() {
                 // (s_max - s_p)/(s_t - s_p), la forme litterale de l'eq. 14.
                 double rs = shearOrigin_
                     ? rsO
-                    : ((J.slipF > 0.0) ? std::abs(J.slip[k]) / J.slipF : 0.0);
+                    : ((slipRef > 0.0) ? std::abs(J.slip[k]) / slipRef : 0.0);
                 // eq. 16, which degenerates into eq. 12 (pure tension) and
                 // eq. 14 (pure shear) when the other driver vanishes
                 double Dnow = std::sqrt(rn * rn + rs * rs);
@@ -6072,6 +6096,14 @@ void FdemSolver::jointForces() {
                     // secant to the origin. At dn = omax this returns sMax, so
                     // loading and unloading agree on the envelope.
                     sigEl = (om > 1e-30) ? sMax * dn / om : 0.0;
+                    // jointSecantRatchet (12/09, M7) : secante sMax/om non
+                    // croissante — voir Fdem3dSolver.cpp, meme bloc.
+                    if (secRatchet_ && om > 1e-30) {
+                        double kn = sMax / om;
+                        if (J.knr[k] >= 0.0 && kn > J.knr[k]) kn = J.knr[k];
+                        J.knr[k] = kn;
+                        sigEl = kn * dn;
+                    }
                 } else {
                     // k- = k+(D) en mode adaptatif : la MEME secante des deux
                     // cotes de dn = 0, donc plus de saut de raideur.
@@ -6259,6 +6291,14 @@ void FdemSolver::jointForces() {
                 // conserver de glissement plastique.
                 double tauEnv = std::min(J.pj * smx, tauLim);
                 tau = (noTau || smx <= 1e-30) ? 0.0 : tauEnv * sEff / smx;
+                // jointSecantRatchet (12/09, M1) : secante tauEnv/smx non
+                // croissante — tau_lim(sigma_n) ne raidit plus a glissement fixe.
+                if (secRatchet_ && !noTau && smx > 1e-30) {
+                    double ks = tauEnv / smx;
+                    if (J.ksr[k] >= 0.0 && ks > J.ksr[k]) ks = J.ksr[k];
+                    J.ksr[k] = ks;
+                    tau = ks * sEff;
+                }
                 // en `yan`, D a deja ete mis a jour par l'eq. 16 au-dessus
                 if (!yanSoft_ && rsO > Dref) Dref = std::min(1.0, rsO);
             } else {
@@ -6277,10 +6317,10 @@ void FdemSolver::jointForces() {
                         double ot = J.dnF - J.dnE;
                         double rn = (ot > 0.0 && dn > J.dnE) ? (dn - J.dnE) / ot
                                                              : 0.0;
-                        double rs = std::abs(J.slip[k]) / J.slipF;
+                        double rs = std::abs(J.slip[k]) / slipRef;
                         Dt = std::sqrt(rn * rn + rs * rs);   // eq. 16 / 14
                     } else {
-                        Dt = std::abs(J.slip[k]) / J.slipF;
+                        Dt = std::abs(J.slip[k]) / slipRef;
                     }
                     if (Dt > Dref) Dref = std::min(1.0, Dt);
                 }

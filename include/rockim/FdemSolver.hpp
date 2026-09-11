@@ -257,6 +257,11 @@ private:
         double smax[2] = {0.0, 0.0};       // largest SLIDING ever reached, the
                                            // s_max of eq. 18 (jointShearUnload
                                            // = origin only; unused otherwise)
+        // jointSecantRatchet = on : raideurs secantes non croissantes, mode I
+        // (knr = sigma/dn, eq. 17) et mode II (ksr = tau/s, eq. 18, branche
+        // origin). -1 = jamais posee. Inertes si la cle est off.
+        double knr[2] = {-1.0, -1.0};
+        double ksr[2] = {-1.0, -1.0};
         // Force NORMALE nette que le joint transmettait a l instant EXACT de
         // sa mort, en N par metre d epaisseur (negatif = compression). Sortie
         // de mesure seulement : c est la charge que le relais au contact doit
@@ -600,7 +605,16 @@ private:
     // residuel non degrade) elle rend le glissement frottant reversible. La
     // configuration litterale de l'article est donc origin + fricScaled = 1
     // (c'est ce que pose configs_yan/article_exact_base.cfg).
+    // ⚠️ CONSEIL DU 12/09 (M1) : `origin` est NON CONSERVATIF (la secante
+    // suit tau_lim(sigma_n) courant ; cycle a glissement fixe : ½(k2-k1)s²
+    // crees). Mesure 2D : bissection V0..V20, seule clef en cause. Reste
+    // disponible avec AVERTISSEMENT ; jointSecantRatchet = on le corrige.
     bool shearOrigin_ = false;
+
+    // jointSecantRatchet = on | off (defaut off, bit-identique) — conseil du
+    // 12/09 (M1, M7) : secantes de decharge des eq. 17 et 18 NON CROISSANTES
+    // (Joint::knr, Joint::ksr), voir Fdem3dSolver.hpp.
+    bool secRatchet_ = false;
 
     // jointShearRange = cohesion | coulomb (defaut cohesion, bit-identique).
     // `coulomb` : la PLAGE d'adoucissement de mode II est divisee a chaque pas

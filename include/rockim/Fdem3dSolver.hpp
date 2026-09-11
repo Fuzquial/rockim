@@ -253,6 +253,15 @@ private:
         // largest SLIDING ever reached, the s_max of eq. 18, mesure depuis
         // l'origine figee slip[k] (jointShearUnload = origin seulement)
         std::array<double, 3> smax{{0.0, 0.0, 0.0}};
+        // ---- jointSecantRatchet = on (2026-09-12, conseil M1/M7) ----------
+        // Raideurs SECANTES non croissantes, par point d integration :
+        // knr = sigma/dn du mode I (eq. 17), ksr = tau/s de l eq. 18. Une
+        // secante ne peut que baisser : ni le DIF (ft(t) sous continuous) ni
+        // la pression courante (tau_lim(sigma_n)) ne peuvent la remonter a
+        // ouverture ou glissement fixe — c est la condition Phi >= 0 d une
+        // loi d endommagement. -1 = jamais posee. Inertes si la cle est off.
+        std::array<double, 3> knr{{-1.0, -1.0, -1.0}};
+        std::array<double, 3> ksr{{-1.0, -1.0, -1.0}};
         // ---- failure mode, recorded ONCE when D first reaches 1 -----------
         // Ported from the 2D solver: partition of the eq. 16 damage driver at
         // the breaking instant. bmode = 1 tensile, 2 shear, 0 intact;
@@ -474,7 +483,26 @@ private:
     // ⚠️ l'eq. 18 place TOUT le cap dans la secante, frottement de Coulomb
     // compris : combinee a jointFrictionScaled = 0 elle rend le glissement
     // frottant reversible. Forme litterale = origin + jointFrictionScaled = 1.
+    // ⚠️ CONSEIL DU 12/09 (M1) : sous `origin`, tau = tau_lim(sigma_n)/s_max
+    // · s des que le cap est actif — la raideur secante SUIT la compression
+    // courante. dtau/ddn != dsigma/ds : aucun potentiel, et un cycle a
+    // glissement fixe (comprimer, glisser en retour, relacher) rend
+    // ½(k2 - k1) s² > 0. Mesure : 2D V0 vs V19, 3D reference vs B1 (16 J
+    // crees en 81 us). `plastic` est la forme conforme (retour radial,
+    // Phi = tau·ds_p >= 0). `origin` reste disponible (principe VIII) avec
+    // un AVERTISSEMENT ; jointSecantRatchet = on le rend dissipatif.
     bool shearOrigin_ = false;
+
+    // jointSecantRatchet = on | off (defaut off, bit-identique) — conseil du
+    // 12/09 (M1, M7). Les secantes de decharge des eq. 17 (mode I, toutes
+    // branches) et 18 (mode II, branche origin) deviennent NON CROISSANTES
+    // dans le temps (Joint::knr, Joint::ksr). C est la condition de
+    // dissipation d une loi d endommagement : ni la remontee du DIF (ft(t)
+    // sous strainRateDIFArm = continuous, qui reecrit dnE a chaque pas) ni
+    // la remontee de tau_lim avec la compression ne peuvent restituer plus
+    // d energie que la charge n en a stockee. Le DIF continue d elever
+    // l ENVELOPPE atteignable en charge (le critere), pas la raideur.
+    bool secRatchet_ = false;
 
     // jointShearRange = cohesion | coulomb (defaut cohesion, bit-identique).
     // Miroir exact du 2D (FdemSolver.hpp) : la plage d'adoucissement de mode

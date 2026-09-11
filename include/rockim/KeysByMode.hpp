@@ -1,5 +1,5 @@
 #pragma once
-// KeysByMode.hpp — GENERE par tools/gen_keys_by_mode.py le 2026-09-11 20:43:15 : NE PAS EDITER.
+// KeysByMode.hpp — GENERE par tools/gen_keys_by_mode.py le 2026-09-12 01:25:51 : NE PAS EDITER.
 // Registre lisible : tools/keys_by_mode.json (methode dans la docstring du generateur).
 // Table des cles PROPRES A UN MODE (lues par un seul solveur) ; toute autre cle est commune.
 #include <stdexcept>
@@ -407,6 +407,7 @@ inline const char* const kKnown[] = {
     "jointPrebrokenSeed",
     "jointQuadrature",
     "jointResidualMu",
+    "jointSecantRatchet",
     "jointShearEnvelope",
     "jointShearRange",
     "jointShearUnload",
@@ -871,6 +872,7 @@ inline const Readers kReaders[] = {
     {"jointPrebrokenSeed", "fdem"},
     {"jointQuadrature", "fdem fdem3d"},
     {"jointResidualMu", "fdem fdem3d"},
+    {"jointSecantRatchet", "fdem fdem3d"},
     {"jointShearEnvelope", "fdem fdem3d"},
     {"jointShearRange", "fdem fdem3d"},
     {"jointShearUnload", "fdem fdem3d"},
