@@ -187,6 +187,15 @@ Ce que le conseil a établi et que le code porte maintenant :
   vaut `J.slipF` au bit près quand la clé est absente ou sous `origin`.
 - Registre `tools/keys_by_mode.json` + `KeysByMode.hpp` régénérés (425 clés, `jointSecantRatchet`
   commune). Build complet dans `obj_g1y11` (jamais de lien partiel après un .hpp).
+- **Ancre 8/8 IDENTIQUE** (`results/bitid_g1y11.log`, `bitid_g1y11.json`). **Ancre latérale créée** :
+  `tools/bitid_refs_jointlaw.json` (deck `fdem3d_yang_v2_court`, 339,6 s à 4 fils, prise sur
+  `rockim_g1y10.exe`, sha 08e46e22…) — raison : aucun des 8 decks principaux n'exerce `parabolic` +
+  `yang` + `coulomb` + `midedge` + `majority` + DIF continu, le chemin même que ce lot touche
+  (remarque des critiques pré-mortem et ingénieur). `bitid.py` : champ `side=True`, joué seulement
+  sur `--only` ou sur un `--refs` autre que l'ancre principale ; la passe 8/8 par défaut est inchangée.
+- **N0 du conseil** (DIF gelé / désarmé sur B4, 90 µs) : joints −0,10 / −0,15 / −0,18 J, leapfrog
+  +1,73 / +1,66 / +1,23 J, 1 375 / 1 396 / 1 550 rompus — le DIF n'est pas une pompe mesurable sur une
+  fracture à 95 % en cisaillement comprimé (M7 reste vrai en traction ouverte, le ratchet le couvre).
 
 Décisions du conseil non codées (volontairement) : refus de `origin` sous `budgetAbortPct`
 (cassait 40 decks et l'ancre `cut3d_heilman_court`), `JointLaw.hpp` (le « miroir 2D/3D exact » est
