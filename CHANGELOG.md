@@ -156,6 +156,26 @@ facettes toutes rompues autour : le critère d'insertion fait son travail, c'est
 Correction = loi de volume sur la roche (`lawPhase`, ci-dessus) ; premier essai `law = dpr` au §7
 du document.
 
+### Ajouté — figures « rien que les joints » (12/09, 0 h - 0 h 30)
+
+Demande de Fernando : valider les fissures à l'œil, joints seuls, arêtes seules, puis des coupes.
+- `tools/fig_joints_only.py out_dir [--frame k] [--stem] [--title] [--lim 30] [--depth 25] [--faces]` :
+  six vues des facettes rompues — rangée 1 par MODE (rouge traction, jaune cisaillement : 3D, dessus,
+  coupe |y| < 5 mm), rangée 2 par ORIENTATION (sub-verticales |n_z| ≤ 0,6 = fissures, sub-horizontales
+  = broyé). Rendu par arêtes par défaut (faces transparentes), `--faces` pour le plein. Cercles de
+  référence : insert 8,51 mm, Yang 9 m/s cratère 7 mm et radiales 10 mm. Imprime rompus, % traction,
+  % sub-verticales, extension radiale, rayon de cratère, profondeur.
+- `tools/fig_joints_cuts.py out_dir [--ys 0,5,10] [--zs -1,-3,-6,-10] [--lw 2]` : COUPES EXACTES —
+  chaque facette rompue est intersectée avec le plan, la trace est un segment (pas un triangle
+  projeté) ; verticales x-z à y = 0, 5, 10 mm et y-z à x = 0, horizontales à z = −1, −3, −6, −10 mm ;
+  nombre de traces et longueur cumulée par coupe.
+- Les deux réutilisent `bench_impact/tools/imp_lib.py` (read_vtu, broken, frames). Figures dans
+  `results/fig/joints_*`, `joints_aretes_*`, `coupes_*` pour les trois bancs s = 2,5 (intrinsèque
+  80 µs, adaptatif + max 110 µs, adaptatif moyenne 110 µs). Lecture (ETAT §13) : l'intrinsèque est
+  une cuvette de cisaillement 3 à 5× trop large (l'image de la pompe d'énergie), l'adaptatif + max
+  un cône broyé au rayon de Yang (7 mm) avec anneau de traction à 12-15 mm ; aucune radiale nulle
+  part — à 2,5 mm de maille une fissure de 10 mm fait quatre arêtes.
+
 ### Mesuré (ETAT §5-7)
 
 - Coût par pas v1 (14 fils, 120 k tets) : éléments 11 ms, joints 32 ms, contact 50 ms — joints et
