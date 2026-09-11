@@ -7730,6 +7730,34 @@ void FdemSolver::checkEnergyAbort() {
     double scale = std::max({keInit_, ke, gross, 1e-30});
     if (scale < 1e-12) return;             // charge nulle : pas de verdict
     double resid = (ke - keInit_) - sumW;
+    // ---- (2026-09-12) BORNE PHYSIQUE, miroir du 3D : KE <= KE0 + travail des
+    // sources exterieures (outil, liaisons, confinement, hydro, pesanteur et
+    // tri). Mesure 2D du 12/09 (impact Kuru intrinseque, 100 kg/m a 5,62
+    // m/s = 1 579 J/m) : 94 % des joints rompus a 155 us, joints +3 712 J/m,
+    // contact -2 775, frontieres -1 584 — et le residu B4 muet, la correction
+    // leapfrog absorbant la creation. Meme cle, meme tolerance.
+    {
+        double ext = toolWork_ + bcWork_ + confWork_ + hydroWork_;
+        if (eBody_) ext += gravWork_ + brushWork_;
+        const double excess = ke - keInit_ - std::max(0.0, ext);
+        if (excess > 0.01 * eAbortPct_ * scale && excess > eAbortMin_) {
+            int iw = 0; double vw = 0.0;
+            for (std::size_t i = 0; i < X0_.size(); ++i) {
+                double vn = v_[i].squaredNorm();
+                if (vn > vw) { vw = vn; iw = (int)i; }
+            }
+            std::cout << "[FDEM] ENERGY ABORT (budgetAbortPct = " << eAbortPct_
+                      << ") a t = " << t_ << " s : energie cinetique " << ke
+                      << " J/m > initiale " << keInit_ << " + sources exterieures "
+                      << std::max(0.0, ext) << " (exces " << excess << " J/m = "
+                      << 100.0 * excess / scale << " % de l'echelle) — de "
+                         "l'energie est CREEE (residu B4 " << resid
+                      << ", correction leapfrog " << biasW_ << "). Hotspot : noeud "
+                      << iw << ", |v| = " << std::sqrt(vw) << " m/s\n";
+            eAbort_ = true;
+            return;
+        }
+    }
     if (std::abs(resid) <= 0.01 * eAbortPct_ * scale
         || std::abs(resid) <= eAbortMin_) return;
     int iw = 0; double vw = 0.0;           // hotspot : le noeud le plus rapide

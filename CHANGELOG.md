@@ -80,6 +80,18 @@ penalty` retirés — le second pour le triplet interdit du 02/09) ; `yang2026_b
 reste porté par la loi de joint au lieu de devenir une paire de contact). dt s = 1 en adaptatif :
 **2,43 ns** contre 1,00 ns en intrinsèque. `tools/bench_compare.py` : tableau des bancs côte à côte.
 
+### Corrigé — borne KE du garde-fou portée au 2D (`rockim_g1y10.exe`, 2026-09-12)
+
+`FdemSolver::checkEnergyAbort` : même borne physique qu'en 3D (KE ≤ KE₀ + travail des sources,
+hydro comprise), même clé `budgetAbortPct`. Trouvé en lançant le 2D intrinsèque « comme Yang »
+(`configs/impact2d_kuru_intrinseque.cfg`) : création d'énergie dès le premier contact de l'insert
+analytique (pénalité) sur l'assemblage intrinsèque, 94 % des joints rompus à 155 µs, résidu B4
+muet. Douze variantes de bissection (`configs/impact2d_bis_V*.cfg`) : aucune clé de loi n'est en
+cause, le deck `_m100` du 03/09 lui-même abort en intrinsèque ; les amortissements du 03/09
+absorbent la création sans la supprimer. Le 2D intrinsèque à outil analytique est **inutilisable
+en l'état** (ETAT §12). `tools/impact2d_report.py` (dépouillement 2D), `meshes/impact2d_grad_clean.msh`
+(nœud orphelin du point Gmsh retiré). Défaut inchangé ; ancre `results/bitid_g1y10.log`.
+
 ### Ajouté — `facetAverage = nodal` (`rockim_g1y9.exe`, 2026-09-12) — le critère de Camacho-Ortiz, et il insère MOINS
 
 Traction transmise par la facette liée, par partition des forces nodales (Camacho & Ortiz 1996,
