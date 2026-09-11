@@ -61,6 +61,69 @@ sur leurs **59 instants communs jusqu'à 74,6 µs**, fracture comprise (2 000+ j
 dont contact 12,3 ms, `ROCKIM_PROF=1`), contre ~28 ms/pas avant fracture et ~230 ms/pas après
 pour la version série sur le même deck (mesures contendues par un autre run).
 
+### Corrigé — insertion adaptative + `jointElastic = parabolic` (`rockim_g1y4.exe`, nuit)
+
+À l'insertion adaptative le décalage de continuité `dn0` était calculé sur la branche linéaire
+(`dn0 = s/pj`) quelle que soit la branche élastique : sous la parabole de Guo (éq. 2.31,
+t = ft(2r − r²)) le joint naissait avec une traction 2s − s²/ft > s, soit +25 % de ft pour une
+insertion pilotée par le cisaillement à s = ft/2 (exact seulement au pic, s = ft). Désormais
+r = 1 − √(1 − s/ft), dn0 = r·dnE. Linéaire (défaut) : inchangé au caractère près ; la combinaison
+n'existait dans aucun deck d'ancre. Trouvé en préparant la variante adaptative du deck Yang
+(`docs/ADAPTATIF_impact_2026-09-11.md` §2.3).
+
+### Ajouté — variantes de deck pour le point sur l'adaptatif (nuit)
+
+`configs/yang2026_impact_adaptive.cfg`, `yang2026_bench_s25_adaptive.cfg` (quatre lignes changent :
+`insertion = adaptive`, `insertionPenaltyFactor = 4`, `jointElastic = parabolic` et `gcBirth =
+penalty` retirés — le second pour le triplet interdit du 02/09) ; `yang2026_bench_s25_sep.cfg`,
+`_adaptive_sep.cfg` (`jointDeath = separation` + `jointResidualMu = 0.18` : un joint rompu comprimé
+reste porté par la loi de joint au lieu de devenir une paire de contact). dt s = 1 en adaptatif :
+**2,43 ns** contre 1,00 ns en intrinsèque. `tools/bench_compare.py` : tableau des bancs côte à côte.
+
+### Ajouté — `facetAverage = max` (`rockim_g1y7.exe`, nuit) — LA correction de l'adaptatif en impact
+
+Le critère d'insertion évaluait la traction sur la MOYENNE des contraintes des deux tétraèdres
+(§2.1 éq. 10 de la note, `arith` ou `volume`). Sous l'insert, l'élément qui porte l'anneau de
+traction hertzien a pour voisin un élément comprimé : la moyenne divise sa traction par deux et
+rien ne s'insère (premier joint à 90 µs contre 64 en intrinsèque, 27 joints rompus contre 6 090
+à 100 µs, banc s = 2,5). `max` retient le plus chargé des deux (rapport max de σ_n/ft_dyn et
+|τ|/f_s, même DIF, même enveloppe) ; σ_n, τ et f_s passés à l'insertion sont ceux de cet élément.
+Mesuré : premier joint à **79 µs**, **412** rompus à 100 µs (×15), 2 781 facettes insérées (×4),
+cône à 8 mm de profondeur au lieu d'une peau de 2 mm, bilan fermé (KE 31,5 → 30,1 J). Ni la loi
+de volume `dpr` ni le cap de compaction n'avaient bougé ces chiffres. Opt-in ; `facetStress()`
+servie ailleurs reste la moyenne. Ancre : `results/bitid_g1y7.log`. 2D : à porter.
+
+### Ajouté — `lawPhase = <phase>` (`rockim_g1y6.exe`, nuit)
+
+La loi de volume (`law = dpr | cdp | …`) ne porte que sur les éléments de la phase désignée, les
+autres restent élastiques. Jusqu'ici `law` + plusieurs `phases` était refusé, ce qui interdisait
+toute loi de volume sur le montage d'impact à six corps (roche, acier, carbure). Sans la clé :
+garde historique inchangée. Motif : le banc adaptatif laisse les tétraèdres isolés sous l'insert
+porter 1,4 GPa sans céder (`docs/ADAPTATIF_impact_2026-09-11.md` §5) — la loi de volume est la
+correction, et elle ne concerne que la roche.
+
+### Corrigé — garde-fou d'énergie aveugle à une création (`rockim_g1y5.exe`, nuit)
+
+`budgetAbortPct` testait le résidu B4, qui inclut la correction leapfrog `biasW_` : sur le banc
+s = 2,5 `jointDeath = separation` + `gcBirth = penalty`, l'énergie cinétique est passée de 31 à
+**255 J** pour 42,8 J incidents (contact « −203 J », 7 000 joints rompus jusqu'à 67 mm de l'axe)
+et le résidu affichait **[OK] à 8·10⁻¹¹ %**, le poste « intégration » (+68,9 J) absorbant la
+création. Ajout, sous la même clé et la même tolérance, d'une **borne physique** : KE ≤ KE₀ +
+travail des sources extérieures (outil, liaisons, pesanteur et tri, confinement) ; au-delà, arrêt
+avec le hotspot. Sans `budgetAbortPct` : rien ne change (bit-identique, ancre 8/8
+`results/bitid_g1y5.log`). La variante `separation + gcBirth = penalty` est disqualifiée en l'état
+(cause non élucidée : la naissance calée d'un joint mort par ouverture ? à instruire).
+
+### Mesuré — l'adaptatif en impact (nuit, `docs/ADAPTATIF_impact_2026-09-11.md`)
+
+Banc s = 2,5 à 110 µs, physique identique : l'adaptatif tourne (dt ×2,2, calcul ×5-15 moins
+cher, bilan fermé) mais **27 joints rompus contre 6 090** en intrinsèque à 100 µs, une peau de
+3 mm au lieu d'un cône broyé de 24 mm ; les tétraèdres isolés sous l'insert portent 1,36 GPa,
+facettes toutes rompues autour : le critère d'insertion fait son travail, c'est le continuum
+élastique qui ne s'écrase pas. `jointFrictionMobilised = damage` ne change rien (607 facettes).
+Correction = loi de volume sur la roche (`lawPhase`, ci-dessus) ; premier essai `law = dpr` au §7
+du document.
+
 ### Mesuré (ETAT §5-7)
 
 - Coût par pas v1 (14 fils, 120 k tets) : éléments 11 ms, joints 32 ms, contact 50 ms — joints et

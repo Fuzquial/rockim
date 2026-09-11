@@ -568,6 +568,14 @@ private:
     // et un petit pesent autant, et c est le petit — celui qui voit la
     // singularite — qui est dilue de moitie.
     bool facetVolAvg_ = false;
+    // facetAverage = max (2026-09-11 nuit) : le critere d insertion evalue la
+    // traction de facette sur CHACUN des deux tetraedres et retient le plus
+    // charge, au lieu de leur moyenne. Motif : sous l insert la moyenne
+    // dilue de moitie l element qui porte l anneau de traction hertzien ;
+    // premier joint a 90 us en adaptatif contre 64 us en intrinseque (banc
+    // s = 2,5), dix fois moins de facettes inserees. Opt-in ; la contrainte
+    // de facette servie ailleurs (facetStress) reste la moyenne.
+    bool facetMaxIns_ = false;
     // ---- facetRate = scalar (defaut) | tensor — §2.1 eq. 11 -------------
     bool facetTensor_ = false;
     // ---- insertionCriterion = or (defaut) | elliptic — §2.2 eq. 12 ------
@@ -862,6 +870,13 @@ private:
     // directly with no plane-strain embedding. Absent by default, so every
     // earlier result stays reproducible.
     std::unique_ptr<MatLaw> law_;
+    // lawPhase = <nom> (2026-09-11 nuit) : la loi de volume ne s applique
+    // qu aux elements de CETTE phase (la roche), les autres restent
+    // elastiques (acier, carbure du train de frappe). -1 = toutes (historique,
+    // qui exige une seule phase). Motif : l impact adaptatif laisse le
+    // continuum sous l insert porter 1,4 GPa sans rien qui le fasse ceder ;
+    // la loi de volume est la correction, et le deck a trois phases.
+    int lawPhase_ = -1;
     std::vector<double> hEl_;              // per-element inscribed size 6V/A
 
     // ---- viscosite newtonienne de Yan et al. 2023 (leur eq. 6, 2 mu D) --

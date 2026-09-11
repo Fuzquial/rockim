@@ -461,9 +461,27 @@ void Fdem3dSolver::init() {
     // ---- cohesive joint law (PER JOINT, as in 2D) ---------------------------
     // ---- optional bulk constitutive law -------------------------------------
     if (cfg_.has("law")) {
-        if (phases_.n() > 1)
+        // ---- lawPhase (2026-09-11 nuit) : la loi ne porte que sur UNE phase
+        lawPhase_ = -1;
+        {
+            const std::string lp = cfg_.gets("lawPhase", "");
+            if (!lp.empty()) {
+                for (int p = 0; p < phases_.n(); ++p)
+                    if (phases_.name[p] == lp) lawPhase_ = p;
+                if (lawPhase_ < 0)
+                    throw std::runtime_error("lawPhase = '" + lp + "' : phase "
+                        "inconnue (cle `phases`)");
+                std::cout << "[FDEM3D] lawPhase = " << lp << " : la loi de volume "
+                             "ne s applique qu aux elements de cette phase ; les "
+                          << phases_.n() - 1 << " autre(s) phase(s) restent "
+                             "elastiques (crushCap, meanTensionCap et bulkDamage "
+                             "y restent desarmes comme sous toute loi)\n";
+            }
+        }
+        if (phases_.n() > 1 && lawPhase_ < 0)
             throw std::runtime_error("'law' (bulk constitutive law) is a SINGLE "
-                "material model: it cannot be combined with mineral 'phases'.");
+                "material model: it cannot be combined with mineral 'phases' "
+                "— sauf a designer la phase qui la porte : lawPhase = <nom>.");
         double lcMax = 0.0;
         for (double h : hEl_) lcMax = std::max(lcMax, h);
         // ---- SURCHARGES DE VOLUME (2026-08-19) ---------------------------
@@ -713,12 +731,24 @@ void Fdem3dSolver::init() {
     // =====================================================================
     {   // ---- facetAverage — §2.1 eq. 10 ---------------------------------
         std::string fa = cfg_.gets("facetAverage", "arith");
-        if (fa != "arith" && fa != "volume")
-            throw std::runtime_error("facetAverage must be arith | volume "
+        if (fa != "arith" && fa != "volume" && fa != "max")
+            throw std::runtime_error("facetAverage must be arith | volume | max "
                                      "(got '" + fa + "') — volume = "
                                      "sigma_F = (V+ sigma+ + V- sigma-)/"
-                                     "(V+ + V-), §2.1 eq. 10 de la note");
+                                     "(V+ + V-), §2.1 eq. 10 de la note ; max = "
+                                     "le critere d insertion retient le plus "
+                                     "charge des deux tetraedres");
         facetVolAvg_ = fa == "volume";
+        facetMaxIns_ = fa == "max";
+        if (facetMaxIns_)
+            std::cout << "[FDEM3D] facetAverage = max : le critere d insertion "
+                         "evalue sig_n et |tau| sur CHAQUE tetraedre de la "
+                         "facette et retient le plus charge (rapport max de "
+                         "sig/ft_dyn, |tau|/f_s) — la moyenne diluait de moitie "
+                         "l element qui porte la singularite (mesure du "
+                         "2026-09-11 : premier joint a 90 us contre 64 en "
+                         "intrinseque). La contrainte de facette servie ailleurs "
+                         "reste la moyenne arithmetique.\n";
         if (facetVolAvg_)
             std::cout << "[FDEM3D] facetAverage = volume (§2.1 eq. 10) : la "
                          "contrainte ET le taux de facette sont ponderes par "
@@ -2701,6 +2731,33 @@ void Fdem3dSolver::insertionSweep() {
             : dC * J.coh
               + J.tanPhi * rockim::mcFrictionTerm(sig, J.ft, yangEnv_);
         if (fs < 0.0) fs = 0.0;
+        // ---- facetAverage = max : le plus charge des deux tetraedres ------
+        // Pour chaque element on forme (sig_e, tau_e, fs_e) avec le meme DIF
+        // et la meme enveloppe, puis on garde celui dont le rapport de charge
+        // max(sig/ft_dyn, |tau|/fs) est le plus grand. sig, tauV et fs sont
+        // REMPLACES : l offset de continuite de l insertion (dn0 = sig/pj)
+        // porte alors la traction de l element qui declenche.
+        if (facetMaxIns_) {
+            double best = -1.0;
+            for (int side = 0; side < 2; ++side) {
+                const Eigen::Matrix3d& Se = (side == 0) ? el_[J.eA].sigG
+                                                        : el_[J.eB].sigG;
+                Eigen::Vector3d te = Se * n;
+                double sige = n.dot(te);
+                Eigen::Vector3d taue = te - sige * n;
+                double fse = fricMob_
+                    ? dC * J.coh
+                    : dC * J.coh
+                      + J.tanPhi * rockim::mcFrictionTerm(sige, J.ft, yangEnv_);
+                if (fse < 0.0) fse = 0.0;
+                double ratio = std::max(sige / std::max(dT * J.ft, 1e-300),
+                                        taue.norm() / std::max(fse, 1e-300));
+                if (ratio > best) {
+                    best = ratio;
+                    sig = sige; tauV = taue; fs = fse;
+                }
+            }
+        }
         double fac = (tipBias && atTip(J)) ? 1.0 / tipFactor_ : 1.0;
         // ---- §2.2 eq. 12 : le critere d insertion -------------------------
         // `or` (defaut) : le OU logique historique, sig >= t_n0 OU |tau| >=
@@ -2842,7 +2899,19 @@ void Fdem3dSolver::activateJoint(int jI, double sig,
             J.dmMax[k] = J.tsl.dm0;
         }
     } else {
-    J.dn0 = std::min(sig, J.ft) / J.pj;
+    {   // Decalage de continuite de traction a l insertion (2026-09-11 nuit) :
+        // sur la branche lineaire, t = pj dn donc dn0 = s/pj (historique) ;
+        // sur la PARABOLE de Guo (jointElastic = parabolic, eq. 2.31)
+        // t = ft (2r - r^2) avec r = dn/dnE, donc r = 1 - sqrt(1 - s/ft).
+        // Sans cela un joint insere en cisaillement (s < ft) naissait avec
+        // une traction 2s - s^2/ft > s, soit +25 % de ft a s = ft/2 — saut
+        // qui n existait que sous parabolic + adaptive. Lineaire : inchange.
+        const double s = std::min(sig, J.ft);
+        if (paraElastic_ && J.ft > 0.0) {
+            const double q = std::max(0.0, 1.0 - s / J.ft);
+            J.dn0 = J.dnE * (1.0 - std::sqrt(q));
+        } else J.dn0 = s / J.pj;
+    }
     Eigen::Vector3d tau0 = tauV;
     double tn = tau0.norm();
     if (tn > fsNow && tn > 0.0) tau0 *= fsNow / tn;
@@ -3560,6 +3629,40 @@ void Fdem3dSolver::checkEnergyAbort() {
     double scale = std::max({keInit_, ke, gross, 1e-30});
     if (scale < 1e-12) return;             // charge nulle : pas de verdict
     double resid = (ke - keInit_) - sumW;
+    // ---- (2026-09-11 nuit) BORNE PHYSIQUE, aveugle a la correction leapfrog
+    // L energie cinetique ne peut pas depasser l energie initiale plus le
+    // travail des SOURCES exterieures (outil, liaisons, pesanteur et tri,
+    // confinement) : les elements, joints, contacts et amortisseurs ne
+    // creent rien. Mesure sur le banc s = 2,5 « jointDeath = separation +
+    // gcBirth = penalty » : KE 31 -> 255 J pour 42,8 J incidents, contact
+    // « -203 J », et residu B4 [OK] a 8e-11 % parce que le poste
+    // « integration » (+68,9 J, la correction f^2 dt^2 / 2m) absorbait la
+    // creation : une identite comptable ne coupe rien. Ce test l aurait
+    // coupe vers 80 us. Meme cle, meme tolerance, meme plancher absolu.
+    {
+        double ext = toolWork_ + bcWork_ + confWork_;
+        if (eBody_) ext += gravWork_ + brushWork_;
+        const double excess = ke - keInit_ - std::max(0.0, ext);
+        if (excess > 0.01 * eAbortPct_ * scale && excess > eAbortMin_) {
+            int iw = 0; double vw = 0.0;
+            for (std::size_t i = 0; i < X0_.size(); ++i) {
+                double vn = v_[i].squaredNorm();
+                if (vn > vw) { vw = vn; iw = (int)i; }
+            }
+            std::cout << "[FDEM3D] ENERGY ABORT (budgetAbortPct = " << eAbortPct_
+                      << ") a t = " << t_ << " s : energie cinetique " << ke
+                      << " J > initiale " << keInit_ << " J + sources exterieures "
+                      << std::max(0.0, ext) << " J (exces " << excess << " J = "
+                      << 100.0 * excess / scale << " % de l'echelle) — de "
+                         "l'energie est CREEE (le residu B4 vaut " << resid
+                      << " J et n'y voit rien : la correction leapfrog " << biasW_
+                      << " J l'absorbe). Hotspot : noeud " << iw << ", |v| = "
+                      << std::sqrt(vw) << " m/s, position ("
+                      << (X0_[iw] + u_[iw]).transpose() << ")\n";
+            eAbort_ = true;
+            return;
+        }
+    }
     if (std::abs(resid) <= 0.01 * eAbortPct_ * scale
         || std::abs(resid) <= eAbortMin_) return;
     int iw = 0; double vw = 0.0;           // hotspot : le noeud le plus rapide
@@ -3611,7 +3714,10 @@ void Fdem3dSolver::elementForces() {
         Eigen::Matrix3d eps = 0.5 * (Ub + Ub.transpose()) - Eigen::Matrix3d::Identity();
         double tr = eps.trace();
         Eigen::Matrix3d sig;
-        if (law_) sig = law_->stress(eps, e.st, dt_, hEl_[eI]);
+        // lawPhase_ < 0 (historique) : la loi porte sur tout ; sinon sur les
+        // seuls elements de la phase designee, les autres restent elastiques.
+        if (law_ && (lawPhase_ < 0 || e.phase == lawPhase_))
+            sig = law_->stress(eps, e.st, dt_, hEl_[eI]);
         else if (neoHooke_) {
             // ---- bulkModel = neohookean : Guo, these Imperial 2014, eq. 2.6
             //   T = (mu/J) (B - I) + (lambda/J) ln(J) I,   B = F F^T, J = det F

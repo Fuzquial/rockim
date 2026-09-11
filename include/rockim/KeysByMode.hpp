@@ -1,5 +1,5 @@
 #pragma once
-// KeysByMode.hpp — GENERE par tools/gen_keys_by_mode.py le 2026-09-11 19:11:43 : NE PAS EDITER.
+// KeysByMode.hpp — GENERE par tools/gen_keys_by_mode.py le 2026-09-11 20:43:15 : NE PAS EDITER.
 // Registre lisible : tools/keys_by_mode.json (methode dans la docstring du generateur).
 // Table des cles PROPRES A UN MODE (lues par un seul solveur) ; toute autre cle est commune.
 #include <stdexcept>
@@ -125,6 +125,7 @@ inline const Entry kTable[] = {
     {"cutterDia", "fdem3d"},
     {"dtBudgetTangential", "fdem3d"},
     {"fragBrushDirZ", "fdem3d"},
+    {"lawPhase", "fdem3d"},
     {"trackGroup", "fdem3d"},
     {"trackGroups", "fdem3d"},
     {"viscousInInsertion", "fdem3d"},
@@ -427,6 +428,7 @@ inline const char* const kKnown[] = {
     "ksRatio",
     "lateralRollers",
     "law",
+    "lawPhase",
     "lloydIters",
     "loadArcDeg",
     "loadRate",
@@ -890,6 +892,7 @@ inline const Readers kReaders[] = {
     {"ksRatio", "dem dem3d"},
     {"lateralRollers", "fdem"},
     {"law", "fdem fdem3d fem3d shared"},
+    {"lawPhase", "fdem3d"},
     {"lloydIters", "fdem fdem3d fem fem3d"},
     {"loadArcDeg", "fdem"},
     {"loadRate", "fdem"},
