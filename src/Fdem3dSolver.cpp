@@ -4731,7 +4731,13 @@ void Fdem3dSolver::potentialContact() {
         if (eg.size() != nC) eg.assign(nC, {});
         else for (auto& c : eg) c.clear();
     }
-    for (int q = 0; q < (int)elems.size(); ++q) {
+    // (2026-09-11) AABB en parallele (ecritures par q, independantes), puis
+    // rangement en seaux en serie (push_back partage). Meme contenu de grille.
+    const int nEl = (int)elems.size();
+#ifdef _OPENMP
+#pragma omp parallel for schedule(static) if (nEl >= 256)
+#endif
+    for (int q = 0; q < nEl; ++q) {
         const Elem& E = el_[elems[q]];
         Eigen::Vector3d lo = X0_[E.n[0]] + u_[E.n[0]], hi = lo;
         for (int a = 1; a < 4; ++a) {
@@ -4743,7 +4749,11 @@ void Fdem3dSolver::potentialContact() {
         ehi[q] = hi;
         einb[q] = (hi.array() > ebLo.array()).all()
                   && (lo.array() < ebHi.array()).all();
+    }
+    for (int q = 0; q < nEl; ++q) {
         if (!einb[q]) continue;
+        const Eigen::Vector3d& lo = elo[q];
+        const Eigen::Vector3d& hi = ehi[q];
         int x0 = std::clamp(int((lo.x() - egMin.x()) / cl), 0, egx - 1);
         int x1 = std::clamp(int((hi.x() - egMin.x()) / cl), 0, egx - 1);
         int y0 = std::clamp(int((lo.y() - egMin.y()) / cl), 0, egy - 1);
@@ -4757,13 +4767,26 @@ void Fdem3dSolver::potentialContact() {
     }
 
     // ---- (3) paires candidates, en ordre CANONIQUE (voir 2D) -------------
-    static std::vector<int> pstamp;
-    if (pstamp.size() != elems.size()) pstamp.assign(elems.size(), -1);
-    else std::fill(pstamp.begin(), pstamp.end(), -1);
+    // (2026-09-11) generation PAR FIL : chaque fil balaie sa tranche de q
+    // (schedule static) avec SON tableau d estampilles et SA liste ; les
+    // listes sont concatenees puis triees — l ordre canonique vient du tri,
+    // pas du decoupage, donc le resultat ne depend pas du nombre de fils.
+    static std::vector<std::vector<int>> pstampTL;
+    static std::vector<std::vector<uint64_t>> pairsTL;
     static std::vector<uint64_t> pairs;
-    pairs.clear();
-    for (int q = 0; q < (int)elems.size(); ++q) {
-        if (!einb[q]) continue;
+    int nT3 = 1;
+#ifdef _OPENMP
+    nT3 = std::max(1, omp_get_max_threads());
+#endif
+    if ((int)pstampTL.size() < nT3) { pstampTL.resize(nT3); pairsTL.resize(nT3); }
+    for (int t = 0; t < nT3; ++t) {
+        if (pstampTL[t].size() != elems.size()) pstampTL[t].assign(elems.size(), -1);
+        else std::fill(pstampTL[t].begin(), pstampTL[t].end(), -1);
+        pairsTL[t].clear();
+    }
+    auto genPairs = [&](int q, std::vector<int>& pstamp,
+                        std::vector<uint64_t>& out) {
+        if (!einb[q]) return;
         int x0 = std::clamp(int((elo[q].x() - egMin.x()) / cl), 0, egx - 1);
         int x1 = std::clamp(int((ehi[q].x() - egMin.x()) / cl), 0, egx - 1);
         int y0 = std::clamp(int((elo[q].y() - egMin.y()) / cl), 0, egy - 1);
@@ -4781,9 +4804,22 @@ void Fdem3dSolver::potentialContact() {
                             continue;
                         uint64_t a = (uint64_t)std::min(elems[q], elems[r]);
                         uint64_t b = (uint64_t)std::max(elems[q], elems[r]);
-                        pairs.push_back((a << 32) | b);
+                        out.push_back((a << 32) | b);
                     }
+    };
+#ifdef _OPENMP
+#pragma omp parallel num_threads(nT3)
+    {
+        const int t = omp_get_thread_num();
+#pragma omp for schedule(static)
+        for (int q = 0; q < nEl; ++q) genPairs(q, pstampTL[t], pairsTL[t]);
     }
+#else
+    for (int q = 0; q < nEl; ++q) genPairs(q, pstampTL[0], pairsTL[0]);
+#endif
+    pairs.clear();
+    for (int t = 0; t < nT3; ++t)
+        pairs.insert(pairs.end(), pairsTL[t].begin(), pairsTL[t].end());
     std::sort(pairs.begin(), pairs.end());
     {
         auto t1 = std::chrono::steady_clock::now();
@@ -4792,43 +4828,79 @@ void Fdem3dSolver::potentialContact() {
     }
     potStats_.pairs += pairs.size();
 
+    // ---- (4) trois phases (2026-09-11) --------------------------------------
+    // La boucle des paires etait SERIE : avec la grille elle pesait 53 % du
+    // pas sur le deck Yang s = 1 (contact 50 ms sur 95, 14 fils inutilises) et
+    // le banc s = 2,5 a ralenti x8 des l amorcage de la fracture. Decoupage :
+    //   A (serie)     : joint vivant -> la paire est portee, on l ecarte ;
+    //                   entree du cache par paire (l insertion dans potFt_
+    //                   n est pas thread-safe ; le pointeur sur un noeud
+    //                   d unordered_map reste valide, la table ne deplace
+    //                   jamais ses noeuds).
+    //   B (parallele) : la geometrie PURE — axe separateur (n ecrit que le
+    //                   sepAxis de SA paire) et polyedre de recouvrement
+    //                   (scratch thread_local dans PotentialContact.hpp).
+    //   C (serie)     : compteurs, releve de naissance, frottement
+    //                   incremental, assemblage — le corps historique,
+    //                   inchange, dans l ordre canonique des paires.
+    // Chaque paire est calculee en isolation et appliquee dans le meme ordre
+    // qu avant : bit-identique au chemin serie, quel que soit le nombre de fils.
+    struct PCand { uint64_t pk; int eLo, eHi; PotHist* H; int jI; };
+    struct PRes { pot3::V3 pa[4], pb[4]; pot3::PairForce3 R; int code; };
+    static std::vector<PCand> cand;
+    static std::vector<PRes> res;
+    cand.clear();
     for (uint64_t pk : pairs) {
+        const int eLo = (int)(pk >> 32);
+        const int eHi = (int)(pk & 0xFFFFFFFFu);
+        auto itJ = jointOfPair_.find(pk);
+        const int jI = (itJ != jointOfPair_.end()) ? itJ->second : -1;
+        if (jI >= 0 && !jt_[jI].dead) {
+            ++potStats_.joint;
+            continue;      // le joint vivant porte la paire
+        }
+        cand.push_back({pk, eLo, eHi, &potFt_[pk], jI});
+    }
+    const int nCand = (int)cand.size();
+    res.resize(cand.size());
+#ifdef _OPENMP
+#pragma omp parallel for schedule(static) if (nCand >= 64)
+#endif
+    for (int i = 0; i < nCand; ++i) {
+        const PCand& c = cand[i];
+        PRes& r = res[i];
+        const Elem& EA = el_[c.eLo];
+        const Elem& EB = el_[c.eHi];
+        for (int k = 0; k < 4; ++k) {
+            r.pa[k] = X0_[EA.n[k]] + u_[EA.n[k]];
+            r.pb[k] = X0_[EB.n[k]] + u_[EB.n[k]];
+        }
+        // pre-filtre d'axe separateur avec cache par paire : en regime
+        // etabli un voisin tangent coute UN test de plan au lieu d'un clip
+        // complet (bit-neutre — voir PotentialContact.hpp)
+        const int h0 = c.H->sepAxis;
+        if (pot3::separated(r.pa, r.pb, c.H->sepAxis)) {
+            r.code = (c.H->sepAxis == h0) ? 1 : (c.H->sepAxis < 8 ? 2 : 3);
+            continue;
+        }
+        r.code = pot3::pairForce(r.pa, r.pb, potP_, r.R) ? 0 : 4;
+    }
+    for (int ci = 0; ci < nCand; ++ci) {
         {
             {
-                        int eLo = (int)(pk >> 32);
-                        int eHi = (int)(pk & 0xFFFFFFFFu);
-                        auto itJ = jointOfPair_.find(pk);
-                        if (itJ != jointOfPair_.end()
-                            && !jt_[itJ->second].dead) {
-                            ++potStats_.joint;
-                            continue;      // le joint vivant porte la paire
-                        }
+                        const PCand& c = cand[ci];
+                        PRes& r = res[ci];
+                        if (r.code == 1) { ++potStats_.sepHint; continue; }
+                        if (r.code == 2) { ++potStats_.sepFace; continue; }
+                        if (r.code == 3) { ++potStats_.sepEdge; continue; }
+                        if (r.code == 4) { ++potStats_.clipMiss; continue; }
+                        const int eLo = c.eLo, eHi = c.eHi;
                         const Elem& EA = el_[eLo];
                         const Elem& EB = el_[eHi];
-                        pot3::V3 pa[4], pb[4];
-                        for (int k = 0; k < 4; ++k) {
-                            pa[k] = X0_[EA.n[k]] + u_[EA.n[k]];
-                            pb[k] = X0_[EB.n[k]] + u_[EB.n[k]];
-                        }
-                        // pre-filtre d'axe separateur avec cache par paire :
-                        // en regime etabli un voisin tangent coute UN test de
-                        // plan au lieu d'un clip complet (bit-neutre — voir
-                        // PotentialContact.hpp)
-                        auto& H = potFt_[pk];
-                        {
-                            const int h0 = H.sepAxis;
-                            if (pot3::separated(pa, pb, H.sepAxis)) {
-                                if (H.sepAxis == h0) ++potStats_.sepHint;
-                                else if (H.sepAxis < 8) ++potStats_.sepFace;
-                                else ++potStats_.sepEdge;
-                                continue;
-                            }
-                        }
-                        pot3::PairForce3 R;
-                        if (!pot3::pairForce(pa, pb, potP_, R)) {
-                            ++potStats_.clipMiss;
-                            continue;
-                        }
+                        const pot3::V3* pa = r.pa;
+                        const pot3::V3* pb = r.pb;
+                        PotHist& H = *c.H;
+                        pot3::PairForce3& R = r.R;
                         ++potStats_.clipHit;
                         double sc;
                         if (birthPenalty_) {
@@ -4844,8 +4916,8 @@ void Fdem3dSolver::potentialContact() {
                             // seul le MODULE compte — leurs deux branches de
                             // signe (l. 921 et 949) aboutissent au meme clamp.
                             if (H.penScale < 0.0) {
-                                double fnJ = (itJ != jointOfPair_.end())
-                                    ? std::fabs(jt_[itJ->second].fDeath) : 0.0;
+                                double fnJ = (c.jI >= 0)
+                                    ? std::fabs(jt_[c.jI].fDeath) : 0.0;
                                 double fnC = R.F.norm();
                                 double fac = (fnJ > 0.0 && fnC > 1e-300)
                                            ? fnJ / fnC : 1.0;

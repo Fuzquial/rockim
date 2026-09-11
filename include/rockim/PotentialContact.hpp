@@ -517,7 +517,10 @@ inline bool pairForce(const V3 pa[4], const V3 pb[4], double p,
     // scratch fixe (les fragments d'une face de tet coupe restent peu
     // nombreux — garde par saturation, la force reste bornee par p A phi<=1)
     struct Frag { V3 a, b, c; };
-    static Frag frag[256], tmp[256];
+    // thread_local (2026-09-11) : la boucle des paires du solveur 3D est
+    // parallele en phase geometrique ; un scratch statique partage serait une
+    // course. En serie, strictement identique.
+    static thread_local Frag frag[256], tmp[256];
     auto gval = [&](const V3& X) { return bA.phi(X) - bB.phi(X); };
 
     for (int f = 0; f < P.nF; ++f) {

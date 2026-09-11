@@ -40,6 +40,27 @@ physique, plus l'impression du nœud qui commande le pas). Bit-identité : `resu
   la moitié centrale d'un corps.
 - **Nœud qui commande le pas de temps** : corps, phase, h inscrit, part élément / joints / contact.
 
+### Modifié — contact par potentiel 3D PARALLÈLE (`rockim_g1y3.exe`, commit séparé)
+
+`Fdem3dSolver::potentialContact()` était « série et déterministe » : sur le deck Yang s = 1 la
+grille + la boucle des paires pesaient 53 % du pas (14 fils inutilisés), et le banc s = 2,5 a
+ralenti **×8** dès l'amorçage de la fracture (6 → 0,73 µs simulées par minute). Découpage en trois
+phases, **bit-identique par construction** : A (série) exclusion des paires portées par un joint
+vivant et entrée du cache par paire (`potFt_`, insertion non thread-safe, pointeurs de nœuds
+stables) ; B (parallèle, `schedule(static)`) axe séparateur + clip du polyèdre — géométrie pure,
+n'écrit que le `sepAxis` de sa paire, scratch `static thread_local` dans `PotentialContact.hpp` ;
+C (série, ordre canonique) compteurs, relève de naissance, frottement incrémental, assemblage —
+le corps historique inchangé. AABB en parallèle ; génération des paires par fil (listes
+concaténées puis triées : l'ordre canonique vient du tri, pas du découpage).
+
+Contrôles : (1) même deck (`configs/yang2026_bench_s25_court.cfg`), même 14 fils, `history.csv`
+de la version série (`rockim_g1y`) et de la parallèle (`rockim_g1y3`) comparés au caractère près
+sur leurs **59 instants communs jusqu'à 74,6 µs**, fracture comprise (2 000+ joints rompus) :
+**0 cellule différente** (`tools/ab_history.py`) ; (2) ancre de bit-identité 8 decks à 4 fils : **8/8 IDENTIQUE**
+(`results/bitid_g1y3.log`). Vitesse : 75 µs du banc s = 2,5 en **438 s** (26 525 pas, 16,5 ms/pas
+dont contact 12,3 ms, `ROCKIM_PROF=1`), contre ~28 ms/pas avant fracture et ~230 ms/pas après
+pour la version série sur le même deck (mesures contendues par un autre run).
+
 ### Mesuré (ETAT §5-7)
 
 - Coût par pas v1 (14 fils, 120 k tets) : éléments 11 ms, joints 32 ms, contact 50 ms — joints et
