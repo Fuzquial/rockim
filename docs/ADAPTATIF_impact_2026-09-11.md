@@ -3,14 +3,17 @@
 **Question de Fernando** : « ma plus-value était l'adaptatif, mais j'ai l'impression qu'il n'est
 pas adapté pour un impact. Est-ce possible, et si oui, quelles corrections ? »
 
-**Réponse courte** : oui, un impact tourne en adaptatif — il en a déjà tourné un le 22/08 et
-trois cette nuit — et rien dans le schéma ne l'interdit. L'impression vient d'un seul run,
-celui du 22/08 (rebond 0,99 au lieu de 0,72), qui souffrait de trois défauts corrigés depuis et
-**étrangers au schéma** : pas de pulvérisation d'éléments, plage de mode II ×54 trop grande,
-frottement 0,6 au lieu de 0,18. Les mesures de cette nuit (§5) comparent les deux schémas à
-physique identique sur le même banc ; les corrections nécessaires tiennent en quatre lignes de
-deck (§4), et une incompatibilité de code a été identifiée et contournée (`jointElastic =
-parabolic`, §4.3).
+**Réponse courte** : oui, un impact tourne en adaptatif — sept bancs cette nuit, tous stables,
+bilan fermé, pas de temps ×2,2 et calcul 5 à 15 fois moins cher qu'en intrinsèque. Mais
+l'impression est fondée : à physique identique, l'adaptatif forme une **peau de 2 mm** sous
+l'insert là où l'intrinsèque forme un **cône broyé de 24 mm** (§5), et ce n'est pas un défaut
+corrigé depuis le 22/08 qui l'explique. La cause est mesurée (§7) : le critère d'insertion lit la
+**moyenne** des deux tétraèdres et dilue de moitié l'élément qui porte l'anneau de traction
+hertzien. **La correction est `facetAverage = max`** (nouvelle valeur, `rockim_g1y7.exe`) : ×15
+de joints rompus, cône à 8 mm, premier joint à 79 µs au lieu de 90. Une loi de volume sur la
+roche (`lawPhase`, nouvelle clé, avec `dpr` et cap) ne change rien : ce n'est pas une
+plasticité qui manquait. Reste un facteur 6 avec l'intrinsèque, qui est le ratcheting diffus des
+joints de pénalité, propriété de la discrétisation intrinsèque sur laquelle Yang a calibré.
 
 ---
 
@@ -20,7 +23,7 @@ parabolic`, §4.3).
 |---|---|---|---|
 | roche intacte | joints de pénalité partout : complaisance E/(1 + 1/pf), ratcheting diffus (×3,24 de joints endommagés mesuré le 30/08) | continuum EF exact, nœuds liés par groupes | l'adaptatif est **plus fidèle** à la roche intacte |
 | amorçage d'une fissure | le joint quitte sa branche élastique quand SA traction atteint l'enveloppe | la facette s'insère quand la contrainte moyenne des deux tétraèdres atteint l'enveloppe, naissance **au pic** avec continuité de traction (dn0 = σ/pj) | même seuil ; l'intrinsèque endommage par point d'intégration (majority), l'adaptatif insère la facette entière |
-| zone broyée sous l'insert (pression ~GPa) | le joint ne rompt pas en cisaillement (f_s = c + 1,85 p) ; dissipation par **pulvérisation d'éléments** (bulkDamage) + frottement | identique : bulkDamage est une loi d'ÉLÉMENT, indépendante du schéma | **aucune** — c'est ici que le run du 22/08 manquait, faute de bulkDamage |
+| zone broyée sous l'insert | ruine en cisaillement et en traction de milliers de joints à contrainte **modérée** (von Mises médian 100 MPa, σ₁ médian 43 MPa à 80 µs), cascade, cône de 24 mm ; bulkDamage par-dessus | facettes insérées seulement là où la **moyenne** des deux tétraèdres franchit l'enveloppe : peau de 2 mm, continuum élastique dessous (1,36 GPa sur des tets isolés) | **la différence principale** (§5, §7) — réduite ×15 par `facetAverage = max` |
 | radiales, latérales (traction) | rupture des joints en mode I, z-curve | insertion en traction puis même z-curve | même loi après insertion |
 | pas de temps | ressorts de tous les joints à pf = 20 | facettes liées budgétées à la pénalité des joints INSÉRÉS (pf = 4 chez Yan) | **×2,4 mesuré sur s = 1** (2,43 ns contre 1,00) |
 | gros blocs / chips | joints disponibles partout : une fissure peut suivre n'importe quelle facette adoucie | la fissure ne progresse que là où le critère tire : « n'isole pas de gros blocs » (étude du 25/08), remède `insertionTipFactor = 1,6` | à mesurer sur le cratère |
@@ -45,8 +48,9 @@ schéma d'insertion.
 3. **`jointElastic = parabolic` + adaptatif** : la continuité de traction à l'insertion est
    écrite pour la branche linéaire (dn0 = σ/pj) ; sur la parabole de Guo la traction à dn0 vaut
    2σ − σ²/ft, soit un saut de +25 % de ft à σ = ft/2 (insertion pilotée par le cisaillement).
-   Exact au pic (σ = ft), faux en dessous. Retiré du deck adaptatif ; à corriger dans le code si
-   la parabole doit y servir (une ligne dans `activateJoint`, inverser 2r − r² = σ/ft).
+   Exact au pic (σ = ft), faux en dessous. Retiré du deck adaptatif ; **corrigé dans le code**
+   (`rockim_g1y4`, `activateJoint` : r = 1 − √(1 − σ/ft), linéaire inchangé) — non encore
+   mesuré sur le banc.
 4. **`groupContinuum`** (acier et carbure sans joints) fonctionne en adaptatif : les facettes
    permanentes sont exclues du balayage d'insertion (`Joint::perm`, 11/09 soir).
 5. **`insertionPenaltyFactor`** : 4 (Yan) donne le gain sur dt ; 20 rendrait le joint inséré
