@@ -196,3 +196,66 @@ garde-fou (B1 +18 J à 75 µs, C +4,4 J à 92 µs) ; décision de Fernando le 13
 - **Le témoin ne se retourne pas à 300 µs** (Yang 255 µs, 1,0 mm) ; B2 s'en approche (bit 0,94 m/s à 300 µs,
   estimateur T2). Aucun banc ne montre de radiales (fissures ≤ 16-17 mm de rayon de centroïdes pour des
   facettes de 3,4 mm : mailles trop grosses pour en juger, voir `tools/crack_paths.py` de T1).
+
+## 7 — Le banc de joint tranche la question de la « pompe » (S3 bis, 13/09 nuit, `rockim_g1y18`)
+
+La critique indépendante du 13/09 refusait la conclusion « ce n'est pas une erreur de transcription, la loi fait
+ce qu'elle fait chez eux » : le banc B1 isole bien la branche, mais celle-ci change à la fois la mémoire, la
+réponse tangentielle avant le pic et les conventions d'adoucissement, et elle interagit avec le DIF, la rupture
+et le contact. Le test demandé était précis : **un cycle fermé compression-glissement à pression variable, sans
+rupture, sans contact, DIF désactivé, dans la même routine de joint, puis une convergence en Δt**. Le mode
+`jbMode = shear` ne le fait pas — il glisse à pression CONSTANTE.
+
+**`jbMode = cycle`** (ajouté le 13/09, clés `jbNormal2`, `jbCycles`) parcourt le rectangle fermé du plan (s, δn) :
+glissement 0 → jbAmp à δn = jbNormal, compression jbNormal → jbNormal2 à s = jbAmp, retour du glissement à
+δn = jbNormal2, puis décompression à s = 0. L'état final EST l'état initial, aux mêmes échantillons (le chemin
+est paramétré par le numéro de pas). Deux tétraèdres prescrits : aucun contact, aucun amortisseur, aucun DIF,
+aucune rupture. Le travail NET des tractions du joint sur un cycle doit donc être ≤ 0.
+
+Variante **purement élastique** (jbAmp = 1,5e-8 m < s_E = 2,7e-8 m, D ≤ 1e-4) — `tests_f2/campagne13/S3bis/cyce_*.cfg` :
+
+| loi | W net du dernier cycle [J] | à Δt/2 | à Δt/4 | W/amplitude | limite Δt → 0 |
+|---|---|---|---|---|---|
+| `plastic` + ratchet | +2,438e-10 | +1,219e-10 | +6,096e-11 | 9,1e-4 | **0** (W ∝ Δt exactement) |
+| `origin` + ratchet | +2,438e-10 | +1,219e-10 | +6,096e-11 | 9,1e-4 | **0** (identique : sous le cap les deux branches sont la même élastique) |
+| **`solidity`** | **+9,187e-9** | **+9,053e-9** | **+8,987e-9** | **3,3e-2** | **+8,92e-9 ≠ 0** (Richardson, deux extrapolations concordantes) |
+
+Variante **endommagée** (jbAmp = 2e-6 m, D 0,10 à 0,29) — `cyc_*.cfg` :
+
+| loi | W net du dernier cycle [J] | à Δt/2 | à Δt/4 | W/amplitude | limite Δt → 0 |
+|---|---|---|---|---|---|
+| `plastic` + ratchet | −4,188e-5 | −4,204e-5 | −4,212e-5 | −0,265 | **−4,21e-5 : dissipatif, convergé** |
+| `origin` + ratchet | +2,246e-7 | +1,123e-7 | +5,614e-8 | 5,8e-3 | **0** (W ∝ Δt : artefact, cumul −1,2e-5 J dissipatif) |
+| **`solidity`** | **+1,386e-5** | **+1,374e-5** | **+1,368e-5** | **+0,213** | **+1,368e-5 ≠ 0 : création convergée** |
+
+**Ce que cela établit.** (1) La création d'énergie sous `solidity` **n'est pas un artefact de discrétisation** :
+elle converge vers une valeur non nulle quand Δt → 0, dans les deux régimes, et vaut 3,3 % (élastique) à 21 %
+(endommagé) du travail échangé dans le cycle. Le couplage pression-cisaillement en est la seule source possible
+dans ce montage : aucune rupture, aucun contact, aucun amortisseur, aucun DIF, nœuds prescrits. (2) `plastic` est
+**sain** : le résidu est exactement proportionnel à Δt (il disparaît), et le cycle endommagé est franchement
+dissipatif. (3) `origin` **avec le ratchet est sain aussi** — le résidu positif du cycle endommagé est en Δt et
+s'annule ; c'est la validation du correctif `jointSecantRatchet` posé le 12/09, qui n'avait jamais été mesurée sur
+un cycle fermé. (4) Ce que cela **n'établit pas** : que ce mécanisme explique quantitativement les milliers de
+joules du banc B' (un joint de 1 mm sur un cycle de 15 nm ne s'extrapole pas à 20 000 joints sous un insert), ni
+que la version interne de Yang présente la même divergence — leur code public n'a pas de bilan d'énergie, donc
+personne ne l'aurait vue.
+
+## 8 — Corrections apportées à ce document après la critique indépendante du 13/09
+
+- §6 bis : le banc B' s'est arrêté à **261,06 µs** (dernière ligne du CSV), non 251 ; et les 2 745 J sont le
+  **travail cumulé des tractions de joint** (poste `eJnt` du bilan B4), pas l'énergie cinétique finale ni le
+  défaut global du bilan — le défaut mesuré au garde-fou valait 22,15 J pour B et 18,40 J pour B1.
+- §6 : « le contact n'est pas la cause » était trop fort. D donne, par rapport à A : force maximale −5 %,
+  vitesse d'indentation +6,5 %, ruptures +13 %. La conclusion tenable est : **ce changement de contact ne
+  résout pas le problème sur ce maillage avec la loi `plastic`** ; il n'exclut ni une interaction avec une autre
+  loi, ni un défaut de transmission des efforts après rupture.
+- §6 : les ~57 kN de Yang sont une estimation de **freinage moyen** déduite de la cinématique, alors que le
+  tableau donne des **maxima** ; 53,5 ou 60,7 kN de maximum ne prouvent donc pas que la réaction est reproduite.
+  De plus `tools/fig_fp.py` assimile la vitesse de tout le train à celle du bit, ce qui est faux pendant la
+  propagation des ondes (biais mesuré par S2 : la plaque porte jusqu'à 3 214 N sur le bit, soit 13,0 kN
+  d'erreur maximale sur l'estimateur). **La sortie `contactForcePairs` devient la mesure principale**, contrôlée
+  par l'impulsion et les quantités de mouvement de chaque corps.
+- §1 ligne 23 : la résolution reste « **à vérifier** », pas « non handicapante ». Une taille annoncée de 1 mm
+  chez Yang n'établit pas une arête médiane de 1 mm, la série T3 garde un insert à 1,43 mm d'arête médiane pour
+  0,7 mm annoncés, et « sept éléments dans la zone de processus » ne remplace pas une convergence de la
+  fissuration.
