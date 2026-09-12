@@ -142,3 +142,36 @@ les slivers de surface ne partent pas sans remailleur de qualité. Le vrai levie
 Ce qui ne change pas : la chaîne lit lâche → réaction faible → bit rapide → ni radiales ni pulvérisation reste
 la lecture des données ; les deux documents ne la contestent pas, ils demandent qu'elle soit attribuée par des
 sensibilités séparées (fait : A, B, B1, B2, C, D) et mesurée avec les bons filtres (fait).
+
+## 6 — Résultats des bancs s = 2,5 à 300 µs (13/09, 14 h - 17 h 15, rockim_g1y16, 14 fils)
+
+Maillage `impact_yang_s2.5_pose.msh` (piston 0,777 kg = 31,5 J, train 1,158 kg), témoin = deck v3-P.
+Réaction = dérivée de la quantité de mouvement piston + train (`tools/fig_fp.py`) ; v_ind = pente 10-90 % du
+déplacement de l'insert (estimateur de Yang 2025, `tools/fig_kinetics.py` T2) ; rompus = `tBreak ≥ 0`.
+
+| Banc | Ce qui change par rapport à A | t_fin | p [mm] | F_roche max [kN] | v_ind pente [m/s] | rompus | eJnt [J] | verdict |
+|---|---|---|---|---|---|---|---|---|
+| A témoin | — | 300 µs | 1,18 | 53,5 | 5,20 | 375 | −2,2 | pas de retournement à 300 µs (bit 2,45 m/s) |
+| D | contact de Solidity seul (0,25 E, `gcBirth = penalty`) | 300 µs | 1,22 | 50,7 | 5,54 | 424 | −3,0 | **sans effet** : le contact n'est pas la cause |
+| B2 | pénalité seule (`edge`, facteur 25 = 50 E) | 300 µs | 1,12 | 60,7 | 5,06 | 424 | −3,2 | léger raidissement (+13 % de F), bit 1,9 m/s à 300 µs |
+| B1 | **loi `solidity` seule** | **75 µs** | 0,14 | — | — | 2 028 | **+43,5** | **ENERGY ABORT** : 18,4 J créés (KE 49,9 J > 31,5 initiale) |
+| B | loi + pénalité + contact | **83 µs** | — | — | — | 2 020 | **+47,4** | **ENERGY ABORT** : 22,2 J créés (70 % de l'énergie du piston) |
+| C | B + viscosité η D (`bulkViscosity = 2000`) | **92 µs** | — | — | — | 1 560 | **+37,6** | **ENERGY ABORT** : 4,4 J créés malgré la viscosité |
+
+Lecture :
+- **La loi de joint de Solidity, transcrite mot à mot, crée de l'énergie** dès la première vague de ruptures
+  (B1 : le poste joints passe de −0,03 J à +43 J entre 74 et 82 µs pendant que 2 → 2 028 joints cèdent, soit
+  ~20 mJ par joint). B1 l'attribue à la loi seule : ni le contact (D sain), ni la pénalité (B2 sain), ni le
+  relais `penalty` (D sain) n'en sont responsables. Mécanisme : τ = z·f_s(σ_n) sans mémoire — pas de potentiel
+  en mode mixte ; sous l'insert f_s atteint ~1 GPa (c + 1,85 × 500 MPa) sur un glissement au pic de ~1 µm, et
+  un joint comprimé qui glisse sous une contrainte normale oscillante rend au retour plus qu'il n'a reçu à
+  l'aller (la pathologie mesurée sur `origin` le 12/09 : 16 J en 81 µs). Ce n'est pas une erreur de
+  transcription : c'est Sigma_tau tel qu'écrit dans Y3Dfd.c. Le code public n'a pas de bilan d'énergie.
+- **Conséquence pour la comparaison** : la loi réversible ne peut pas être « la cause du noyau solide » au sens
+  d'une physique meilleure ; si leur code fait la même chose, une part de leur réaction plus haute (~57 kN) peut
+  être de l'énergie créée. Hypothèse à tester : bancs B', B1', C' **sans garde-fou** (`budgetAbortPct = 0`,
+  file `tools/queue_bench_F.sh`, en cours) — mesurer la réaction, le bit et les fissures à côté de l'énergie
+  créée, comme leur code le ferait.
+- **Le témoin ne se retourne pas à 300 µs** (Yang 255 µs, 1,0 mm) ; B2 s'en approche (bit 0,94 m/s à 300 µs,
+  estimateur T2). Aucun banc ne montre de radiales (fissures ≤ 16-17 mm de rayon de centroïdes pour des
+  facettes de 3,4 mm : mailles trop grosses pour en juger, voir `tools/crack_paths.py` de T1).
