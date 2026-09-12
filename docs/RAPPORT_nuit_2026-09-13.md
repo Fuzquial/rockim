@@ -112,6 +112,21 @@ Ancres : `results/bitid_g1y11..15.log` (8/8) et `bitid_jointlaw_g1y1*.log` (9ᵉ
 deck v2 sous fracture). Outils nouveaux : `tools/fig_joints_only.py`, `tools/fig_joints_cuts.py`,
 `tools/law_matrix.py`.
 
+## 3 bis. Le critère F–p (10 h 30) : la roche résiste deux à trois fois moins que chez Yang
+
+Force moyenne de freinage du bit après le décollement du piston (déduite de la cinématique) :
+Yang 9 m/s ~57 kN sur 0,45 mm (1,535 kg de 5,62 à 0 m/s en 155 µs) ; Hertz élastique 69 kN à
+0,5 mm ; s = 2,5 plastic seul 43 kN ; plastic + coulomb 31 kN ; v3-P (coulomb + clés de l'audit)
+**20 kN** ; s = 1 v3-P 25 kN (106–153 µs). Forme : pic hertzien 55–65 kN au contact, puis plateau
+15–35 kN sans remontée. Chaque correction de la nuit a ramolli le lit broyé sous l'insert :
+(1) plage coulomb 3 G_II/f_s ≈ 4 µm à σ_n 300–400 MPa (plancher 2 s_E ≈ 2 µm avec pf = 20) : un
+joint plastifié meurt après 4 µm — chez Solidity le plancher 2 s_p dépend de leur pénalité (non
+publiée) et peut être 10× plus long ; (2) `potStiffnessByPhase = min` : lit roche/roche 10× plus
+complaisant ; (3) +36 % d'énergie de piston (course, pas niveau) ; (4) 0 pulvérisé contre ~360 :
+leur lit broyé porte encore 10 % de raideur, le nôtre est un tas de fragments libres. **À traiter au
+run suivant** : plancher de la plage coulomb à la Solidity, raideur de contact, pulvérisation.
+Figures `results/fig/fp_s1_s25.png`, `kinetics_s1_s25.png`.
+
 ## 4. Ce qui reste, classé (pour la décision de Fernando)
 
 1. **Le run s = 1 lui-même** : le laisser aller au bout (T 400 µs, ~10-14 h) ; lire les sept critères
