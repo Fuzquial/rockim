@@ -164,7 +164,37 @@ gmsh.option.setNumber("Mesh.RandomSeed", 1)
 # seul) — c'est h_min qui commande le pas de temps. Matrice testee le
 # 2026-08-30 (A/B/C/D/B2, echelle 2) ; RandomFactor et ExtendFromBoundary
 # sont sans effet sur le reseau.
-gmsh.option.setNumber("Mesh.Algorithm", 1)     # MeshAdapt (jamais 5/6 sous champ)
+gmsh.option.setNumber("Mesh.Algorithm", int(_kw.get("algo2d", 1)))   # MeshAdapt (jamais 5/6 sous champ) ; algo2d=N (13/09) pour MESURER
+# CHASSE AUX SLIVERS (13/09) — options nommees, toutes facultatives, defauts =
+# maillage inchange. Mesure du 13/09 sur impact_yang_s1_pose.msh (tools/
+# mesh_quality.py) : les 25 pires tetras de la roche (h inscrit 0,226-0,30 mm
+# pour des aretes de 0,8-1,4 mm) ont DEUX noeuds sur la face z = 0 et deux a
+# 0,7-1,1 mm sous elle — premiere couche sous la surface ; les tetras
+# interieurs ont h >= 0,323 mm. Netgen et Relocate3D ne bougent pas les
+# noeuds de surface, d ou leur inefficacite (opt=2 : 0,2267 inchange).
+#   optthr=x   Mesh.OptimizeThreshold (defaut gmsh 0,3), seuil de l optimiseur interne
+#   smooth=N   Mesh.Smoothing (defaut 1), passes de lissage de la surface
+#   optgmsh=N  N passes de l optimiseur interne apres generation
+#   opt2d=N    N passes Relocate2D (les noeuds de SURFACE bougent)
+#   lap2d=N    N passes Laplace2D (lissage laplacien de la surface)
+#   quality=hxt  PRESET retenu le 13/09 (mesure a s = 1, tools/mesh_quality.py) :
+#              HXT (algo3d = 10) + Mesh.OptimizeThreshold 0,5. Roche : h min
+#              0,2265 -> 0,270 mm (+19 %), tetras sous 0,3 mm 25 -> 5 ; insert
+#              0,205 -> 0,250. Les autres combinaisons mesurees font moins bien
+#              (seuil 0,7 + passes gmsh 0,247-0,258 ; Relocate2D 0,244 ;
+#              lissage de surface sans effet ; frontal 4 idem Delaunay ; MMG3D
+#              absent de ce gmsh). Le sliver de surface ne part pas sans
+#              remailleur de qualite : le gain sur le pas de temps reste ~+9 %
+#              sous jointPenaltyLength = edge. Surface : MeshAdapt inchange.
+if _kw.get("quality") == "hxt":
+    _kw.setdefault("algo3d", "10")
+    _kw.setdefault("optthr", "0.5")
+elif "quality" in _kw:
+    raise SystemExit("quality=%s inconnu (hxt)" % _kw["quality"])
+if "optthr" in _kw:
+    gmsh.option.setNumber("Mesh.OptimizeThreshold", float(_kw["optthr"]))
+if "smooth" in _kw:
+    gmsh.option.setNumber("Mesh.Smoothing", int(_kw["smooth"]))
 # algo3d=N (2026-09-11) : 1 = Delaunay (defaut, inchange), 10 = HXT (Delaunay
 # parallele + optimiseur de qualite propre). Mesure du jour sur s = 1 : le
 # Delaunay laisse des slivers de 0,226 mm de diametre inscrit a la surface de
@@ -178,6 +208,12 @@ gmsh.model.mesh.generate(3)
 # temps des joints de la roche suit le PLUS PETIT diametre inscrit (0,226 mm
 # pour une mediane de 0,4 mm dans la zone fine) — un sliver sur cent mille
 # commande 20 h de calcul. Defaut 0 = maillage bit-identique.
+for _ in range(int(_kw.get("opt2d", 0))):
+    gmsh.model.mesh.optimize("Relocate2D")
+for _ in range(int(_kw.get("lap2d", 0))):
+    gmsh.model.mesh.optimize("Laplace2D")
+for _ in range(int(_kw.get("optgmsh", 0))):
+    gmsh.model.mesh.optimize("")
 for _ in range(int(_kw.get("opt", 0))):
     gmsh.model.mesh.optimize("Netgen")
     gmsh.model.mesh.optimize("Relocate3D")

@@ -183,7 +183,33 @@ Fernando (« Fais 1 à 3 ») : coder leur loi telle quelle, prendre leur pénali
   `yang2026_bench_s25_solidity.cfg` (B : solidity + edge + pf 25),
   `yang2026_bench_s25_solidity_visc.cfg` (C : B + `bulkViscosity = 4000`). File d'attente
   `tools/queue_benches_s25.sh` derrière le run s = 1 (un gros job à la fois) et derrière l'ancre.
-- Registre régénéré (429 clés). Ancre 8/8 + 9ᵉ deck : `results/bitid_g1y16.log`.
+- Registre régénéré (429 clés). Ancre 8/8 + 9ᵉ deck **1/1 IDENTIQUE** : `results/bitid_g1y16.log`
+  (13 h 15).
+
+### Ajouté — contact de Solidity dans les bancs, banc D, liste des écarts Guo/Solidity/rockim, chasse aux slivers (13/09, 13 h - 14 h 30)
+
+Demande de Fernando à 13 h : « Kill s1 » (fait, 182,9 µs, 19 trames, 2 éléments pulvérisés apparus à
+183 µs), « le même contact que Solidity pour comparer », « la liste des écarts avec la thèse de Guo, juge
+si c'est handicapant, puis s'il faut copier Solidity », « optimise le mailleur pour éviter les slivers ».
+
+- Bancs B et C réécrits avec **le contact de Solidity** : `potPenaltyFactor = 0.25` (= p0/200 = 15 GPa,
+  `Y3Did.c` `penalty = MINIM(d1pepe)/200`) et `gcBirth = penalty` (recalage de naissance [0,01 ; 3]) ;
+  banc **D** = témoin A + ce seul contact (`configs/yang2026_bench_s25_v3P_contact.cfg`,
+  `tools/queue_bench_D.sh` derrière la file A/B/C). Banc C corrigé : η = 4 000 de Guo éq. 2.6 (T = … + η D)
+  vaut `bulkViscosity = 2000` dans la convention 2 μ D de rockim.
+- **`docs/ECARTS_guo2014_rockim_2026-09-13.md`** : 26 lignes Guo (chapitre 2 lu dans le texte) /
+  Solidity (code) / rockim, avec le jugement « handicapant ? » et la décision. Six écarts comptent : la
+  mémoire du joint (banc B), la longueur de pénalité et le pas de temps (`edge`, mailleur), l'amortissement
+  (banc C), la **résolution** (notre s = 1 rend une arête médiane de 1,37 mm dans la boule, 14 722 tétras
+  au lieu de ~35 000 : un s ≈ 1,37 par rapport à Yang), la pulvérisation (δ_m et Cd inconnus). Faut-il
+  copier Solidity : la physique qui se copie l'est (opt-in) ; le code public n'a rien de plus.
+- **`tools/mesh_quality.py`** : diamètre inscrit h = 6 V/Σ aires par tétra et par corps, pires éléments.
+  Mesure : les slivers de la roche (h 0,226-0,30 mm) ont deux nœuds sur z = 0 et deux à 0,7-1,1 mm sous
+  la surface ; Netgen/Relocate3D ne bougent pas les nœuds de surface. `tools/make_impact_mesh.py` :
+  options `algo2d=`, `optthr=`, `smooth=`, `optgmsh=`, `opt2d=`, `lap2d=` et le **preset `quality=hxt`**
+  (HXT + seuil 0,5) : roche 0,2265 → 0,270 mm (+19 %), slivers < 0,3 mm 25 → 5, insert 0,205 → 0,250 ;
+  les autres combinaisons font moins bien (tableau dans ECARTS §4). Maillage `meshes/impact_yang_s1_pose_hxt05.msh`
+  généré pour le run suivant. MMG3D absent de gmsh 4.15.2.
 
 ### Ajouté — le lot de l'audit (`rockim_g1y14.exe`, 13/09, 2 h 30 - 3 h) : proxy σ_n, ratchet armé au cap, garde de phase, raideur de contact par phase, joints ×6
 
