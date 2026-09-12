@@ -712,10 +712,13 @@ void Fdem3dSolver::init() {
     // et al., miroir exact du 2D (voir FdemSolver.cpp).
     {
         std::string ju = cfg_.gets("jointShearUnload", "plastic");
-        if (ju != "plastic" && ju != "origin")
+        if (ju != "plastic" && ju != "origin" && ju != "solidity")
             throw std::runtime_error("jointShearUnload must be plastic | origin "
-                                     "(got '" + ju + "')");
+                                     "| solidity (got '" + ju + "')");
         shearOrigin_ = ju == "origin";
+        // solidity (13/09) : la loi de Y3Dfd.c mot a mot, gardes plus bas,
+        // apres la lecture de jointXi.
+        shearSolidity_ = ju == "solidity";
     }
     {
         std::string sr = cfg_.gets("jointShearRange", "cohesion");
@@ -1226,6 +1229,41 @@ void Fdem3dSolver::init() {
                      "INERTE, la penalite active est insertionPenaltyFactor.\n";
     }
     xiJ_ = cfg_.getd("jointXi", 0.05);
+    // ---- jointShearUnload = solidity : gardes (13/09) ----------------------
+    // La transcription de Sigma_tau ne porte que la loi de Y3Dfd.c : parabole
+    // 2r - r^2 (jointElastic = parabolic), z-curve 0,63/1,8/6 (jointSoftening
+    // = munjiza, alias de yan), rupture nfail > 1 (jointFailRule = majority),
+    // aucun amortisseur de joint (jointXi = 0, jointEtaN/S = 0), pas de loi
+    // de Camacho. Les autres cles de joint sont INERTES sous cette loi
+    // (jointSecantRatchet, jointNormalProxy, jointShearRange, jointDeltaC,
+    // jointResidualMu, jointFrictionMobilised, jointFrictionScaled,
+    // jointDeath) : op, ot, sp, st et le proxy 2 pj dn sont recalcules a
+    // chaque pas comme chez eux, et le joint rompu meurt aussitot.
+    if (shearSolidity_) {
+        if (!paraElastic_ || !yanSoft_)
+            throw std::runtime_error("jointShearUnload = solidity exige "
+                "jointElastic = parabolic et jointSoftening = munjiza (la loi "
+                "de Y3Dfd.c : parabole 2r - r^2 et z-curve 0,63/1,8/6)");
+        if (!majorityFail_)
+            throw std::runtime_error("jointShearUnload = solidity exige "
+                "jointFailRule = majority (leur nfail > 1, Y3Dfd.c l. 1175)");
+        if (xiJ_ > 0.0 || etaN_ > 0.0 || etaS_ > 0.0)
+            throw std::runtime_error("jointShearUnload = solidity exige "
+                "jointXi = 0 et jointEtaN = jointEtaS = 0 (aucun amortisseur "
+                "de joint dans Solidity)");
+        if (tslCamacho_)
+            throw std::runtime_error("jointShearUnload = solidity est "
+                "incompatible avec jointTSL = camacho");
+        std::cout << "[FDEM3D] jointShearUnload = solidity : loi de joint de "
+                     "Solidity mot a mot (Y3Dfd.c Sigma_tau) — elastique "
+                     "REVERSIBLE, z sans memoire (le joint guerit), dpefm = 0 "
+                     "(aucun frottement de joint), rupture a deux points sur "
+                     "trois au meme pas puis mort immediate (relais au "
+                     "contact). Cles INERTES sous cette loi : "
+                     "jointSecantRatchet, jointNormalProxy, jointShearRange, "
+                     "jointDeltaC, jointResidualMu, jointFrictionMobilised, "
+                     "jointFrictionScaled, jointDeath\n";
+    }
 
     kp_ = phases_.maxE() * hmin_;                      // tool contact [N/m]
     // ---- A1 : loi de contact de l'outil, miroir du 2D --------------------
@@ -2298,6 +2336,11 @@ void Fdem3dSolver::buildFromTets(const std::vector<Eigen::Vector3d>& vpos,
 // and the global hmin for the grid mesh (bit-compatible with the pre-GBM
 // behaviour).
 // ---------------------------------------------------------------------------
+// jointShearUnload = solidity : la z-curve de Munjiza avec les constantes EN
+// DUR du code public (Y3Dfd.c l. 1088-1090 : dpefa 0,63, dpefb 1,8, dpefc 6),
+// independantes de yanP_.
+static const yan::Params kSolidityZ{};
+
 void Fdem3dSolver::assignJointProps() {
     // Adaptive insertion: the penalty only serves ACTIVATED joints as
     // unloading/contact stiffness (bonded faces are kinematic), so it can be
@@ -2305,6 +2348,31 @@ void Fdem3dSolver::assignJointProps() {
     // Yan et al. comes from. Same convention as the 2D solver.
     double pf = adaptive_ ? cfg_.getd("insertionPenaltyFactor", 4.0)
                           : cfg_.getd("jointPenaltyFactor", 20.0);
+    // ---- jointPenaltyLength = min | local | edge (audit §7, 13/09) ---------
+    // Quelle longueur h dans pj = pf E/h. `min` (defaut, bit-identique) :
+    // hmin_ = le plus petit diametre inscrit du maillage gmsh pour TOUS les
+    // joints — le sliver (0,226 mm a s = 1) commande la raideur de toutes les
+    // facettes, 240 E equivalent pour pf = 20, 4,5x la penalite de Yang et
+    // l essentiel de l ecart de pas de temps (1,0 ns contre 2,5 ns). `local` :
+    // ½(hEl_A + hEl_B), la convention Voronoi deja codee. `edge` : la moyenne
+    // des trois aretes de la facette, exactement le `el` de Solidity
+    // (Y3Dfd.c S_N_direction) et le h de Guo eq. 2.25-2.26 — sous
+    // jointElastic = parabolic la raideur initiale vaut alors 2 pf E/el =
+    // p0/el, donc pf = p0/(2E) : 25 pour leurs 3 000 GPa a E = 60 GPa.
+    {
+        const std::string pl = cfg_.gets("jointPenaltyLength", "min");
+        if (pl != "min" && pl != "local" && pl != "edge")
+            throw std::runtime_error("jointPenaltyLength must be min | local | "
+                                     "edge (got '" + pl + "')");
+        penLen_ = (pl == "local") ? 1 : (pl == "edge") ? 2 : 0;
+        if (penLen_)
+            std::cout << "[FDEM3D] jointPenaltyLength = " << pl
+                      << " : pj = pf E/h avec h "
+                      << (penLen_ == 2 ? "= moyenne des trois aretes de la "
+                                         "facette (el de Solidity, h de Guo)"
+                                       : "= 1/2 (hEl_A + hEl_B)")
+                      << " au lieu de hmin_ = " << hmin_ << " m\n";
+    }
     for (auto& J : jt_) {
         const Elem& A = el_[J.eA];
         const Elem& B = el_[J.eB];
@@ -2367,7 +2435,18 @@ void Fdem3dSolver::assignJointProps() {
             throw std::runtime_error("assignJointProps: attenuated joint "
                 "properties left the physical range (ft/coh/E must be > 0, "
                 "friction angle in [0, 89) deg) — check gb* factors");
-        double h = voronoi_ ? 0.5 * (hEl_[J.eA] + hEl_[J.eB]) : hmin_;
+        double h;
+        if (penLen_ == 2) {
+            // el de Solidity : moyenne des trois aretes de la facette
+            const Eigen::Vector3d& P0 = X0_[J.a[0]];
+            const Eigen::Vector3d& P1 = X0_[J.a[1]];
+            const Eigen::Vector3d& P2 = X0_[J.a[2]];
+            h = ((P1 - P0).norm() + (P2 - P1).norm() + (P0 - P2).norm()) / 3.0;
+        } else if (penLen_ == 1 || voronoi_) {
+            h = 0.5 * (hEl_[J.eA] + hEl_[J.eB]);
+        } else {
+            h = hmin_;
+        }
         J.pj = pf * E / h;
         J.ft = ft;
         J.coh = coh;
@@ -4469,6 +4548,80 @@ void Fdem3dSolver::jointForces() {
             // inserees mais jamais ouvertes — aucune force ne le lit.
             if (dn > J.dmMax[k]) J.dmMax[k] = dn;
 
+            // ---- jointShearUnload = solidity : Sigma_tau (Y3Dfd.c l. 1078-
+            // 1300), transcription LITTERALE du code public de Solidity
+            // (13/09/2026). Aucune memoire : leur z (notre D) et les deux
+            // tractions sont des fonctions de l ouverture o = dn et du
+            // glissement s COURANTS — decharge et recharge retracent la courbe
+            // de charge, le joint GUERIT en se refermant (Guo 2014 eq. 2.33,
+            // « 0 otherwise »). Leur code -> rockim :
+            //   op = 2 el ft/pe = ft/pj = dnE ;  ot = max(2 op, 3 Gf/ft) ;
+            //   sigma_tmp = 2 o ft/op = 2 pj dn en compression (EPSILON sinon) ;
+            //   dpefs = c en traction, c + tan(phi) |sigma_tmp| en compression ;
+            //   sp = 2 el dpefs/pe = dpefs/pj ;  st = max(2 sp, 3 GfII/dpefs) ;
+            //   z = sqrt(t1^2 + t2^2) | t1 | t2 | 0 selon (o > op, |s| > sp),
+            //   puis z-curve 0,63/1,8/6 (1 si intact, 0 si le point est rompu) ;
+            //   sigma = 2 (o/op) ft (o < 0) | ft z (o > op) | (2r - r^2) z ft ;
+            //   tau = z dpefs (|s| > sp) | (2q - q^2) z dpefs, dans le sens de s ;
+            //   dpefm = 0 EN DUR chez eux : AUCUN frottement dans le joint.
+            // Rupture : point a z >= 1 -> traction nulle a ce point ; joint
+            // rompu quand DEUX points sur trois le sont au MEME pas (nfail > 1,
+            // l. 1175), puis mort immediate — relais au contact (voir `die`).
+            // Le DIF continu (refreshDif) reecrit ft, c, Gf, GfII et dnE avant
+            // ce bloc, comme leur dpeftdif en tete de boucle element.
+            if (shearSolidity_) {
+                const double op = J.dnE;
+                const double ot = std::max(2.0 * op, 3.0 * J.Gf / J.ft);
+                const double sigTmp = (dn < 0.0) ? 2.0 * J.pj * dn : 0.0;
+                const double fs = (dn < 0.0) ? J.coh - J.tanPhi * sigTmp
+                                             : J.coh;
+                const double sp = fs / J.pj;
+                const double st = std::max(2.0 * sp, 3.0 * J.GfII / fs);
+                J.slip[k] -= J.slip[k].dot(n) * n;    // origine figee, en plan
+                const Eigen::Vector3d sEffS = dt3 - J.slip[k];
+                const double sabs = sEffS.norm();
+                const double t1 = (dn - op) / ot;
+                const double t2 = (sabs - sp) / st;
+                double zD;
+                int iz = 1;
+                if (dn > op && sabs > sp) zD = std::sqrt(t1 * t1 + t2 * t2);
+                else if (dn > op) zD = t1;
+                else if (sabs > sp) zD = t2;
+                else { zD = 0.0; iz = 0; }
+                if (zD >= 1.0) { zD = 1.0; iz = 2; }
+                const double z = (iz == 0) ? 1.0 : (iz == 2) ? 0.0
+                               : yan::fD(zD, kSolidityZ);
+                const double r = dn / op;
+                double sig;
+                if (dn < 0.0) sig = 2.0 * r * J.ft;              // = 2 pj dn
+                else if (dn > op) sig = J.ft * z;
+                else sig = (2.0 * r - r * r) * z * J.ft;
+                const double q = sabs / sp;
+                const double tauM = (sabs > sp) ? z * fs
+                                                : (2.0 * q - q * q) * z * fs;
+                Eigen::Vector3d tau = Eigen::Vector3d::Zero();
+                if (sabs > 1e-30) tau = (tauM / sabs) * sEffS;
+                // D du point = leur z AVANT la courbe, SANS memoire ; J.D (max
+                // des points, tenu apres la boucle) ne sert qu aux sorties et
+                // au test de rupture.
+                Dref = zD;
+                if (t2 > rsMaxO) rsMaxO = t2;
+                Eigen::Vector3d trac = (sig * n + tau) * At;
+                fnSum += sig * At;
+                if (midEdge_) {
+                    Eigen::Vector3d h = 0.5 * trac;
+                    addF(ib, -h);  addF(ia, h);
+                    addF(ib2, -h); addF(ia2, h);
+                    jw += h.dot(v_[ia] - v_[ib]) * dt_
+                        + h.dot(v_[ia2] - v_[ib2]) * dt_;
+                } else {
+                    addF(ib, -trac);
+                    addF(ia, trac);
+                    jw += trac.dot(v_[ia] - v_[ib]) * dt_;
+                }
+                continue;
+            }
+
             // ---- eq. 18 (jointShearUnload = origin) : miroir exact du 2D ----
             // s_max est mis a jour AVANT la traction normale : en mode
             // `origin` le moteur de mode II de l'eq. 16 en depend, et ce
@@ -4772,8 +4925,8 @@ void Fdem3dSolver::jointForces() {
                 double rnF = (otF > 0.0 && dnMax > J.dnE)
                            ? (dnMax - J.dnE) / otF : 0.0;
                 double rsF;
-                if (shearOrigin_) {            // pas de glissement plastique
-                    rsF = rsMaxO;
+                if (shearOrigin_ || shearSolidity_) {   // pas de glissement
+                    rsF = rsMaxO;                       // plastique
                 } else {
                     double sMx = 0.0;
                     for (int q = 0; q < 3; ++q)
@@ -4791,7 +4944,9 @@ void Fdem3dSolver::jointForces() {
             // le contact et son glissement contactMu ne prennent jamais le
             // relais. `damage` applique la regle de Guo §2.3.3 : mort des que
             // D >= 1, quel que soit le signe de l ouverture.
-            bool die = deathOnDamage_ || dnMax > 3.0 * J.dnF;
+            // jointShearUnload = solidity : leur joint rompu (nfail > 1) est
+            // retire aussitot et le contact nait (Y3Dfd.c l. 1175-1250).
+            bool die = deathOnDamage_ || shearSolidity_ || dnMax > 3.0 * J.dnF;
             if (die && !J.dead) {
                 // MESURE (principe IV) : la charge normale que le relais au
                 // contact doit reprendre a cet instant precis. Negative =

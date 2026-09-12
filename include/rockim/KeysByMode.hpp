@@ -1,5 +1,5 @@
 #pragma once
-// KeysByMode.hpp — GENERE par tools/gen_keys_by_mode.py le 2026-09-12 02:30:31 : NE PAS EDITER.
+// KeysByMode.hpp — GENERE par tools/gen_keys_by_mode.py le 2026-09-12 12:51:40 : NE PAS EDITER.
 // Registre lisible : tools/keys_by_mode.json (methode dans la docstring du generateur).
 // Table des cles PROPRES A UN MODE (lues par un seul solveur) ; toute autre cle est commune.
 #include <stdexcept>
@@ -126,6 +126,7 @@ inline const Entry kTable[] = {
     {"cutterDia", "fdem3d"},
     {"dtBudgetTangential", "fdem3d"},
     {"fragBrushDirZ", "fdem3d"},
+    {"jointPenaltyLength", "fdem3d"},
     {"lawPhase", "fdem3d"},
     {"potStiffnessByPhase", "fdem3d"},
     {"trackGroup", "fdem3d"},
@@ -407,6 +408,7 @@ inline const char* const kKnown[] = {
     "jointMixLaw",
     "jointNormalProxy",
     "jointPenaltyFactor",
+    "jointPenaltyLength",
     "jointPrebrokenFrac",
     "jointPrebrokenSeed",
     "jointQuadrature",
@@ -875,6 +877,7 @@ inline const Readers kReaders[] = {
     {"jointMixLaw", "fdem fdem3d"},
     {"jointNormalProxy", "fdem fdem3d"},
     {"jointPenaltyFactor", "fdem fdem3d"},
+    {"jointPenaltyLength", "fdem3d"},
     {"jointPrebrokenFrac", "fdem fdem3d"},
     {"jointPrebrokenSeed", "fdem"},
     {"jointQuadrature", "fdem fdem3d"},

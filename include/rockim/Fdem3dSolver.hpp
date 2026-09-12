@@ -493,6 +493,19 @@ private:
     // un AVERTISSEMENT ; jointSecantRatchet = on le rend dissipatif.
     bool shearOrigin_ = false;
 
+    // jointShearUnload = solidity (13/09/2026) : la loi de joint de Solidity
+    // MOT A MOT, lue dans le code public (Y3Dfd.c, Sigma_tau l. 1078-1300).
+    // Aucune memoire d endommagement : leur z et les deux tractions sont des
+    // fonctions de l ouverture et du glissement COURANTS — elastique
+    // reversible, le joint GUERIT en se refermant (Guo 2014 eq. 2.33, « 0
+    // otherwise ») ; dpefm = 0 en dur (aucun frottement dans le joint) ;
+    // rupture a deux points sur trois au MEME pas (nfail > 1) puis mort
+    // immediate (relais au contact). Exclusive de `origin` ; exige
+    // jointElastic = parabolic, jointSoftening = munjiza, jointFailRule =
+    // majority, jointXi = 0. Les autres cles de joint sont inertes sous
+    // cette loi (op, ot, sp, st recalcules a chaque pas comme chez eux).
+    bool shearSolidity_ = false;
+
     // jointSecantRatchet = on | off (defaut off, bit-identique) — conseil du
     // 12/09 (M1, M7). Les secantes de decharge des eq. 17 (mode I, toutes
     // branches) et 18 (mode II, branche origin) deviennent NON CROISSANTES
@@ -511,6 +524,18 @@ private:
     // deux dans tout ce qui fixe une resistance de mode II (le cap, lui, lit
     // la vraie traction). `law` pose pjN_ = 2 sous parabolic (1 sinon).
     double pjN_ = 1.0;
+
+    // jointPenaltyLength = min | local | edge (defaut min, bit-identique) —
+    // audit §7 du 13/09. La longueur h de pj = pf E/h : `min` = hmin_ pour
+    // TOUS les joints d un maillage gmsh (le sliver, 0,226 mm a s = 1,
+    // commande la raideur de toutes les facettes : 240 E equivalent pour
+    // pf = 20, 4,5x la penalite de Yang, l essentiel de l ecart de pas de
+    // temps 1,0 ns contre 2,5 ns) ; `local` = ½(hEl_A + hEl_B), la convention
+    // Voronoi deja codee ; `edge` = moyenne des trois aretes de la facette,
+    // le `el` de Solidity (Y3Dfd.c S_N_direction) et le h de Guo eq.
+    // 2.25-2.26, si bien que sous jointElastic = parabolic pf = p0/(2E)
+    // (25 pour leurs 3 000 GPa a E = 60 GPa). 0 = min, 1 = local, 2 = edge.
+    int penLen_ = 0;
 
     // jointShearRange = cohesion | coulomb (defaut cohesion, bit-identique).
     // Miroir exact du 2D (FdemSolver.hpp) : la plage d'adoucissement de mode

@@ -156,6 +156,35 @@ facettes toutes rompues autour : le critère d'insertion fait son travail, c'est
 Correction = loi de volume sur la roche (`lawPhase`, ci-dessus) ; premier essai `law = dpr` au §7
 du document.
 
+### Ajouté — la loi de joint de Solidity mot à mot et `jointPenaltyLength` (`rockim_g1y16.exe`, 13/09, 13 h - 14 h)
+
+Motif : le run s = 1 du 13/09 (deck v3-P, `plastic`) confronté à yang2026 relu (`docs/AUDIT_2026-09-13.md` §10) :
+lit broyé **lâche** (2 892 facettes mortes à 173 µs, réaction 20-30 kN, bit 7,37 m/s, nPulv = 0) là où
+Yang a un noyau **solide** à joints réversibles (~57 kN, 5,62 m/s, ~360 éléments pulvérisés). Demande de
+Fernando (« Fais 1 à 3 ») : coder leur loi telle quelle, prendre leur pénalité, tester au banc s = 2,5.
+
+- **`jointShearUnload = solidity`** (fdem, fdem3d) : transcription littérale de `Sigma_tau` (`Y3Dfd.c`
+  l. 1078-1300, code public d'Imperial) — z **sans mémoire** (le joint guérit), tractions fonctions de
+  l'ouverture et du glissement **courants**, op/ot/sp/st recalculés à chaque pas, f_s = c en traction et
+  c + tanφ·|2 pj dn| en compression, z-curve 0,63/1,8/6 en dur (`kSolidityZ`), dpefm = 0 (aucun
+  frottement de joint), point rompu = traction nulle, joint rompu à **deux points sur trois au même pas**
+  puis mort immédiate. Gardes : parabolic + munjiza + majority + jointXi 0 + jointEtaN/S 0, pas de camacho.
+  Rend inertes ratchet, normalProxy, shearRange, deltaC, residualMu, frictionMobilised, frictionScaled,
+  jointDeath. Bloc placé en tête de la boucle des points, `continue` avant les branches historiques :
+  le chemin par défaut est textuellement intact.
+- **`jointPenaltyLength = min | local | edge`** (fdem3d) : la longueur h de pj = pf·E/h. `edge` =
+  moyenne des trois arêtes de la facette = le `el` de Solidity (`S_N_direction`) et le h de Guo éq. 2.25,
+  d'où pf = p0/(2E) sous parabolic (25 pour 3 000 GPa à 60 GPa). `min` = comportement historique.
+- Bancs courts (scratchpad, deck `fdem3d_visc_yan_3d` + parabolic/munjiza/midedge/majority, 4 fils,
+  155 s) : `solidity` tourne, résidu B4 −3e-15 J, pic macro 9,95 MPa = ft, 52 joints rompus à 140 µs
+  (plastic : 60 ; poste joints 0,137 J contre 0,158 J) ; la variante `jointFailRule = any` est
+  **refusée** par la garde.
+- Decks du banc s = 2,5 à 300 µs : `configs/yang2026_bench_s25_v3P_300.cfg` (A, témoin),
+  `yang2026_bench_s25_solidity.cfg` (B : solidity + edge + pf 25),
+  `yang2026_bench_s25_solidity_visc.cfg` (C : B + `bulkViscosity = 4000`). File d'attente
+  `tools/queue_benches_s25.sh` derrière le run s = 1 (un gros job à la fois) et derrière l'ancre.
+- Registre régénéré (429 clés). Ancre 8/8 + 9ᵉ deck : `results/bitid_g1y16.log`.
+
 ### Ajouté — le lot de l'audit (`rockim_g1y14.exe`, 13/09, 2 h 30 - 3 h) : proxy σ_n, ratchet armé au cap, garde de phase, raideur de contact par phase, joints ×6
 
 Fernando : « refais un audit pour vérifier s'il n'y a pas d'autres erreurs ou optimisations ». Quatre

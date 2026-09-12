@@ -611,6 +611,13 @@ private:
     // disponible avec AVERTISSEMENT ; jointSecantRatchet = on le corrige.
     bool shearOrigin_ = false;
 
+    // jointShearUnload = solidity (13/09/2026) : la loi de joint de Solidity
+    // mot a mot (Y3Dfd.c Sigma_tau), miroir du 3D — voir Fdem3dSolver.hpp.
+    // Elastique reversible sans memoire (le joint guerit), dpefm = 0, rupture
+    // a tous les points du joint au meme pas (nfail > 1 : les deux en 2D)
+    // puis mort immediate. Exige parabolic + munjiza + majority + jointXi = 0.
+    bool shearSolidity_ = false;
+
     // jointSecantRatchet = on | off (defaut off, bit-identique) — conseil du
     // 12/09 (M1, M7) : secantes de decharge des eq. 17 et 18 NON CROISSANTES
     // (Joint::knr, Joint::ksr), voir Fdem3dSolver.hpp.

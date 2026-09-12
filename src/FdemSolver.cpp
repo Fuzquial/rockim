@@ -938,10 +938,13 @@ void FdemSolver::init() {
     // l'eq. 17 du mode I. Voir l'en-tete pour la mise en garde.
     {
         std::string ju = cfg_.gets("jointShearUnload", "plastic");
-        if (ju != "plastic" && ju != "origin")
+        if (ju != "plastic" && ju != "origin" && ju != "solidity")
             throw std::runtime_error("jointShearUnload must be plastic | origin "
-                                     "(got '" + ju + "')");
+                                     "| solidity (got '" + ju + "')");
         shearOrigin_ = ju == "origin";
+        // solidity (13/09) : la loi de Y3Dfd.c mot a mot, miroir du 3D ;
+        // gardes plus bas, apres la lecture de jointXi.
+        shearSolidity_ = ju == "solidity";
     }
     {
         std::string sr = cfg_.gets("jointShearRange", "cohesion");
@@ -1011,6 +1014,29 @@ void FdemSolver::init() {
     }
     applyPrebrokenPopulation();
     xiJ_ = cfg_.getd("jointXi", 0.05);
+    // ---- jointShearUnload = solidity : gardes (13/09), miroir du 3D --------
+    // (jointTSL et jointEtaN/S sont lus plus loin : leurs gardes y sont.)
+    if (shearSolidity_) {
+        if (!paraElastic_ || !yanSoft_)
+            throw std::runtime_error("jointShearUnload = solidity exige "
+                "jointElastic = parabolic et jointSoftening = munjiza (la loi "
+                "de Y3Dfd.c : parabole 2r - r^2 et z-curve 0,63/1,8/6)");
+        if (!majorityFail_)
+            throw std::runtime_error("jointShearUnload = solidity exige "
+                "jointFailRule = majority (leur nfail > 1, Y3Dfd.c l. 1175)");
+        if (xiJ_ > 0.0)
+            throw std::runtime_error("jointShearUnload = solidity exige "
+                "jointXi = 0 (aucun amortisseur de joint dans Solidity)");
+        std::cout << "[FDEM] jointShearUnload = solidity : loi de joint de "
+                     "Solidity mot a mot (Y3Dfd.c Sigma_tau) — elastique "
+                     "REVERSIBLE, z sans memoire (le joint guerit), dpefm = 0 "
+                     "(aucun frottement de joint), rupture aux deux points au "
+                     "meme pas puis mort immediate (relais au contact). Cles "
+                     "INERTES sous cette loi : jointSecantRatchet, "
+                     "jointNormalProxy, jointShearRange, jointDeltaC, "
+                     "jointResidualMu, jointFrictionMobilised, "
+                     "jointFrictionScaled, jointDeath\n";
+    }
 
     // ---- E9 (2026-08-20) : gcCell et gcBoxMesh etaient INERTES hors SHPB.
     // Ils n'etaient lus que dans la branche du montage barre-disque-barre, si
@@ -2466,6 +2492,11 @@ void FdemSolver::buildFromTriangles(const std::vector<Eigen::Vector2d>& vpos,
 // not uniform) and the global hmin for the grid mesh (bit-compatible with
 // the pre-GBM behaviour).
 // ---------------------------------------------------------------------------
+// jointShearUnload = solidity : la z-curve de Munjiza avec les constantes EN
+// DUR du code public (Y3Dfd.c l. 1088-1090 : dpefa 0,63, dpefb 1,8, dpefc 6),
+// independantes de yanP_ — miroir du 3D.
+static const yan::Params kSolidityZ{};
+
 void FdemSolver::assignJointProps() {
     // Adaptive insertion: the penalty never glues an intact continuum (bonded
     // edges are handled kinematically), it only serves the ACTIVATED joints as
@@ -3683,6 +3714,9 @@ void FdemSolver::readNote2026Keys() {
                 "note, t_m^ins = traction REELLEMENT TRANSMISE, "
                 "delta_m^f = 2 G_C / t_m^ins, decharge secante)");
         tslCamacho_ = ts == "camacho";
+        if (tslCamacho_ && shearSolidity_)
+            throw std::runtime_error("jointShearUnload = solidity est "
+                "incompatible avec jointTSL = camacho");
         // GARDE §5.2 du contrat : une loi sans raideur initiale n a aucun
         // sens sur un joint intrinseque, qui doit justement coller le
         // continuum par sa penalite.
@@ -3828,6 +3862,10 @@ void FdemSolver::readNote2026Keys() {
     {
         etaN_ = cfg_.getd("jointEtaN", 0.0);
         etaS_ = cfg_.getd("jointEtaS", 0.0);
+        if (shearSolidity_ && (etaN_ > 0.0 || etaS_ > 0.0))
+            throw std::runtime_error("jointShearUnload = solidity exige "
+                "jointEtaN = jointEtaS = 0 (aucun amortisseur de joint dans "
+                "Solidity)");
         if (etaN_ < 0.0 || etaS_ < 0.0)
             throw std::runtime_error("jointEtaN / jointEtaS doivent etre >= 0 "
                 "[Pa.s/m] : un amortisseur negatif injecte de l'energie");
@@ -5992,6 +6030,64 @@ void FdemSolver::jointForces() {
                 jtsl::split(tmC, dmC, dnEffC, J.tsl.beta, tnC, tsScaleC);
             }
 
+            // ---- jointShearUnload = solidity : Sigma_tau de Solidity (Y3Dfd.c
+            // l. 1078-1300), miroir EXACT du bloc 3D (Fdem3dSolver.cpp, ou le
+            // commentaire complet est ecrit). 2D : glissement scalaire signe
+            // s = dtg - slip[k] (origine figee, 0 en intrinseque), deux points
+            // d integration, tau porte le signe de s.
+            if (shearSolidity_) {
+                const double op = J.dnE;
+                const double ot = std::max(2.0 * op, 3.0 * J.Gf / J.ft);
+                const double sigTmp = (dn < 0.0) ? 2.0 * J.pj * dn : 0.0;
+                const double fs = (dn < 0.0) ? J.coh - J.tanPhi * sigTmp
+                                             : J.coh;
+                const double sp = fs / J.pj;
+                const double st = std::max(2.0 * sp, 3.0 * J.GfII / fs);
+                const double sEffS = dtg - J.slip[k];
+                const double sabs = std::abs(sEffS);
+                const double t1 = (dn - op) / ot;
+                const double t2 = (sabs - sp) / st;
+                double zD;
+                int iz = 1;
+                if (dn > op && sabs > sp) zD = std::sqrt(t1 * t1 + t2 * t2);
+                else if (dn > op) zD = t1;
+                else if (sabs > sp) zD = t2;
+                else { zD = 0.0; iz = 0; }
+                if (zD >= 1.0) { zD = 1.0; iz = 2; }
+                const double z = (iz == 0) ? 1.0 : (iz == 2) ? 0.0
+                               : yan::fD(zD, kSolidityZ);
+                const double r = dn / op;
+                double sig;
+                if (dn < 0.0) sig = 2.0 * r * J.ft;              // = 2 pj dn
+                else if (dn > op) sig = J.ft * z;
+                else sig = (2.0 * r - r * r) * z * J.ft;
+                const double q = sabs / sp;
+                const double tauM = (sabs > sp) ? z * fs
+                                                : (2.0 * q - q * q) * z * fs;
+                const double tau = (sEffS < 0.0) ? -tauM : tauM;
+                Dref = zD;                     // leur z avant la courbe, sans memoire
+                if (t2 > rsMaxO) rsMaxO = t2;
+                if (jsOn_) {                   // S8 : etat, aucune force ajoutee
+                    jsSig += sig; jsTau += tau; jsDn += dn;
+                    if (z * fs > 0.0 && std::abs(tau) >= z * fs * (1.0 - 1e-9))
+                        jsSlip += 1.0;
+                }
+                Eigen::Vector2d trac = (sig * n + tau * e) * Ltrib;
+                fnSum += sig * Ltrib;
+                if (midEdge_) {
+                    const double w0 = 1.0 - tq[k], w1 = tq[k];
+                    addF(ib[0], -w0 * trac); addF(ia[0], w0 * trac);
+                    addF(ib[1], -w1 * trac); addF(ia[1], w1 * trac);
+                    jw += w0 * trac.dot(v_[ia[0]] - v_[ib[0]]) * dt_
+                        + w1 * trac.dot(v_[ia[1]] - v_[ib[1]]) * dt_;
+                } else {
+                    addF(ib[k], -trac);
+                    addF(ia[k], trac);
+                    jw += trac.dot(v_[ia[k]] - v_[ib[k]]) * dt_;
+                }
+                continue;
+            }
+
             // ---- eq. 18 (jointShearUnload = origin seulement) ---------------
             // s_max, le plus grand glissement JAMAIS atteint, est mis a jour
             // ICI — avant la traction normale — parce qu'en mode `origin` le
@@ -6488,8 +6584,9 @@ void FdemSolver::jointForces() {
                     rnF = jtsl::mac(dnMax);
                     const double q = dmx * dmx - rnF * rnF;
                     rsF = (q > 0.0) ? std::sqrt(q) : 0.0;
-                } else if (shearOrigin_) {    // pas de glissement plastique :
-                                              // le moteur est celui de l'eq. 14
+                } else if (shearOrigin_ || shearSolidity_) {
+                    // pas de glissement plastique : le moteur est celui de
+                    // l'eq. 14 (origin) ou leur t2 (solidity)
                     rsF = rsMaxO;
                 } else {
                     double sMx = std::max(std::abs(J.slip[0]),
@@ -6524,7 +6621,8 @@ void FdemSolver::jointForces() {
             // convention de la loi a penalite) piloterait un seuil sans
             // rapport avec la loi reellement integree.
             const double sepRef = tslCamacho_ ? J.tsl.dmF : J.dnF;
-            if (deathOnDamage_ || dnMax > 3.0 * sepRef) {
+            // jointShearUnload = solidity : joint rompu retire aussitot
+            if (deathOnDamage_ || shearSolidity_ || dnMax > 3.0 * sepRef) {
                 J.fDeath = fnSum; J.dead = true; ++nd;
             }
         }
