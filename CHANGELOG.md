@@ -211,6 +211,12 @@ si c'est handicapant, puis s'il faut copier Solidity », « optimise le mailleur
   les autres combinaisons font moins bien (tableau dans ECARTS §4). Maillage `meshes/impact_yang_s1_pose_hxt05.msh`
   généré pour le run suivant. MMG3D absent de gmsh 4.15.2.
 
+### Campagne de correction du 13/09 (après-midi) — `rockim_g1y17.exe`
+
+Cadrage : `docs/CAMPAGNE_correction_2026-09-13.md` (tâches S1-S4 solveur, T1-T4 outils/decks, B build et
+ancre, V vérification adversariale, Z synthèse), issu des deux diagnostics indépendants du 12/09 et de
+`docs/ECARTS_guo2014_rockim_2026-09-13.md` §5. Les agents ajoutent leurs puces ci-dessous.
+
 ### Corrigé — filtre des facettes rompues, bancs d'attribution B1/B2 (13/09, 15 h, relecture des diagnostics indépendants du 12/09)
 
 - **`bench_impact/tools/imp_lib.py` `broken()`** : lisait `damage ≥ 0,999`, qui vaut 1 dès qu'UN point
