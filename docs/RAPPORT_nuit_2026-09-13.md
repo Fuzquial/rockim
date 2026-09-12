@@ -91,8 +91,10 @@ deck v2 sous fracture). Outils nouveaux : `tools/fig_joints_only.py`, `tools/fig
    s ≈ 0,75 (~290 k tets, dt ×0,75, coût ×3 : ~35 h à ce rythme).
 3. **Masses** : bit + insert + circlip 1,367 kg (Yang 1,51), piston 1,057 (facettisation) : corriger par
    ρ ou par le maillage avant la comparaison des vitesses.
-4. **`gcBirth = relay`** : A/B en cours sur le banc s = 2,5 (2 fils) ; à poser au deck si le poste
-   leapfrog et le travail des joints baissent sans perte de portance.
+4. **`gcBirth = relay`** : A/B fait (banc s = 2,5, plastic + coulomb, 200 µs) : neutre — 231 rompus
+   contre 226, joints +2,10 J contre +2,02, leapfrog +0,88 contre +0,94, 211 paires calées (facteur
+   moyen 0,53). Rien à changer sur cette loi ; à remesurer sur une configuration qui tue des milliers
+   de joints en compression.
 5. **Mesures à coder** (audit B) : `dtContactAudit` (raideur de contact réellement vue par nœud — le
    budget de dt suppose 2 paires/nœud), `gcBirthWork` (injection de la rampe), `gcFricSplit`.
 6. **Forme de D** (éq. 4 vs Fig. 4a linéaire : Dmax à 0,107 mm ou 0,4 mm), Cd = 1, δ_m = h·√(2/3)‖dev ε‖
