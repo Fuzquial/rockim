@@ -172,6 +172,27 @@ Lecture :
   être de l'énergie créée. Hypothèse à tester : bancs B', B1', C' **sans garde-fou** (`budgetAbortPct = 0`,
   file `tools/queue_bench_F.sh`, en cours) — mesurer la réaction, le bit et les fissures à côté de l'énergie
   créée, comme leur code le ferait.
+### 6 bis — la variante sans garde-fou tranche l'hypothèse (13/09, 17 h 15 - 22 h, banc B')
+
+`configs/yang2026_bench_s25_solidity_noabort.cfg` = banc B avec `budgetAbortPct = 0` : la loi fait ce
+qu'elle fait chez eux, dont le code n'a aucun bilan d'énergie. Arrêté à la main à 251 µs sur 300 (11 trames
+conservées) parce que le verdict est acquis et monotone :
+
+| B' sans garde-fou | 80 µs | 100 µs | 150 µs | 200 µs | 250 µs |
+|---|---|---|---|---|---|
+| Réaction de la roche [kN] | 21,9 | 11,4 | 5,6 | −3,0 | 1,4 |
+| Joints rompus | 842 | 6 246 | 10 145 | 14 133 | 14 240 |
+| Énergie créée (poste joints) [J] | 16 | 369 | 1 320 | 2 732 | 2 745 |
+
+**2 745 J créés pour 31,5 J apportés par le piston (×87), la quasi-totalité des joints de la roche rompus,
+et la réaction qui s'effondre de 22 kN à ~1 kN.** Conclusion : l'hypothèse « une part de leurs ~57 kN
+pourrait être de l'énergie créée » est FAUSSE dans cette forme — ici l'énergie créée détruit la roche et
+tue la réaction au lieu de la gonfler. La loi de Solidity transcrite mot à mot n'est pas utilisable comme
+loi de rockim et n'explique pas leur noyau solide. Elle reste utile comme point de comparaison contrôlé
+(avec garde-fou) et comme preuve que leur formulation, telle que publiée, n'a pas de potentiel en mode mixte.
+B1' (loi seule) et C' (avec viscosité) NON lancés : même divergence, déjà mesurée par leurs versions avec
+garde-fou (B1 +18 J à 75 µs, C +4,4 J à 92 µs) ; décision de Fernando le 13/09 à 22 h pour libérer la machine.
+
 - **Le témoin ne se retourne pas à 300 µs** (Yang 255 µs, 1,0 mm) ; B2 s'en approche (bit 0,94 m/s à 300 µs,
   estimateur T2). Aucun banc ne montre de radiales (fissures ≤ 16-17 mm de rayon de centroïdes pour des
   facettes de 3,4 mm : mailles trop grosses pour en juger, voir `tools/crack_paths.py` de T1).
