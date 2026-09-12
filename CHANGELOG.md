@@ -156,6 +156,29 @@ facettes toutes rompues autour : le critère d'insertion fait son travail, c'est
 Correction = loi de volume sur la roche (`lawPhase`, ci-dessus) ; premier essai `law = dpr` au §7
 du document.
 
+### Ajouté — `facetAverage = max` en 2D (`rockim_g1y13.exe`, 12/09, 2 h) — le port du critère des impacts
+
+Item en attente depuis le 11/09 (ADAPTATIF §8). `FdemSolver::insertionSweep()`, branches OpenMP et
+série : sous `max`, le critère lit le plus chargé des deux triangles (rapport max(σ/ft_dyn, |τ|/f_s),
+même DIF, même enveloppe) et REMPLACE (σ, τ, f_s) de la moyenne ; l'offset de continuité dn0 porte
+alors la traction du triangle qui déclenche, comme en 3D (g1y7). Chemin mort sous `arith`/`volume`.
+`rockim_g1y12.exe` (relay seul) a été compilé à cheval sur l'édition de `FdemSolver.hpp` — jeté,
+jamais utilisé (piège COMDAT) ; `g1y13` = rebuild complet propre avec relay + max.
+
+### Ajouté — `gcBirth = relay` (`rockim_g1y12.exe`, 12/09, 2 h) — le relais joint mort → contact à force continue, sans l'injection du premier contact
+
+D4/N7 du conseil. `penalty` (Solidity, Y3Did.c l. 915-964) cale la pénalité de la paire naissante
+sur fn_joint/fn_contact pour TOUTES les paires — y compris celles qui n'ont pas de joint mort
+(premier contact piston/bit), où fn_joint = 0 donne un facteur 1 sur un recouvrement déjà formé :
+½kδ₀² injectés, 1 J, abort à 2,9 µs (`_certif`). `ramp` (défaut) part de zéro sur gcBirthTau pour
+toutes les paires — sous l'insert, où 90 % des joints meurent en compression (2 à 3,7 MN lâchés
+cumulés sur le banc s = 2,5), c'est une coupure du chemin d'effort qui nourrit le terme leapfrog.
+`relay` = `penalty` pour les paires nées d'un joint mort (`c.jI >= 0`, continuité de force, raideur
+tangentielle re-échelonnée sur les seules paires calées `H.penScale >= 0`), `ramp` pour les autres.
+`gcBirthTau` reste actif (rampe des paires sans joint). Défauts bit-identiques (`ramp` et `penalty`
+inchangés au test près). Corrigé au passage : `gcBirthPenMin/Max` étaient imprimés avant d'être lus
+(la bannière disait toujours 0,01 / 3,0). Decks : `configs/yang2026_bench_s25_{ratchet,plastic_coulomb}_relay.cfg`.
+
 ### Ajouté — la loi de joint passée au conseil : `jointSecantRatchet`, coulomb sur `plastic`, avertissement `origin` (`rockim_g1y11.exe`, 12/09, 1 h 30)
 
 Fernando : « tout doit être mathématique et physique ; corrige les problèmes mathématiques, écris les

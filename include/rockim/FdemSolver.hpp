@@ -982,6 +982,11 @@ private:
     // S applique a la contrainte ET au taux, comme l exige l eq. 11 (« sur le
     // MEME patch pondere »).
     bool facetVol_ = false;
+    // facetAverage = max (porte du 3D le 12/09) : le critere d insertion lit le
+    // plus charge des deux triangles (rapport max(sig/ft_dyn, |tau|/fs)) au
+    // lieu de leur moyenne — la moyenne dilue l anneau hertzien sous un
+    // indenteur (peau de 2 mm au lieu du cone broye en 3D).
+    bool facetMaxIns_ = false;
     // §2.1 eq. 11 — facetRate = scalar (defaut) | tensor. Voir Elem::Dg.
     bool facetTensor_ = false;
     // §2.2 eq. 12 — insertionCriterion = or (defaut) | elliptic. `elliptic`

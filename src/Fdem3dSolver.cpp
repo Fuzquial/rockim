@@ -1441,14 +1441,32 @@ void Fdem3dSolver::init() {
     // ADDITION (principe VIII) : `ramp` est le defaut, mot pour mot l ancien.
     {
         std::string gb = cfg_.gets("gcBirth", "ramp");
-        if (gb != "ramp" && gb != "penalty")
-            throw std::runtime_error("gcBirth must be ramp | penalty (ramp = "
-                                     "force partant de ZERO et montant sur "
-                                     "gcBirthTau, le defaut ; penalty = leur "
+        if (gb != "ramp" && gb != "penalty" && gb != "relay")
+            throw std::runtime_error("gcBirth must be ramp | penalty | relay "
+                                     "(ramp = force partant de ZERO et montant "
+                                     "sur gcBirthTau, le defaut ; penalty = leur "
                                      "re-echelonnement de la penalite de la "
                                      "paire pour que la force soit CONTINUE, "
-                                     "Y3Did.c l. 915-964)");
+                                     "Y3Did.c l. 915-964 ; relay (12/09) = "
+                                     "penalty pour les paires nees d un joint "
+                                     "MORT, ramp pour les autres)");
         birthPenalty_ = gb == "penalty";
+        birthRelay_ = gb == "relay";
+        // Les bornes sont lues AVANT la banniere qui les imprime (l ancien
+        // ordre affichait toujours 0,01 / 3,0 — piege releve par le conseil).
+        birthPenMin_ = cfg_.getd("gcBirthPenMin", 0.01);
+        birthPenMax_ = cfg_.getd("gcBirthPenMax", 3.0);
+        if (birthRelay_ && !contactPot_)
+            throw std::runtime_error("gcBirth = relay exige contact = potential "
+                                     "(meme raison que penalty)");
+        if (birthRelay_)
+            std::cout << "[FDEM3D] gcBirth = relay (conseil du 12/09, D4) : "
+                         "continuite de FORCE (calage fn_joint/fn_contact, "
+                         "bornes [" << birthPenMin_ << " ; " << birthPenMax_
+                      << "]) pour les paires nees d un joint MORT ; rampe de "
+                         "naissance (gcBirthTau) pour les paires sans joint "
+                         "mort — `penalty` y injectait 1/2 k delta0^2 (1 J au "
+                         "choc piston/bit)\n";
         if (birthPenalty_ && !contactPot_)
             throw std::runtime_error("gcBirth = penalty exige contact = "
                                      "potential : le re-echelonnement de la "
@@ -1481,10 +1499,10 @@ void Fdem3dSolver::init() {
                                      "contraire");
         // Leurs deux bornes, exposees parce qu elles sont ARBITRAIRES chez eux
         // (aucune justification dans le code ni dans les articles) : il faut
-        // pouvoir mesurer ce qu elles coutent.
-        birthPenMin_ = cfg_.getd("gcBirthPenMin", 0.01);
-        birthPenMax_ = cfg_.getd("gcBirthPenMax", 3.0);
-        if (birthPenalty_ && !(birthPenMin_ > 0.0 && birthPenMax_ >= birthPenMin_))
+        // pouvoir mesurer ce qu elles coutent. (Lues plus haut, avant la
+        // banniere.)
+        if ((birthPenalty_ || birthRelay_)
+            && !(birthPenMin_ > 0.0 && birthPenMax_ >= birthPenMin_))
             throw std::runtime_error("gcBirthPenMin doit etre > 0 et "
                                      "gcBirthPenMax >= gcBirthPenMin");
     }
@@ -5174,7 +5192,11 @@ void Fdem3dSolver::potentialContact() {
                         pot3::PairForce3& R = r.R;
                         ++potStats_.clipHit;
                         double sc;
-                        if (birthPenalty_) {
+                        // gcBirth = relay : le calage de force ne concerne que
+                        // les paires nees d un joint mort (c.jI >= 0) ; les
+                        // autres suivent la rampe. Sous ramp/penalty (defauts
+                        // et cle historique) le test est inchange.
+                        if (birthPenalty_ || (birthRelay_ && c.jI >= 0)) {
                             // ---- gcBirth = penalty (Y3Did.c l. 915-964) --
                             // Au pas EXACT de la naissance ils lisent la force
                             // que le joint portait en mourant et calent la
@@ -5277,7 +5299,10 @@ void Fdem3dSolver::potentialContact() {
                                 // suit la penalite RE-ECHELONNEE de la paire
                                 // (`ktss = 2.0/(7.0)*d1pepe[icoup]`, l. 940 et
                                 // 965), et non la penalite nominale.
-                                Ft -= (birthPenalty_ ? sc * potKt_ : potKt_)
+                                // (relay : seules les paires calees, H.penScale
+                                // >= 0, portent la raideur re-echelonnee.)
+                                Ft -= ((birthPenalty_ || H.penScale >= 0.0)
+                                       ? sc * potKt_ : potKt_)
                                     * dt_ * vt;
                                 double cap = ctcMu(eLo, eHi) * Fn;  // WP6
                                 double Ftn = Ft.norm();
@@ -6605,8 +6630,9 @@ void Fdem3dSolver::finalize() {
         // [gcBirthPenMin ; gcBirthPenMax] mordent. Un facteur moyen colle a
         // une borne signale que le clamp — arbitraire chez eux — decide a la
         // place de la physique, et qu il faut l elargir pour le savoir.
-        if (birthPenalty_ && nBirthScaled_ > 0)
-            std::cout << "[FDEM3D]   gcBirth = penalty : " << nBirthScaled_
+        if ((birthPenalty_ || birthRelay_) && nBirthScaled_ > 0)
+            std::cout << "[FDEM3D]   gcBirth = " << (birthRelay_ ? "relay" : "penalty")
+                      << " : " << nBirthScaled_
                       << " paires calees a la naissance, facteur moyen "
                       << birthScaleSum_ / (double)nBirthScaled_
                       << " (bornes " << birthPenMin_ << " / " << birthPenMax_

@@ -3544,12 +3544,20 @@ void FdemSolver::readNote2026Keys() {
     // ---- §2.1 eq. 10 — moyenne de facette ponderee par les VOLUMES -------
     {
         const std::string fa = cfg_.gets("facetAverage", "arith");
-        if (fa != "arith" && fa != "volume")
-            throw std::runtime_error("facetAverage must be arith | volume "
+        if (fa != "arith" && fa != "volume" && fa != "max")
+            throw std::runtime_error("facetAverage must be arith | volume | max "
                 "(arith = 0,5/0,5, le defaut historique ; volume = "
                 "sigma_F = (V+ sigma+ + V- sigma-)/(V+ + V-), eq. 10 de la "
-                "note de septembre 2026)");
+                "note de septembre 2026 ; max = le plus charge des deux "
+                "triangles, porte du 3D le 12/09)");
         facetVol_ = fa == "volume";
+        facetMaxIns_ = fa == "max";
+        if (facetMaxIns_)
+            std::cout << "[FDEM] facetAverage = max : le critere d insertion "
+                         "lit le plus charge des deux triangles (rapport "
+                         "max(sig/ft_dyn, |tau|/fs)) au lieu de leur moyenne "
+                         "— porte du 3D (g1y7), ou la moyenne diluait l anneau "
+                         "hertzien sous l insert\n";
         if (facetVol_)
             std::cout << "[FDEM] facetAverage = volume (note 2026 eq. 10) : "
                          "la contrainte ET le taux de facette sont ponderes "
@@ -4072,6 +4080,29 @@ void FdemSolver::insertionSweep() {
             double fs = dC * J.coh
                       + J.tanPhi * rockim::mcFrictionTerm(sig, J.ft, yangEnv_);
             if (fs < 0.0) fs = 0.0;
+            // ---- facetAverage = max (porte du 3D, 12/09) : le plus charge
+            // des deux triangles REMPLACE la moyenne (sig, tau, fs) ; meme
+            // DIF, meme enveloppe. Chemin mort sous arith/volume.
+            if (facetMaxIns_) {
+                double best = -1.0, sigB = sig, tauB = tau, fsB = fs;
+                for (int side = 0; side < 2; ++side) {
+                    const Elem& E = (side == 0) ? A : B;
+                    double se = n.x() * (E.sxx * n.x() + E.sxy * n.y())
+                              + n.y() * (E.sxy * n.x() + E.syy * n.y());
+                    double te = e.x() * (E.sxx * n.x() + E.sxy * n.y())
+                              + e.y() * (E.sxy * n.x() + E.syy * n.y());
+                    double fse = dC * J.coh
+                               + J.tanPhi * rockim::mcFrictionTerm(se, J.ft,
+                                                                   yangEnv_);
+                    if (fse < 0.0) fse = 0.0;
+                    double ratio = std::max(se / std::max(dT * J.ft, 1e-300),
+                                            std::abs(te) / std::max(fse, 1e-300));
+                    if (ratio > best) {
+                        best = ratio; sigB = se; tauB = te; fsB = fse;
+                    }
+                }
+                sig = sigB; tau = tauB; fs = fsB;
+            }
             // enveloppe RELACHEE en pointe (voir plus haut)
             double fac = 1.0;
             if (tipBias && (vertTip_[vOf_[J.a1]] || vertTip_[vOf_[J.a2]]))
@@ -4147,6 +4178,26 @@ void FdemSolver::insertionSweep() {
         double fs = dC * J.coh
                   + J.tanPhi * rockim::mcFrictionTerm(sig, J.ft, yangEnv_);
         if (fs < 0.0) fs = 0.0;
+        if (facetMaxIns_) {                        // idem branche OpenMP
+            double best = -1.0, sigB = sig, tauB = tau, fsB = fs;
+            for (int side = 0; side < 2; ++side) {
+                const Elem& E = (side == 0) ? A : B;
+                double se = n.x() * (E.sxx * n.x() + E.sxy * n.y())
+                          + n.y() * (E.sxy * n.x() + E.syy * n.y());
+                double te = e.x() * (E.sxx * n.x() + E.sxy * n.y())
+                          + e.y() * (E.sxy * n.x() + E.syy * n.y());
+                double fse = dC * J.coh
+                           + J.tanPhi * rockim::mcFrictionTerm(se, J.ft,
+                                                               yangEnv_);
+                if (fse < 0.0) fse = 0.0;
+                double ratio = std::max(se / std::max(dT * J.ft, 1e-300),
+                                        std::abs(te) / std::max(fse, 1e-300));
+                if (ratio > best) {
+                    best = ratio; sigB = se; tauB = te; fsB = fse;
+                }
+            }
+            sig = sigB; tau = tauB; fs = fsB;
+        }
         double fac = 1.0;                          // idem branche OpenMP
         if (tipBias && (vertTip_[vOf_[J.a1]] || vertTip_[vOf_[J.a2]]))
             fac = 1.0 / tipFactor_;

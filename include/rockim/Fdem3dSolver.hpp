@@ -1142,6 +1142,12 @@ private:
     // [0,01 ; 3], de sorte que la force est CONTINUE. Le facteur persiste
     // ensuite pour la paire, et la raideur tangentielle le suit.
     bool birthPenalty_ = false;
+    // gcBirth = relay (conseil du 12/09, D4/N7) : continuite de FORCE pour les
+    // paires nees d un joint MORT (le calage de penalite de Solidity, comme
+    // `penalty`), rampe de naissance (vRef, gcBirthTau) pour les paires SANS
+    // joint mort (premier contact de deux corps) — `penalty` y injectait
+    // ½ k delta0² (1 J a la naissance piston/bit, abort 2,9 us).
+    bool birthRelay_ = false;
     double birthPenMin_ = 0.01, birthPenMax_ = 3.0;   // leurs deux bornes
     long nBirthScaled_ = 0;                           // mesure : paires calees
     double birthScaleSum_ = 0.0;                      // ... et facteur moyen
