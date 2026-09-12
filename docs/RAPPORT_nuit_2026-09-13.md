@@ -29,6 +29,28 @@ python tools/yang_report.py out_yang2026_v3 results/yang2026_v3.log
 Garde-fous armés : borne physique KE ≤ KE₀ + sources (`budgetAbortPct = 2`) — s'il aborte, le journal
 le dit en clair ; le moniteur de session relève la progression toutes les 15 min.
 
+**État à 7 h 15 (113 µs, 12 trames, 0,25 µs/min en phase de fracture → fin vers 20 h)** :
+
+| critère | s = 1 à 113 µs | jumeau s = 2,5 (200 µs) | Yang 9 m/s |
+|---|---|---|---|
+| σ_zz max au bit | 176 MPa (à 34 µs) | 173 | ~160 |
+| vitesse d'indentation max | **7,37 m/s** (106 µs) | 6,27 | 5,62 |
+| enfoncement | 0,44 mm (en cours) | 0,83 | ~1,0 |
+| joints rompus / fragments | 1 023 / 362 | 294 / 124 | — |
+| traction / cisaillement | 36 % / 64 % | 45 / 55 | — |
+| rayon de la zone rompue | 5,2 mm | — | cratère ~7 |
+| profondeur de la zone rompue | 5,5 mm | — | — |
+| pulvérisés | 0 | 0 | ~360 |
+| bilan | joints −1,1 J en cours de charge (stocké), contact −2,2, frottement −1,7 ; pas d'abort | joints +1,95, leapfrog +0,85 | — |
+
+Lecture : le cratère se forme sous la pointe sphérique (zone de 5 mm de rayon, 5,5 mm de
+profondeur, deux tiers cisaillement, coupes `results/fig/coupes_s1_v3_110us*.png`), aucune radiale
+encore, aucune pulvérisation (δ_m = h·ε : à 1,4 mm de maille il faut 1 % de distorsion déviatorique).
+La vitesse d'indentation dépasse Yang de 31 % (et le jumeau s = 2,5 de 18 %) : le bit maillé est 9 %
+plus léger que le leur (audit D), le contact roche est plus souple par phase (`potStiffnessByPhase`),
+et le maillage fin résiste moins — à trancher avec la suite du run (le point de retour dira ce que la
+roche a absorbé).
+
 ## 2. La loi retenue, et pourquoi (le conseil)
 
 La référence intrinsèque du 11/09 **créait de l'énergie** : relancée sous la borne KE elle aborte à
