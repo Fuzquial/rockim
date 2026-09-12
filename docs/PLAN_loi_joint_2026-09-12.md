@@ -189,8 +189,9 @@ Hors périmètre ici : estimateur de facette adaptatif (`max`), coût, maillage 
 
 ## 5. Ce que ce plan ne sait pas encore
 
-- Le texte exact des éq. 17-18 de Yan 2023 (PDF absent) : si l'éq. 18 publiée porte déjà la
-  sécante non croissante, D3 est « Yan corrigé en transcription » et non « Yan amendé ».
+- ~~Le texte exact des éq. 17-18 de Yan 2023 (PDF absent)~~ **Lu le 13/09 (PDF déposé)** : l'éq. 18
+  publiée est bien τ = (c − σ·tanφ)·f(D_max)·|s|/s_max avec σ la contrainte normale COURANTE — la sécante
+  paramétrique est dans l'article ; `jointSecantRatchet` est « Yan amendé » (AUDIT §8).
 - La grandeur de M2 chez Solidity : mesurée au §3, pas supposée.
 - Si `plastic` fracture assez : B1 n'a rompu que 4 joints en 90 µs ; le banc 300 µs en cours
   (`yang2026_bench_s25_plastic`, 60 % à 1 h 05) répondra avant le conseil ou juste après.
