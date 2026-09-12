@@ -347,24 +347,9 @@ void Fdem3dSolver::init() {
         bdOn_ = bd == "yang";
     }
     if (bdOn_) {
-        {   // bulkDamagePhase (audit D, 13/09) : garde de phase, opt-in
-            const std::string bp = cfg_.gets("bulkDamagePhase", "");
-            bdPhase_ = -1;
-            if (!bp.empty()) {
-                for (int p = 0; p < phases_.n(); ++p)
-                    if (phases_.name[p] == bp) bdPhase_ = p;
-                if (bdPhase_ < 0)
-                    throw std::runtime_error("bulkDamagePhase = '" + bp
-                                             + "' : phase inconnue");
-                std::cout << "[FDEM3D] bulkDamagePhase = " << bp << " : l "
-                             "endommagement de volume (eq. 3-4) ne s applique "
-                             "qu a cette phase (acier et carbure exclus)\n";
-            } else if (phases_.n() > 1)
-                std::cout << "[FDEM3D] AVERTISSEMENT : bulkDamage = yang sans "
-                             "bulkDamagePhase — les eq. 3-4 (calibrees sur le "
-                             "granite) s appliquent a TOUTES les phases, acier "
-                             "et carbure compris (audit D du 13/09)\n";
-        }
+        // bulkDamagePhase : resolu PLUS BAS, apres la lecture des phases
+        // (ici phases_ est encore vide — premiere tentative refusee
+        // « phase inconnue » sur le deck de sante du 13/09).
         bdD0_   = cfg_.getd("bulkDamageDelta0", 1.4e-5);
         bdDf_   = cfg_.getd("bulkDamageDeltaF", 4.0e-4);
         bdDmax_ = cfg_.getd("bulkDamageDmax", 0.9);
@@ -476,6 +461,26 @@ void Fdem3dSolver::init() {
                 "moment ou il porte seul la charge. Retirer la cle de ce cfg "
                 "fdem3d (elle reste disponible en mode fem3d)");
 
+    // ---- bulkDamagePhase (audit D, 13/09) : garde de phase, opt-in ----------
+    // Resolu ICI, apres la lecture des phases (plus haut phases_ est vide).
+    if (bdOn_) {
+        const std::string bp = cfg_.gets("bulkDamagePhase", "");
+        bdPhase_ = -1;
+        if (!bp.empty()) {
+            for (int p = 0; p < phases_.n(); ++p)
+                if (phases_.name[p] == bp) bdPhase_ = p;
+            if (bdPhase_ < 0)
+                throw std::runtime_error("bulkDamagePhase = '" + bp
+                                         + "' : phase inconnue (cle `phases`)");
+            std::cout << "[FDEM3D] bulkDamagePhase = " << bp << " : l "
+                         "endommagement de volume (eq. 3-4) ne s applique qu a "
+                         "cette phase (acier et carbure exclus)\n";
+        } else if (phases_.n() > 1)
+            std::cout << "[FDEM3D] AVERTISSEMENT : bulkDamage = yang sans "
+                         "bulkDamagePhase — les eq. 3-4 (calibrees sur le "
+                         "granite) s appliquent a TOUTES les phases, acier et "
+                         "carbure compris (audit D du 13/09)\n";
+    }
     // ---- cohesive joint law (PER JOINT, as in 2D) ---------------------------
     // ---- optional bulk constitutive law -------------------------------------
     if (cfg_.has("law")) {
