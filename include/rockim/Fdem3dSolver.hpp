@@ -646,8 +646,28 @@ private:
     // (jointShearUnload = solidity, regle nfail > 1 a trois points) ; un banc
     // 2D (deux triangles, deux points) reste a ecrire.
     bool jbOn_ = false;
-    int jbMode_ = 0;                       // 0 tension, 1 shear, 2 mixed
+    int jbMode_ = 0;                       // 0 tension, 1 shear, 2 mixed,
+                                           // 3 cycle (S3 bis, relecture V)
     double jbAmp_ = 2.0e-5, jbNormal_ = 0.0, jbUnloadAt_ = 0.0;
+    // ---- S3 bis (relecture V du 13/09) : CYCLE FERME a pression VARIABLE --
+    // Le mode `shear` glisse sous un offset normal CONSTANT : il ne teste pas
+    // le couplage pression-cisaillement, donc pas la « pompe » energetique
+    // suspectee sous `solidity` et `origin` (tau_lim depend de sigma_n sans
+    // couplage reciproque dans la reponse normale : pas de potentiel).
+    // `cycle` parcourt le RECTANGLE ferme du plan (s, dn), quatre branches :
+    //   A  s : 0 -> jbAmp      a dn = jbNormal
+    //   B  dn : jbNormal -> jbNormal2   a s = jbAmp   (on COMPRIME davantage)
+    //   C  s : jbAmp -> 0      a dn = jbNormal2
+    //   D  dn : jbNormal2 -> jbNormal   a s = 0       (retour au depart)
+    // repete jbCycles fois. L etat final EST l etat initial : si la loi
+    // derive d un potentiel, le travail NET des tractions du joint sur le
+    // cycle est nul ; s il est > 0 la loi CREE de l energie, s il est < 0
+    // elle en dissipe (legitime pour une plasticite a retour radial).
+    // Critere (v) de jbReport, avec la convergence en dt (jbSteps x2, x4).
+    double jbNormal2_ = 0.0;               // compression de la branche retour
+    int jbCycles_ = 1;
+    long jbNB_ = 0;                        // pas des branches B et D
+    long jbNCyc_ = 0;                      // pas d un cycle complet (A+B+C+D)
     double jbRate_ = 1.0, jbTiltRad_ = 0.0, jbEdge_ = 1.0e-3;
     long jbSteps_ = 4000;                  // echantillons par jbAmp
     long jbPre_ = 0;                       // pas de la rampe normale
@@ -669,6 +689,8 @@ private:
                                            // 2 recharge, 3 palier
         std::array<double, 3> dn{}, ds{}, sig{}, tau{}, tabs{}, D{};
         int nFail = 0, broken = 0, dead = 0;
+        double jw = 0.0;                   // S3 bis : jointWork_ cumule a t
+        int cyc = 0;                       // S3 bis : numero du cycle (mode 3)
     };
     std::vector<JbRow> jbHist_;
     std::ofstream jbCsv_;

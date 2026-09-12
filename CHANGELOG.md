@@ -544,6 +544,29 @@ ancre, V vérification adversariale, Z synthèse), issu des deux diagnostics ind
   dépôt, convention `font.serif` inchangée.
   Sorties `results/fig/crack_paths_out_yang2026_v3*` et `crack_paths_out_yang_bench_s25_v3P*`.
 
+### Corrigé et ajouté — S1/S2 fermés, `jbMode = cycle` (`rockim_g1y18.exe`, 13/09 nuit)
+
+Suite de la campagne, après la critique indépendante du 13/09 (points repris dans
+`docs/ECARTS_guo2014_rockim_2026-09-13.md` §7 et §8).
+
+- **S1 clos** (le correcteur avait appliqué ses quatre points avant l'arrêt de la campagne) : le journal du
+  compteur d'écrêtage (bannière + ligne par trame) et le champ `e.pm` sont désormais **sous
+  `writeRuptureFields`** — sans la clé, journal et calcul textuellement inchangés ; les deux affirmations de
+  documentation contredites par la mesure sont corrigées (`jointBreakModeRef` change bien les colonnes
+  `nBrokTen`/`nBrokShear` de `history.csv` ; `pMean` en 2D est un hybride, σzz n'étant ni écrêtée ni
+  multipliée par la pulvérisation).
+- **S2 clos** : `contactForcePairs` n'était analysée que dans `buildMeshFile()` et restait **silencieusement
+  inerte** en `mesh = grid`/`voronoi` et sous `scenario = jointbench` (le piège des clés inertes du dépôt).
+  Refus explicite ajouté dans `buildMesh()`, avant tout maillage.
+- **`jbMode = cycle` + `jbNormal2` + `jbCycles`** (fdem3d) : cycle **fermé** compression-glissement à pression
+  variable, le test que la critique réclamait et que `jbMode = shear` ne fait pas. Critère (v) de `jbReport` :
+  travail net par cycle, cumul, rapport W/amplitude, avec la convergence en Δt par `jbSteps`. Neuf decks
+  `tests_f2/campagne13/S3bis/cyc*_{plastic,origin,solidity}[_dt2,_dt4].cfg`.
+  **Verdict mesuré** : `solidity` crée +8,92e-9 J/cycle (élastique, 3,3 % de l'amplitude) et +1,37e-5 J/cycle
+  (endommagé, 21 %), **convergé en Δt** ; `plastic` et `origin`+ratchet donnent un résidu exactement ∝ Δt qui
+  s'annule. C'est aussi la première validation sur cycle fermé du correctif `jointSecantRatchet` du 12/09.
+- Ancre de bit-identité de `rockim_g1y18.exe` : `results/bitid_g1y18.log`.
+
 ### Corrigé — filtre des facettes rompues, bancs d'attribution B1/B2 (13/09, 15 h, relecture des diagnostics indépendants du 12/09)
 
 - **`bench_impact/tools/imp_lib.py` `broken()`** : lisait `damage ≥ 0,999`, qui vaut 1 dès qu'UN point

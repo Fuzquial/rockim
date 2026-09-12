@@ -1,5 +1,5 @@
 #pragma once
-// KeysByMode.hpp — GENERE par tools/gen_keys_by_mode.py le 2026-09-12 16:27:52 : NE PAS EDITER.
+// KeysByMode.hpp — GENERE par tools/gen_keys_by_mode.py le 2026-09-13 01:15:59 : NE PAS EDITER.
 // Registre lisible : tools/keys_by_mode.json (methode dans la docstring du generateur).
 // Table des cles PROPRES A UN MODE (lues par un seul solveur) ; toute autre cle est commune.
 #include <stdexcept>
@@ -128,9 +128,11 @@ inline const Entry kTable[] = {
     {"dtBudgetTangential", "fdem3d"},
     {"fragBrushDirZ", "fdem3d"},
     {"jbAmp", "fdem3d"},
+    {"jbCycles", "fdem3d"},
     {"jbEdge", "fdem3d"},
     {"jbMode", "fdem3d"},
     {"jbNormal", "fdem3d"},
+    {"jbNormal2", "fdem3d"},
     {"jbRate", "fdem3d"},
     {"jbSteps", "fdem3d"},
     {"jbTilt", "fdem3d"},
@@ -409,9 +411,11 @@ inline const char* const kKnown[] = {
     "insituSv",
     "insituSxy",
     "jbAmp",
+    "jbCycles",
     "jbEdge",
     "jbMode",
     "jbNormal",
+    "jbNormal2",
     "jbRate",
     "jbSteps",
     "jbTilt",
@@ -892,9 +896,11 @@ inline const Readers kReaders[] = {
     {"insituSv", "fdem"},
     {"insituSxy", "fdem"},
     {"jbAmp", "fdem3d"},
+    {"jbCycles", "fdem3d"},
     {"jbEdge", "fdem3d"},
     {"jbMode", "fdem3d"},
     {"jbNormal", "fdem3d"},
+    {"jbNormal2", "fdem3d"},
     {"jbRate", "fdem3d"},
     {"jbSteps", "fdem3d"},
     {"jbTilt", "fdem3d"},

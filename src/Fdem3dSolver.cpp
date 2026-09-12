@@ -498,7 +498,8 @@ void Fdem3dSolver::init() {
     {
         static const char* const kJb[] = {"jbMode", "jbAmp", "jbNormal",
                                           "jbUnloadAt", "jbRate", "jbTilt",
-                                          "jbEdge", "jbSteps"};
+                                          "jbEdge", "jbSteps",
+                                          "jbNormal2", "jbCycles"};
         if (!jbOn_)
             for (const char* k : kJb)
                 if (cfg_.has(k))
@@ -509,15 +510,19 @@ void Fdem3dSolver::init() {
     }
     if (jbOn_) {
         const std::string jm = cfg_.gets("jbMode", "tension");
-        if (jm != "tension" && jm != "shear" && jm != "mixed")
+        if (jm != "tension" && jm != "shear" && jm != "mixed" && jm != "cycle")
             throw std::runtime_error("jbMode must be tension | shear | mixed "
-                                     "(tension = ouverture normale ; shear = "
-                                     "glissement dans le plan de la facette, "
-                                     "sous l offset normal jbNormal ; mixed = "
-                                     "trajet proportionnel a 45 deg, "
+                                     "| cycle (tension = ouverture normale ; "
+                                     "shear = glissement dans le plan de la "
+                                     "facette, sous l offset normal jbNormal ; "
+                                     "mixed = trajet proportionnel a 45 deg, "
                                      "composantes normale et tangentielle "
-                                     "egales)");
-        jbMode_ = (jm == "tension") ? 0 : (jm == "shear") ? 1 : 2;
+                                     "egales ; cycle = rectangle FERME du plan "
+                                     "(s, dn) a pression variable, S3 bis de la "
+                                     "relecture V : le seul mode qui teste le "
+                                     "couplage pression-cisaillement)");
+        jbMode_ = (jm == "tension") ? 0 : (jm == "shear") ? 1
+                : (jm == "mixed") ? 2 : 3;
         jbAmp_ = cfg_.getd("jbAmp", 2.0e-5);
         jbNormal_ = cfg_.getd("jbNormal", 0.0);
         jbUnloadAt_ = cfg_.getd("jbUnloadAt", 0.0);
@@ -536,6 +541,33 @@ void Fdem3dSolver::init() {
         if (jbSteps_ < 100)
             throw std::runtime_error("jbSteps doit etre >= 100 (echantillons "
                                      "par jbAmp)");
+        // ---- S3 bis (relecture V) : le cycle ferme a pression variable ----
+        jbNormal2_ = cfg_.getd("jbNormal2", 0.0);
+        jbCycles_ = cfg_.geti("jbCycles", 1);
+        if (jbMode_ == 3) {
+            if (jbNormal2_ == jbNormal_)
+                throw std::runtime_error("jbMode = cycle exige jbNormal2 != "
+                    "jbNormal : c est la VARIATION de l ouverture normale "
+                    "entre l aller et le retour qui teste le couplage "
+                    "pression-cisaillement (a pression constante le cycle est "
+                    "trivialement ferme sous toutes les lois)");
+            if (jbNormal_ > 0.0 || jbNormal2_ > 0.0)
+                throw std::runtime_error("jbMode = cycle : jbNormal et "
+                    "jbNormal2 doivent etre <= 0 (COMPRESSION) — en traction "
+                    "l enveloppe de Mohr-Coulomb est plafonnee et le couplage "
+                    "teste n existe pas");
+            if (jbCycles_ < 1 || jbCycles_ > 1000)
+                throw std::runtime_error("jbCycles doit etre dans [1 ; 1000]");
+            if (jbUnloadAt_ > 0.0)
+                throw std::runtime_error("jbMode = cycle : jbUnloadAt est sans "
+                    "objet (le cycle EST la decharge), le retirer");
+            if (jbTiltRad_ != 0.0)
+                throw std::runtime_error("jbMode = cycle : jbTilt ferait "
+                    "tourner B et le cycle ne serait plus ferme, le retirer");
+        } else if (cfg_.has("jbNormal2") || cfg_.has("jbCycles")) {
+            throw std::runtime_error("jbNormal2 et jbCycles n ont de sens que "
+                                     "sous jbMode = cycle");
+        }
         if (cfg_.has("mesh") || cfg_.has("meshFile"))
             throw std::runtime_error("scenario = jointbench construit son "
                                      "propre maillage (deux tetraedres "
@@ -1905,6 +1937,20 @@ void Fdem3dSolver::init() {
 // the quiet boundaries and the general contact.
 // ---------------------------------------------------------------------------
 void Fdem3dSolver::buildMesh() {
+    // ---- S2, relecture V du 13/09 : contactForcePairs n est ANALYSEE que
+    // dans buildMeshFile() (elle a besoin des $PhysicalNames). Posee sur un
+    // autre front-end elle etait SILENCIEUSEMENT INERTE — le piege des cles
+    // inertes deja repertorie dans le depot (reference-rockim-pieges-cles-
+    // inertes). Mesure du relecteur : mesh = grid + contactForcePairs = a:b
+    // (corps fictifs) rendait rc 0, aucune colonne Fc_*, aucun message.
+    // Refus explicite ici, AVANT tout maillage, pour les deux chemins
+    // (jointbench compris) : la cle ne peut plus etre posee sans effet.
+    if (cfg_.has("contactForcePairs")
+        && (jbOn_ || cfg_.gets("mesh", "grid") != "file"))
+        throw std::runtime_error("contactForcePairs exige mesh = file : les "
+            "couples de corps sont les $PhysicalNames du maillage. En "
+            "mesh = grid / voronoi (et sous scenario = jointbench) il n y a "
+            "pas de corps nommes, la cle serait INERTE — retirez-la du deck");
     if (jbOn_) { jbBuildMesh(); return; } // S3 : deux tetraedres, un joint
     std::string mesh = cfg_.gets("mesh", "grid");
     if (mesh != "grid" && mesh != "voronoi" && mesh != "file")
@@ -7743,7 +7789,16 @@ void Fdem3dSolver::jbSetupPath() {
         if (jbNU_ < 1) jbNU_ = 1;
     }
     const double sU = jbNU_ * dl;
-    const double tPath = jbT0_ + (2.0 * sU + jbAmp_) / jbRate_ + 2.0 * dt_;
+    double tPath = jbT0_ + (2.0 * sU + jbAmp_) / jbRate_ + 2.0 * dt_;
+    if (jbMode_ == 3) {
+        // S3 bis : le cycle est parametre par le NUMERO DE PAS, pour que les
+        // quatre coins tombent exactement sur des echantillons et que l etat
+        // final soit bit a bit l etat initial du cycle precedent.
+        jbNB_ = std::lround(std::abs(jbNormal2_ - jbNormal_) / dl);
+        if (jbNB_ < 1) jbNB_ = 1;
+        jbNCyc_ = 2 * (long)jbSteps_ + 2 * jbNB_;
+        tPath = jbT0_ + (double)(jbCycles_ * jbNCyc_) * dt_ + 2.0 * dt_;
+    }
     if (!cfg_.has("T")) T_ = tPath;
     const Joint& J = jt_[0];
     std::cout << "[JOINTBENCH] chemin : rampe normale " << jbNormal_ << " m en "
@@ -7771,6 +7826,33 @@ void Fdem3dSolver::jbPath(double t, double& s, double& off, int& phase) const {
         return;
     }
     off = jbNormal_;
+    if (jbMode_ == 3) {
+        // ---- S3 bis : rectangle FERME du plan (s, dn), par numero de pas --
+        // A (0 .. nS)        s : 0 -> jbAmp      a dn = jbNormal
+        // B (nS .. nS+nB)    dn : jbNormal -> jbNormal2  a s = jbAmp
+        // C (.. 2nS+nB)      s : jbAmp -> 0      a dn = jbNormal2
+        // D (.. 2nS+2nB)     dn : jbNormal2 -> jbNormal  a s = 0
+        // phase = 10 + branche ; le coin final de D EST le point de depart.
+        const long nS = (long)jbSteps_;
+        long j = std::lround((t - jbT0_) / dt_);
+        if (j < 0) j = 0;
+        const long jTot = (long)jbCycles_ * jbNCyc_;
+        if (j >= jTot) { s = 0.0; off = jbNormal_; phase = 14; return; }
+        const long m = j % jbNCyc_;
+        if (m < nS) {
+            s = jbAmp_ * (double)m / (double)nS; off = jbNormal_; phase = 10;
+        } else if (m < nS + jbNB_) {
+            const double f = (double)(m - nS) / (double)jbNB_;
+            s = jbAmp_; off = jbNormal_ + f * (jbNormal2_ - jbNormal_); phase = 11;
+        } else if (m < 2 * nS + jbNB_) {
+            const double f = (double)(m - nS - jbNB_) / (double)nS;
+            s = jbAmp_ * (1.0 - f); off = jbNormal2_; phase = 12;
+        } else {
+            const double f = (double)(m - 2 * nS - jbNB_) / (double)jbNB_;
+            s = 0.0; off = jbNormal2_ + f * (jbNormal_ - jbNormal2_); phase = 13;
+        }
+        return;
+    }
     const double l = std::max(0.0, jbRate_ * (t - jbT0_));
     const double sU = jbNU_ * jbRate_ * dt_;
     if (jbNU_ > 0 && l < sU)             { s = l;            phase = 0; }
@@ -7818,7 +7900,7 @@ void Fdem3dSolver::jbRecord() {
         for (int k = 0; k < 3; ++k)
             jbCsv_ << ",dn" << k << ",ds" << k << ",sig" << k << ",tau" << k
                    << ",tauAbs" << k << ",D" << k;
-        jbCsv_ << ",nFail,broken,dead,Fn,Ft\n";
+        jbCsv_ << ",nFail,broken,dead,Fn,Ft,jw,cyc\n";
     }
     const Joint& J = jt_[0];
     JbRow r;
@@ -7838,13 +7920,22 @@ void Fdem3dSolver::jbRecord() {
     r.nFail = nF;
     r.broken = (J.tBreak >= 0.0) ? 1 : 0;
     r.dead = J.dead ? 1 : 0;
+    // S3 bis : travail CUMULE des tractions du joint (jointWork_, le poste
+    // « joints » du bilan B4) et numero du cycle, pour le critere (v).
+    r.jw = jointWork_;
+    r.cyc = 0;
+    if (jbMode_ == 3 && jbNCyc_ > 0) {
+        long j = std::lround((t_ - jbT0_) / dt_);
+        if (j < 0) j = 0;
+        r.cyc = (int)std::min((long)jbCycles_, j / jbNCyc_);
+    }
     jbHist_.push_back(r);
     jbCsv_ << r.t << "," << r.s << "," << r.phase << "," << r.off;
     for (int k = 0; k < 3; ++k)
         jbCsv_ << "," << r.dn[k] << "," << r.ds[k] << "," << r.sig[k] << ","
                << r.tau[k] << "," << r.tabs[k] << "," << r.D[k];
     jbCsv_ << "," << r.nFail << "," << r.broken << "," << r.dead << "," << Fn
-           << "," << Ft << "\n";
+           << "," << Ft << "," << r.jw << "," << r.cyc << "\n";
 }
 
 // Les quatre criteres FALSIFIANTS du cadrage, imprimes au resume :
@@ -7871,7 +7962,8 @@ void Fdem3dSolver::jbReport() {
         return std::string(b);
     };
     std::cout << "\n[JOINTBENCH] ---- criteres falsifiants (S3, 13/09) ----\n"
-              << "[JOINTBENCH] mode " << (jbMode_ == 0 ? "tension" : jbMode_ == 1 ? "shear" : "mixed")
+              << "[JOINTBENCH] mode " << (jbMode_ == 0 ? "tension" : jbMode_ == 1 ? "shear"
+                                        : jbMode_ == 2 ? "mixed" : "cycle")
               << ", jointShearUnload = " << law << ", jointFailRule = "
               << (majorityFail_ ? "majority" : "any") << ", jointDeltaC = "
               << (solidityDeltaC_ ? "solidity" : guoDeltaC_ ? "guo" : "exact")
@@ -7880,6 +7972,79 @@ void Fdem3dSolver::jbReport() {
               << ", jointQuadrature = " << (midEdge_ ? "midedge" : "vertex")
               << " ; " << nR << " lignes\n";
     if (nR < 2) { std::cout << "[JOINTBENCH] trop peu de lignes : aucun critere\n"; return; }
+    // ---- (v) CYCLE FERME a pression variable (S3 bis, relecture V) --------
+    // L etat final de chaque cycle EST son etat initial (meme s, meme dn, aux
+    // memes echantillons). Le travail NET des tractions du joint sur un cycle
+    // doit donc etre <= 0 : nul si la loi derive d un potentiel, negatif si
+    // elle dissipe. STRICTEMENT POSITIF = la loi CREE de l energie, et le
+    // couplage pression-cisaillement en est la seule source possible ici
+    // (aucune rupture, aucun contact, aucun amortisseur, noeuds prescrits).
+    // Convergence en dt : rejouer avec jbSteps x2 et x4 ; si W/cycle tend
+    // vers 0 c est un artefact de discretisation, s il converge c est la loi.
+    if (jbMode_ == 3 && jbNCyc_ > 0) {
+        std::cout << "[JOINTBENCH] (v) CYCLE FERME a pression variable : dn "
+                  << jbNormal_ << " -> " << jbNormal2_ << " m, s 0 -> "
+                  << jbAmp_ << " m, " << jbCycles_ << " cycle(s) de "
+                  << jbNCyc_ << " pas (dt = " << dt_ << " s)\n";
+        double Dmax = 0.0;
+        bool brk = false;
+        for (const auto& r : jbHist_) {
+            for (int k = 0; k < 3; ++k) Dmax = std::max(Dmax, r.D[k]);
+            if (r.broken) brk = true;
+        }
+        // travail cumule au DERNIER echantillon de chaque cycle
+        std::vector<double> jwEnd((std::size_t)jbCycles_ + 1,
+                                  std::numeric_limits<double>::quiet_NaN());
+        double jwStart = std::numeric_limits<double>::quiet_NaN();
+        for (const auto& r : jbHist_) {
+            if (r.phase < 10) continue;              // rampe normale
+            if (std::isnan(jwStart)) jwStart = r.jw;
+            const std::size_t c = (std::size_t)std::min(r.cyc, jbCycles_);
+            if (c < jwEnd.size()) jwEnd[c] = r.jw;
+        }
+        double wTot = 0.0, wLast = 0.0;
+        int nCycOK = 0;
+        std::cout << "[JOINTBENCH]   cycle :   W_net [J]        cumule [J]\n";
+        double prev = jwStart;
+        for (int c = 0; c < jbCycles_; ++c) {
+            if (std::isnan(jwEnd[(std::size_t)c]) || std::isnan(prev)) continue;
+            const double w = jwEnd[(std::size_t)c] - prev;
+            prev = jwEnd[(std::size_t)c];
+            wTot += w; wLast = w; ++nCycOK;
+            if (c < 5 || c == jbCycles_ - 1)
+                std::cout << "[JOINTBENCH]   " << (c + 1) << " : " << fmt(w)
+                          << "   " << fmt(wTot) << "\n";
+        }
+        // echelle de comparaison : amplitude du travail A L INTERIEUR du cycle
+        double jwMin = 1e300, jwMax = -1e300;
+        for (const auto& r : jbHist_)
+            if (r.phase >= 10) { jwMin = std::min(jwMin, r.jw); jwMax = std::max(jwMax, r.jw); }
+        const double scale = (jwMax > jwMin) ? (jwMax - jwMin) : 1.0;
+        // Tolerance RELATIVE a l amplitude du travail echange dans le cycle :
+        // 1e-6 est trois ordres au-dessus du bruit d arrondi cumule sur ~1e4
+        // pas en double (mesure : la meme loi a deux jbSteps donne le meme
+        // W/scale a mieux que 1e-4), et trois ordres SOUS la creation
+        // mesuree sous solidity (3e-2). Le rapport W/amplitude est imprime :
+        // c est lui qui se compare d une loi a l autre et d un dt a l autre.
+        const double tol = 1e-6 * scale;
+        std::cout << "[JOINTBENCH]   D max sur le cycle = " << Dmax
+                  << (brk ? " (JOINT ROMPU : le cycle n est plus ferme, "
+                            "reduire jbAmp ou |jbNormal|)" : " (aucune rupture)")
+                  << " ; amplitude du travail dans le cycle = " << fmt(scale)
+                  << " J, tolerance = " << fmt(tol) << " J\n"
+                  << "[JOINTBENCH]   W net du DERNIER cycle = " << fmt(wLast)
+                  << " J  -> " << (wLast > tol ? "*** ECHEC : la loi CREE de "
+                                   "l energie (W > 0 sur un cycle ferme) ***"
+                                 : wLast < -tol ? "OK (dissipatif, W < 0)"
+                                                : "OK (conservatif, |W| < tol)")
+                  << "  (W/amplitude = " << fmt(wLast / scale) << ")"
+                  << "\n[JOINTBENCH]   W net cumule sur " << nCycOK
+                  << " cycle(s) = " << fmt(wTot) << " J"
+                  << (brk || Dmax > 0.0 ? "  [reserve : D > 0 ou rupture, le "
+                                          "cycle n est pas purement elastique]"
+                                        : "")
+                  << "\n";
+    }
     // ---- instants de rupture (joint et points) ----------------------------
     double tB = -1.0;
     std::size_t iB = nR;
