@@ -46,10 +46,15 @@ le dit en clair ; le moniteur de session relève la progression toutes les 15 mi
 Lecture : le cratère se forme sous la pointe sphérique (zone de 5 mm de rayon, 5,5 mm de
 profondeur, deux tiers cisaillement, coupes `results/fig/coupes_s1_v3_110us*.png`), aucune radiale
 encore, aucune pulvérisation (δ_m = h·ε : à 1,4 mm de maille il faut 1 % de distorsion déviatorique).
-La vitesse d'indentation dépasse Yang de 31 % (et le jumeau s = 2,5 de 18 %) : le bit maillé est 9 %
-plus léger que le leur (audit D), le contact roche est plus souple par phase (`potStiffnessByPhase`),
-et le maillage fin résiste moins — à trancher avec la suite du run (le point de retour dira ce que la
-roche a absorbé).
+La vitesse d'indentation dépasse Yang de 31 % (et le jumeau s = 2,5 de 18 %). **Cause trouvée à
+10 h (figure F–p)** : les masses maillées diffèrent d'un maillage à l'autre par la facettisation
+des cylindres — piston **1,057 kg à s = 1 (42,8 J à 9 m/s) contre 0,777 kg à s = 2,5 (31,5 J)**, train
+de frappe 1,367 kg contre 1,158. Yang donne 23,84 J au bit à 9 m/s : le banc s = 2,5 le reproduisait
+(23,4 J) par chance, le s = 1 lui donne ~33 J. La contrainte de jauge, elle, ne dépend que de la
+vitesse (ρcv/2) : 176 MPa contre 160. L'article ne dimensionne pas le piston ; pour viser 23,84 J au bit
+il faut un piston de ~0,78 kg (Φ26,5 × ~180 mm) ou un run à 7,7 m/s. Le run en cours est donc un
+impact **36 % plus énergétique** que celui de Yang à 9 m/s : ses critères se comparent à un piston plus
+lourd, pas au cas 9 m/s de l'article. Figure : `results/fig/fp_s1_s25.png` (`tools/fig_fp.py`).
 
 ## 2. La loi retenue, et pourquoi (le conseil)
 
