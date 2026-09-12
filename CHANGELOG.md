@@ -211,6 +211,20 @@ si c'est handicapant, puis s'il faut copier Solidity », « optimise le mailleur
   les autres combinaisons font moins bien (tableau dans ECARTS §4). Maillage `meshes/impact_yang_s1_pose_hxt05.msh`
   généré pour le run suivant. MMG3D absent de gmsh 4.15.2.
 
+### Corrigé — filtre des facettes rompues, bancs d'attribution B1/B2 (13/09, 15 h, relecture des diagnostics indépendants du 12/09)
+
+- **`bench_impact/tools/imp_lib.py` `broken()`** : lisait `damage ≥ 0,999`, qui vaut 1 dès qu'UN point
+  d'intégration cède alors que la facette ne rompt qu'à deux points sur trois (`jointFailRule = majority`) ;
+  lit désormais `tBreak ≥ 0` (repli sur l'ancien filtre si le champ manque). Trame 18 du s = 1 : 3 357
+  rompues et non 3 737 (380 faux positifs, 10 %). Toutes les figures « joints » et les comptes antérieurs
+  du 13/09 sont ~10 % trop hauts ; conclusions inchangées.
+- Bancs **B1** `configs/yang2026_bench_s25_law.cfg` (témoin + loi solidity seule) et **B2**
+  `yang2026_bench_s25_pen.cfg` (témoin + `edge` + facteur 25 seuls), file `tools/queue_bench_E.sh` derrière D.
+- `docs/ECARTS_guo2014_rockim_2026-09-13.md` §5 : relecture point par point des deux diagnostics (filtre,
+  étiquette de mode, cisaillement pré-pic linéaire sous `plastic`, h_e = diamètre inscrit dans δ_m, 3 000 GPa
+  = St Anne, cap caché `meanTensionCapFactor = 3`, estimateur de vitesse d'indentation 6,86 m/s, St Anne
+  d'abord).
+
 ### Ajouté — le lot de l'audit (`rockim_g1y14.exe`, 13/09, 2 h 30 - 3 h) : proxy σ_n, ratchet armé au cap, garde de phase, raideur de contact par phase, joints ×6
 
 Fernando : « refais un audit pour vérifier s'il n'y a pas d'autres erreurs ou optimisations ». Quatre

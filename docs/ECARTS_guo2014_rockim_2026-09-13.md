@@ -92,3 +92,53 @@ de surface : `opt = 2` était sans effet (0,2267). MMG3D n'est pas dans ce gmsh 
 Le gain accessible avec gmsh est de l'ordre de +20 % sur h_min (dt +9 % sous `edge`, +20 % sous `min`) :
 les slivers de surface ne partent pas sans remailleur de qualité. Le vrai levier du pas de temps est 8
 (`edge`, ×2,2) ; et la résolution (23) coûtera dt ×0,73 quoi qu'il arrive.
+
+## 5 — Relecture des deux diagnostics indépendants du 12/09 (lus le 13/09 à 15 h)
+
+`docs/DIAGNOSTIC_ICL_independant_2026-09-12.md` et `docs/COMPLEMENT_YANG_sources_et_corrections_2026-09-12.md`
+(auteur non identifié, non commités). Ce qu'ils apportent, vérifié ici :
+
+- **Filtre des facettes rompues (§5 du diagnostic) : vrai, corrigé.** `imp_lib.broken()` prenait `damage ≥ 0,999`,
+  or sous `jointFailRule = majority` `damage` est le MAX des trois points et vaut 1 dès qu'UN point cède ; la
+  facette ne rompt qu'à deux points sur trois (`tBreak ≥ 0`). Vérifié sur la trame 18 du s = 1 : 3 737 contre
+  **3 357** rompues, 380 faux positifs (10 %). `imp_lib.broken()` lit désormais `tBreak` (repli sur l'ancien
+  filtre si le champ manque). Les figures et comptes de ce document et du rapport du matin sont donc ~10 % trop
+  hauts ; les conclusions (cône compact, rien au-delà de 9 mm) ne changent pas.
+- **Étiquette traction/cisaillement à la rupture : vrai.** Le moteur `plastic` normalise par `slipRef` (pression
+  courante) et l'étiquette exportée par `J.slipF` : les proportions rouge/jaune sont indicatives, pas à comparer
+  quantitativement à leur fig. 14. À corriger dans l'instrumentation (sortie seule).
+- **Branche élastique de cisaillement sous `plastic` : vrai.** Elle est linéaire de pente pj (`tauTr = pj (s − s_p)`)
+  là où Guo éq. 2.31 transposée au cisaillement donne la parabole de pente initiale 2 pj ; le glissement au pic
+  s_p = f_s/pj est le même. `jointElastic = parabolic` ne touchait que le mode I. La branche `solidity`
+  transcrit la parabole. Ligne 13 du tableau à lire ainsi : compression identique, cisaillement pré-pic différent.
+- **Pulvérisation : vrai et précisé.** rockim mesure δ_m = h_e ε_vm avec h_e = **diamètre inscrit** (médiane
+  0,51 mm dans la boule), pas l'arête (1,37 mm) : le seuil δ_0 = 14 µm vaut donc 2,7 % de déformation
+  déviatorique, et D = 0,9 est atteint à κ = 106 µm (forme rationnelle de Camanho), soit 21 %, et non à 400 µm.
+  En compression isotrope dev(ε) = 0 : le modèle ne s'arme jamais. Ligne 22 complétée.
+- **3 000 GPa n'est pas la pénalité du Kuru : vrai.** C'est la valeur ARMA 2024 du calcaire St Anne (E = 57 GPa,
+  soit 52,6 E) ; le granite n'est pas publié. Les bancs B/B2 l'emploient comme proxy et le disent.
+- **« Mass Damping Coefficient » 4 000 : unités et opérateur inconnus, vrai.** Le banc C (η D, 2 000 dans la
+  convention 2 μ D) est exploratoire, pas une transposition établie. À demander avec le deck.
+- **det F ≈ 0,96 dans la zone centrale à 180 µs : accepté.** Ma mention « det F 0,5-0,7 sous l'insert » (ligne 2)
+  venait d'un commentaire du code, pas d'une mesure de ce run : retirée.
+- **`meanTensionCapFactor = 3` (cap caché à 32,9 MPa sur la pression moyenne en traction) : vrai, actif dans
+  tous les runs.** Sous joints intrinsèques à ft = 11 MPa (DIF ≤ 1,85) un élément porte au plus ~20 MPa de
+  traction principale : le cap ne devrait pas s'armer, mais les VTU n'exportent pas la contrainte des éléments
+  (champ `velocity` seul) : invérifiable a posteriori. À poser à 0 dans tout deck de conformité et à instrumenter
+  (compteur d'écrêtage dans le journal).
+- **Vitesse d'indentation : estimateur différent, vrai.** Yang 2025 prend la pente de la portion linéaire du
+  déplacement ; avec cet estimateur (10-90 % de l'enfoncement, 65-169 µs) le s = 1 donne **6,86 m/s** (insert)
+  au lieu du maximum instantané 7,37. L'écart à 5,62 reste (+22 %), moins qu'annoncé (+31 %).
+- **Jumeau s = 2,5 : piston 26 % plus léger, vrai.** La comparaison s = 1 / s = 2,5 n'est pas une étude de
+  résolution ; le mailleur sait figer le train (argument SR distinct de s) : à faire pour la prochaine série.
+- **Banc B = un paquet (loi + longueur + facteur + contact + naissance) : vrai.** D isole le contact ;
+  **B1** (loi seule, `yang2026_bench_s25_law.cfg`) et **B2** (pénalité seule, `_pen.cfg`) ajoutés à la file
+  (`tools/queue_bench_E.sh`, après D).
+- **St Anne d'abord (impact 2025 sans pulvérisation, paramètres ARMA publiés) : d'accord.** C'est le cas
+  discriminant du moteur joint/contact, sans les inconnues de l'éq. 3-4. À monter après la série s = 2,5.
+- **Guo 2020 p. 40 : les fractures formées restent permanentes** : cohérent avec la transcription (guérison
+  pré-rupture seulement, mort à la rupture).
+
+Ce qui ne change pas : la chaîne lit lâche → réaction faible → bit rapide → ni radiales ni pulvérisation reste
+la lecture des données ; les deux documents ne la contestent pas, ils demandent qu'elle soit attribuée par des
+sensibilités séparées (fait : A, B, B1, B2, C, D) et mesurée avec les bons filtres (fait).

@@ -74,7 +74,16 @@ def history(run):
 def broken(pts, con, f):
     """Faces ROMPUES (D = 1, plus bondees) : sommets (n,3,3), centroides,
     normales unitaires et mode de rupture (1 = traction, 2 = cisaillement)."""
-    sel = (f["damage"] >= 0.999) & (f["bonded"] < 0.5)
+    # CORRECTIF 13/09 (diagnostic independant du 12/09, §5) : sous
+    # jointFailRule = majority, `damage` est le MAX des trois points et vaut 1
+    # des qu UN point a cede, alors que la facette ne rompt qu a DEUX points
+    # sur trois. Le vrai evenement est tBreak >= 0 (380 faux positifs sur
+    # 3 737 a 180 us du run s = 1). Repli sur l ancien filtre si le champ
+    # manque (anciens VTU).
+    if "tBreak" in f:
+        sel = (f["tBreak"] >= 0.0) & (f["bonded"] < 0.5)
+    else:
+        sel = (f["damage"] >= 0.999) & (f["bonded"] < 0.5)
     P = pts[con[sel]]
     c = P.mean(axis=1)
     n = np.cross(P[:, 1] - P[:, 0], P[:, 2] - P[:, 0])
