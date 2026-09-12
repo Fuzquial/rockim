@@ -418,8 +418,73 @@ void FdemSolver::init() {
                 "bulkDamage = yang exige l ABSENCE de la cle law : meme "
                 "'law = elastic' construit une MatLaw et court-circuite "
                 "bulkDamage EN SILENCE (garde durcie post-revue 2026-08-28)");
+        // ---- S4 (campagne du 13/09) : miroir 2D des mesures alternatives
+        // de delta_m = h * eps_m (voir le bloc S4 de Fdem3dSolver.cpp).
+        // Defauts (`inscribed`, `deviatoric`) = chemin historique textuel.
+        {
+            const std::string bl = cfg_.gets("bulkDamageLength", "inscribed");
+            if (bl != "inscribed" && bl != "edge")
+                throw std::runtime_error("bulkDamageLength must be inscribed "
+                                         "| edge (S4, 13/09 : longueur h de "
+                                         "delta_m = h * eps_m)");
+            bdLen_ = bl == "edge" ? 1 : 0;
+            const std::string bs = cfg_.gets("bulkDamageStrain", "deviatoric");
+            if (bs != "deviatoric" && bs != "principal" && bs != "total")
+                throw std::runtime_error("bulkDamageStrain must be deviatoric "
+                                         "| principal | total (S4, 13/09 : "
+                                         "mesure eps_m de delta_m = h * eps_m)");
+            bdStrain_ = bs == "deviatoric" ? 0 : (bs == "principal" ? 1 : 2);
+            bdProbe_ = cfg_.getb("bulkDamageProbe", false);
+            if (bdLen_ != 0 || bdStrain_ != 0)
+                std::cout << "[FDEM] bulkDamage : delta_m = h * eps_m avec h = "
+                          << bl << ", eps_m = " << bs
+                          << " (S4, 13/09 ; historique : inscribed, "
+                             "deviatoric)\n";
+        }
+    } else {
+        // S4 : une cle de mesure posee SANS bulkDamage = yang serait inerte
+        // et muette (piege maison n. 1) : on refuse.
+        static const char* const kBdS4[] = {"bulkDamageLength",
+                                            "bulkDamageStrain",
+                                            "bulkDamageProbe"};
+        for (const char* k : kBdS4)
+            if (cfg_.has(k))
+                throw std::runtime_error(std::string(k) + " exige bulkDamage "
+                                         "= yang (S4, 13/09) : sans "
+                                         "pulverisation la cle serait inerte");
     }
     mtCap_ = cfg_.getd("meanTensionCapFactor", 3.0);
+    // ---- S1 (campagne du 13/09), miroir du 3D : instrumentation de rupture
+    // (voir Fdem3dSolver.cpp pour le commentaire complet). Sorties seules.
+    writeRupture_ = cfg_.getb("writeRuptureFields", false);
+    {
+        std::string br = cfg_.gets("jointBreakModeRef", "slipF");
+        if (br != "slipF" && br != "slipRef")
+            throw std::runtime_error("jointBreakModeRef must be slipF | slipRef "
+                                     "(slipF = etiquette historique normalisee "
+                                     "par J.slipF ; slipRef = par la plage "
+                                     "courante du moteur, jointShearRange = "
+                                     "coulomb comprise)");
+        breakModeRef_ = (br == "slipRef") ? 1 : 0;
+        if (breakModeRef_ == 1)
+            std::cout << "[FDEM] jointBreakModeRef = slipRef : l etiquette "
+                         "traction/cisaillement a la rupture lit la plage "
+                         "COURANTE du moteur de mode II (sortie seule)\n";
+    }
+    // Relecture V (13/09), miroir du 3D : compteur du cap (demarrage, ligne
+    // par trame, comptage) SOUS writeRuptureFields — journal inchange sinon.
+    if (writeRupture_) {
+#ifdef _OPENMP
+        mtCapExcT_.assign(std::max(1, omp_get_max_threads()), 0.0);
+#else
+        mtCapExcT_.assign(1, 0.0);
+#endif
+        if (mtCap_ > 0.0 && !cfg_.has("law"))
+            std::cout << "[FDEM] meanTensionCapFactor = " << mtCap_
+                      << " : cap ACTIF sur la pression moyenne (pm <= "
+                      << mtCap_ << " ft) ; les elements ecretes sont comptes "
+                         "a chaque trame (S1, 13/09, sous writeRuptureFields)\n";
+    }
     srTau_ = cfg_.getd("strainRateTau", 1.0e-6);
     // ---- strainRateFilter : LISSE-T-ON le taux avant d en tirer le DIF ? --
     // ADDITION (principe VIII) : `exponential` est le defaut et reproduit le
@@ -678,6 +743,42 @@ void FdemSolver::init() {
     }
 
     buildMesh();
+
+    // ---- S4 : bulkDamageProbe — seuils en DEFORMATION de la mesure (miroir
+    // 2D, sortie seule) : delta0/h et deltaF/h pour le diametre inscrit et
+    // l arete moyenne (medianes sur les elements).
+    if (bdOn_ && bdProbe_) {
+        std::vector<double> hi, he;
+        for (std::size_t eI = 0; eI < el_.size(); ++eI) {
+            const Elem& e = el_[eI];
+            hi.push_back(hEl_[eI]);
+            const auto& A = X0_[e.n[0]];
+            const auto& B = X0_[e.n[1]];
+            const auto& C = X0_[e.n[2]];
+            he.push_back(((B - A).norm() + (C - B).norm() + (A - C).norm())
+                         / 3.0);
+        }
+        auto med = [](std::vector<double> v) {
+            if (v.empty()) return 0.0;
+            std::sort(v.begin(), v.end());
+            return v[v.size() / 2];
+        };
+        const double hiM = med(hi), heM = med(he);
+        std::cout << "[FDEM] bulkDamageProbe : " << hi.size()
+                  << " elements ; h median inscrit = " << hiM * 1e3
+                  << " mm, arete moyenne mediane = " << heM * 1e3 << " mm\n"
+                  << "[FDEM]   seuil eps_m (delta0/h) : inscrit "
+                  << (hiM > 0.0 ? 100.0 * bdD0_ / hiM : 0.0)
+                  << " %, arete " << (heM > 0.0 ? 100.0 * bdD0_ / heM : 0.0)
+                  << " % ; forme limite (deltaF/h) : inscrit "
+                  << (hiM > 0.0 ? 100.0 * bdDf_ / hiM : 0.0)
+                  << " %, arete " << (heM > 0.0 ? 100.0 * bdDf_ / heM : 0.0)
+                  << " % ; mesure ACTIVE : h = "
+                  << (bdLen_ == 1 ? "edge" : "inscribed") << ", eps_m = "
+                  << (bdStrain_ == 0 ? "deviatoric"
+                      : (bdStrain_ == 1 ? "principal" : "total"))
+                  << "\n";
+    }
 
     // ---- per-phase element tables (elementForces hot loop) ------------------
     DmP_.clear(); nuP_.clear(); crushCapP_.clear(); ftP_.clear(); rhoP_.clear();
@@ -2366,6 +2467,9 @@ void FdemSolver::buildFromTriangles(const std::vector<Eigen::Vector2d>& vpos,
         e.phase = grainPhase.empty() ? 0 : grainPhase[e.grain];
         double per = (B - A).norm() + (C - B).norm() + (A - C).norm();
         hEl_.push_back(4.0 * e.A0 / per);              // inscribed diameter
+        // S4 (13/09) : bulkDamageLength = edge — arete moyenne du triangle.
+        // Rempli SEULEMENT sous l option : sans elle le vecteur reste vide.
+        if (bdLen_ == 1) hEdge_.push_back(per / 3.0);
         int id = (int)el_.size();
         el_.push_back(e);
         int vv[4] = {va, vb, vs, va};
@@ -5436,8 +5540,22 @@ void FdemSolver::elementForces() {
     double wVi = 0.0;                      // dont part VISQUEUSE (ventilation)
     double wBd = 0.0;                      // dont PULVERISATION (WP1, energie)
     long nPv = 0;
+    // S1(c), miroir du 3D : compteur d ecretage du cap de traction moyenne,
+    // max de l exces par fil (pas de reduction(max) en OpenMP 2.0 MSVC)
+    // dans le membre mtCapExcT_. Relecture V : sous writeRupture_ seulement
+    // — sous defaut nMt reste 0, aucune allocation, aucun acces.
+    long nMt = 0;
+    if (writeRupture_) {
 #ifdef _OPENMP
-#pragma omp parallel for schedule(static) reduction(+:wEl,wVi,wBd,nPv)
+        const std::size_t nTmt = (std::size_t)std::max(1, omp_get_max_threads());
+#else
+        const std::size_t nTmt = 1;
+#endif
+        if (mtCapExcT_.size() < nTmt) mtCapExcT_.resize(nTmt);
+        std::fill(mtCapExcT_.begin(), mtCapExcT_.end(), 0.0);
+    }
+#ifdef _OPENMP
+#pragma omp parallel for schedule(static) reduction(+:wEl,wVi,wBd,nPv,nMt)
 #endif
     for (int eI = 0; eI < (int)el_.size(); ++eI) {
         Elem& e = el_[eI];
@@ -5519,6 +5637,17 @@ void FdemSolver::elementForces() {
         }
         if (!law_ && mtCap_ > 0.0 && pm > mtCap_ * ftP_[e.phase]) {
             double shift = pm - mtCap_ * ftP_[e.phase];
+            // S1(c) : on COMPTE (meme condition, meme decalage : bit-identique),
+            // sous cle seulement (relecture V).
+            if (writeRupture_) {
+                ++nMt;
+#ifdef _OPENMP
+                const int tMt = omp_get_thread_num();
+#else
+                const int tMt = 0;
+#endif
+                if (shift > mtCapExcT_[tMt]) mtCapExcT_[tMt] = shift;
+            }
             s(0) -= shift; s(1) -= shift;
         }
         // ---- WP1 : pulverisation (Yang et al. 2026, eq. 3-4), miroir 2D --
@@ -5533,7 +5662,30 @@ void FdemSolver::elementForces() {
             double d2 = (eps(0) - m3) * (eps(0) - m3)
                       + (eps(1) - m3) * (eps(1) - m3) + m3 * m3
                       + 0.5 * eps(2) * eps(2);         // 2 (gamma/2)^2
-            double dm = hEl_[eI] * std::sqrt(2.0 / 3.0 * d2);
+            double dm;
+            if (bdLen_ == 0 && bdStrain_ == 0) {
+                // chemin HISTORIQUE, textuellement intact (bit-identique)
+                dm = hEl_[eI] * std::sqrt(2.0 / 3.0 * d2);
+            } else {
+                // S4 (13/09) : mesures alternatives, opt-in — miroir 2D.
+                // eps_zz = 0 (deformation plane) entre dans chaque mesure :
+                // `principal` prend max(|eps_1|, |eps_2|, 0), `total` la
+                // norme de Frobenius du tenseur complet, trace comprise.
+                const double hb = bdLen_ == 1 ? hEdge_[eI] : hEl_[eI];
+                double em;
+                if (bdStrain_ == 0) em = std::sqrt(2.0 / 3.0 * d2);
+                else if (bdStrain_ == 1) {
+                    const double c = 0.5 * (eps(0) + eps(1));
+                    const double r = std::sqrt(0.25 * (eps(0) - eps(1))
+                                               * (eps(0) - eps(1))
+                                               + 0.25 * eps(2) * eps(2));
+                    em = std::max(std::abs(c + r), std::abs(c - r));
+                } else
+                    em = std::sqrt(2.0 / 3.0 * (eps(0) * eps(0)
+                                                + eps(1) * eps(1)
+                                                + 0.5 * eps(2) * eps(2)));
+                dm = hb * em;
+            }
             if (dm > e.bdDm) e.bdDm = dm;
             if (e.bdDm > bdD0_) {
                 double D = bdDf_ * (e.bdDm - bdD0_)
@@ -5550,6 +5702,12 @@ void FdemSolver::elementForces() {
                 if (D >= bdDmax_) ++nPv;
             }
         }
+        // S1 : pression moyenne (s0 + s1 + szz)/3, viscosite exclue. Sortie
+        // seule (`pMean`), calculee sous cle seulement (relecture V). s0, s1
+        // sont assemblees (caps + pulverisation) ; szz, hors plan, n est ni
+        // decalee par le cap de traction moyenne ni multipliee par la
+        // pulverisation (voir FdemSolver.hpp, Elem::pm).
+        if (writeRupture_) e.pm = (s(0) + s(1) + szz) / 3.0;
         // ---- viscosite NEWTONIENNE ISOTROPE (eq. 6 de Yan : + 2 mu D) -----
         // NB de vocabulaire : ce n est PAS une  viscosite de volume  au sens
         // zeta tr(D) I (le bulk viscosity d Abaqus). Le terme agit sur le
@@ -5664,6 +5822,15 @@ void FdemSolver::elementForces() {
     viscWork_ += wVi * dt_;                // ventilation, incluse dans elWork_
     bdWork_ += wBd;                        // WP1 : deja une ENERGIE (Y dD)
     nPulv_ = nPv;
+    // S1(c) : reduction du compteur d ecretage (dernier pas + max de trame),
+    // sous cle seulement (relecture V).
+    if (writeRupture_) {
+        mtCapN_ = nMt;
+        mtCapExc_ = 0.0;
+        for (double x : mtCapExcT_) if (x > mtCapExc_) mtCapExc_ = x;
+        if (nMt > mtCapNFr_) mtCapNFr_ = nMt;
+        if (mtCapExc_ > mtCapExcFr_) mtCapExcFr_ = mtCapExc_;
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -5956,6 +6123,9 @@ void FdemSolver::jointForces() {
         double fnSum = 0.0;                // charge normale nette portee [N/m]
         double rsMaxO = 0.0;               // moteur de mode II du pas courant
                                            // (jointShearUnload = origin)
+        // S1(b) jointBreakModeRef = slipRef, miroir du 3D : rs de chaque
+        // point a la plage COURANTE slipRef, releve apres le retour radial.
+        double rsPt[2] = {0.0, 0.0};
 
         // jointQuadrature : `vertex` (defaut) place les 2 points AUX NOEUDS
         // (Newton-Cotes, le choix d Abaqus). `midedge` place des points
@@ -5990,6 +6160,9 @@ void FdemSolver::jointForces() {
             double dn = delta.dot(n) + J.dn0;
             double dtg = delta.dot(e);
             dnMax = std::max(dnMax, dn);
+            // S1(a) : ouverture GEOMETRIQUE max (sans dn0) — mesure, sous
+            // cle seulement ; aucune force ne la lit.
+            if (writeRupture_ && delta.dot(n) > J.onMax) J.onMax = delta.dot(n);
 
             // ---- §2.4 eq. 16-19 : jointTSL = camacho, etat du pas --------
             // Calcule ICI parce que la separation effective delta_m et son
@@ -6480,6 +6653,10 @@ void FdemSolver::jointForces() {
                     }
                     if (Dt > Dref) Dref = std::min(1.0, Dt);
                 }
+                // S1(b) : rs du point a la plage COURANTE (apres retour)
+                if (breakModeRef_ == 1)
+                    rsPt[k] = (slipRef > 0.0) ? std::abs(J.slip[k]) / slipRef
+                                              : 0.0;
             }
             // ---- §2.5 eq. 20 : OPTION B, terme visqueux TANGENTIEL -------
             //     t_s,alpha = t_s,alpha^coh(delta_m) + eta_s d(delta_s)/dt
@@ -6588,6 +6765,11 @@ void FdemSolver::jointForces() {
                     // pas de glissement plastique : le moteur est celui de
                     // l'eq. 14 (origin) ou leur t2 (solidity)
                     rsF = rsMaxO;
+                } else if (breakModeRef_ == 1) {
+                    // jointBreakModeRef = slipRef (S1(b), 13/09), miroir du
+                    // 3D : la partition lit la plage COURANTE du moteur
+                    // (slipRef du pas) et non J.slipF. Max sur les points.
+                    rsF = std::max(rsPt[0], rsPt[1]);
                 } else {
                     double sMx = std::max(std::abs(J.slip[0]),
                                           std::abs(J.slip[1]));
@@ -9149,7 +9331,7 @@ void FdemSolver::writeFrame(int frame) {
     // colonnes dans le VTU est ALPHABETIQUE quoi qu il arrive — la refonte
     // est byte-identique quand aucun champ optionnel n est arme. Les vecteurs
     // vivent a la portee de la fonction (writeTriMesh garde des pointeurs).
-    std::vector<double> bdv, tmv;
+    std::vector<double> bdv, tmv, bdm;
     // ---- endommagement de la LOI DE VOLUME (porte de insertion-pointe,
     // commit c2c2d42 du 2026-08-24). law = dpdfh calcule trois endommagements
     // directionnels dans un repere fige (SDV 4-6 de la VUMAT) mais rien ne
@@ -9170,6 +9352,13 @@ void FdemSolver::writeFrame(int frame) {
         bdv.resize(el_.size());
         for (std::size_t e = 0; e < el_.size(); ++e) bdv[e] = el_[e].bdD;
         ef["bulkD"] = &bdv;
+        // S4 : bulkDamageProbe — max historique de delta_m [m] (opt-in :
+        // sans la cle le VTU reste byte-identique).
+        if (bdProbe_) {
+            bdm.resize(el_.size());
+            for (std::size_t e = 0; e < el_.size(); ++e) bdm[e] = el_[e].bdDm;
+            ef["bulkDm"] = &bdm;
+        }
     }
     if (thermOn_) {
         tmv = Tel_;                        // temperature par element
@@ -9212,12 +9401,52 @@ void FdemSolver::writeFrame(int frame) {
         ef["dfhD"] = &dfhv;
         ef["dfhTini"] = &dfht;
     }
+    // S1 (13/09), miroir du 3D : writeRuptureFields = true -> `pMean`.
+    std::vector<double> pmv;
+    if (writeRupture_) {
+        pmv.resize(el_.size());
+        for (std::size_t e = 0; e < el_.size(); ++e) pmv[e] = el_[e].pm;
+        ef["pMean"] = &pmv;
+    }
     vtk::writeTriMesh(out_ + name, pts, tris, ef,
                       {{"velocity", &vel}});
+    // S1(c) : journal du cap de traction moyenne, a chaque trame (compteur
+    // pur, elementForces). Imprime seulement quand le cap est ACTIF et sous
+    // writeRuptureFields = true (relecture V : journal inchange sinon).
+    if (writeRupture_ && mtCap_ > 0.0 && !law_) {
+        std::cout << "[FDEM] meanTensionCap (" << mtCap_ << " ft) trame "
+                  << frame << " : " << mtCapN_ << " el. ecretes au dernier pas"
+                  << " (max " << mtCapNFr_ << " sur un pas depuis la trame "
+                  << "precedente), exces max " << mtCapExcFr_ * 1e-6
+                  << " MPa\n";
+        mtCapNFr_ = 0;
+        mtCapExcFr_ = 0.0;
+    }
+    // S4 : bulkDamageProbe — l etat de la mesure a chaque trame (miroir 2D) :
+    // max historique de delta_m, max de D, elements armes. Sortie seule.
+    if (bdOn_ && bdProbe_) {
+        double dmMax = 0.0, DMax = 0.0;
+        long nArm = 0;
+        for (const auto& e : el_) {
+            if (e.bdDm > dmMax) dmMax = e.bdDm;
+            if (e.bdD > DMax) DMax = e.bdD;
+            if (e.bdDm > bdD0_) ++nArm;
+        }
+        std::cout << "[FDEM] bulkDamageProbe trame " << frame
+                  << " : max delta_m = " << dmMax * 1e6 << " um (seuil "
+                  << bdD0_ * 1e6 << " um), max D = " << DMax
+                  << ", elements armes (delta_m > delta0) : " << nArm
+                  << " / " << el_.size() << "\n";
+    }
 
     std::vector<std::array<int, 2>> lines;
     std::vector<double> Dj, tb, Tp, Fs, Bd, Fm, Bm, Dt, Ed, Ti;
+    std::vector<double> Dd, Om;            // S1(a) : dead, openMax
     for (const auto& J : jt_) {
+        if (writeRupture_) {
+            Dd.push_back(J.dead ? 1.0 : 0.0);
+            Om.push_back(J.onMax);
+        }
         lines.push_back({J.a1, J.a2});
         Dj.push_back(J.D);
         tb.push_back(J.tBreak);
@@ -9255,6 +9484,7 @@ void FdemSolver::writeFrame(int frame) {
         }
         jf["sigN"] = &Js; jf["tauS"] = &Jt; jf["dn"] = &Jd; jf["contactState"] = &Jc;
     }
+    if (writeRupture_) { jf["dead"] = &Dd; jf["openMax"] = &Om; }
     vtk::writeLines(out_ + name, pts, lines, jf);
 
     std::ofstream fm(out_ + "/frames.csv",

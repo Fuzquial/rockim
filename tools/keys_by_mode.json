@@ -1,6 +1,6 @@
 {
  "_meta": {
-  "generated": "2026-09-12 12:51:40",
+  "generated": "2026-09-12 16:27:52",
   "generator": "tools/gen_keys_by_mode.py (voir la docstring : methode)",
   "rule": "cle lue par UN SEUL solveur = cle de ce mode, refusee dans les autres modes ; lue par le code partage ou par >= 2 solveurs = commune, jamais refusee ; cle absente du registre (construite dynamiquement) = jamais refusee",
   "files_scanned": [
@@ -66,9 +66,9 @@
    "scenario",
    "seed"
   ],
-  "n_keys": 429,
-  "n_common": 279,
-  "n_mode_specific": 150,
+  "n_keys": 443,
+  "n_common": 284,
+  "n_mode_specific": 159,
   "n_obsolete": 1,
   "rule_c1": "C1 (w21) : cle du deck NON consommee ET hors registre (ni commune, ni du mode, ni famille dynamique lue) = faute ; cle du registre non consommee (lecture conditionnelle) = legitime ; cle obsolete = « remplacee par » ; cle d'un autre mode = « sans effet en mode » ; source des obsoletes : tools/obsolete_keys.json",
   "rule_w22": "w22 (relecture D1) : une cle du deck NON consommee est legitime ssi le mode courant figure dans ses lecteurs (readers) ou si 'shared' y figure (code partage, ALWAYS_COMMON) ; sinon « cle X sans effet en mode Y : cles des modes Z1, Z2 » (kReaders dans KeysByMode.hpp)"
@@ -191,9 +191,18 @@
   "fdem3d": [
    "bulkDamagePhase",
    "bulkViscosityGraded",
+   "contactForcePairs",
    "cutterDia",
    "dtBudgetTangential",
    "fragBrushDirZ",
+   "jbAmp",
+   "jbEdge",
+   "jbMode",
+   "jbNormal",
+   "jbRate",
+   "jbSteps",
+   "jbTilt",
+   "jbUnloadAt",
    "jointPenaltyLength",
    "lawPhase",
    "potStiffnessByPhase",
@@ -263,6 +272,9 @@
   "bulkDamageDelta0",
   "bulkDamageDeltaF",
   "bulkDamageDmax",
+  "bulkDamageLength",
+  "bulkDamageProbe",
+  "bulkDamageStrain",
   "bulkFrictionDeg",
   "bulkFt",
   "bulkGf",
@@ -396,6 +408,7 @@
   "insertionTipDamage",
   "insertionTipFactor",
   "jointBKEta",
+  "jointBreakModeRef",
   "jointContactPenalty",
   "jointDeath",
   "jointDeltaC",
@@ -512,6 +525,7 @@
   "vertexMergeFrac",
   "weibullScope",
   "writeJointMode",
+  "writeRuptureFields",
   "yanA",
   "yanB",
   "yanC",
@@ -729,7 +743,19 @@
    "fdem",
    "fdem3d"
   ],
+  "bulkDamageLength": [
+   "fdem",
+   "fdem3d"
+  ],
   "bulkDamagePhase": [
+   "fdem3d"
+  ],
+  "bulkDamageProbe": [
+   "fdem",
+   "fdem3d"
+  ],
+  "bulkDamageStrain": [
+   "fdem",
    "fdem3d"
   ],
   "bulkFrictionDeg": [
@@ -875,6 +901,9 @@
   ],
   "contactDamageCoupling": [
    "fdem",
+   "fdem3d"
+  ],
+  "contactForcePairs": [
    "fdem3d"
   ],
   "contactMu": [
@@ -1389,7 +1418,35 @@
   "insituSxy": [
    "fdem"
   ],
+  "jbAmp": [
+   "fdem3d"
+  ],
+  "jbEdge": [
+   "fdem3d"
+  ],
+  "jbMode": [
+   "fdem3d"
+  ],
+  "jbNormal": [
+   "fdem3d"
+  ],
+  "jbRate": [
+   "fdem3d"
+  ],
+  "jbSteps": [
+   "fdem3d"
+  ],
+  "jbTilt": [
+   "fdem3d"
+  ],
+  "jbUnloadAt": [
+   "fdem3d"
+  ],
   "jointBKEta": [
+   "fdem",
+   "fdem3d"
+  ],
+  "jointBreakModeRef": [
    "fdem",
    "fdem3d"
   ],
@@ -2139,6 +2196,10 @@
   ],
   "writeJointState": [
    "fdem"
+  ],
+  "writeRuptureFields": [
+   "fdem",
+   "fdem3d"
   ],
   "yanA": [
    "fdem",

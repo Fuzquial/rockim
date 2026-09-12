@@ -292,7 +292,7 @@ Colonne « portée » : modes qui lisent la clé. Défauts entre parenthèses.
 | clé (défaut) | rôle | portée |
 |---|---|---|
 | `mode` (fem) | fem \| fem3d \| dem \| dem3d \| fdem \| fdem3d | — |
-| `scenario` (percussion) | percussion \| shear \| tension ; + `bar_wave` (fem) ; + `brazilian`, `shpb` (fdem) | tous |
+| `scenario` (percussion) | percussion \| shear \| tension ; + `bar_wave` (fem) ; + `brazilian`, `shpb` (fdem) ; + **`jointbench`** (fdem3d, **S3 du 13/09** : banc de joint cinématique à un seul joint entre deux tétraèdres, §5.4 sexies — construit son maillage, refuse `mesh`/`W`/`D`/`H`/`nx`/`ny`/`nz`) | tous |
 | `geometry` (box ; disc si brazilian, shpb si shpb) | box \| disc (fdem) ; box \| cylinder (fem3d) | fdem, fem3d |
 | `mesh` (grid) | grid \| voronoi (GBM) \| **file** (maillage non structuré importé, « à la Yan ») | fdem, fdem3d |
 | `meshFile` (requis si mesh = file) | chemin d'un Gmsh MSH 2.2 ASCII (type 2 en 2D, type 4 en 3D) ; boîte translatée à l'origine, W/H/D relus de l'enveloppe ; générer via `tools/make_unstructured_mesh.py` — variantes `box3d`, `box2d`, `bench1` (bloc + insert spherique), **`bench1g`** (idem GRADUE : `bench1g W D H R gap h hIns hFin rFin dFin out.msh [seed]`, champ de taille en rampe, fin dans un cylindre de rayon `rFin` et profondeur `dFin` sous l'axe d'impact — resserrer sur le rayon de contact de Hertz, pas sur l'etendue du champ visible), `tunnel` | fdem, fdem3d |
@@ -456,6 +456,17 @@ tous être refusés avec un message explicatif).
 | `jointFrictionScaled` (0) | 1 = le terme de Coulomb est aussi multiplié par f(D) (éq. 10 littérale — un joint broyé perd alors tout frottement résiduel) |
 | **`jointResidualMu`** (< 0 = non posée) | **Le coefficient de frottement RÉSIDUEL du joint rompu.** Le coefficient glisse du **pic** `tan(frictionDeg)` vers ce résiduel par la **même f(D)** que la cohésion : μ_eff = μ_res + (tanφ − μ_res)·f(D). rockim gardait jusqu'ici le frottement de **pic à vie**, ce qui verrouille une zone broyée sous forte compression. C'est la distinction que fait **Y-Geo** (AbuAisha et al. 2015, éq. 7.5 : un angle de frottement de **fracture** φ_f distinct de l'angle interne du pic) et que **Solidity** obtient autrement, en remettant le joint rompu au contact et à son glissement — **0,6** pour le calcaire, **0,18** pour le granite de Kuru, contre un frottement de pic de **1,85** : un facteur **10,3** entre pic et résiduel, et le papier granite dit explicitement que ce coefficient bas est ce qui permet aux fragments d'être éjectés et de cesser de porter le taillant. **`jointResidualMu` GÉNÉRALISE `jointFrictionScaled`** — μ_res = tan(frictionDeg) redonne le défaut, μ_res = 0 redonne `jointFrictionScaled = 1` — les deux clés sont donc **exclusives** (le run s'arrête si les deux sont posées). Les deux égalités sont **exactes**, vérifiées et verrouillées par `residualmu_equiv_defaut_2d` et `residualmu_equiv_scaled_2d` |
 | **`jointShearUnload`** (plastic) | plastic \| **origin** = décharge ET recharge en cisaillement sur la **sécante à l'origine** passant par (s_max, τ_env(s_max)), éq. 18 de Yan et al. — symétrique exact de l'éq. 17 du mode I. `plastic` (défaut, inchangé) est une plasticité à retour radial : la décharge suit la sécante de pénalité et le glissement plastique est conservé. Les deux **coïncident en charge monotone** (le glissement au pic est le s_p = (c + tanφ·\|σ_n\|)/p de Munjiza, donc l'endommagement de mode II démarre au même instant) et ne diffèrent qu'à la décharge. ⚠️ l'éq. 18 place **tout** le cap dans la sécante, frottement de Coulomb compris : avec `jointFrictionScaled = 0` le glissement frottant devient réversible (aucune boucle d'hystérésis). **Forme littérale de l'article = `origin` + `jointFrictionScaled = 1`**. **`solidity`** (13/09, 2D et 3D) = **la loi de joint de Solidity mot à mot**, transcrite du code public (`Y3Dfd.c`, `Sigma_tau` l. 1078-1300) : **aucune mémoire d'endommagement** — leur z et les deux tractions sont des fonctions de l'ouverture et du glissement **courants**, décharge et recharge retracent la courbe de charge, **le joint guérit en se refermant** (Guo 2014 éq. 2.33, « 0 otherwise ») ; op = ft/pj, ot = max(2 op, 3 Gf/ft), σ_tmp = 2 pj dn en compression, f_s = c en traction et c + tanφ·\|σ_tmp\| en compression, sp = f_s/pj, st = max(2 sp, 3 GfII/f_s), recalculés **à chaque pas** ; z = √(t1² + t2²) \| t1 \| t2 \| 0 puis z-curve 0,63/1,8/6 (constantes en dur chez eux) ; σ = 2 pj dn (compression) \| ft·z (dn > op) \| (2r − r²)·z·ft ; τ = z·f_s (\|s\| > sp) \| (2q − q²)·z·f_s dans le sens de s ; **dpefm = 0 en dur : aucun frottement dans le joint**, un point à z ≥ 1 ne transmet rien, le joint est **rompu quand deux points sur trois le sont au même pas** (nfail > 1, l. 1175) et **meurt aussitôt** (relais au contact, `jointDeath` inerte). Exige `jointElastic = parabolic`, `jointSoftening = munjiza`, `jointFailRule = majority`, `jointXi = 0`, `jointEtaN/S = 0`, pas de `jointTSL = camacho` ; rend inertes `jointSecantRatchet`, `jointNormalProxy`, `jointShearRange`, `jointDeltaC`, `jointResidualMu`, `jointFrictionMobilised`, `jointFrictionScaled`. ⚠️ C'est **leur** loi, pas la forme conforme : élastique non linéaire réversible jusqu'à la rupture (l'énergie stockée y est dissipée d'un coup), potentiel inexistant en mode mixte ; le bilan B4 reste exact (travail des tractions) et `budgetAbortPct` la surveille. Motif : le run s = 1 du 13/09 (plastic) donne un lit broyé **lâche** (2 892 facettes mortes, réaction 20-30 kN) là où Yang a un noyau **solide** à joints réversibles (~57 kN) — le banc s = 2,5 `yang2026_bench_s25_solidity.cfg` teste cette seule hypothèse |
+| `jointBreakModeRef` (slipF) | slipF \| **slipRef** — **S1(b) de la campagne du 13/09** (DIAGNOSTIC §5 : « le moteur plastique emploie `slipRef`, qui dépend de la pression, mais la classification exportée à la rupture renormalise par `J.slipF` »). Quelle plage normalise le glissement plastique dans la **partition rn/rs à l'instant de la rupture** (`failMode`, `breakMode`, `rnB`, `rsB`) sur la branche `plastic`. `slipF` (défaut, historique) : max sur les points de \|s_p\|/J.slipF. `slipRef` : max sur les points de \|s_p\|/slipRef(point), la **plage courante du moteur** (relevée après le retour radial du pas de rupture) — sous `jointShearRange = coulomb` elle vaut max(2 s_E, slipF·c/f_s(σ_n)) et dépend de la pression du point ; sans `coulomb`, slipRef ≡ J.slipF et les deux étiquettes coïncident (mesuré : 0 étiquette changée sur UCS 2D 355 rompues, visc_yan 3D 200 rompues) ; avec `coulomb` l'écart est petit (UCS 2D : 2 / 392 étiquettes ; heilman 3D : 0 / 336, presque tout en cisaillement pur). Inerte sous `origin` et `solidity` (leur branche `rsF = rsMaxO` passe avant) et sous `camacho` (en 3D le bloc d'étiquette historique n'est pas même atteint — la branche camacho pose sa propre étiquette et sort par `return` ; en 2D la branche `tslCamacho_` est en tête ; mesuré sur `configs/mini/mini_n4_elas_cam_short.cfg` : sorties identiques avec et sans la clé). **Sortie seule** : aucune force ; `frames.csv`, `damage`, `tBreak` et les champs d'éléments sont identiques, mais **`history.csv` n'est PAS byte-identique quand une étiquette change** — ses colonnes de recensement `nBrokTen`/`nBrokShear` (2D) comptent les `bmode` (mesuré : UCS 2D coulomb, 2 étiquettes changées sur 392 → `history.csv` différent, `frames.csv` identique ; relecture V du 13/09). 2D + 3D |
+| `writeRuptureFields` (false) | true = trois champs VTU de plus (**S1(a)/(c), 13/09**) : sur les joints `dead` (0/1, le drapeau `Joint::dead` — la facette a été remise au contact, ce que ni `bonded` ni `damage` ne disent) et `openMax` (m, ouverture normale **géométrique** maximale δ·n, sans l'offset dn0, max sur les points d'intégration et sur le temps ; 0 = jamais ouverte) ; sur les éléments `pMean` (Pa, pression moyenne au dernier pas, traction > 0 : **3D** = tr(σ)/3 de la contrainte assemblée, après caps et pulvérisation ; **2D** = (s₀ + s₁ + σzz)/3 où s₀, s₁ sont assemblées après caps et pulvérisation mais σzz, composante hors plan de la déformation plane (ν(s₀+s₁), TI ou néo-hookéen), n'est ni décalée par le cap de traction moyenne ni multipliée par la pulvérisation et n'est jamais assemblée — un hybride, précisé après la relecture V du 13/09). La clé arme aussi le **journal du compteur d'écrêtage** de `meanTensionCapFactor` (ligne de démarrage + une ligne par trame, voir cette clé). Motif : DIAGNOSTIC §5 (« pour distinguer une fissure rompue mais fermée d'une fissure ouverte, il faut exporter l'ouverture et/ou `dead` ») et ECARTS §5 (« les VTU n'exportent pas la contrainte des éléments »). Sans la clé : `openMax`, `pMean` et le compteur ne sont pas même calculés (garde sur chaque site), VTU et journal byte-identiques. 2D + 3D |
+| `contactForcePairs` (—) | `a:b c:d ...` — **S2 de la campagne du 13/09** (DIAGNOSTIC §6.1 : « exporter les forces de contact piston/bit et insert/roche »), fdem3d, `mesh = file` avec corps nommés. Pour chaque paire `a:b`, trois colonnes `Fc_<a>_<b>_x,_y,_z` dans `history.csv` : la somme, **au pas courant** (comme `grpFx/y/z`), des forces de **contact général** (normale + tangentielle ; potentiel de Munjiza ET pénalité nœud-face, selon `contact`) exercées **par le corps a sur le corps b**, en N. Sommée dans les boucles d'assemblage (série par construction : phase C du potentiel, boucle `cpTL` de la pénalité), donc le même chiffre quel que soit le nombre de fils. `a:b` et `b:a` sont exactement opposés ; la somme des `Fc_<X>_bit_z` sur tous les partenaires X du bit recoupe `grpFz` (`trackGroup = bit`) ; `a:a` et un corps inconnu sont refusés. Exclus : l'outil analytique (`toolContact`, pas un corps nommé), les joints vivants (`groupBond` : ce n'est pas du contact) et les forces de joint. Sans la clé : aucune instruction de plus dans le contact, sorties byte-identiques. Pas de miroir 2D : `FdemSolver` n'a pas de corps nommés (`elemGroup_`). Canal insert/roche vérifié **vivant** (S2bis : banc `tests_f2/campagne13/S2/s25_fcrock.cfg`, train lancé à −20 m/s, 4 µs — `Fc_insert_rock_z` non nulle dès 1,01 µs, négative sur les 1 059 lignes non nulles, max 2 150 N, et Σ des cinq partenaires = `grpFz` à 0 N exactement) : sur le banc de 30 µs la même colonne vaut 0 exact parce que l'onde n'a pas encore atteint la roche, pas parce que la colonne est morte. **Piège d'interprétation mesuré** : sur ce maillage, la plaque porte sur le bit jusqu'à 3 214 N pendant les 30 premières µs — une force extérieure que l'estimateur `m dv/dt` de `tools/fig_fp.py` attribue en bloc à la roche (biais de l'hypothèse de train rigide : 13,0 kN max, 4,8 % de l'échelle ; 65,1 contre 43,9 kN à 200 µs selon la forme de l'estimateur). fdem3d seul |
+| **`jbMode`** (tension) | tension \| shear \| mixed — **S3 de la campagne du 13/09** (DIAGNOSTIC §6.2), `scenario = jointbench` seulement (§5.4 sexies ; posée sous un autre scénario, la clé est **refusée** : elle serait inerte). Direction du chemin prescrit au tétraèdre B : `tension` = normale n du joint (ouverture) ; `shear` = e_s, l'arête Q0Q1 de la facette (glissement dans le plan) ; `mixed` = (n + e_s)/√2, trajet proportionnel à 45° (composantes normale et tangentielle égales). fdem3d |
+| **`jbAmp`** (2e-5) | amplitude finale du chemin [m], s : 0 → `jbAmp` (avec le cycle de `jbUnloadAt` s'il est posé). À choisir au-delà de dnF (tension) ou de la plage de mode II (cisaillement) pour voir la rupture ; le journal imprime dnE, dnF, sE, slipF et le nombre de pas par branche. fdem3d |
+| **`jbNormal`** (0) | offset normal constant [m] (négatif = compression, σ_n = 2 pj dn sous `jointElastic = parabolic`), posé **d'abord** par une rampe linéaire de ⌈\|jbNormal\|/(jbRate dt)⌉ pas, puis tenu pendant tout le chemin : les essais de cisaillement sous pression. fdem3d |
+| **`jbUnloadAt`** (0) | fraction de `jbAmp` où l'on **décharge jusqu'à s = 0 puis recharge** (0 = chemin monotone, [0 ; 1[). La décharge est alignée sur les pas (⌊jbUnloadAt·jbSteps⌉ pas), si bien que les échantillons de recharge tombent **exactement** sur ceux de la charge : le critère (i) compare des paires au même dn/ds, sans interpolation. fdem3d |
+| **`jbRate`** (1.0) | vitesse du chemin [m/s]. Le banc est **quasi statique par construction** (aucun nœud libre) : la vitesse ne compte que pour un dashpot de joint (`jointXi > 0`, averti) ou un DIF, inertes ici (tétraèdres rigides, taux nul). fdem3d |
+| **`jbTilt`** (0) | rotation rigide de B [deg] à s = `jbAmp`, proportionnelle à s, autour d'un axe dans le plan de la facette (15° de l'arête Q0Q1, décalé pour que **tous** les points s'ouvrent à des bras distincts, imprimés au journal) : les trois points d'intégration cèdent à des instants différents — c'est ce qui rend la **règle deux points sur trois** (`jointFailRule = majority`) observable, critère (iv). fdem3d |
+| **`jbEdge`** (1e-3) | arête des deux tétraèdres réguliers [m] ; sous `jointPenaltyLength = edge`, h = `jbEdge` exactement (pj = facteur·E/jbEdge) ; h inscrit = jbEdge/√6. fdem3d |
+| **`jbSteps`** (4000) | échantillons par `jbAmp` : dt = jbAmp/(jbRate·jbSteps) est un pas d'**échantillonnage**, pas un pas de stabilité (aucun nœud libre ; le dt explicite est imprimé pour information). ⚠️ À pj = 25 E/mm la branche élastique dnE = ft/pj ≈ 7 nm tient en 1,5 pas : l'aire de la branche adoucissante (2 700 pas) est exacte à 0,01 %, la branche élastique ne l'est pas — monter `jbSteps` si elle compte. fdem3d |
 | `jointSecantRatchet` (off) | on \| off — **conseil du 12/09 (M1, M7)**. Les sécantes de décharge des éq. 17 (mode I, toutes branches) et 18 (mode II, branche `origin`) deviennent **non croissantes** dans le temps (`Joint::knr`, `Joint::ksr`, par point d'intégration). C'est la condition Φ ≥ 0 d'une loi d'endommagement. Sans elle : (M1) sous `origin` la sécante τ_lim(σ_n)/s_max **suit la compression courante**, ∂τ/∂δ_n ≠ ∂σ/∂δ_s, aucun potentiel, un cycle à glissement fixé crée ½(k₂−k₁)s² (mesuré : 16 J en 81 µs sur le banc Yang s = 2,5, bissections 2D V0..V20 et 3D B1..B7) ; (M7) sous `strainRateDIFArm = continuous`, `refreshDif` réécrit ft et dnE à chaque pas et la sécante de l'éq. 17 suit ft(t) non monotone, **quelle que soit la branche de cisaillement**. Avec la clé, le DIF et la pression continuent d'élever l'enveloppe atteignable en charge croissante ; ils ne raidissent plus un joint déjà chargé. `origin` sans la clé imprime un AVERTISSEMENT (rien n'est refusé) |
 | `jointNormalProxy` (penalty) | penalty \| `law` — **audit A #1 du 13/09**. Sous `jointElastic = parabolic` la loi transmet 2·pj·dn en compression, mais s_E (seuil élastique de glissement), la plage coulomb et l'amorçage du DIF lisaient pj·dn : σ_n divisé par deux dans tout ce qui fixe une résistance de mode II (le cap τ_lim lit la vraie traction). `law` pose la pente réelle (2 pj sous parabolic, pj sinon), comme Solidity (σ_tmp = pe·o/el). 2D + 3D |
 | `bulkDamagePhase` (toutes) | nom de phase — **audit D du 13/09**. Les éq. 3-4 de Yang (pulvérisation, calibrées sur le granite) s'appliquaient à toutes les phases, acier et carbure compris (δ0 = 14 µm contre h·ε ≈ 9-13 µm à 175 MPa dans le train de frappe). Avertissement au démarrage si la clé est absente avec plusieurs phases |
@@ -481,6 +492,9 @@ tous être refusés avec un message explicatif).
 | `crushCap` (8·cohesion) | plafond élasto-plastique du déviateur du bulk (garde-fou, désactivé si une `law` est active) |
 | `bulkDamage` (off) | **pulvérisation** (Yang et al. 2026, IJRMMS 206, éq. 3-4) : dégradation de raideur des tétraèdres, σ = Cd·(1−D)·σ̄, D linéaire (Camanho) en δm = h_e·ε_vm entre `bulkDamageDelta0` et `bulkDamageDeltaF` [m], irréversible, plafonné à `bulkDamageDmax` ; **2D et 3D** (déformation plane : ε_zz = 0 entre dans le déviateur), `law = elastic` seul. S'AJOUTE au crushCap (principe VIII) — le deck granite neutralise ce dernier (1e12). Colonnes `nPulv,bdWork` + champ VTU `bulkD` quand armé. Dissipation Y·dD ventilée dans le poste éléments |
 | `bulkDamageDelta0` (1.4e-5) / `bulkDamageDeltaF` (4.0e-4) / `bulkDamageDmax` (0.9) / `bulkDamageCd` (1.0) | calibration Kuru Grey de l'article (leur 0,014/0,4 lus en mm, éléments de 1 mm) |
+| **`bulkDamageLength`** (inscribed) | inscribed \| **edge** — **S4, campagne du 13/09** (DIAGNOSTIC §3, COMPLEMENT §7), fdem et fdem3d, exige `bulkDamage = yang` (refusée sans). Quelle longueur h dans δm = h·εm. `inscribed` (défaut, bit-identique) : h = hEl_ = 6V/A (2D : 4A/P), le diamètre inscrit — **0,51 mm** de médiane dans la boule R 12,5 du s = 1, si bien que δ0 = 14 µm s'arme à **2,7 %** de déformation. `edge` : moyenne des **six arêtes** du tétraèdre (2D : des trois arêtes), **1,37 mm** au même endroit → seuil à **1,0 %**. L'article ne définit pas sa longueur : les deux sont des hypothèses à comparer, pas une valeur publiée. Vecteur `hEdge_` rempli seulement sous `edge` |
+| **`bulkDamageStrain`** (deviatoric) | deviatoric \| **principal** \| **total** — **S4, 13/09**, fdem et fdem3d, exige `bulkDamage = yang`. Quelle mesure εm dans δm = h·εm. `deviatoric` (défaut, bit-identique) : εvm = √(2/3)‖dev ε‖ — **nulle en compression isotrope**, le modèle ne s'y arme jamais (mesuré : 2,5 GPa isotropes, D = 0, εm résiduel 1e-3 = transitoire de rampe). `principal` : plus grande déformation principale en valeur absolue (`maxAbsEigSym3` du Biot co-rotationnel ; 2D : sur ε1, ε2, εzz = 0). `total` : norme de Frobenius √(2/3)‖ε‖, **trace comprise** (s'arme en isotrope : √2·ε). En uniaxial à ν = 0,25 les trois valent 0,833 ε, ε et 0,866 ε : `total` et `deviatoric` ne diffèrent que de 3,9 %, `edge` multiplie par 3,04 sur un maillage de Kuhn. Rien de tout cela n'est la définition des auteurs (COMPLEMENT §7) |
+| **`bulkDamageProbe`** (false) | **S4, 13/09**, fdem et fdem3d, exige `bulkDamage = yang`. Sortie seule : au démarrage, h médian inscrit et arête moyenne médiane des éléments endommageables et les seuils **en déformation** δ0/h et δF/h pour les deux longueurs (la mesure active est rappelée) ; à chaque trame et au résumé, max historique de δm, max de D, nombre d'éléments armés (δm > δ0) ; champ VTU des éléments **`bulkDm`** (max historique de δm, m — la variable d'histoire qui pilote D). Sans la clé : `history.csv` byte-identique, VTU byte-identique (mesuré sur 4 decks). Essais élémentaires : `tests_f2/campagne13/S4/` (`make_decks.py`, `check_s4.py`) |
 | `groupBond.<A>.<B>` (—) | **liaison entre corps** (3D, mesh = file) : l'interface conforme entre deux volumes physiques nommés reçoit des joints cohésifs (type GBM frontière, moyenne des phases × facteurs gb*) au lieu d'être remise au contact — le brasage insert/bit de la spec 005. Valeur : `joints`. L'insertion adaptative lie les nœuds de l'interface comme partout (rebindVertex) |
 | `groupContinuum.<corps>` (—) | **corps continu, sans joints** (3D, mesh = file, 2026-09-11) : `true` lie POUR TOUJOURS les facettes intérieures du corps (et celles de son interface avec un autre corps continu déclaré par `groupBond`) — jamais évaluées par la loi de joint, jamais insérées en adaptatif, **hors budget CFL des ressorts** ; les copies de nœuds intègrent comme un seul nœud (la liaison par groupes de l'insertion adaptative, ici permanente), donc continuum EF exact, sans la complaisance E/(1 + 1/pf). Pour l'acier et le carbure du train de frappe. Mesuré sur le deck Yang 2026 (119 901 tets, carbure à 0,7 mm, pf 20) : les joints du carbure fixaient dt = 0,94 ns quand la CFL des éléments autorise 4,7 ns. Fonctionne en intrinsèque et en adaptatif. Absente : bit-identique |
 | `facetAverage` (arith) | **comment le critère d'insertion adaptative lit la contrainte de facette** (3D ; en 2D `arith` \| `volume` \| `max`, ce dernier porté le 12/09 dans `insertionSweep()`, g1y13). `arith` : moyenne 0,5/0,5 des deux tétraèdres (historique) ; `volume` : pondérée par les volumes (§2.1 éq. 10 de la note) ; `max` (2026-09-11 nuit) : le plus chargé des deux (rapport max de σ_n/ft_dyn et |τ|/f_s) ; `nodal` (2026-09-12) : **traction transmise par partition des forces nodales** (Camacho & Ortiz 1996) — à chaque sommet, forces internes des copies du côté A du plan de la facette, attribuées à la facette au prorata de son aire tributaire, t = −F/A_f ; moins l'inertie du pas précédent, forme symétrique ½[Σ_A − Σ_B] ; évaluée là où `max` dépasse 50 % du seuil ; exige `insertion = adaptive`. Validé sur un champ uniforme (pic 9,72 MPa pour ft = 10, `configs/tension3d_adaptive_*.cfg`). Mesure (banc Yang s = 2,5, 100 µs) : `arith` 27 joints rompus, `max` 412, **`nodal` 0** (33 facettes insérées), l'intrinsèque 6 090 — la traction transmise est l'équilibre de tout le patch nodal, la mesure la plus lisse ; le joint intrinsèque lit l'élément seul, dont l'analogue est `max`, le critère recommandé pour les impacts. `facetStress()` servie ailleurs reste la moyenne |
@@ -593,7 +607,7 @@ charge nulle `zeroload_dif_intrinseque_2d` (aucun joint armé sous charge nulle)
 | clé (défaut) | rôle | portée |
 |---|---|---|
 | `jointShearEnvelope` (yan) | `yan` = son éq. 8, le terme de frottement tombe à **zéro dès que la contrainte normale est en traction** ; `yang` = l'**éq. 1 de Yang et al.**, il décroît jusqu'au cut-off en ft : fs = c − tanφ·min(σn, ft). Les deux **coïncident exactement en compression** et ne diffèrent qu'en traction, où la forme de Yang AFFAIBLIT le cisaillement (−34 % au cut-off sur le banc de percussion). C'est ce qui gouverne le partage traction/cisaillement dans les zones tendues, donc le faciès radial. **La forme de l'article est `yang`** | fdem, fdem3d |
-| `meanTensionCapFactor` (0 = off) | plafond sur la contrainte moyenne de l'élément, en multiples de `ft`. Garde-fou rockim, sans équivalent dans la littérature de référence : laisser éteint pour toute réplique | fdem, fdem3d |
+| `meanTensionCapFactor` (0 = off) | plafond sur la contrainte moyenne de l'élément, en multiples de `ft`. Garde-fou rockim, sans équivalent dans la littérature de référence : laisser éteint pour toute réplique. ⚠️ Le **défaut du code est 3** (`mtCap_ = 3.0`, actif dans tous les runs qui ne posent pas la clé, ECARTS §5) — « 0 = off » veut dire qu'il faut l'écrire. **Compteur (S1(c), 13/09)** : sous **`writeRuptureFields = true`** (relecture V : le cap valant 3 par défaut, une sortie non gardée aurait touché tous les journaux — sans cette clé le journal est celui d'avant S1), quand le cap est actif (> 0 et pas de `law`), le démarrage l'annonce et chaque trame imprime `meanTensionCap (f ft) trame N : n el. ecretes au dernier pas (max m sur un pas depuis la trame precedente), exces max X MPa` — nombre d'éléments dont tr(σ)/3 dépassait f·ft avant écrêtage et excès maximal ; compteur pur, aucune force changée (mesuré : `history.csv` identique avec et sans le journal) | fdem, fdem3d |
 
 ### 5.4 quater Loi de joint : les deux dernières conventions de Guo
 
@@ -918,6 +932,63 @@ rééchelonnement.
 ⚠️ `gcbirth_penalty_3d` ne verrouille **pas** un écart : en traction 3D les
 deux modes donnent le même `err_pct` (−4,75889 %). Il verrouille le *fait* que
 le mécanisme s'arme (118 paires calées). C'est délibéré et noté dans le repère.
+
+### 5.4 sexies Banc de joint cinématique — `scenario = jointbench` (S3, campagne du 13/09)
+
+Motif : DIAGNOSTIC §6.2 (« valider une loi de joint unique sur un petit banc 3D : traction
+monotone et décharge, cisaillement à plusieurs pressions, aire dissipée, ouverture de rupture,
+passage à deux points sur trois ; comparer la branche actuelle à `solidity` avec le même maillage et
+la même pénalité »). fdem3d seul ; clés `jbMode`, `jbAmp`, `jbNormal`, `jbUnloadAt`, `jbRate`,
+`jbTilt`, `jbEdge`, `jbSteps` (tableau §5.4).
+
+**Principe.** Deux tétraèdres réguliers d'arête `jbEdge` partagent une facette : **un** joint, trois
+points d'intégration (milieux d'arêtes sous `jointQuadrature = midedge`, sommets sinon). Le tétraèdre
+A (`el_[0]`, dessous) est fixe ; le tétraèdre B (`el_[1]`) est **déplacé rigidement** en tête de
+chaque pas le long d'un chemin prescrit (translation s(t)·dir + jbNormal·n, rotation `jbTilt`·s/jbAmp
+autour d'un axe du plan de la facette). **Aucun nœud n'est libre** : ni masse, ni amortissement, ni
+onde — le joint ne voit que la séparation imposée, exactement comme une routine matériau appelée
+sur un trajet (`jointXi = 0` recommandé, averti sinon ; le DIF est inerte, les tétraèdres ne se
+déforment pas). Le pas de temps n'est qu'un pas d'échantillonnage. Toutes les clés de joint du
+solveur s'appliquent (`jointShearUnload = plastic | origin | solidity`, `jointDeltaC`,
+`jointShearRange`, `jointFailRule`, `jointElastic`, `jointSoftening`, `jointPenaltyLength`…) : c'est
+la **même** `processJoint` que l'impact, avec deux lignes de relevé de plus sous `jbOn_`. Refusés :
+`insertion = adaptive | none`, `jointTSL = camacho`, `mesh`/`meshFile`/`W`/`D`/`H`/`nx`/`ny`/`nz`.
+
+**Sortie `jointbench.csv`** (une ligne par pas, §6.2) : `t, s, phase` (−1 rampe normale, 0 charge,
+1 décharge, 2 recharge, 3 palier), `dnOff`, puis par point k : `dn_k` (m), `ds_k` (m, signé le long
+de e_s), `sig_k` (Pa), `tau_k` (Pa, signé le long de e_s), `tauAbs_k`, `D_k` (z du point sous
+`majority`, D partagé sinon), puis `nFail` (points à D ≥ 1), `broken` (tBreak ≥ 0), `dead`, `Fn`,
+`Ft` (N). Au résumé, quatre **critères falsifiants** (`[JOINTBENCH]`) :
+
+| critère | mesure imprimée | attendu |
+|---|---|---|
+| (i) retrace | max \|σ_recharge − σ_charge\| (τ en shear) sur les échantillons **appariés au même dn/ds** (tolérance 1e-3 pas, aucune interpolation), avant rupture | PASS (< 1e-6 ft) sous `solidity` (loi sans mémoire, Guo éq. 2.33) ; **FAIL** sous `plastic`/`origin` (sécante de décharge, éq. 17/18) |
+| (ii) résiduel | glissement (ouverture) à traction nulle sur la décharge, par point, par interpolation du changement de signe ; `<=x` = pas de changement de signe jusqu'au retournement, résiduel borné par \|x\|min | > 0 sous `plastic` en cisaillement (glissement conservé) ; 0 sous `origin`/`solidity` |
+| (iii) aire | ∫σ d(dn) [∫τ d(ds)] jusqu'à tBreak (trapèzes, moyenne des trois points) contre Gf [GfII] **et** contre la valeur que la loi codée doit donner (branche élastique + adoucissement) | Gf ± 2 % sous `jointDeltaC = exact` ; 1,159 Gf sous `solidity` (ot = 3 Gf/ft, ∫z = 0,3863) ; mode II jugé seulement à σ_n = 0 (sinon le frottement s'ajoute) |
+| (iv) règle 2/3 | instants où chaque point atteint D ≥ 1 et instant de tBreak | sous `majority` avec `jbTilt ≠ 0` : instants distincts, joint mort au **deuxième** ; sous `any` : au premier |
+
+**Mesuré** (`tests_f2/campagne13/S3/`, `make_decks.py` → 9 decks, joint Kuru ft 10,98 / c 29,84 MPa /
+Gf 50 / GfII 1 000, pj = 25 E/edge = 1,5e15 Pa/m, conventions de Solidity, 4 000 pas par jbAmp,
+0,2-0,3 s par deck, vérificateur `check_s3.py` → `RESULTATS_check_s3.txt`) :
+traction 20 µm avec décharge à 10 µm — `solidity` : W_I = **1,15987 Gf** (attendu 1,15999, 0,011 %),
+retrace **5e-10 ft** sur 6 000 paires ; `plastic` et `origin` : W_I = **1,00095 Gf** (attendu 1,00107),
+retrace **FAIL** (écart 0,9999 ft : la sécante rend ~0 là où la parabole est à ft) ; cisaillement
+30 µm sous −20 nm (σ_n = −60 MPa) avec décharge à 12 µm — `plastic` : résiduel **11,98 µm** sur
+les trois points, W_II = 1,70 GfII (frottement compris) ; `solidity` : retrace 8e-11 c, résiduel
+≤ 1e-18 m, W_II = 1,1677 GfII (= 1,1593 + la branche élastique 2/3 f_s²/pj à f_s = 141 MPa) ;
+`origin` : résiduel ≤ 1e-18 m, retrace FAIL (4,7 c) ; basculement 0,5° (bras 0,28 / 0,63 / 0,76 mm
+aux milieux d'arêtes) — `solidity` : points à 10,26 / 10,715 µs / jamais, joint à **10,715 µs**
+(deuxième) ; `plastic + majority` : 8,855 / 9,245 / jamais, joint à 9,245 µs ; `plastic + any` :
+joint à **8,855 µs** (premier), et W_I = 0,935 Gf (6,6 % sous Gf : le D partagé casse la facette
+avant que les deux autres points aient dissipé). Les deux variantes qui doivent être refusées
+(`jbAmp` en percussion, `mesh = grid` sous jointbench) le sont. Le recalcul indépendant de W_I
+depuis `jointbench.csv` (`check_s3.py`) égale le chiffre du solveur.
+
+**Ce que le banc ne fait pas.** Pas de miroir 2D (le scénario vise la transcription 3D de Solidity et
+sa règle nfail > 1 à trois points ; un banc à deux triangles reste à écrire) ; pas de relais
+joint/contact (le contact général tourne mais n'a aucun nœud libre à pousser) ; pas de trajet à
+pression variable (`jbNormal` est constant après sa rampe) ; la branche élastique de 7 nm n'est pas
+résolue à 4 000 pas (voir `jbSteps`).
 
 ### 5.5 Lois de comportement (`law`, modes fem3d / fdem / fdem3d)
 
@@ -2379,7 +2450,9 @@ seul le champ `damage` des VTU joints le montre. Ni le nombre de joints inséré
 ni l'endommagement maximal ne sont écrits dans `history.csv` — lacune connue.
 
 fdem3d : `t, gripFz, sigma, sigmaPeak, nBroken` (tension) ; percussion/shear comme en
-2D avec les trois composantes (+ `grpZ, grpVz` si `trackGroup`, + les six colonnes
+2D avec les trois composantes (+ `grpZ, grpVz` si `trackGroup`, + `Fc_<a>_<b>_x/y/z` par
+paire de `contactForcePairs` — S2 du 13/09, force de contact général exercée par a sur b au
+pas courant, placées après les jauges `szz_*` et avant les six colonnes énergie —, + les six colonnes
 énergie V2/B4). fem/fem3d/dem/dem3d : variantes proches (force outil,
 travail, casse). ⚠️ `sigmaPeak` est un max glissant qui attrape la sonnerie
 post-rupture : recalculer les pics depuis les courbes échantillonnées, ou lire le pic
@@ -2411,10 +2484,11 @@ en quasi-statique les platines sont comptées à v imposée (approx O(dt)).
 
 | fichier | contenu (champs par cellule sauf mention) |
 |---|---|
-| `fdem_XXXX.vtu` | maillage 2D : `vonMises, fragment, phase, grain, sigmaXX, sigmaYY, sigmaXY, epsXX` + `velocity` (nœuds) |
-| `fdem_joints_XXXX.vtu` | joints (lignes) : `damage, tBreak, type` (0 intra/1 homo/2 hétéro), `ftScale, bonded, breakMode` (1 traction/2 cisaillement) + `failMode` si `writeJointMode = true` |
-| `fdem3d_XXXX.vtu` | tets : `vonMises, fragment, phase, grain` + `velocity` |
-| `fdem3d_joints_XXXX.vtu` | triangles : `damage, tBreak, type, ftScale, bonded, breakMode` (+ `failMode`) |
+| `fdem_XXXX.vtu` | maillage 2D : `vonMises, fragment, phase, grain, sigmaXX, sigmaYY, sigmaXY, epsXX` + `velocity` (nœuds) ; + `pMean` si `writeRuptureFields = true` |
+| `fdem_joints_XXXX.vtu` | joints (lignes) : `damage, tBreak, type` (0 intra/1 homo/2 hétéro), `ftScale, bonded, breakMode` (1 traction/2 cisaillement) + `failMode` si `writeJointMode = true` ; + `dead` (0/1) et `openMax` (m) si `writeRuptureFields = true` |
+| `fdem3d_XXXX.vtu` | tets : `vonMises, sigma1, tauMax, fragment, phase, grain` + `velocity` ; + `pMean` si `writeRuptureFields = true` |
+| `fdem3d_joints_XXXX.vtu` | triangles : `damage, tBreak, type, ftScale, bonded, breakMode` (+ `failMode`) ; + `dead` et `openMax` si `writeRuptureFields = true`. ⚠️ **facette rompue = `tBreak >= 0`**, pas `damage >= 0,999` (max des points sous `majority`) ni `bonded` ; rompue et **ouverte** = `tBreak >= 0` et `openMax > 0` ; remise au contact = `dead = 1` ⊂ `tBreak >= 0` |
+| `jointbench.csv` (fdem3d, `scenario = jointbench`, S3 du 13/09) | une ligne par pas : `t, s, phase, dnOff`, puis `dn_k, ds_k, sig_k, tau_k, tauAbs_k, D_k` pour k = 0..2, puis `nFail, broken, dead, Fn, Ft` — voir §5.4 sexies ; les quatre critères sont imprimés au résumé (`[JOINTBENCH]`) |
 | `fem_XXXX.vtu` / `fem3d_XXXX.vtu` | `damage, vonMises, meanStress/pressure, kapDP, epvEq, ftScale, eroded` selon la loi |
 | `dem*_particles/bonds_XXXX.vtu` | particules (Glyph→Sphere sur `radius`) et liaisons (`state`) |
 | `frames.csv` | frame → temps et pose de l'outil (utilisé par make_gif) |
@@ -2693,6 +2767,157 @@ collectée du banc étant ρ × volume ; `--plot` vue de dessus, `--csv` export)
 `tools/make_unstructured_mesh.py` (maillages simplexes non structurés uniformes via
 Gmsh — `box3d W D H h out.msh [seed]` / `box2d W H h out.msh [seed]` — pour
 `mesh = file` ; `pip install gmsh`).
+
+**Mailleur de l'impact à insert unique et série à train figé (T3, campagne du 13/09)** :
+`tools/make_impact_mesh.py out.msh s [gapr] [SR] [leger] [gap= gapr= algo2d= algo3d= quality=hxt opt= …]`,
+arguments nommés ajoutés le 13/09, **défauts inchangés** (maillage bit-identique, sha256 du s = 2,5
+`a0047b76…` vérifié après édition) : **`train=fixed`** — le train (insert, bit, piston, circlip, plaque)
+est maillé SEUL, roche cachée, sous le champ à l'échelle s, puis la roche dans un SECOND modèle gmsh sous
+le champ à l'échelle SR, et le script écrit la fusion (v2.2, CRLF, mêmes tags physiques/élémentaires, seuls
+les nœuds des tétras) : le train est IDENTIQUE — nœuds, surface, tétras, masses — quel que soit SR (vérifié à
+SR = 2,5 / 1 / 5 sous Delaunay et HXT). Sans la clé, le train suit le champ de la ROCHE (avec
+`Mesh.MeshSizeExtendFromBoundary = 0` les tailles aux points OCC ne gouvernent que les courbes) : piston
+1 033 tétras / 1,057 kg à SR = 1 contre 209 / 0,777 kg à SR = 2,5 — c'est le « piston 26,5 % plus léger »
+du diagnostic du 12/09 §4. Contrepartie : à SR = s le fichier n'est pas bit-identique au défaut (autre ordre
+de génération). `srfar=x` : échelle du seul champ lointain (10 mm × x entre R 25 et R 100 mm, défaut SR) pour
+raffiner la boule sans multiplier les tétras du bord ; `verbose=1` : journal gmsh.
+`tools/mesh_quality.py a.msh [--worst N] [--ball R] [--masses [--yang] [--rho corps=val]]` : `--ball 0.0125`
+= statistiques des tétras dont le centroïde est à r < R de l'origine, par corps (reproduit les 14 722 tétras
+/ 1,372 mm de la demi-boule du diagnostic du 12/09) ; `--masses` = volume × ρ par corps (ρ des decks
+`yang2026_*` : 2 626 / 7 850 / 15 250 ; reproduit les six masses du résumé du solveur : piston 0,776709 kg à
+s = 2,5, 1,05703 à s = 1) ; `--yang` = volumes analytiques des corps tels que dessinés par le générateur,
+perte de facettisation, masses publiées (piston 1,173 kg, bit 1,509 kg) et densité corrigée
+ρ × m_Yang / m_maillé. Série et masses : `docs/MAILLAGE_serie_2026-09-13.md`.
+
+**Decks de conformité et fumée (T4, 13/09)** : `tools/deck_smoke.py --exe <exe> --out <dossier> [--T 2e-6]
+[--frames 1] [--threads 4] [--mesh m.msh] [--drop-key cle] [--tag nom] deck.cfg …` recopie chaque deck avec
+T/frames (et au besoin `meshFile`) surchargés, le lance, et dépouille le journal : démarrage sans refus de clé,
+dt, pas, masses par corps, résidu B4, avertissements, puis **coût estimé** du deck complet (pas = T_deck/dt ×
+ms/pas, `--ms-shared` 77,73 du v3P / `--ms-alone` 17) dans `<dossier>/smoke_<tag>.md` ; `--drop-key` prouve qu'un
+refus vient d'une seule clé. `tools/make_conformity_decks.py [--check]` génère `configs/stanne2025_bench_s25_visc.cfg`
+et la série `configs/yang2026_bench_s25_v4_*.cfg` depuis leurs sources (corps octet pour octet, en-tête avec la
+liste **calculée** des clés qui diffèrent du témoin A, **trois** clés de conformité ajoutées en fin de deck :
+`meanTensionCapFactor = 0`, `jointBreakModeRef = slipRef`, `writeRuptureFields = true` — `contactForcePairs`
+est délibérément exclue de la série v4, elle ajouterait des colonnes à `history.csv` et casserait le contrôle
+de bit-identité contre la v3 ; les deux decks St Anne la portent) ; tableau pour validation dans
+`docs/DECKS_conformite_2026-09-13.md`. `tools/t4_check_instr.py <dossier de fumée> … [--expect-fc a:b,c:d]
+[--expect-fields] [--negative] [--piston-mass m] [--bit-mass m] [--tcontact t]` vérifie **sur les fichiers**
+(il ne lance rien) que l'instrumentation d'un deck est réellement armée : masses par corps du journal contre
+les masses attendues du train, colonnes `Fc_<a>_<b>_*` présentes avec leur max, nullité **exacte** de la paire
+qui touche la roche tant que l'onde ne l'a pas atteinte, `Fc_piston_bit_z` nulle avant l'instant de contact et
+non nulle après, champs `dead`/`openMax` du dernier VTU de joints et `pMean` de celui des éléments ;
+`--negative` exige l'inverse (aucune colonne `Fc_*`, aucun champ de S1) et sert de témoin sur un run sans les
+clés. ⚠️ les noms de `DataArray` sont dispersés dans tout le VTU (données ASCII à la suite de chaque balise) :
+le fichier est lu en entier par blocs, lire seulement l'en-tête donne un faux négatif.
+
+**Fissures connectées et cratère — `tools/crack_paths.py <run> [--frame k]`** (T1 de la
+campagne du 13/09 ; motif : DIAGNOSTIC indépendant du 12/09 §5, « le rayon max des centroïdes
+n'est pas une longueur de fissure »). Facettes rompues = `tBreak ≥ 0` (`imp_lib.broken_mask`) ;
+les nœuds dupliqués par élément du VTU sont unifiés par leurs coordonnées de la trame 0, et
+deux facettes sont adjacentes si elles partagent une **arête** ; composantes connexes
+(`scipy.csgraph`, contrôlées par un union-find indépendant avec `--check`). **Noyau** = la
+plus grande composante qui touche r < `--rcore` (6 mm) ; « centrales secondaires » = les
+autres qui touchent r < 6 mm ; « périphériques » = le reste. **Bras** du noyau =
+sous-composantes de ses facettes à r > rcore. Pour chaque composante et chaque bras : facettes,
+r min / r max sur les sommets, longueur radiale, profondeurs, orientation moyenne pondérée par
+l'aire — **radiale** si |n·e_r| < 0,35 (`--radial`) **et** |n_z| < 0,6 (`--nz` ; sans ce second
+test une facette horizontale passerait pour radiale), **horizontale** si |n_z| ≥ 0,6, sinon
+**conique** — et azimut. **Longueur de fissure radiale au sens de Yang** = distance du centre à
+la pointe du plus long bras *radial* connecté au noyau (0 s'il n'y en a pas). **Rayon de
+cratère** = frontière extérieure des facettes de surface du noyau (centroïde à moins de
+`--skin` = 1 mm sous la surface) : r max des sommets ET moyenne / min des r max par 12
+secteurs (le r max seul est porté par une facette isolée sur un maillage grossier). Géométrie
+de **référence** (trame 0) par défaut, `--current` pour les positions courantes ; les deux r max
+sont imprimés, ainsi que l'ancienne métrique (r max des centroïdes) pour comparaison. Sorties :
+tableau stdout, `<stem>_components.csv`, `<stem>_summary.csv`, figure PDF vectoriel + PNG
+(`results/fig/crack_paths_<run>`) : (a) vue de dessus, noyau gris, une couleur par bras (tab10)
+et par composante séparée (tab20), cercles insert / Yang / cratère mesuré, étoile = pointe
+radiale ; (b) coupe verticale dans le plan de l'axe et de la pointe radiale (pas à y = 0).
+Cadrage **ajusté aux données** par défaut (`--lim 0`, `--depth 0` : 15 % de marge autour du plus
+grand rayon mesuré, au moins 10 mm pour garder les cercles de Yang ; une valeur explicite en mm
+est respectée) ; le titre porte les deux rayons de cratère (r max **et** moyenne par 12 secteurs),
+jamais le r max seul.
+`--selftest` : population synthétique (éventail + raccord + bande radiale + trois
+périphériques) avec la variante « raccord retiré » qui DOIT faire tomber la longueur de Yang de
+16,5 à 0 mm. Contrôles complémentaires : `tests_f2/campagne13/T1/verif_T1.py` (refactor pur de
+`imp_lib.broken_mask()`, variante falsifiante de l'ancien filtre `damage ≥ 0,999`, caractère
+aberrant du r max de cratère). Mesuré le 13/09 : s = 1 trame 18 (180 µs) — 3 357 facettes, 22
+composantes, noyau 3 328 facettes, 16 bras dont 4 radiaux, **Yang 8,26 mm** (contre 9,16 mm par
+l'ancienne métrique), cratère r max 8,71 mm / moyenne par secteur 7,23 mm (rapport 0,83) ; témoin
+s = 2,5 à 200 µs — 294 facettes, 3 composantes, 6 bras **aucun radial** (Yang 0), cratère r max
+14,01 mm porté par **deux facettes** seulement sur 105 (même sommet extérieur, aires 1,5 × la
+médiane) / moyenne par secteur 7,89 mm (rapport 0,56) : **lire la moyenne par secteur**, pas le
+r max, sur un maillage grossier. Post-traitement pur, aucune clé.
+
+**Estimateurs de Yang pour la cinétique d'impact** (`tools/yang_estimators.py`, campagne du 13/09,
+tâche T2, motif COMPLEMENT_YANG §5) : Yang et al. 2025 §4.1 mesurent la vitesse d'indentation comme la
+**pente de la portion linéaire** de la courbe déplacement-temps du bit, la vitesse de rebond comme la pente
+de la portion linéaire remontante après le retournement, et la contrainte de référence comme le **pic de la
+première onde** à la jauge à mi-bit — pas comme des extrema instantanés. Le module lit `history.csv`
+(colonnes `z_<corps>`, `vz_<corps>`, `szz_bit`) et calcule les deux estimateurs côte à côte :
+`indentation_slope` (droite aux moindres carrés de p = z(0) − z entre 10 % et 90 % de l'enfoncement
+maximal, avant le retournement ; fenêtre, r², résidu rms imprimés), `rebound_slope` (idem sur le
+déplacement récupéré entre 10 % et 90 % de l'amplitude récupérée dans l'enregistrement ; déclaré **non
+mesurable** si p_max est au dernier point ou si moins de 5 % de p_max est récupéré — on ne fabrique pas une
+pente sur un retournement inachevé), `instantaneous` (l'ancien estimateur : min de vz, max de vz après le
+minimum), `first_wave_peak` (départ = premier point > 5 % du max global, fin = premier retour sous 10 % du
+max courant depuis le départ, pic sur cette fenêtre ; le max global et sa date restent imprimés à côté avec
+la mention « onde ULTÉRIEURE » s'ils diffèrent). `tools/fig_kinetics.py` (option `--body insert|bit`,
+défaut `insert`) hachure la fenêtre de pente sur (c) et trace la droite ajustée, hachure la première onde
+sur (a) et marque son pic, et imprime le tableau des deux estimateurs avec leurs fenêtres sous le tableau
+historique (conservé) ; `tools/yang_report.py` imprime les critères 1-3 sous les deux formes et déclare le
+rebond non mesurable quand le bit descend encore à la fin (auparavant une vitesse négative était imprimée
+comme « rebond »). Test falsifiant `tools/test_yang_estimators.py [run ...]` : signaux synthétiques à
+pentes exactes (6 et 4 m/s retrouvés à 1e-12), pic gaussien qui fait diverger max instantané (7,4) et pente
+(6,0), jauge à deux ondes où la variante naïve « max global » se trompe d'onde (200 ≠ 160 MPa, échec
+attendu), enregistrements tronqués avant/pendant le retournement déclarés non mesurables. Mesuré sur le
+run s = 1 (`out_yang2026_v3`, arrêté à 183 µs) : v_ind pente **6,86 m/s** (insert, 65-169 µs, r² 0,998 ;
+bit 6,57 m/s, 50-167 µs) contre max instantané **7,37 m/s** (bit, 106 µs ; insert 10,07 m/s à 64 µs, la
+chiquenaude du jeu de 0,02 mm) ; pic de la première onde 175,95 MPa à 34,3 µs (onde 21-87 µs) = max global ;
+rebond non mesurable (bit à −5,73 m/s à la fin). Témoin s = 2,5 (`out_yang_bench_s25_v3P`, 200 µs) : 6,01
+(insert) / 5,60 (bit) m/s en pente contre 7,61 / 6,27 m/s en max ; 173,0 MPa à 68,0 µs. Aucune clé solveur.
+
+**Contrôle croisé des estimateurs — `--robust`** (T2, deuxième passe du 13/09 au soir ; la question posée
+est « 6,86 m/s est-il une mesure ou un artefact de fenêtre ? »). Trois fonctions ajoutées à
+`tools/yang_estimators.py`, toutes hors du chemin par défaut : `slope_theilsen` (pente robuste = médiane
+des pentes de toutes les paires de points, estimateur **indépendant** des moindres carrés sur la même
+fenêtre), `window_sensitivity` (la pente pour les fenêtres 5-95, 10-90, 20-80, 30-70, 40-60 % de
+l'enfoncement, avec la dispersion sur les fenêtres larges) et `wave_transit` / `transit_from_log`
+(temps de transit 1D du train : `c_barre = √(E/ρ)` = 5 047,5 m/s et `c_P = √(E(1−ν)/(ρ(1+ν)(1−2ν)))` =
+5 778,2 m/s pour l'acier du deck, instant du contact piston/bit = jeu/v₀ = 2,22 µs, arrivée au centre de
+la bande de jauge, **retour de la réflexion du bas du bit**, durée du créneau de piston 2L/c et contrainte
+d'impact 1D ρcv/2 ; la géométrie est **lue dans le journal du run** — lignes `bit : z = [...]`,
+`piston : z = [...]`, `gauge bit : ... z = [...]`, `groupVel.piston`). `tools/yang_estimators.py --robust
+<run>` et `tools/yang_report.py --robust <run> [journal]` ajoutent le bloc en fin de sortie ; **sans
+l'option la sortie est inchangée** (vérifié : `yang_report.py` sans `--robust` rend un fichier octet pour
+octet identique à celui de la première passe, et le tableau de `fig_kinetics.py` est identique).
+Mesuré le 13/09 au soir (`tests_f2/campagne13/T2/*_robust.log`, `test_yang_estimators_passe2.log`,
+45 critères PASS / 0 échec) : **la jauge est bien à mi-bit** — bande `[0,28 ; 0,31]` m de centre 0,295 m
+contre un bit `z = [0,17322 ; 0,41502]` m de milieu 0,29412 m (L = 241,8 mm), soit 0,9 mm = 0,36 % de L, et
+le garde-fou du solveur (qui imprime un AVERTISSEMENT si le centre sort de la moitié centrale) est muet
+dans les deux journaux. **Theil-Sen égale les moindres carrés** à 1,07-2,24 % sur les quatre couples
+(run, corps). **Dispersion des fenêtres larges** : insert 2,36 %, bit 5,55 % sur le s = 1 ; 3,56 % et
+4,77 % sur le s = 2,5 — mais les fenêtres étroites montent jusqu'à +10,55 % (bit, 40-60 %), donc *le
+chiffre ne se cite pas sans sa fenêtre*. Les deux estimateurs naïfs s'en écartent franchement, ce qui est
+la raison d'être de la définition de Yang : vitesse moyenne p_max/t_pmax −22,7 à −30,9 %, max instantané
++11,9 à +46,9 %. **L'écart à Yang survit au choix de fenêtre** : sur le s = 1 la pente vaut +22,0 %
+(insert) et +16,8 % (bit) de plus que les 5,62 m/s publiés, et encore +12,2 % sur la fenêtre la plus
+favorable (bit, 5-95 % : 6,31 m/s) ; le témoin s = 2,5, lui, tombe à −0,3 % (bit, 5,60 m/s). **Première
+onde** : le premier signal physiquement possible à la bande est 20,40 µs (bord haut, à c_P) et l'arrivée
+au centre 26,00 µs ; la réflexion du bas du bit revient à 74,25 µs. Le pic retenu tombe à 34,27 µs (s = 1)
+et 67,99 µs (s = 2,5), donc **avant** ce retour : la contrainte de référence n'est pas une superposition —
+de peu pour le témoin (6,3 µs de marge). Sa valeur vaut l'impact 1D ρcv/2 = 178,30 MPa à −1,3 % (175,95)
+et −3,0 % (173,03). La fenêtre détectée (66,0 et 71,7 µs) est plus **courte** que le créneau de piston
+(103,0 µs) : la jauge est déchargée avant la fin du créneau, le critère de retombée ne délimite donc pas
+le créneau complet. Les contre-exemples `G` prouvent que ces critères peuvent tomber (déplacement
+bilinéaire 3 puis 9 m/s : dispersion 21,74 % ; jauge muette avant 80 µs : pic retenu à 160 µs, hors de
+l'intervalle). **Rebond** : aucun des 44 runs d'impact du dépôt n'enregistre le retournement ; le seul qui
+le franchit, `out_yang_bench_s25_plastic` (300 µs, p_max 0,904 mm à 264,2 µs), n'a récupéré que 2,43 % de
+p_max, donc `rebound_slope` le déclare non mesurable (plancher 5 %). Forcé à `min_amp = 0,02` il donne
+0,915 m/s, et la vitesse instantanée finale est +1,341 m/s, contre 4,65 m/s chez Yang : les deux
+estimateurs disent « ~1 m/s », mais à 300 µs le rebond accélère encore. Une mesure conforme (pente lue
+après 450 µs) demande un run de 450 µs, soit 2,25 × le témoin de 200 µs (≈ 12 400 s à 14 fils sur machine
+partagée, ~45 min seul).
 
 **Post-traitement du couplage hydro** (`bench_abuaisha/tools/`, 2026-08-20) :
 `hydro_sign_check.py <run_conf> <run_hydro>` (LE contrôle de signe, cf. §5.10),

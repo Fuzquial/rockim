@@ -1,0 +1,102 @@
+{
+  "core_tets": 14722,
+  "core_edge_mean_median_mm": 1.3721680895848438,
+  "core_h_median_mm": 0.510349067748985,
+  "rock_tets": 98546,
+  "grain_volumes_m3": {
+    "0.0": 0.007357197166316772,
+    "1.0": 4.235902780438316e-06,
+    "2.0": 0.00016411428282778797,
+    "3.0": 0.00013465323903761372,
+    "4.0": 9.335945782408768e-07,
+    "5.0": 2.4273993490120303e-05
+  },
+  "phase_volumes_m3": {
+    "0.0": 0.007357197166316772,
+    "1.0": 0.00032304151535552197,
+    "2.0": 5.169497358679193e-06
+  },
+  "history": {
+    "end_us": 182.92499999999998,
+    "max_indentation_speed": 7.36906,
+    "final_vz_bit": -5.72957,
+    "max_compression_gauge_MPa": 175.948,
+    "final_nBroken": 3530.0,
+    "final_nPulv": 2.0,
+    "100us": {
+      "t": 0.000100031,
+      "vz_bit": -7.18813,
+      "nBroken": 623.0,
+      "nPulv": 0.0,
+      "bdWork": 0.0
+    },
+    "150us": {
+      "t": 0.000150047,
+      "vz_bit": -6.53863,
+      "nBroken": 2258.0,
+      "nPulv": 0.0,
+      "bdWork": -0.00991304
+    },
+    "180us": {
+      "t": 0.000179936,
+      "vz_bit": -5.77168,
+      "nBroken": 3352.0,
+      "nPulv": 0.0,
+      "bdWork": -0.0107065
+    }
+  },
+  "10": {
+    "nBroken": 623,
+    "false_positive_old_filter": 88,
+    "tensile_label": 173,
+    "shear_label": 450,
+    "radius_centroids_p95_mm": 3.380845955058437,
+    "radius_centroids_max_mm": 4.669587697072701,
+    "depth_centroids_max_mm": 4.894036782666663,
+    "joint_fields": [
+      "bonded",
+      "breakMode",
+      "damage",
+      "difT",
+      "edotIns",
+      "ftScale",
+      "tBreak",
+      "type"
+    ],
+    "bulkD": {
+      "max": 0.0,
+      "min": 0.0,
+      "nonzero": 0
+    },
+    "core_current_dm_um_max": 10.790640964461241,
+    "core_current_dm_over14um": 0,
+    "core_J_min": 0.967290999630425
+  },
+  "18": {
+    "nBroken": 3357,
+    "false_positive_old_filter": 380,
+    "tensile_label": 1063,
+    "shear_label": 2294,
+    "radius_centroids_p95_mm": 6.665326805078423,
+    "radius_centroids_max_mm": 9.162655833144449,
+    "depth_centroids_max_mm": 10.144855964,
+    "joint_fields": [
+      "bonded",
+      "breakMode",
+      "damage",
+      "difT",
+      "edotIns",
+      "ftScale",
+      "tBreak",
+      "type"
+    ],
+    "bulkD": {
+      "max": 0.258833020807,
+      "min": 0.0,
+      "nonzero": 10
+    },
+    "core_current_dm_um_max": 14.395860427578812,
+    "core_current_dm_over14um": 4,
+    "core_J_min": 0.963438561387315
+  }
+}

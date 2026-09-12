@@ -366,8 +366,87 @@ void Fdem3dSolver::init() {
                 "bulkDamage = yang exige l ABSENCE de la cle law : meme "
                 "'law = elastic' construit une MatLaw et court-circuite "
                 "bulkDamage EN SILENCE (garde durcie post-revue 2026-08-28)");
+        // ---- S4 (campagne du 13/09, DIAGNOSTIC §3, COMPLEMENT §7) --------
+        // Mesures ALTERNATIVES de delta_m = h * eps_m. Les defauts
+        // (`inscribed`, `deviatoric`) reproduisent le chemin historique mot
+        // pour mot ; les autres valeurs changent la physique (opt-in).
+        //   bulkDamageLength : `inscribed` = hEl_ = 6V/A (0,51 mm de mediane
+        //     dans la boule du s = 1) ; `edge` = moyenne des six aretes du
+        //     tetra (1,37 mm au meme endroit) — le seuil delta0 = 14 um vaut
+        //     alors 1,0 % de deformation au lieu de 2,7 %.
+        //   bulkDamageStrain : `deviatoric` = sqrt(2/3) ||dev eps|| (eps_vm,
+        //     NUL en compression isotrope : le modele ne s arme jamais) ;
+        //     `principal` = plus grande deformation principale en valeur
+        //     absolue ; `total` = sqrt(2/3) ||eps||, trace comprise.
+        //   bulkDamageProbe : sortie seule (seuils, max, champ `bulkDm`).
+        {
+            const std::string bl = cfg_.gets("bulkDamageLength", "inscribed");
+            if (bl != "inscribed" && bl != "edge")
+                throw std::runtime_error("bulkDamageLength must be inscribed "
+                                         "| edge (S4, 13/09 : longueur h de "
+                                         "delta_m = h * eps_m)");
+            bdLen_ = bl == "edge" ? 1 : 0;
+            const std::string bs = cfg_.gets("bulkDamageStrain", "deviatoric");
+            if (bs != "deviatoric" && bs != "principal" && bs != "total")
+                throw std::runtime_error("bulkDamageStrain must be deviatoric "
+                                         "| principal | total (S4, 13/09 : "
+                                         "mesure eps_m de delta_m = h * eps_m)");
+            bdStrain_ = bs == "deviatoric" ? 0 : (bs == "principal" ? 1 : 2);
+            bdProbe_ = cfg_.getb("bulkDamageProbe", false);
+            if (bdLen_ != 0 || bdStrain_ != 0)
+                std::cout << "[FDEM3D] bulkDamage : delta_m = h * eps_m avec h = "
+                          << bl << ", eps_m = " << bs
+                          << " (S4, 13/09 ; historique : inscribed, "
+                             "deviatoric)\n";
+        }
+    } else {
+        // S4 : une cle de mesure posee SANS bulkDamage = yang serait inerte
+        // et muette (piege maison n. 1) : on refuse.
+        static const char* const kBdS4[] = {"bulkDamageLength",
+                                            "bulkDamageStrain",
+                                            "bulkDamageProbe"};
+        for (const char* k : kBdS4)
+            if (cfg_.has(k))
+                throw std::runtime_error(std::string(k) + " exige bulkDamage "
+                                         "= yang (S4, 13/09) : sans "
+                                         "pulverisation la cle serait inerte");
     }
     mtCap_ = cfg_.getd("meanTensionCapFactor", 3.0);
+    // ---- S1 (campagne du 13/09) : instrumentation de rupture --------------
+    // writeRuptureFields : champs VTU `dead`, `openMax` (joints) et `pMean`
+    // (elements). jointBreakModeRef : plage qui normalise rs dans l etiquette
+    // de rupture (voir le header). Les deux sont des SORTIES : aucune force.
+    writeRupture_ = cfg_.getb("writeRuptureFields", false);
+    {
+        std::string br = cfg_.gets("jointBreakModeRef", "slipF");
+        if (br != "slipF" && br != "slipRef")
+            throw std::runtime_error("jointBreakModeRef must be slipF | slipRef "
+                                     "(slipF = etiquette historique normalisee "
+                                     "par J.slipF ; slipRef = par la plage "
+                                     "courante du moteur, jointShearRange = "
+                                     "coulomb comprise)");
+        breakModeRef_ = (br == "slipRef") ? 1 : 0;
+        if (breakModeRef_ == 1)
+            std::cout << "[FDEM3D] jointBreakModeRef = slipRef : l etiquette "
+                         "traction/cisaillement a la rupture lit la plage "
+                         "COURANTE du moteur de mode II (sortie seule)\n";
+    }
+    // Relecture V (13/09) : le compteur du cap (ligne de demarrage, ligne
+    // par trame, comptage dans elementForces) est SOUS writeRuptureFields.
+    // Sans la cle le journal est textuellement celui d avant S1 (le cap
+    // vaut 3 par defaut : une sortie non gardee touchait tout run).
+    if (writeRupture_) {
+#ifdef _OPENMP
+        mtCapExcT_.assign(std::max(1, omp_get_max_threads()), 0.0);
+#else
+        mtCapExcT_.assign(1, 0.0);
+#endif
+        if (mtCap_ > 0.0 && !cfg_.has("law"))
+            std::cout << "[FDEM3D] meanTensionCapFactor = " << mtCap_
+                      << " : cap ACTIF sur la pression moyenne (pm <= "
+                      << mtCap_ << " ft) ; les elements ecretes sont comptes "
+                         "a chaque trame (S1, 13/09, sous writeRuptureFields)\n";
+    }
     srTau_ = cfg_.getd("strainRateTau", 1.0e-6);
     // ---- strainRateFilter : LISSE-T-ON le taux avant d en tirer le DIF ? --
     // ADDITION (principe VIII) : `exponential` est le defaut et reproduit le
@@ -407,7 +486,66 @@ void Fdem3dSolver::init() {
     if      (sc == "percussion") scen_ = Scenario::PERCUSSION;
     else if (sc == "shear")      scen_ = Scenario::SHEAR;
     else if (sc == "tension")    scen_ = Scenario::TENSION;
-    else throw std::runtime_error("fdem3d scenario must be percussion | shear | tension");
+    else if (sc == "jointbench") scen_ = Scenario::JOINTBENCH;   // S3 (13/09)
+    else throw std::runtime_error("fdem3d scenario must be percussion | shear | "
+                                  "tension | jointbench");
+
+    // ---- S3 (campagne du 13/09, DIAGNOSTIC §6.2) : scenario = jointbench ---
+    // Les cles jb* ne sont lues QUE sous ce scenario ; posees ailleurs elles
+    // seraient inertes, donc refusees (piege maison n. 1 : une cle sans
+    // effet et sans avertissement). Voir le bloc S3 de Fdem3dSolver.hpp.
+    jbOn_ = scen_ == Scenario::JOINTBENCH;
+    {
+        static const char* const kJb[] = {"jbMode", "jbAmp", "jbNormal",
+                                          "jbUnloadAt", "jbRate", "jbTilt",
+                                          "jbEdge", "jbSteps"};
+        if (!jbOn_)
+            for (const char* k : kJb)
+                if (cfg_.has(k))
+                    throw std::runtime_error(std::string("la cle ") + k
+                        + " n a de sens que sous scenario = jointbench (banc "
+                          "de joint cinematique, S3 du 13/09) : elle serait "
+                          "INERTE ici");
+    }
+    if (jbOn_) {
+        const std::string jm = cfg_.gets("jbMode", "tension");
+        if (jm != "tension" && jm != "shear" && jm != "mixed")
+            throw std::runtime_error("jbMode must be tension | shear | mixed "
+                                     "(tension = ouverture normale ; shear = "
+                                     "glissement dans le plan de la facette, "
+                                     "sous l offset normal jbNormal ; mixed = "
+                                     "trajet proportionnel a 45 deg, "
+                                     "composantes normale et tangentielle "
+                                     "egales)");
+        jbMode_ = (jm == "tension") ? 0 : (jm == "shear") ? 1 : 2;
+        jbAmp_ = cfg_.getd("jbAmp", 2.0e-5);
+        jbNormal_ = cfg_.getd("jbNormal", 0.0);
+        jbUnloadAt_ = cfg_.getd("jbUnloadAt", 0.0);
+        jbRate_ = cfg_.getd("jbRate", 1.0);
+        jbTiltRad_ = cfg_.getd("jbTilt", 0.0) * M_PI / 180.0;
+        jbEdge_ = cfg_.getd("jbEdge", 1.0e-3);
+        jbSteps_ = cfg_.geti("jbSteps", 4000);
+        if (!(jbAmp_ > 0.0)) throw std::runtime_error("jbAmp doit etre > 0 [m]");
+        if (!(jbRate_ > 0.0)) throw std::runtime_error("jbRate doit etre > 0 [m/s]");
+        if (!(jbUnloadAt_ >= 0.0 && jbUnloadAt_ < 1.0))
+            throw std::runtime_error("jbUnloadAt doit etre dans [0 ; 1[ "
+                                     "(fraction de jbAmp ou l on decharge "
+                                     "jusqu a 0 puis recharge ; 0 = sans "
+                                     "decharge)");
+        if (!(jbEdge_ > 0.0)) throw std::runtime_error("jbEdge doit etre > 0 [m]");
+        if (jbSteps_ < 100)
+            throw std::runtime_error("jbSteps doit etre >= 100 (echantillons "
+                                     "par jbAmp)");
+        if (cfg_.has("mesh") || cfg_.has("meshFile"))
+            throw std::runtime_error("scenario = jointbench construit son "
+                                     "propre maillage (deux tetraedres "
+                                     "reguliers d arete jbEdge) : retirer "
+                                     "mesh / meshFile");
+        if (cfg_.has("W") || cfg_.has("D") || cfg_.has("H")
+            || cfg_.has("nx") || cfg_.has("ny") || cfg_.has("nz"))
+            throw std::runtime_error("scenario = jointbench : W, D, H, nx, ny, "
+                                     "nz sont fixes par jbEdge, les retirer");
+    }
 
     W_ = cfg_.getd("W", 0.08);
     D_ = cfg_.getd("D", 0.08);
@@ -480,6 +618,47 @@ void Fdem3dSolver::init() {
                          "bulkDamagePhase — les eq. 3-4 (calibrees sur le "
                          "granite) s appliquent a TOUTES les phases, acier et "
                          "carbure compris (audit D du 13/09)\n";
+        // ---- S4 : bulkDamageProbe — seuils en DEFORMATION de la mesure ----
+        // Sortie seule. Pour les deux longueurs (diametre inscrit et arete
+        // moyenne, medianes sur les elements de la phase endommageable) on
+        // imprime delta0/h et deltaF/h : la deformation eps_m qui arme D et
+        // celle qui l amene a la forme limite (attendu diagnostic §3 : 14 um
+        // / 0,51 mm = 2,7 % en inscrit, 14 um / 1,37 mm = 1,0 % en arete).
+        if (bdProbe_) {
+            std::vector<double> hi, he;
+            const int ed6[6][2] = {{0, 1}, {0, 2}, {0, 3},
+                                   {1, 2}, {1, 3}, {2, 3}};
+            for (std::size_t eI = 0; eI < el_.size(); ++eI) {
+                const Elem& e = el_[eI];
+                if (bdPhase_ >= 0 && e.phase != bdPhase_) continue;
+                hi.push_back(hEl_[eI]);
+                double Ltot = 0.0;
+                for (const auto& ed : ed6)
+                    Ltot += (X0_[e.n[ed[1]]] - X0_[e.n[ed[0]]]).norm();
+                he.push_back(Ltot / 6.0);
+            }
+            auto med = [](std::vector<double> v) {
+                if (v.empty()) return 0.0;
+                std::sort(v.begin(), v.end());
+                return v[v.size() / 2];
+            };
+            const double hiM = med(hi), heM = med(he);
+            std::cout << "[FDEM3D] bulkDamageProbe : " << hi.size()
+                      << " elements endommageables ; h median inscrit = "
+                      << hiM * 1e3 << " mm, arete moyenne mediane = "
+                      << heM * 1e3 << " mm\n"
+                      << "[FDEM3D]   seuil eps_m (delta0/h) : inscrit "
+                      << (hiM > 0.0 ? 100.0 * bdD0_ / hiM : 0.0)
+                      << " %, arete " << (heM > 0.0 ? 100.0 * bdD0_ / heM : 0.0)
+                      << " % ; forme limite (deltaF/h) : inscrit "
+                      << (hiM > 0.0 ? 100.0 * bdDf_ / hiM : 0.0)
+                      << " %, arete " << (heM > 0.0 ? 100.0 * bdDf_ / heM : 0.0)
+                      << " % ; mesure ACTIVE : h = "
+                      << (bdLen_ == 1 ? "edge" : "inscribed") << ", eps_m = "
+                      << (bdStrain_ == 0 ? "deviatoric"
+                          : (bdStrain_ == 1 ? "principal" : "total"))
+                      << "\n";
+        }
     }
     // ---- cohesive joint law (PER JOINT, as in 2D) ---------------------------
     // ---- optional bulk constitutive law -------------------------------------
@@ -1264,6 +1443,29 @@ void Fdem3dSolver::init() {
                      "jointDeltaC, jointResidualMu, jointFrictionMobilised, "
                      "jointFrictionScaled, jointDeath\n";
     }
+    // ---- S3 : ce que le banc de joint refuse (13/09) -----------------------
+    // Les deux tetraedres bougent RIGIDEMENT : leur contrainte est nulle, donc
+    // aucun critere d insertion (adaptive) ni loi extrinseque (camacho) ne
+    // peut s y declencher ; insertion = none n a pas de joint a mesurer.
+    if (jbOn_) {
+        if (adaptive_ || noJoints_)
+            throw std::runtime_error("scenario = jointbench exige des joints "
+                                     "INTRINSEQUES (cle insertion absente ou "
+                                     "= intrinsic) : les tetraedres ne se "
+                                     "deforment pas, l insertion adaptative "
+                                     "ne s armerait jamais");
+        if (tslCamacho_)
+            throw std::runtime_error("scenario = jointbench : jointTSL = "
+                                     "camacho (loi extrinseque) n a pas de "
+                                     "sens sur un joint intrinseque unique");
+        if (xiJ_ > 0.0)
+            std::cout << "[JOINTBENCH] AVERTISSEMENT : jointXi = " << xiJ_
+                      << " > 0 — le dashpot de joint ajoute cd v/At a la "
+                         "traction (a jbRate = " << jbRate_
+                      << " m/s ce n est pas negligeable devant ft) ; la regle "
+                         "maison est jointXi = 0 pour les verifications de "
+                         "loi\n";
+    }
 
     kp_ = phases_.maxE() * hmin_;                      // tool contact [N/m]
     // ---- A1 : loi de contact de l'outil, miroir du 2D --------------------
@@ -1528,6 +1730,7 @@ void Fdem3dSolver::init() {
         }
     }
     computeStableDt();
+    if (jbOn_) jbSetupPath();              // S3 : dt d echantillonnage, T, chemin
     relax_ = std::exp(-dt_ / cfg_.getd("gcBirthTau", 1e-6));
     // ---- gcBirth : COMMENT nait un contact sur un joint qui vient de mourir
     // ADDITION (principe VIII) : `ramp` est le defaut, mot pour mot l ancien.
@@ -1672,7 +1875,7 @@ void Fdem3dSolver::init() {
     // 2026-08-06 ; 3D confirme 2026-08-11 — grille de Kuhn intrinseque en
     // cascade, gcWork +584 J pour 16 J incidents). Les scenarios d'impact et
     // de coupe doivent partir du maillage desordonne.
-    if (!voronoi_ && scen_ != Scenario::TENSION)
+    if (!voronoi_ && scen_ != Scenario::TENSION && !jbOn_)   // S3 : 2 tets
         std::cout << "[FDEM3D] WARNING: mesh = grid + scenario de "
                      "fissuration — un maillage structure biaise les trajets "
                      "et peut diverger en phase debris (FICHE 2026-08-06/11). "
@@ -1702,6 +1905,7 @@ void Fdem3dSolver::init() {
 // the quiet boundaries and the general contact.
 // ---------------------------------------------------------------------------
 void Fdem3dSolver::buildMesh() {
+    if (jbOn_) { jbBuildMesh(); return; } // S3 : deux tetraedres, un joint
     std::string mesh = cfg_.gets("mesh", "grid");
     if (mesh != "grid" && mesh != "voronoi" && mesh != "file")
         throw std::runtime_error("mesh must be grid | voronoi | file (got '"
@@ -2091,6 +2295,67 @@ void Fdem3dSolver::buildMeshFile() {
             trkGrps_.push_back(gg);
         }
     }
+    // ---- S2 (campagne du 13/09, DIAGNOSTIC §6.1) : force de contact entre
+    // corps nommes. contactForcePairs = "a:b c:d ..." : colonnes
+    // Fc_<a>_<b>_x/y/z de history.csv = somme au pas courant des forces de
+    // contact (normale + tangentielle) exercees PAR a SUR b. Sommee dans les
+    // boucles d assemblage du contact general (potentiel : phase C, serie par
+    // construction ; penalite noeud-face : boucle serie sur cpTL) — l ordre
+    // des paires est celui du chemin historique, aucun atomique necessaire.
+    // Sans la cle : fcOn_ = false, aucune instruction de plus dans le contact.
+    {
+        std::string fl = cfg_.gets("contactForcePairs", "");
+        std::istringstream iss(fl);
+        std::string tok;
+        while (iss >> tok) {
+            std::size_t c = tok.find(':');
+            if (c == std::string::npos || c == 0 || c + 1 >= tok.size())
+                throw std::runtime_error("contactForcePairs: element '" + tok
+                    + "' attendu sous la forme corpsA:corpsB");
+            std::string na = tok.substr(0, c), nb = tok.substr(c + 1);
+            if (nGroups_ <= 1 || elemGroup_.empty())
+                throw std::runtime_error("contactForcePairs exige des corps "
+                    "nommes ($PhysicalNames du maillage, mesh = file)");
+            int ga = -1, gb = -1;
+            for (int g = 0; g < nGroups_; ++g) {
+                if (groupName_[g] == na) ga = g;
+                if (groupName_[g] == nb) gb = g;
+            }
+            if (ga < 0)
+                throw std::runtime_error("contactForcePairs: corps '" + na
+                                         + "' inconnu");
+            if (gb < 0)
+                throw std::runtime_error("contactForcePairs: corps '" + nb
+                                         + "' inconnu");
+            if (ga == gb)
+                throw std::runtime_error("contactForcePairs: '" + tok
+                    + "' — la force d un corps sur lui-meme est nulle par "
+                      "construction (action = reaction)");
+            bool dup = false;
+            for (const auto& p : fcPairs_)
+                if (p.first == ga && p.second == gb) dup = true;
+            if (dup) continue;             // paire repetee : une colonne
+            fcPairs_.push_back({ga, gb});
+        }
+        if (!fcPairs_.empty()) {
+            fcOn_ = true;
+            fcIdx_.assign((std::size_t)nGroups_ * nGroups_, -1);
+            fcSum_.assign(fcPairs_.size(), Eigen::Vector3d::Zero());
+            std::cout << "[FDEM3D] contactForcePairs : " << fcPairs_.size()
+                      << " paire(s) de corps —";
+            for (std::size_t k = 0; k < fcPairs_.size(); ++k) {
+                fcIdx_[(std::size_t)fcPairs_[k].first * nGroups_
+                       + fcPairs_[k].second] = (int)k;
+                std::cout << " " << groupName_[fcPairs_[k].first] << "->"
+                          << groupName_[fcPairs_[k].second];
+            }
+            std::cout << " : colonnes Fc_<a>_<b>_x/y/z de history.csv "
+                         "(force de contact exercee par a sur b au pas "
+                         "courant, normale + tangentielle, contact general "
+                         "seul — l outil analytique n est pas un corps ; "
+                         "S2, 13/09)\n";
+        }
+    }
     for (int g = 0; g < nGroups_; ++g) {
         std::string gs = cfg_.gets("gauge." + groupName_[g], "");
         if (gs.empty()) continue;
@@ -2238,6 +2503,17 @@ void Fdem3dSolver::buildFromTets(const std::vector<Eigen::Vector3d>& vpos,
             Atot += 0.5 * (B - A).cross(C - A).norm();
         }
         hEl_.push_back(6.0 * e.V0 / Atot);
+        // S4 (13/09) : bulkDamageLength = edge — arete moyenne du tetra
+        // (les six aretes), la longueur « 1,37 mm » du diagnostic. Rempli
+        // SEULEMENT sous l option : sans elle le vecteur reste vide.
+        if (bdLen_ == 1) {
+            const int ed6[6][2] = {{0, 1}, {0, 2}, {0, 3},
+                                   {1, 2}, {1, 3}, {2, 3}};
+            double Ltot = 0.0;
+            for (const auto& ed : ed6)
+                Ltot += (X0_[e.n[ed[1]]] - X0_[e.n[ed[0]]]).norm();
+            hEdge_.push_back(Ltot / 6.0);
+        }
         int id = (int)el_.size();
         el_.push_back(e);
 
@@ -3203,6 +3479,13 @@ void Fdem3dSolver::activateJoint(int jI, double sig,
 }
 
 void Fdem3dSolver::placeTool() {
+    if (jbOn_) {                           // S3 : aucun outil sur le banc
+        toolNone_ = true;
+        tool_.free = false;
+        tool_.x = {1e9, 1e9, 1e9};
+        tool_.v.setZero();
+        return;
+    }
     if (scen_ == Scenario::TENSION) return;
     tool_.mass   = cfg_.getd("toolMass", 0.5);
     tool_.radius = cfg_.getd("toolRadius", 0.015);
@@ -3394,7 +3677,7 @@ void Fdem3dSolver::placeTool() {
 void Fdem3dSolver::setupBoundaries() {
     cAbs_.assign(X0_.size(), Eigen::Vector3d::Zero());
     kAbs_.assign(X0_.size(), Eigen::Vector3d::Zero());
-    if (scen_ == Scenario::TENSION) return;
+    if (scen_ == Scenario::TENSION || jbOn_) return;   // S3 : tout est FIXED
 
     std::string ab = cfg_.gets("absorbing", "none");
     if (ab != "none" && ab != "sides" && ab != "all")
@@ -3768,6 +4051,7 @@ void Fdem3dSolver::step() {
         for (int i = 0; i < nN; ++i) f_[i].setZero();
     }
     tool_.F.setZero();
+    if (jbOn_) jbDrive();                  // S3 : B a sa position prescrite
     // tri des fragments : armement a l'instant demande (voir Fdem3dSolver.hpp)
     if (brushStart_ > 0.0 && !brushArmed_ && t_ >= brushStart_) armBrush();
 
@@ -3830,6 +4114,7 @@ void Fdem3dSolver::step() {
     // celui du pas precedant la premiere fissure.
     if (scen_ == Scenario::TENSION || scen_ == Scenario::SHEAR)
         if (nBroken_ == 0) scanSubCriticalDamage();
+    if (jbOn_) jbRecord();                 // S3 : etat du joint a t_
 
     integrate();
     t_ += dt_;
@@ -3976,8 +4261,25 @@ void Fdem3dSolver::elementForces() {
     double wVi = 0.0;                      // dont part VISQUEUSE
     double wBd = 0.0;                      // dont part PULVERISATION (WP1)
     long nPv = 0;
+    // S1(c) : compteur d ecretage du cap de traction moyenne. Le max de
+    // l exces est pris PAR FIL (OpenMP 2.0 de MSVC n a pas reduction(max))
+    // dans le membre mtCapExcT_, puis reduit apres la boucle. Compteur
+    // pur : aucune force ne change. Relecture V : tout est sous
+    // writeRupture_ — sous defaut nMt reste 0, aucune allocation, aucun
+    // acces (la variable de reduction entiere en plus ne change pas l
+    // ordre de reduction des flottants wEl/wVi/wBd).
+    long nMt = 0;
+    if (writeRupture_) {
 #ifdef _OPENMP
-#pragma omp parallel for schedule(static) reduction(+:wEl,wVi,wBd,nPv)
+        const std::size_t nTmt = (std::size_t)std::max(1, omp_get_max_threads());
+#else
+        const std::size_t nTmt = 1;
+#endif
+        if (mtCapExcT_.size() < nTmt) mtCapExcT_.resize(nTmt);
+        std::fill(mtCapExcT_.begin(), mtCapExcT_.end(), 0.0);
+    }
+#ifdef _OPENMP
+#pragma omp parallel for schedule(static) reduction(+:wEl,wVi,wBd,nPv,nMt)
 #endif
     for (int eI = 0; eI < (int)el_.size(); ++eI) {
         Elem& e = el_[eI];
@@ -4035,8 +4337,22 @@ void Fdem3dSolver::elementForces() {
         // REPARATION (2026-08-28) : garde !law_ ajoutee, symetrie avec le
         // 2D (FdemSolver:~3329) — une loi MatLaw possede sa contrainte, le
         // cap elastique ne doit pas l ecreter par-dessus (double comptage).
-        if (!law_ && mtCap_ > 0.0 && pm > mtCap_ * ftP_[e.phase])
+        if (!law_ && mtCap_ > 0.0 && pm > mtCap_ * ftP_[e.phase]) {
+            // S1(c) : on COMPTE avant d ecreter (meme condition, meme
+            // valeur ecretee qu avant : bit-identique). Sous cle seulement
+            // (relecture V) : sans writeRuptureFields, rien n est execute.
+            if (writeRupture_) {
+                ++nMt;
+#ifdef _OPENMP
+                const int tMt = omp_get_thread_num();
+#else
+                const int tMt = 0;
+#endif
+                const double exc = pm - mtCap_ * ftP_[e.phase];
+                if (exc > mtCapExcT_[tMt]) mtCapExcT_[tMt] = exc;
+            }
             pm = mtCap_ * ftP_[e.phase];              // mean-tension cap
+        }
         sig = dev + pm * Eigen::Matrix3d::Identity();
         // ---- WP1 : pulverisation (Yang et al. 2026, eq. 3-4) ------------
         // delta_m = h_e * eps_vm (deformation equivalente deviatorique) ;
@@ -4052,7 +4368,23 @@ void Fdem3dSolver::elementForces() {
             // dans le piston et le bit a 175 MPa : marge 1,04 a 1,6).
             Eigen::Matrix3d ed = eps
                 - (eps.trace() / 3.0) * Eigen::Matrix3d::Identity();
-            double dm = hEl_[eI] * std::sqrt(2.0 / 3.0) * ed.norm();
+            double dm;
+            if (bdLen_ == 0 && bdStrain_ == 0) {
+                // chemin HISTORIQUE, textuellement intact (bit-identique)
+                dm = hEl_[eI] * std::sqrt(2.0 / 3.0) * ed.norm();
+            } else {
+                // S4 (13/09) : mesures alternatives, opt-in. h = arete
+                // moyenne (`edge`) ou diametre inscrit ; eps_m = deviatorique
+                // (eps_vm), principale max en valeur absolue, ou norme
+                // totale sqrt(2/3)||eps|| trace comprise (s arme en
+                // compression isotrope, contrairement a eps_vm).
+                const double hb = bdLen_ == 1 ? hEdge_[eI] : hEl_[eI];
+                double em;
+                if      (bdStrain_ == 0) em = std::sqrt(2.0 / 3.0) * ed.norm();
+                else if (bdStrain_ == 1) em = rockim::maxAbsEigSym3(eps);
+                else                     em = std::sqrt(2.0 / 3.0) * eps.norm();
+                dm = hb * em;
+            }
             if (dm > e.bdDm) e.bdDm = dm;
             if (e.bdDm > bdD0_) {
                 double D = bdDf_ * (e.bdDm - bdD0_)
@@ -4073,6 +4405,11 @@ void Fdem3dSolver::elementForces() {
                 if (D >= bdDmax_) ++nPv;
             }
         }
+        // S1 : pression moyenne de l element telle qu assemblee (caps et
+        // pulverisation compris, viscosite exclue). Sortie seule (`pMean`),
+        // calculee sous cle seulement (relecture V : chemin par defaut
+        // textuellement intact).
+        if (writeRupture_) e.pm = sig.trace() / 3.0;
         // ---- assemblage de la force interne -------------------------------
         // Co-rotationnel (defaut) : P = R sig, la forme historique.
         // Neo-hookeen : le premier Piola-Kirchhoff EXACT, P = J T F^-T. Comme
@@ -4154,6 +4491,15 @@ void Fdem3dSolver::elementForces() {
     viscWork_ += wVi * dt_;                // ventilation, incluse dans elWork_
     bdWork_ += wBd;                        // WP1 : deja une ENERGIE (Y dD)
     nPulv_ = nPv;
+    // S1(c) : reduction du compteur d ecretage (dernier pas + max de trame),
+    // sous cle seulement (relecture V).
+    if (writeRupture_) {
+        mtCapN_ = nMt;
+        mtCapExc_ = 0.0;
+        for (double x : mtCapExcT_) if (x > mtCapExc_) mtCapExc_ = x;
+        if (nMt > mtCapNFr_) mtCapNFr_ = nMt;
+        if (mtCapExc_ > mtCapExcFr_) mtCapExcFr_ = mtCapExc_;
+    }
 }
 
 // Triangular cohesive joints, 3 node-pair integration points (A0/3 each).
@@ -4291,6 +4637,8 @@ void Fdem3dSolver::jointForces() {
                 const double dsn = ds.norm();
                 dnMaxC = std::max(dnMaxC, dn);
                 dsMaxC = std::max(dsMaxC, dsn);
+                // S1(a) : ouverture geometrique max (mesure, cle seule)
+                if (writeRupture_ && dn > J.onMax) J.onMax = dn;
 
                 // ---- jointTSLRise (§2.4) : SEPARATION EFFECTIVE DECALEE ----
                 // Le joint est ne AU SOMMET d une branche ascendante de
@@ -4505,6 +4853,11 @@ void Fdem3dSolver::jointForces() {
         double fnSum = 0.0;                // charge normale nette portee [N]
         double rsMaxO = 0.0;               // moteur de mode II du pas courant
                                            // (jointShearUnload = origin)
+        // S1(b) jointBreakModeRef = slipRef : rs de CHAQUE point, normalise
+        // par la plage courante slipRef (branche plastic), releve apres le
+        // retour radial — la grandeur meme qui a fait croitre D. Lu par
+        // l etiquette de rupture seulement ; jamais ecrit sous slipF.
+        double rsPt[3] = {0.0, 0.0, 0.0};
 
         for (int k = 0; k < 3; ++k) {
             // ---- POINTS D INTEGRATION ------------------------------------
@@ -4543,6 +4896,9 @@ void Fdem3dSolver::jointForces() {
             double dn = delta.dot(n) + J.dn0;
             Eigen::Vector3d dt3 = delta - delta.dot(n) * n;
             dnMax = std::max(dnMax, dn);
+            // S1(a) : ouverture GEOMETRIQUE max (sans dn0) — mesure, sous
+            // cle seulement ; aucune force ne la lit.
+            if (writeRupture_ && delta.dot(n) > J.onMax) J.onMax = delta.dot(n);
             // MESURE (§3.2) : maximum historique de l ouverture, par point.
             // Sous `penalty` ce champ ne sert qu au recensement des facettes
             // inserees mais jamais ouvertes — aucune force ne le lit.
@@ -4606,6 +4962,12 @@ void Fdem3dSolver::jointForces() {
                 // au test de rupture.
                 Dref = zD;
                 if (t2 > rsMaxO) rsMaxO = t2;
+                // S3 (jointbench) : releve du point, sortie seule
+                if (jbOn_) {
+                    jbSeen_ = true;
+                    jbRec_[k] = {{dn, dt3.dot(jbS_), sig, tau.dot(jbS_),
+                                  tau.norm(), zD}};
+                }
                 Eigen::Vector3d trac = (sig * n + tau) * At;
                 fnSum += sig * At;
                 if (midEdge_) {
@@ -4883,8 +5245,18 @@ void Fdem3dSolver::jointForces() {
                     }
                     if (Dt2 > Dref) Dref = std::min(1.0, Dt2);
                 }
+                // S1(b) : rs du point a la plage COURANTE (apres retour)
+                if (breakModeRef_ == 1)
+                    rsPt[k] = (slipRef > 0.0) ? J.slip[k].norm() / slipRef
+                                              : 0.0;
             }
 
+            // S3 (jointbench) : releve du point, sortie seule
+            if (jbOn_) {
+                jbSeen_ = true;
+                jbRec_[k] = {{dn, dt3.dot(jbS_), sig, tau.dot(jbS_),
+                              tau.norm(), Dref}};
+            }
             Eigen::Vector3d trac = (sig * n + tau) * At;
             fnSum += sig * At;             // mesure : charge NORMALE portee
             // V2/B4 : travail TOTAL des tractions de joint (visqueux inclus,
@@ -4927,6 +5299,19 @@ void Fdem3dSolver::jointForces() {
                 double rsF;
                 if (shearOrigin_ || shearSolidity_) {   // pas de glissement
                     rsF = rsMaxO;                       // plastique
+                } else if (breakModeRef_ == 1) {
+                    // jointBreakModeRef = slipRef (S1(b), 13/09) : la
+                    // partition lit la plage COURANTE du moteur (slipRef,
+                    // pression du pas) et non J.slipF — DIAGNOSTIC §5 :
+                    // « le moteur emploie slipRef (:4879), l etiquette
+                    // renormalise par J.slipF (:4934) ». Max sur les points.
+                    // Sous jointTSL = camacho ce bloc n est JAMAIS atteint
+                    // en 3D : la branche camacho pose sa propre etiquette
+                    // et sort par `return` avant (voir « if (tslCamacho_) »
+                    // en tete de la lambda) — inerte par structure, pas
+                    // par coincidence de zeros (relecture V, 13/09 ; mesure
+                    // mini_n4_elas_cam_short : sorties identiques).
+                    rsF = std::max(rsPt[0], std::max(rsPt[1], rsPt[2]));
                 } else {
                     double sMx = 0.0;
                     for (int q = 0; q < 3; ++q)
@@ -5494,6 +5879,7 @@ void Fdem3dSolver::potentialContact() {
                             if (elemGroup_[eLo] == trackGroup_) grpF_ += R.F;
                             if (elemGroup_[eHi] == trackGroup_) grpF_ -= R.F;
                         }
+                        if (fcOn_) fcAccum(eLo, eHi, R.F);   // S2 : normale
                         // barycentriques du centroide : estampilles PONDEREES
                         // de la regle B + frottement (voir le 2D — estampiller
                         // tous les noeuds sur-propageait l'activation : 96 %
@@ -5566,6 +5952,7 @@ void Fdem3dSolver::potentialContact() {
                                     if (elemGroup_[eHi] == trackGroup_)
                                         grpF_ -= Ft;
                                 }
+                                if (fcOn_) fcAccum(eLo, eHi, Ft);  // S2 : tang.
                             } else {
                                 H.step = stepCount_;
                             }
@@ -5581,6 +5968,8 @@ void Fdem3dSolver::potentialContact() {
 
 void Fdem3dSolver::generalContact() {
     grpF_.setZero();                       // V2/B2 : force du pas courant
+    if (fcOn_)                             // S2 : forces entre corps du pas
+        for (auto& s : fcSum_) s.setZero();
     if (gcAdaptive_) {
         if (!poolBuilt_) rebuildContactFaces();
         if (lastTouch_.empty()) lastTouch_.assign(X0_.size(), -1);
@@ -5863,6 +6252,8 @@ void Fdem3dSolver::generalContact() {
                 if (elemGroup_[elemOf_[i]] == trackGroup_) grpF_ += Fc;
                 if (elemGroup_[bf.elem] == trackGroup_) grpF_ -= Fc;
             }
+            // S2 : Fc s applique au noeud i (element elemOf_[i]), -Fc a la face
+            if (fcOn_) fcAccum(elemOf_[i], bf.elem, Fc);
             if (gcAdaptive_) {                         // source de la regle B
                 lastTouch_[i] = stepCount_;
                 lastTouch_[bf.n[0]] = stepCount_;
@@ -6496,11 +6887,19 @@ void Fdem3dSolver::writeFrame(int frame) {
     vtk::ScalarField ef{
         {"vonMises", &svm}, {"sigma1", &sg1}, {"tauMax", &tmx},
         {"fragment", &frag}, {"phase", &phs}, {"grain", &grn}};
-    std::vector<double> bdv, dmg, omc, epv;
+    std::vector<double> bdv, dmg, omc, epv, bdm;
     if (bdOn_) {
         bdv.resize(el_.size());
         for (std::size_t e = 0; e < el_.size(); ++e) bdv[e] = el_[e].bdD;
         ef["bulkD"] = &bdv;
+        // S4 : bulkDamageProbe — max historique de delta_m [m] par element
+        // (la variable d histoire qui pilote D). Opt-in : sans la cle le
+        // VTU reste byte-identique.
+        if (bdProbe_) {
+            bdm.resize(el_.size());
+            for (std::size_t e = 0; e < el_.size(); ++e) bdm[e] = el_[e].bdDm;
+            ef["bulkDm"] = &bdm;
+        }
     }
     if (law_) {
         dmg.resize(el_.size());
@@ -6515,11 +6914,56 @@ void Fdem3dSolver::writeFrame(int frame) {
         ef["omegaC"] = &omc;
         ef["epvEq"]  = &epv;
     }
+    // S1 (13/09) : writeRuptureFields = true -> `pMean` (tr(sigma)/3 au
+    // dernier pas, traction > 0). Sous cle : sans elle le VTU est
+    // byte-identique (ScalarField est une map, l ordre reste alphabetique).
+    std::vector<double> pmv;
+    if (writeRupture_) {
+        pmv.resize(el_.size());
+        for (std::size_t e = 0; e < el_.size(); ++e) pmv[e] = el_[e].pm;
+        ef["pMean"] = &pmv;
+    }
     vtk::writeTetMesh(out_ + name, pts, tets, ef, {{"velocity", &vel}});
+    // S1(c) : journal du cap de traction moyenne, a chaque trame. Compteur
+    // pur (elementForces). Imprime seulement quand le cap est ACTIF et
+    // sous writeRuptureFields = true (relecture V : sans la cle, journal
+    // textuellement inchange).
+    if (writeRupture_ && mtCap_ > 0.0 && !law_) {
+        std::cout << "[FDEM3D] meanTensionCap (" << mtCap_ << " ft) trame "
+                  << frame << " : " << mtCapN_ << " el. ecretes au dernier pas"
+                  << " (max " << mtCapNFr_ << " sur un pas depuis la trame "
+                  << "precedente), exces max " << mtCapExcFr_ * 1e-6
+                  << " MPa\n";
+        mtCapNFr_ = 0;
+        mtCapExcFr_ = 0.0;
+    }
+    // S4 : bulkDamageProbe — l etat de la mesure a chaque trame : max
+    // historique de delta_m, max de D, nombre d elements armes (delta_m >
+    // delta0). Sortie seule, opt-in.
+    if (bdOn_ && bdProbe_) {
+        double dmMax = 0.0, DMax = 0.0;
+        long nArm = 0;
+        for (const auto& e : el_) {
+            if (e.bdDm > dmMax) dmMax = e.bdDm;
+            if (e.bdD > DMax) DMax = e.bdD;
+            if (e.bdDm > bdD0_) ++nArm;
+        }
+        std::cout << "[FDEM3D] bulkDamageProbe trame " << frame
+                  << " : max delta_m = " << dmMax * 1e6 << " um (seuil "
+                  << bdD0_ * 1e6 << " um), max D = " << DMax
+                  << ", elements armes (delta_m > delta0) : " << nArm
+                  << " / " << el_.size() << "\n";
+    }
 
     std::vector<std::array<int, 3>> tris;
     std::vector<double> Dj, tb, Tp, Fs, Bd, Fm, Bm, Dt, Ed;
+    // S1(a) : `dead` (0/1) et `openMax` (m), sous writeRuptureFields.
+    std::vector<double> Dd, Om;
     for (const auto& J : jt_) {
+        if (writeRupture_) {
+            Dd.push_back(J.dead ? 1.0 : 0.0);
+            Om.push_back(J.onMax);
+        }
         tris.push_back(J.a);
         Dj.push_back(J.D);
         tb.push_back(J.tBreak);
@@ -6558,6 +7002,7 @@ void Fdem3dSolver::writeFrame(int frame) {
         jf["dmF"]   = &Df;
     }
     if (cfg_.getb("writeJointMode", false)) jf["failMode"] = &Fm;
+    if (writeRupture_) { jf["dead"] = &Dd; jf["openMax"] = &Om; }
     vtk::writeTriangles3(out_ + name, pts, tris, jf);
 
     std::ofstream fm(out_ + "/frames.csv",
@@ -6599,6 +7044,11 @@ void Fdem3dSolver::historyHeader(std::ostream& os) const {
             os << ",z_" << groupName_[g] << ",vz_" << groupName_[g];
         for (const auto& gg : gauges_)                 // WP3 : jauges
             os << ",szz_" << groupName_[gg.grp];
+        for (const auto& p : fcPairs_)                 // S2 : forces a -> b
+            os << ",Fc_" << groupName_[p.first] << "_" << groupName_[p.second]
+               << "_x,Fc_" << groupName_[p.first] << "_" << groupName_[p.second]
+               << "_y,Fc_" << groupName_[p.first] << "_" << groupName_[p.second]
+               << "_z";
         if (eBreak_) os << ",eVp,eDamT,eDamC";         // §3.2 eq. 26
         os << "\n";
         return;
@@ -6611,6 +7061,11 @@ void Fdem3dSolver::historyHeader(std::ostream& os) const {
         os << ",z_" << groupName_[g] << ",vz_" << groupName_[g];
     for (const auto& gg : gauges_)                     // WP3 : jauges
         os << ",szz_" << groupName_[gg.grp];
+    for (const auto& p : fcPairs_)                     // S2 : forces a -> b
+        os << ",Fc_" << groupName_[p.first] << "_" << groupName_[p.second]
+           << "_x,Fc_" << groupName_[p.first] << "_" << groupName_[p.second]
+           << "_y,Fc_" << groupName_[p.first] << "_" << groupName_[p.second]
+           << "_z";
     // V2/B4 : travaux cumules par famille (signes : negatif = preleve)
     os << ",eEl,eJnt,eGc,eFric,eCund,eLys";
     if (bdOn_) os << ",nPulv,bdWork";
@@ -6645,6 +7100,8 @@ void Fdem3dSolver::historyRow(std::ostream& os) const {
             }
             os << "," << (vs > 0 ? sz / vs : 0.0);
         }
+        for (const auto& s : fcSum_)                   // S2 : forces a -> b
+            os << "," << s.x() << "," << s.y() << "," << s.z();
         if (eBreak_) energyBreakdownRow(os);           // §3.2 eq. 26
         os << "\n";
         return;
@@ -6702,6 +7159,8 @@ void Fdem3dSolver::historyRow(std::ostream& os) const {
         }
         os << "," << (vs > 0 ? sz / vs : 0.0);
     }
+    for (const auto& s : fcSum_)                       // S2 : forces a -> b
+        os << "," << s.x() << "," << s.y() << "," << s.z();
     os << "," << elWork_ << "," << jointWork_ << "," << gcWork_ << ","
        << gcFricWork_ << "," << cundWork_ << "," << lysWork_;   // V2/B4
     if (bdOn_) os << "," << nPulv_ << "," << bdWork_;
@@ -6712,6 +7171,7 @@ void Fdem3dSolver::historyRow(std::ostream& os) const {
 void Fdem3dSolver::finalize() {
     if (nanEvery_ > 0) checkFinite();      // C4 (w20) : dernier controle
     computeFragments();
+    if (jbOn_) jbReport();                 // S3 : criteres du banc de joint
 
     std::ofstream fe(out_ + "/fdem3d_final_elements.csv");
     fe << "cx,cy,cz,fragment,phase,grain\n";
@@ -6803,6 +7263,23 @@ void Fdem3dSolver::finalize() {
                       << -bdWork_ << " J dissipes, " << nPulv_
                       << " elements a D = Dmax. VENTILATION : deja comptee "
                          "dans le poste elements.\n";
+        // S4 : bulkDamageProbe — l etat de la mesure a la trame : max
+        // historique de delta_m, max de D, nombre d elements armes
+        // (delta_m > delta0). Sortie seule, opt-in.
+        if (bdOn_ && bdProbe_) {
+            double dmMax = 0.0, DMax = 0.0;
+            long nArm = 0;
+            for (const auto& e : el_) {
+                if (e.bdDm > dmMax) dmMax = e.bdDm;
+                if (e.bdD > DMax) DMax = e.bdD;
+                if (e.bdDm > bdD0_) ++nArm;
+            }
+            std::cout << "[FDEM3D]      bulkDamageProbe : max delta_m = "
+                      << dmMax * 1e6 << " um (seuil " << bdD0_ * 1e6
+                      << " um), max D = " << DMax << ", elements armes "
+                         "(delta_m > delta0) : " << nArm << " / " << el_.size()
+                      << "\n";
+        }
         std::cout << "[FDEM3D]   joints       : " << -(jointWork_ - dampWork_)
                   << " J cohesif (fissuration + stocke), dashpot "
                   << -dampWork_ << " J\n"
@@ -7154,6 +7631,440 @@ void Fdem3dSolver::finalize() {
         std::cout << "\n";
     }
     brushReport();          // no-op si le tri n'a pas ete arme
+}
+
+// ===========================================================================
+//  S3 (campagne du 13/09, DIAGNOSTIC §6.2) — scenario = jointbench
+//  Banc de joint cinematique : le principe est dans Fdem3dSolver.hpp (bloc
+//  S3). Tout ce qui suit n est appele que sous jbOn_.
+// ===========================================================================
+
+// Deux tetraedres REGULIERS d arete L partageant la facette z = hT :
+//   A = {P0, P1, P2, apex bas}  -> el_[0], FIXE
+//   B = {P0, P1, P2, apex haut} -> el_[1], deplace par jbDrive()
+// buildFromTets cree le joint unique (eA = tet 0, normale sortant de A vers
+// B), les six faces exterieures et les masses ; hmin_ = diametre inscrit
+// 6V/A = L/sqrt(6). Sous jointPenaltyLength = edge, h = L exactement.
+void Fdem3dSolver::jbBuildMesh() {
+    const double L = jbEdge_;
+    const double hT = L * std::sqrt(2.0 / 3.0);      // hauteur du tetra
+    const double yT = 0.5 * std::sqrt(3.0) * L;      // hauteur du triangle
+    std::vector<Eigen::Vector3d> vpos = {
+        Eigen::Vector3d(0.0, 0.0, hT), Eigen::Vector3d(L, 0.0, hT),
+        Eigen::Vector3d(0.5 * L, yT, hT),
+        Eigen::Vector3d(0.5 * L, yT / 3.0, 0.0),        // apex de A
+        Eigen::Vector3d(0.5 * L, yT / 3.0, 2.0 * hT)};  // apex de B
+    std::vector<std::array<int, 4>> tets = {{{0, 1, 2, 3}}, {{0, 1, 2, 4}}};
+    W_ = L; D_ = yT; H_ = 2.0 * hT;
+    hmin_ = L / std::sqrt(6.0);
+    voronoi_ = false;
+    nGrains_ = 1;
+    buildFromTets(vpos, tets, std::vector<int>{0, 0}, std::vector<int>{0});
+    if (jt_.size() != 1 || el_.size() != 2)
+        throw std::runtime_error("jointbench: attendu 2 tetraedres et 1 joint, "
+                                 "obtenu " + std::to_string(el_.size()) + " / "
+                                 + std::to_string(jt_.size()));
+    for (auto& f : flag_) f = FIXED;                 // aucun noeud libre
+    jbNodesB_ = el_[1].n;
+    const Joint& J = jt_[0];
+    const Eigen::Vector3d Q0 = X0_[J.a[0]], Q1 = X0_[J.a[1]], Q2 = X0_[J.a[2]];
+    Eigen::Vector3d n = (Q1 - Q0).cross(Q2 - Q0);
+    n.normalize();
+    Eigen::Vector3d cA = Eigen::Vector3d::Zero(), cB = Eigen::Vector3d::Zero();
+    for (int a = 0; a < 4; ++a) {
+        cA += 0.25 * X0_[el_[0].n[a]];
+        cB += 0.25 * X0_[el_[1].n[a]];
+    }
+    if (!(n.dot(cB - cA) > 0.0))
+        throw std::runtime_error("jointbench: la normale du joint ne sort pas "
+                                 "de A vers B (topologie inattendue)");
+    const Eigen::Vector3d e1 = (Q1 - Q0).normalized();
+    const Eigen::Vector3d e2 = n.cross(e1);
+    jbN_ = n;
+    jbS_ = e1;
+    if (jbMode_ == 0)      jbDir_ = n;
+    else if (jbMode_ == 1) jbDir_ = e1;
+    else                   jbDir_ = (n + e1) / std::sqrt(2.0);
+    // Axe de basculement (jbTilt) : dans le plan de la facette, a 15 deg de
+    // l arete Q0Q1, decale du cote -e_b pour que TOUS les points (sommets et
+    // milieux d aretes) s ouvrent (b > 0) a des distances DISTINCTES : sous
+    // jbTilt != 0 les trois points d integration cedent a des instants
+    // differents (regle deux points sur trois, critere (iv)).
+    const double al = 15.0 * M_PI / 180.0;
+    jbAxis_ = std::cos(al) * e1 + std::sin(al) * e2;
+    const Eigen::Vector3d eb = n.cross(jbAxis_);
+    const Eigen::Vector3d Q[3] = {Q0, Q1, Q2};
+    double bMin = 1e300;
+    for (int k = 0; k < 3; ++k) {
+        bMin = std::min(bMin, (Q[k] - Q0).dot(eb));
+        bMin = std::min(bMin, (0.5 * (Q[k] + Q[(k + 1) % 3]) - Q0).dot(eb));
+    }
+    jbPivot_ = Q0 + (bMin - 0.15 * L) * eb;
+    std::cout << "[JOINTBENCH] scenario = jointbench (S3, 13/09) : deux "
+                 "tetraedres reguliers d arete " << L << " m, facette A0 = "
+              << J.A0 << " m2, h inscrit = " << hmin_ << " m ; tetra A fixe, "
+                 "tetra B prescrit (mode "
+              << (jbMode_ == 0 ? "tension" : jbMode_ == 1 ? "shear" : "mixed")
+              << ")\n[JOINTBENCH]   n = (" << n.transpose() << "), e_s = ("
+              << e1.transpose() << "), direction du chemin = ("
+              << jbDir_.transpose() << ")\n";
+    if (jbTiltRad_ != 0.0) {
+        std::cout << "[JOINTBENCH]   jbTilt = " << jbTiltRad_ * 180.0 / M_PI
+                  << " deg a s = jbAmp, axe (" << jbAxis_.transpose()
+                  << ") par (" << jbPivot_.transpose()
+                  << ") ; bras b des points [m] : sommets";
+        for (int k = 0; k < 3; ++k)
+            std::cout << " " << (Q[k] - jbPivot_).dot(eb);
+        std::cout << ", milieux d aretes";
+        for (int k = 0; k < 3; ++k)
+            std::cout << " " << (0.5 * (Q[k] + Q[(k + 1) % 3]) - jbPivot_).dot(eb);
+        std::cout << "\n";
+    }
+}
+
+// Pas de temps = pas d ECHANTILLONNAGE du chemin (aucun noeud libre : la
+// stabilite explicite n a rien a borner), duree par defaut = le chemin
+// entier, decharge alignee sur les pas (jbNU_ entier) pour que les
+// echantillons de recharge tombent EXACTEMENT sur ceux de la charge —
+// c est ce qui permet le critere (i) sans interpolation.
+void Fdem3dSolver::jbSetupPath() {
+    jbDtStable_ = dt_;
+    dt_ = jbAmp_ / (jbRate_ * (double)jbSteps_);
+    const double dl = jbRate_ * dt_;
+    jbPre_ = 0;
+    if (jbNormal_ != 0.0) {
+        jbPre_ = (long)std::ceil(std::abs(jbNormal_) / dl - 1e-9);
+        if (jbPre_ < 1) jbPre_ = 1;
+    }
+    jbT0_ = jbPre_ * dt_;
+    jbNU_ = 0;
+    if (jbUnloadAt_ > 0.0) {
+        jbNU_ = std::lround(jbUnloadAt_ * (double)jbSteps_);
+        if (jbNU_ < 1) jbNU_ = 1;
+    }
+    const double sU = jbNU_ * dl;
+    const double tPath = jbT0_ + (2.0 * sU + jbAmp_) / jbRate_ + 2.0 * dt_;
+    if (!cfg_.has("T")) T_ = tPath;
+    const Joint& J = jt_[0];
+    std::cout << "[JOINTBENCH] chemin : rampe normale " << jbNormal_ << " m en "
+              << jbPre_ << " pas, puis s : 0 -> "
+              << (jbNU_ > 0 ? std::to_string(sU) + " -> 0 -> " : std::string())
+              << jbAmp_ << " m a " << jbRate_ << " m/s ; dt = " << dt_
+              << " s (echantillonnage, " << jbSteps_ << " pas par jbAmp ; dt "
+                 "explicite " << jbDtStable_ << " s sans objet : aucun noeud "
+                 "libre) ; duree du chemin " << tPath << " s, T = " << T_
+              << " s" << (T_ < tPath ? " *** T < duree du chemin ***" : "")
+              << "\n[JOINTBENCH] joint : pj = " << J.pj << " Pa/m, ft = "
+              << J.ft << " Pa, c = " << J.coh << " Pa, dnE = " << J.dnE
+              << " m, dnF = " << J.dnF << " m, sE = " << J.coh / J.pj
+              << " m, slipF = " << J.slipF << " m, Gf = " << J.Gf
+              << " J/m2, GfII = " << J.GfII << " J/m2 ; dnE/pas = "
+              << J.dnE / dl << ", (dnF - dnE)/pas = " << (J.dnF - J.dnE) / dl
+              << "\n";
+}
+
+void Fdem3dSolver::jbPath(double t, double& s, double& off, int& phase) const {
+    if (jbPre_ > 0 && t < jbT0_ - 0.5 * dt_) {   // rampe de l offset normal
+        off = jbNormal_ * (t / jbT0_);
+        s = 0.0;
+        phase = -1;
+        return;
+    }
+    off = jbNormal_;
+    const double l = std::max(0.0, jbRate_ * (t - jbT0_));
+    const double sU = jbNU_ * jbRate_ * dt_;
+    if (jbNU_ > 0 && l < sU)             { s = l;            phase = 0; }
+    else if (jbNU_ > 0 && l < 2.0 * sU)  { s = 2.0 * sU - l; phase = 1; }
+    else if (l < 2.0 * sU + jbAmp_)      { s = l - 2.0 * sU; phase = jbNU_ > 0 ? 2 : 0; }
+    else                                 { s = jbAmp_;       phase = 3; }
+}
+
+// Position et vitesse prescrites des quatre noeuds de B a l instant t_ :
+// translation s(t) jbDir_ + off(t) jbN_, rotation jbTilt s/jbAmp autour de
+// (jbPivot_, jbAxis_). La vitesse est la difference avant du chemin, pour
+// que le travail des joints (jw) et un eventuel dashpot lisent la vraie
+// vitesse de separation. Les noeuds sont FIXED : integrate() remet v a 0,
+// et la position est re-imposee ici au pas suivant.
+void Fdem3dSolver::jbDrive() {
+    jbSeen_ = false;
+    for (auto& r : jbRec_) r.fill(0.0);
+    double s = 0.0, off = 0.0, s2 = 0.0, off2 = 0.0;
+    int ph = -1, ph2 = -1;
+    jbPath(t_, s, off, ph);
+    jbPath(t_ + dt_, s2, off2, ph2);
+    jbSNow_ = s; jbOffNow_ = off; jbPhaseNow_ = ph;
+    auto place = [&](double sv, double ov, const Eigen::Vector3d& X) {
+        Eigen::Vector3d xr = X;
+        const double th = (jbAmp_ > 0.0) ? jbTiltRad_ * sv / jbAmp_ : 0.0;
+        if (th != 0.0)
+            xr = jbPivot_ + Eigen::AngleAxisd(th, jbAxis_).toRotationMatrix()
+                            * (X - jbPivot_);
+        return Eigen::Vector3d(xr + sv * jbDir_ + ov * jbN_);
+    };
+    for (int i : jbNodesB_) {
+        const Eigen::Vector3d xNow = place(s, off, X0_[i]);
+        const Eigen::Vector3d xNext = place(s2, off2, X0_[i]);
+        u_[i] = xNow - X0_[i];
+        v_[i] = (xNext - xNow) / dt_;
+    }
+}
+
+// Une ligne par pas : etat du joint APRES jointForces() a l instant t_.
+void Fdem3dSolver::jbRecord() {
+    if (!jbCsv_.is_open()) {
+        jbCsv_.open(out_ + "/jointbench.csv");
+        jbCsv_.precision(12);
+        jbCsv_ << "t,s,phase,dnOff";
+        for (int k = 0; k < 3; ++k)
+            jbCsv_ << ",dn" << k << ",ds" << k << ",sig" << k << ",tau" << k
+                   << ",tauAbs" << k << ",D" << k;
+        jbCsv_ << ",nFail,broken,dead,Fn,Ft\n";
+    }
+    const Joint& J = jt_[0];
+    JbRow r;
+    r.t = t_; r.s = jbSNow_; r.off = jbOffNow_; r.phase = jbPhaseNow_;
+    int nF = 0;
+    double Fn = 0.0, Ft = 0.0;
+    const double At = J.A0 / 3.0;
+    for (int k = 0; k < 3; ++k) {
+        r.dn[k] = jbRec_[k][0]; r.ds[k] = jbRec_[k][1];
+        r.sig[k] = jbRec_[k][2]; r.tau[k] = jbRec_[k][3];
+        r.tabs[k] = jbRec_[k][4];
+        r.D[k] = majorityFail_ ? J.Dk[k] : J.D;
+        if (r.D[k] >= 1.0) ++nF;
+        Fn += r.sig[k] * At;
+        Ft += r.tabs[k] * At;
+    }
+    r.nFail = nF;
+    r.broken = (J.tBreak >= 0.0) ? 1 : 0;
+    r.dead = J.dead ? 1 : 0;
+    jbHist_.push_back(r);
+    jbCsv_ << r.t << "," << r.s << "," << r.phase << "," << r.off;
+    for (int k = 0; k < 3; ++k)
+        jbCsv_ << "," << r.dn[k] << "," << r.ds[k] << "," << r.sig[k] << ","
+               << r.tau[k] << "," << r.tabs[k] << "," << r.D[k];
+    jbCsv_ << "," << r.nFail << "," << r.broken << "," << r.dead << "," << Fn
+           << "," << Ft << "\n";
+}
+
+// Les quatre criteres FALSIFIANTS du cadrage, imprimes au resume :
+//  (i)   decharge/recharge AVANT rupture : la recharge retrace-t-elle la
+//        charge ? (echantillons apparies au meme dn ou ds, aucune
+//        interpolation) — attendu OUI sous solidity (loi sans memoire),
+//        NON sous plastic/origin (secante de decharge, eq. 17/18) ;
+//  (ii)  glissement (ouverture) residuel a traction nulle sur la decharge —
+//        attendu > 0 sous plastic en cisaillement, 0 sous origin/solidity ;
+//  (iii) aire sous sigma(dn) [tau(ds)] jusqu a la rupture contre Gf [GfII]
+//        et contre la valeur que la loi CODEE doit donner (1,159 Gf sous
+//        solidity : ot = 3 Gf/ft et int z = 0,3863) ;
+//  (iv)  regle deux points sur trois : instants de rupture des points et du
+//        joint (jbTilt != 0 les separe).
+void Fdem3dSolver::jbReport() {
+    if (jbCsv_.is_open()) jbCsv_.flush();
+    const Joint& J = jt_[0];
+    const double ft = J.ft, coh = J.coh;
+    const char* law = shearSolidity_ ? "solidity" : (shearOrigin_ ? "origin" : "plastic");
+    const std::size_t nR = jbHist_.size();
+    auto fmt = [](double x) {                // 7 chiffres, pas les 6 decimales
+        char b[40];                          // fixes de std::to_string
+        std::snprintf(b, sizeof(b), "%.6e", x);
+        return std::string(b);
+    };
+    std::cout << "\n[JOINTBENCH] ---- criteres falsifiants (S3, 13/09) ----\n"
+              << "[JOINTBENCH] mode " << (jbMode_ == 0 ? "tension" : jbMode_ == 1 ? "shear" : "mixed")
+              << ", jointShearUnload = " << law << ", jointFailRule = "
+              << (majorityFail_ ? "majority" : "any") << ", jointDeltaC = "
+              << (solidityDeltaC_ ? "solidity" : guoDeltaC_ ? "guo" : "exact")
+              << ", jointSoftening = " << (yanSoft_ ? "yan/munjiza" : "linear")
+              << ", jointElastic = " << (paraElastic_ ? "parabolic" : "linear")
+              << ", jointQuadrature = " << (midEdge_ ? "midedge" : "vertex")
+              << " ; " << nR << " lignes\n";
+    if (nR < 2) { std::cout << "[JOINTBENCH] trop peu de lignes : aucun critere\n"; return; }
+    // ---- instants de rupture (joint et points) ----------------------------
+    double tB = -1.0;
+    std::size_t iB = nR;
+    for (std::size_t i = 0; i < nR; ++i)
+        if (jbHist_[i].broken) { tB = jbHist_[i].t; iB = i; break; }
+    std::array<double, 3> tK{{-1.0, -1.0, -1.0}};
+    for (int k = 0; k < 3; ++k)
+        for (std::size_t i = 0; i < nR; ++i)
+            if (jbHist_[i].D[k] >= 1.0) { tK[k] = jbHist_[i].t; break; }
+    // ---- (iii) aires jusqu a la rupture ------------------------------------
+    const std::size_t iEnd = (iB < nR) ? iB : nR - 1;
+    double wI = 0.0, wII = 0.0;
+    for (int k = 0; k < 3; ++k)
+        for (std::size_t i = 1; i <= iEnd; ++i) {
+            const JbRow& a = jbHist_[i - 1];
+            const JbRow& b = jbHist_[i];
+            wI  += 0.5 * (a.sig[k] + b.sig[k]) * (b.dn[k] - a.dn[k]);
+            wII += 0.5 * (a.tau[k] + b.tau[k]) * (b.ds[k] - a.ds[k]);
+        }
+    wI /= 3.0; wII /= 3.0;
+    double wIexp = 0.0, wIIexp = 0.0;
+    if (shearSolidity_) {
+        const double op = J.dnE, ot = std::max(2.0 * op, 3.0 * J.Gf / ft);
+        const double Iz = yan::integralFD(kSolidityZ);
+        wIexp = (2.0 / 3.0) * ft * op + ft * ot * Iz;
+        const double sp = coh / J.pj, st = std::max(2.0 * sp, 3.0 * J.GfII / coh);
+        wIIexp = (2.0 / 3.0) * coh * sp + coh * st * Iz;
+    } else if (yanSoft_) {
+        wIexp = (paraElastic_ ? 2.0 / 3.0 : 0.5) * ft * J.dnE
+              + ft * (J.dnF - J.dnE) * yanI_;
+        // plastic : la branche elastique tangentielle se decharge pendant
+        // l adoucissement (ds = tau/pj + s_p), son aire n est pas conservee ;
+        // origin : secante a l origine, l aire elastique reste.
+        wIIexp = (shearOrigin_ ? 0.5 * coh * (coh / J.pj) : 0.0)
+               + coh * J.slipF * yanI_;
+    } else {
+        wIexp = 0.5 * ft * J.dnF;
+        wIIexp = (shearOrigin_ ? 0.5 * coh * (coh / J.pj) : 0.0)
+               + 0.5 * coh * J.slipF;
+    }
+    std::cout << "[JOINTBENCH] (iii) aire sous sigma(dn) jusqu a la rupture : W_I = "
+              << wI << " J/m2 = " << wI / J.Gf << " Gf ; attendu par la loi codee "
+              << wIexp << " J/m2 = " << wIexp / J.Gf << " Gf";
+    if (jbMode_ == 0) {
+        const double err = (wIexp > 0.0) ? std::abs(wI / wIexp - 1.0) : 1e300;
+        std::cout << " -> ecart " << err * 100.0 << " % ["
+                  << (tB < 0.0 ? "PAS DE RUPTURE : non evalue"
+                               : (err <= 0.02 ? "PASS (<= 2 %)" : "FAIL (> 2 %)"))
+                  << "]";
+    }
+    std::cout << "\n[JOINTBENCH] (iii) aire sous tau(ds) jusqu a la rupture : W_II = "
+              << wII << " J/m2 = " << wII / J.GfII << " GfII ; attendu a pression "
+                 "normale nulle " << wIIexp << " J/m2 = " << wIIexp / J.GfII << " GfII";
+    if (jbMode_ == 1 && jbNormal_ == 0.0) {
+        const double err = (wIIexp > 0.0) ? std::abs(wII / wIIexp - 1.0) : 1e300;
+        std::cout << " -> ecart " << err * 100.0 << " % ["
+                  << (tB < 0.0 ? "PAS DE RUPTURE : non evalue"
+                               : (err <= 0.02 ? "PASS (<= 2 %)" : "FAIL (> 2 %)"))
+                  << "]";
+    } else if (jbMode_ == 1) {
+        std::cout << " (jbNormal != 0 : le frottement s ajoute, pas de verdict)";
+    }
+    std::cout << "\n";
+    // ---- (i) retrace de la decharge / recharge -----------------------------
+    const bool useDs = (jbMode_ == 1);
+    if (jbNU_ > 0) {
+        const double comp = std::abs(jbDir_.dot(useDs ? jbS_ : jbN_));
+        const double tol = 1e-3 * jbRate_ * dt_ * comp;
+        double devU = 0.0, devR = 0.0;
+        long nU = 0, nRl = 0, nUnm = 0, nRnm = 0;
+        for (int k = 0; k < 3; ++k) {
+            std::vector<std::pair<double, double>> ld;
+            for (std::size_t i = 0; i < nR; ++i) {
+                const JbRow& r = jbHist_[i];
+                if (r.phase == 0 && !r.broken)
+                    ld.emplace_back(useDs ? r.ds[k] : r.dn[k],
+                                    useDs ? r.tau[k] : r.sig[k]);
+            }
+            std::sort(ld.begin(), ld.end());
+            if (ld.empty()) continue;
+            const double xMax = ld.back().first;
+            auto match = [&](double x, double y, double& dev, long& n, long& nm) {
+                auto it = std::lower_bound(ld.begin(), ld.end(),
+                                           std::make_pair(x, -1e300));
+                double best = 1e300, yb = 0.0;
+                if (it != ld.end() && std::abs(it->first - x) < best) {
+                    best = std::abs(it->first - x); yb = it->second;
+                }
+                if (it != ld.begin()) {
+                    auto jt = it; --jt;
+                    if (std::abs(jt->first - x) < best) {
+                        best = std::abs(jt->first - x); yb = jt->second;
+                    }
+                }
+                if (best <= tol) { dev = std::max(dev, std::abs(y - yb)); ++n; }
+                else ++nm;
+            };
+            for (std::size_t i = 0; i < nR; ++i) {
+                const JbRow& r = jbHist_[i];
+                if (r.broken) continue;
+                const double x = useDs ? r.ds[k] : r.dn[k];
+                const double y = useDs ? r.tau[k] : r.sig[k];
+                if (r.phase == 1) match(x, y, devU, nU, nUnm);
+                else if (r.phase == 2 && x <= xMax + tol) match(x, y, devR, nRl, nRnm);
+            }
+        }
+        const double ref = useDs ? coh : ft;
+        std::cout << "[JOINTBENCH] (i) retrace : max |" << (useDs ? "tau" : "sigma")
+                  << "_recharge - " << (useDs ? "tau" : "sigma") << "_charge| = "
+                  << devR << " Pa = " << devR / ref << " " << (useDs ? "c" : "ft")
+                  << " (" << nRl << " echantillons apparies, " << nRnm
+                  << " sans jumeau) ; decharge : " << devU << " Pa = " << devU / ref
+                  << " " << (useDs ? "c" : "ft") << " (" << nU << " apparies) -> ["
+                  << (nRl == 0 ? "AUCUN ECHANTILLON : non evalue"
+                               : (devR <= 1e-6 * ref ? "PASS (< 1e-6)"
+                                                     : "FAIL (>= 1e-6)"))
+                  << "] ; attendu PASS sous solidity (loi sans memoire), FAIL "
+                     "sous plastic/origin (secante de decharge)\n";
+        // ---- (ii) residuel a traction nulle sur la decharge ----------------
+        std::cout << "[JOINTBENCH] (ii) " << (useDs ? "glissement" : "ouverture")
+                  << " residuel(le) a traction nulle sur la decharge, par point [m] :";
+        for (int k = 0; k < 3; ++k) {
+            // rows de la decharge (phase 1) PLUS le point de retournement
+            // (premiere row de phase 2, s = 0) : c est la ou une secante a
+            // l origine rend exactement zero.
+            double xRes = -1.0, xPrev = 0.0, yPrev = 0.0, sgn = 0.0, xMin = 1e300;
+            bool first = true, inU = false;
+            for (std::size_t i = 0; i < nR; ++i) {
+                const JbRow& r = jbHist_[i];
+                if (r.broken) break;
+                const bool turn = inU && r.phase == 2;
+                if (r.phase != 1 && !turn) continue;
+                inU = true;
+                const double x = useDs ? r.ds[k] : r.dn[k];
+                const double y = useDs ? r.tau[k] : r.sig[k];
+                xMin = std::min(xMin, std::abs(x));
+                if (first) { sgn = (y >= 0.0) ? 1.0 : -1.0; first = false; }
+                else if (y * sgn <= 0.0) {
+                    const double dy = y - yPrev;
+                    xRes = (std::abs(dy) > 1e-300) ? xPrev - yPrev * (x - xPrev) / dy : x;
+                    break;
+                }
+                xPrev = x; yPrev = y;
+                if (turn) break;
+            }
+            // pas de changement de signe jusqu au retournement : la traction
+            // garde son signe jusqu a |x|min (~1e-18 m, le zero numerique) et
+            // le residuel est BORNE par cette valeur
+            std::cout << " " << (xRes < 0.0 ? "<=" + fmt(xMin) : fmt(xRes));
+        }
+        std::cout << " ; glissement plastique interne |slip| :";
+        for (int k = 0; k < 3; ++k) std::cout << " " << fmt(J.slip[k].norm());
+        std::cout << " -> attendu > 0 sous plastic en cisaillement (glissement "
+                     "conserve), 0 sous origin/solidity (secante a l origine / "
+                     "sans memoire)\n";
+    } else {
+        std::cout << "[JOINTBENCH] (i)/(ii) sans decharge (jbUnloadAt = 0) : non evalues\n";
+    }
+    // ---- (iv) regle deux points sur trois ----------------------------------
+    std::cout << "[JOINTBENCH] (iv) rupture des points (D >= 1) a t =";
+    for (int k = 0; k < 3; ++k)
+        std::cout << " " << (tK[k] < 0.0 ? std::string("jamais") : fmt(tK[k]));
+    std::cout << " s ; joint rompu (tBreak) a t = "
+              << (tB < 0.0 ? std::string("jamais") : fmt(tB)) << " s";
+    if (iB < nR) std::cout << " (nFail = " << jbHist_[iB].nFail << " a cet instant)";
+    if (tB >= 0.0) {
+        std::vector<double> v;
+        for (double x : tK) if (x >= 0.0) v.push_back(x);
+        std::sort(v.begin(), v.end());
+        if (!majorityFail_) {
+            const bool ok = !v.empty() && std::abs(tB - v[0]) <= 0.5 * dt_;
+            std::cout << " -> jointFailRule = any : rupture au PREMIER point ["
+                      << (ok ? "conforme" : "INATTENDU") << "]";
+        } else if (v.size() >= 2) {
+            const bool second = std::abs(tB - v[1]) <= 0.5 * dt_;
+            const bool distinct = (v[1] - v[0]) > 0.5 * dt_;
+            std::cout << " -> jointFailRule = majority : "
+                      << (second ? "mort au DEUXIEME point" : "mort AILLEURS qu au deuxieme point")
+                      << (distinct ? ", instants distincts" : ", instants confondus (jbTilt = 0 ?)")
+                      << " [" << (second && distinct ? "PASS" : (second ? "non discriminant" : "FAIL")) << "]";
+        } else {
+            std::cout << " -> moins de deux points rompus";
+        }
+    }
+    std::cout << "\n[JOINTBENCH] sortie : " << out_ << "/jointbench.csv (" << nR << " lignes)\n";
 }
 
 // ---------------------------------------------------------------------------

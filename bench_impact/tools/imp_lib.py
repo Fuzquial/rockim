@@ -71,6 +71,17 @@ def history(run):
     return {k: np.array([float(x[k]) for x in r]) for k in r[0]}
 
 
+def broken_mask(f):
+    """Masque booleen des facettes ROMPUES a partir des champs par cellule.
+    Le vrai evenement de rupture est tBreak >= 0 ; repli sur l ancien filtre
+    (damage >= 0,999) si le champ manque (anciens VTU). Expose a part pour
+    tools/crack_paths.py (T1, 13/09), qui a besoin des INDICES et non des
+    sommets. Meme regle que broken(), qui l appelle."""
+    if "tBreak" in f:
+        return (f["tBreak"] >= 0.0) & (f["bonded"] < 0.5)
+    return (f["damage"] >= 0.999) & (f["bonded"] < 0.5)
+
+
 def broken(pts, con, f):
     """Faces ROMPUES (D = 1, plus bondees) : sommets (n,3,3), centroides,
     normales unitaires et mode de rupture (1 = traction, 2 = cisaillement)."""
@@ -79,11 +90,8 @@ def broken(pts, con, f):
     # des qu UN point a cede, alors que la facette ne rompt qu a DEUX points
     # sur trois. Le vrai evenement est tBreak >= 0 (380 faux positifs sur
     # 3 737 a 180 us du run s = 1). Repli sur l ancien filtre si le champ
-    # manque (anciens VTU).
-    if "tBreak" in f:
-        sel = (f["tBreak"] >= 0.0) & (f["bonded"] < 0.5)
-    else:
-        sel = (f["damage"] >= 0.999) & (f["bonded"] < 0.5)
+    # manque (anciens VTU). Regle portee par broken_mask().
+    sel = broken_mask(f)
     P = pts[con[sel]]
     c = P.mean(axis=1)
     n = np.cross(P[:, 1] - P[:, 0], P[:, 2] - P[:, 0])
@@ -93,7 +101,20 @@ def broken(pts, con, f):
 
 
 def metrics(c):
-    """Les metriques morphologiques de leur fig. 8, sur les centroides c."""
+    """Les metriques morphologiques de leur fig. 8, sur les centroides c.
+
+    AVERTISSEMENT (diagnostic independant du 12/09 §5, deuxieme defaut de
+    lecture) : `radial` et `crater` ne sont PAS la longueur de fissure ni le
+    rayon de cratere de Yang, seulement l'ETENDUE SPATIALE de la population
+    des facettes rompues — un fragment deplace gonfle `radial`, un reseau
+    diffus atteint 10 mm sans former de radiale connectee, et une facette
+    cassee en surface ne veut pas dire que la matiere est partie. Les
+    grandeurs comparables a l'article sont calculees par
+    `tools/crack_paths.py` (tache T1 du 13/09 : composantes connexes, bras
+    radiaux relies au noyau, cratere par secteurs). Mesure du 13/09 sur la
+    trame 18 du s = 1 : `radial` = 9,16 mm ici contre 8,26 mm pour la plus
+    longue radiale connectee. Valeurs rendues INCHANGEES (les figures
+    existantes en dependent) ; seul ce commentaire est nouveau."""
     if len(c) == 0:
         return dict(radial=0.0, crater=0.0, depth=0.0, n=0)
     r = np.hypot(c[:, 0] - CX, c[:, 1] - CY)

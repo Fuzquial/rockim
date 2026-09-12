@@ -54,6 +54,7 @@
 // ---------------------------------------------------------------------------
 #include <array>
 #include <cstdint>
+#include <fstream>                         // S3 : jointbench.csv
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -149,13 +150,21 @@ public:
 
 private:
     enum Flag { FREE = 0, FIXED = 1, PRESCRIBED = 2 };
-    enum class Scenario { PERCUSSION, SHEAR, TENSION };
+    // JOINTBENCH (S3, campagne du 13/09) : banc de joint cinematique, un
+    // seul joint entre deux tetraedres, tetra B en translation prescrite.
+    enum class Scenario { PERCUSSION, SHEAR, TENSION, JOINTBENCH };
 
     struct Elem {
         std::array<int, 4> n;
         Eigen::Matrix<double, 3, 4> dN;    // reference shape-fn gradients
         double V0;
         double svm = 0.0;
+        // S1 (campagne du 13/09) : pression moyenne tr(sigma)/3 de l element
+        // au dernier pas, traction > 0, APRES caps et pulverisation (la
+        // contrainte reellement assemblee, viscosite exclue). Sortie seule :
+        // ecrite dans le VTU (`pMean`) sous writeRuptureFields = true, et
+        // CALCULEE sous cette cle seulement (relecture V : 0 sans la cle).
+        double pm = 0.0;
         // Taux de deformation FILTRE de l element [1/s], pour le DIF de
         // Yang et al. 2025. Miroir du champ edot du solveur 2D. La mesure
         // est la principale MAXIMALE en valeur absolue du tenseur taux :
@@ -209,6 +218,13 @@ private:
                                            // l insertion ; la part cohesive de
                                            // l eq. 19 ne le lit pas.
         bool dead = false;
+        // S1 (13/09) : ouverture normale GEOMETRIQUE maximale (delta.n, sans
+        // l offset dn0 de l insertion adaptative), maximum sur les points et
+        // sur le temps, en m. 0 = jamais ouvert. Tenu a jour et ecrit
+        // (`openMax`) sous writeRuptureFields = true seulement ; aucune force
+        // ne le lit. C est ce qui distingue une facette rompue OUVERTE d une
+        // facette rompue mais FERMEE (DIAGNOSTIC §5 du 12/09).
+        double onMax = 0.0;
         // Force NORMALE nette que le joint transmettait a l instant EXACT de
         // sa mort, en N (negatif = compression). Sortie de mesure seulement :
         // c est la charge que le relais au contact doit reprendre. Voir
@@ -585,6 +601,83 @@ private:
     // deux lois (penalite et potentiel). La F-delta se lit alors en direct
     // dans history (grpFx/y/z) au lieu de M dv/dt.
     Eigen::Vector3d grpF_ = Eigen::Vector3d::Zero();
+    // S2 (campagne du 13/09, DIAGNOSTIC §6.1) : contactForcePairs = "a:b c:d"
+    // — a chaque ligne de history.csv, la somme au pas courant des forces de
+    // contact (normale + tangentielle, contact general : potentiel ET
+    // penalite noeud-face) que le corps a exerce SUR le corps b, colonnes
+    // Fc_<a>_<b>_x/y/z. Remise a zero en tete de generalContact, comme grpF_.
+    // fcIdx_ : table nGroups x nGroups, [ga*n + gb] = indice de la paire
+    // (a = ga exerce sur b = gb), -1 = non suivie. fcOn_ = false (cle
+    // absente) : aucune ligne des boucles de contact n est executee de plus.
+    // L outil analytique (toolContact) n est pas un corps nomme : exclu.
+    // Pas de miroir 2D : FdemSolver n a pas de corps nommes (elemGroup_).
+    bool fcOn_ = false;
+    std::vector<std::pair<int, int>> fcPairs_;
+    std::vector<int> fcIdx_;
+    std::vector<Eigen::Vector3d> fcSum_;
+    // F = force de contact appliquee a l element eLo (l oppose sur eHi).
+    inline void fcAccum(int eLo, int eHi, const Eigen::Vector3d& F) {
+        const int ga = elemGroup_[eLo], gb = elemGroup_[eHi];
+        if (ga == gb) return;              // meme corps : somme nulle
+        const int k1 = fcIdx_[(std::size_t)ga * nGroups_ + gb];  // ga -> gb
+        if (k1 >= 0) fcSum_[k1] -= F;      // force sur gb (= eHi) = -F
+        const int k2 = fcIdx_[(std::size_t)gb * nGroups_ + ga];  // gb -> ga
+        if (k2 >= 0) fcSum_[k2] += F;      // force sur ga (= eLo) = +F
+    }
+    // ---- S3 (campagne du 13/09, DIAGNOSTIC §6.2 « valider une loi de joint
+    // unique sur un petit banc 3D ») : scenario = jointbench, fdem3d seul --
+    // Deux tetraedres REGULIERS d arete jbEdge partageant une facette : UN
+    // joint, trois points d integration. Tetra A (el_[0], en dessous) FIXE ;
+    // tetra B (el_[1]) en translation RIGIDE prescrite le long d un chemin
+    // quasi statique (jbMode = tension | shear | mixed, amplitude jbAmp a la
+    // vitesse jbRate, offset normal constant jbNormal pose d abord par une
+    // rampe, cycle de decharge/recharge a jbUnloadAt x jbAmp), plus une
+    // rotation optionnelle jbTilt (deg, proportionnelle a l avancement) qui
+    // fait ceder les trois points a des instants distincts (regle 2/3).
+    // AUCUN noeud n est libre (tous FIXED, B deplace par jbDrive() en tete de
+    // pas) : pas de masse, pas d amortissement, pas de dynamique parasite —
+    // le joint ne voit que la separation imposee, et le pas de temps n est
+    // qu un pas d ECHANTILLONNAGE (jbAmp/(jbRate jbSteps)), la stabilite
+    // explicite n ayant rien a borner. Sortie `jointbench.csv` (une ligne par
+    // pas) et, au resume, les quatre criteres falsifiants du cadrage (jbReport).
+    // jbOn_ = false hors du scenario : les deux `if (jbOn_)` de processJoint
+    // sont les seules lignes de plus dans la boucle des joints (aucune force
+    // ne les lit). Pas de miroir 2D : le banc vise la loi 3D de Solidity
+    // (jointShearUnload = solidity, regle nfail > 1 a trois points) ; un banc
+    // 2D (deux triangles, deux points) reste a ecrire.
+    bool jbOn_ = false;
+    int jbMode_ = 0;                       // 0 tension, 1 shear, 2 mixed
+    double jbAmp_ = 2.0e-5, jbNormal_ = 0.0, jbUnloadAt_ = 0.0;
+    double jbRate_ = 1.0, jbTiltRad_ = 0.0, jbEdge_ = 1.0e-3;
+    long jbSteps_ = 4000;                  // echantillons par jbAmp
+    long jbPre_ = 0;                       // pas de la rampe normale
+    long jbNU_ = 0;                        // pas jusqu a la decharge (0 = sans)
+    double jbT0_ = 0.0;                    // fin de la rampe normale [s]
+    double jbDtStable_ = 0.0;              // dt explicite (information)
+    std::array<int, 4> jbNodesB_{{-1, -1, -1, -1}};
+    Eigen::Vector3d jbN_{0, 0, 1}, jbS_{1, 0, 0}, jbDir_{0, 0, 1};
+    Eigen::Vector3d jbPivot_{0, 0, 0}, jbAxis_{1, 0, 0};
+    double jbSNow_ = 0.0, jbOffNow_ = 0.0;
+    int jbPhaseNow_ = -1;
+    bool jbSeen_ = false;                  // le joint a ete evalue ce pas
+    // par point : dn, ds (signe, le long de jbS_), sigma, tau (signe, le
+    // long de jbS_), |tau|, D — ecrit par processJoint sous jbOn_ seulement
+    std::array<std::array<double, 6>, 3> jbRec_{};
+    struct JbRow {
+        double t = 0.0, s = 0.0, off = 0.0;
+        int phase = -1;                    // -1 rampe, 0 charge, 1 decharge,
+                                           // 2 recharge, 3 palier
+        std::array<double, 3> dn{}, ds{}, sig{}, tau{}, tabs{}, D{};
+        int nFail = 0, broken = 0, dead = 0;
+    };
+    std::vector<JbRow> jbHist_;
+    std::ofstream jbCsv_;
+    void jbBuildMesh();
+    void jbSetupPath();
+    void jbPath(double t, double& s, double& off, int& phase) const;
+    void jbDrive();
+    void jbRecord();
+    void jbReport();
     double biasW_ = 0.0;       // correction leapfrog EXACTE : les compteurs
                                // lisent v- ; le theoreme discret veut
                                // (v- + v+)/2 -> ecart = f_tot^2 dt^2 / 2m par
@@ -985,6 +1078,21 @@ private:
     // dissipation d endommagement volumique, DEJA comptee dans elWork_.
     bool bdOn_ = false;
     double bdD0_ = 1.4e-5, bdDf_ = 4.0e-4, bdDmax_ = 0.9, bdCd_ = 1.0;
+    // ---- S4 (campagne du 13/09, DIAGNOSTIC §3, COMPLEMENT §7) : mesures
+    // ALTERNATIVES de delta_m = h * eps_m, opt-in. bdLen_ : 0 = `inscribed`
+    // (defaut, hEl_ = 6V/A, mediane 0,51 mm dans la boule du s = 1) ;
+    // 1 = `edge` (moyenne des six aretes du tetra, 1,37 mm au meme endroit,
+    // hEdge_, rempli SEULEMENT sous cette option). bdStrain_ : 0 =
+    // `deviatoric` (defaut, sqrt(2/3)||dev eps||, nul en compression
+    // isotrope) ; 1 = `principal` (max |eps_i|) ; 2 = `total`
+    // (sqrt(2/3)||eps||, trace comprise). bdProbe_ : sortie seule — seuils
+    // en deformation delta0/h et deltaF/h au demarrage (medianes), max de
+    // delta_m et de D + nombre d elements armes a chaque trame, champ VTU
+    // `bulkDm`. Sans les cles : 0/0/false, chemin historique textuel.
+    int bdLen_ = 0;
+    int bdStrain_ = 0;
+    bool bdProbe_ = false;
+    std::vector<double> hEdge_;            // S4 : arete moyenne par tetra [m]
     // WP6 (spec 005, plan WP6_contact_residuel.md, 2026-08-28) : mu de
     // contact RESIDUEL post-pulverisation — l ingredient "mobilite" du
     // modele de Yang et al. 2026 (sliding friction 0,18 sur le granite,
@@ -1092,6 +1200,38 @@ private:
     // articles : il faut pouvoir le desarmer pour faire tourner le modele de
     // quelqu un d autre. <= 0 le desarme. Defaut 3 = inchange.
     double mtCap_ = 3.0;
+    // ---- S1(c), campagne du 13/09 : COMPTEUR d ecretage du cap ------------
+    // Le cap etait invisible (ECARTS §5 : « inverifiable a posteriori »).
+    // On compte, a chaque pas, les elements dont la pression moyenne
+    // depasse mtCap_ * ft AVANT ecretage, et l exces maximal (Pa). Aucune
+    // force ne change : la ligne d ecretage est la meme, on la compte.
+    // *N_ / *Exc_ = dernier pas ; *NFr_ / *ExcFr_ = maximum depuis la
+    // derniere trame (imprimes par writeFrame, puis remis a zero).
+    // Relecture adversariale (V, 13/09) : le comptage, la ligne de demarrage
+    // et la ligne par trame sont SOUS writeRuptureFields = true — le cap
+    // vaut 3 par defaut, une sortie sans garde aurait touche tout journal.
+    // mtCapExcT_ : max de l exces PAR FIL (OpenMP 2.0 de MSVC n a pas
+    // reduction(max)), membre dimensionne une fois — aucune allocation par
+    // pas, rien du tout sous defaut.
+    long mtCapN_ = 0, mtCapNFr_ = 0;
+    double mtCapExc_ = 0.0, mtCapExcFr_ = 0.0;
+    std::vector<double> mtCapExcT_;
+    // ---- S1(a)/(c) : writeRuptureFields (defaut false) ---------------------
+    // true : VTU des joints + `dead` (0/1) et `openMax` (m) ; VTU des
+    // elements + `pMean` (Pa) ; journal du compteur du cap. Sans la cle :
+    // fichiers ET journal byte-identiques, et Elem::pm / Joint::onMax ne
+    // sont pas meme calcules (garde sur chaque site, relecture V).
+    bool writeRupture_ = false;
+    // ---- S1(b) : jointBreakModeRef = slipF (defaut) | slipRef -------------
+    // Partition rn/rs de l etiquette de rupture (failMode, breakMode, rnB,
+    // rsB) sur la branche `plastic`. `slipF` (historique) normalise le
+    // glissement plastique max par J.slipF ; `slipRef` le normalise par
+    // la plage COURANTE du moteur (slipRef, qui suit fs(sigma_n) sous
+    // jointShearRange = coulomb), point par point — la meme grandeur que
+    // celle qui a fait croitre D. Sans `coulomb`, slipRef == J.slipF et les
+    // deux etiquettes coincident. Inerte sous origin / solidity / camacho
+    // (leur moteur est deja la plage courante). Sortie seule.
+    int breakModeRef_ = 0;                 // 0 = slipF, 1 = slipRef
     bool difOn_ = false;
     double difExpT_ = 0.07;                // 0,07 litteral | 0,1707 fig. 2b
     double srTau_ = 0.0, srRelax_ = 0.0;   // filtre du taux

@@ -189,6 +189,17 @@ private:
         Eigen::Matrix<double, 2, 3> dN;    // reference shape-fn gradients
         double A0;                         // reference area
         double svm = 0.0;                  // von Mises (output)
+        // S1 (13/09), miroir du 3D : pression moyenne (s0 + s1 + szz)/3 au
+        // dernier pas, traction > 0. PRECISION (relecture V) : s0, s1 sont
+        // les composantes ASSEMBLEES (apres cap deviatorique, cap de
+        // traction moyenne et pulverisation) ; szz est la composante hors
+        // plan de la deformation plane (nu (s0 + s1), ou TI / neo-hookeen),
+        // mise a l echelle par le cap DEVIATORIQUE mais NI decalee par le cap
+        // de traction moyenne NI multipliee par la pulverisation, et jamais
+        // assemblee. Ce n est donc pas strictement « tr(sigma)/3 apres caps »
+        // comme en 3D. Sortie seule (`pMean` sous writeRuptureFields = true),
+        // calculee sous cette cle seulement.
+        double pm = 0.0;
         double exx = 0.0;                  // co-rotated axial strain
                                            // (output; SHPB gauges)
         double sxx = 0.0, syy = 0.0;       // global stress (gauges: confinement,
@@ -268,6 +279,11 @@ private:
         // reprendre. Voir jointDeath dans ce header.
         double fDeath = 0.0;
         bool dead = false;                 // faces released to general contact
+        // S1 (13/09), miroir du 3D : ouverture normale GEOMETRIQUE maximale
+        // (delta.n sans dn0), max sur les points et le temps, en m ; 0 =
+        // jamais ouvert. Tenu a jour et ecrit (`openMax`) sous
+        // writeRuptureFields = true seulement ; aucune force ne le lit.
+        double onMax = 0.0;
         double tBreak = -1.0;              // first time D reached 1
         double tInsert = -1.0;             // instant d'insertion adaptative
                                            // (catalogue AE de nucleation ;
@@ -871,6 +887,18 @@ private:
     // articles : il faut pouvoir le desarmer pour faire tourner le modele de
     // quelqu un d autre. <= 0 le desarme. Defaut 3 = inchange.
     double mtCap_ = 3.0;
+    // ---- S1 (campagne du 13/09), miroir du 3D — voir Fdem3dSolver.hpp ----
+    // Compteur d ecretage du cap (dernier pas / max depuis la trame, max
+    // par fil dans mtCapExcT_, membre dimensionne une fois) ;
+    // writeRuptureFields (dead, openMax, pMean, journal du compteur) ;
+    // jointBreakModeRef (0 = slipF historique, 1 = slipRef = plage
+    // courante du moteur). Relecture V : comptage, journal et Elem::pm
+    // sont tous sous writeRupture_ — rien n est execute sous defaut.
+    long mtCapN_ = 0, mtCapNFr_ = 0;
+    double mtCapExc_ = 0.0, mtCapExcFr_ = 0.0;
+    std::vector<double> mtCapExcT_;
+    bool writeRupture_ = false;
+    int breakModeRef_ = 0;
     bool difOn_ = false;
     // ---- DIF en schema INTRINSEQUE : le gel a l AMORCAGE (2026-08-25) -----
     // Vrai quand strainRateDIF est arme ET insertion = intrinsic. Le meme
@@ -1571,6 +1599,17 @@ private:
     double bdD0_ = 1.4e-5, bdDf_ = 4.0e-4, bdDmax_ = 0.9, bdCd_ = 1.0;
     double bdWork_ = 0.0;
     long nPulv_ = 0;
+    // ---- S4 (campagne du 13/09) : miroir 2D des mesures alternatives de
+    // delta_m = h * eps_m (voir Fdem3dSolver.hpp). bdLen_ : 0 = `inscribed`
+    // (defaut, hEl_ = 4A/P) ; 1 = `edge` (moyenne des trois aretes du
+    // triangle, hEdge_, rempli seulement sous l option). bdStrain_ : 0 =
+    // `deviatoric` (defaut, deformation plane : eps_zz = 0 dans le
+    // deviateur) ; 1 = `principal` (max |eps_i| sur eps_1, eps_2, 0) ; 2 =
+    // `total` (sqrt(2/3)||eps||, trace comprise). bdProbe_ : sortie seule.
+    int bdLen_ = 0;
+    int bdStrain_ = 0;
+    bool bdProbe_ = false;
+    std::vector<double> hEdge_;            // S4 : arete moyenne par triangle
     // WP6 : mu de contact residuel post-pulverisation — miroir 2D exact du
     // 3D (voir le commentaire complet dans Fdem3dSolver.hpp). Sites 2D :
     // contact general (potentiel + relais penalite) et outil (PDC, flat,
