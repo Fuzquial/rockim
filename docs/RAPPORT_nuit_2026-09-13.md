@@ -58,6 +58,12 @@ terme leapfrog passe par construction ; le « miroir 2D/3D exact » est faux.
 Loi du run s = 1 = **v3-P** : `plastic` + `jointShearRange = coulomb` (garde levée) +
 `jointSecantRatchet = on` + rampe de naissance + les trois clés de l'audit.
 
+**Jumeau s = 2,5 du deck v3-P** (`out_yang_bench_s25_v3P`, g1y15, 200 µs, 5 498 s à 4 fils) — les
+trois clés de l'audit contre plastic + coulomb seul : 294 rompus (226), 124 fragments (93), 0
+pulvérisé (2), joints +1,95 J (+2,02), leapfrog +0,85 (+0,94), résidu 2e-9 %, σ_zz 173 MPa, indentation
+6,27 m/s à 108 µs, enfoncement 0,83 mm. Sain, +30 % de fracture, mêmes cinématiques. C'est la référence
+s = 2,5 à mettre en face du run s = 1.
+
 ## 3. Ce qui a été corrigé cette nuit (binaires g1y11 → g1y15, tout opt-in, ancres 8/8 + 9ᵉ deck)
 
 | binaire | clé / geste | défaut corrigé | preuve |
