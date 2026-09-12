@@ -86,7 +86,9 @@ deck v2 sous fracture). Outils nouveaux : `tools/fig_joints_only.py`, `tools/fig
    rebond, ~1 mm, cratère 7 mm, radiales 9-10 mm, ~360 pulvérisés). Le rebond exige T ≥ 600-750 µs
    (Yang lit jusqu'à 750) : un second run, ou une reprise, à décider.
 2. **Maillage** (audit D) : le s = 1 est à 1,37 mm au cœur (Yang 1,0) et 1,39 mm sur l'insert (Yang
-   0,7) — la pulvérisation δ_m = h·ε est ∝ h. Remailler 0,7/1,0 mm coûte ×1,5-2 en éléments et en dt.
+   0,7) — la pulvérisation δ_m = h·ε est ∝ h. Le générateur vise 1,0 mm au cœur (`make_impact_mesh.py`,
+   « s = 1 reproduit l'article ») mais gmsh rend une médiane de 1,37 mm : un maillage conforme demande
+   s ≈ 0,75 (~290 k tets, dt ×0,75, coût ×3 : ~35 h à ce rythme).
 3. **Masses** : bit + insert + circlip 1,367 kg (Yang 1,51), piston 1,057 (facettisation) : corriger par
    ρ ou par le maillage avant la comparaison des vitesses.
 4. **`gcBirth = relay`** : A/B en cours sur le banc s = 2,5 (2 fils) ; à poser au deck si le poste
