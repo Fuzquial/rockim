@@ -535,6 +535,12 @@ inline bool pairForce(const V3 pa[4], const V3 pb[4], double p,
         int nf = 0;
         for (int i = 1; i + 1 < m; ++i)
             if (nf < 256) frag[nf++] = {P.v[f][0], P.v[f][i], P.v[f][i + 1]};
+        // ping-pong cur/nxt (audit C, 13/09) : l ancienne recopie tmp -> frag
+        // apres chacun des 12 plans coutait jusqu a 96 x 256 x 72 o par face ;
+        // les deux tampons s echangent par pointeur. Memes flottants, meme
+        // ordre : bit-identique par construction (deja fait sur Poly3).
+        Frag* cur = frag;
+        Frag* nxt = tmp;
         // subdivision par les 6 + 6 fonctions l_i - l_j
         for (int t = 0; t < 2; ++t) {
             const Bary4& b4 = t ? bB : bA;
@@ -542,7 +548,7 @@ inline bool pairForce(const V3 pa[4], const V3 pb[4], double p,
                 for (int b = a + 1; b < 4; ++b) {
                     int nt = 0;
                     for (int q = 0; q < nf; ++q) {
-                        const Frag& F0 = frag[q];
+                        const Frag& F0 = cur[q];
                         const V3 vv[3] = {F0.a, F0.b, F0.c};
                         double d[3];
                         for (int i = 0; i < 3; ++i) {
@@ -554,7 +560,7 @@ inline bool pairForce(const V3 pa[4], const V3 pb[4], double p,
                         bool pos = d[0] > 0 || d[1] > 0 || d[2] > 0;
                         bool neg = d[0] < 0 || d[1] < 0 || d[2] < 0;
                         if (!(pos && neg)) {
-                            if (nt < 256) tmp[nt++] = F0;
+                            if (nt < 256) nxt[nt++] = F0;
                             continue;
                         }
                         // polygone coupe en deux : clip contre d>=0 et d<=0
@@ -578,17 +584,17 @@ inline bool pairForce(const V3 pa[4], const V3 pb[4], double p,
                             if (k >= 3) {
                                 for (int i = 1; i + 1 < k; ++i)
                                     if (nt < 256)
-                                        tmp[nt++] = {buf[0], buf[i], buf[i + 1]};
+                                        nxt[nt++] = {buf[0], buf[i], buf[i + 1]};
                             }
                         }
                     }
                     nf = nt;
-                    for (int q = 0; q < nf; ++q) frag[q] = tmp[q];
+                    std::swap(cur, nxt);
                 }
         }
         // ---- lumping nodal consistant par fragment -----------------------
         for (int q = 0; q < nf; ++q) {
-            const V3 vv[3] = {frag[q].a, frag[q].b, frag[q].c};
+            const V3 vv[3] = {cur[q].a, cur[q].b, cur[q].c};
             double A2f = (vv[1] - vv[0]).cross(vv[2] - vv[0]).norm();
             if (A2f < 1e-300) continue;
             double Af = 0.5 * A2f;

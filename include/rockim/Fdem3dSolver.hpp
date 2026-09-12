@@ -504,6 +504,14 @@ private:
     // l ENVELOPPE atteignable en charge (le critere), pas la raideur.
     bool secRatchet_ = false;
 
+    // jointNormalProxy = penalty | law (defaut penalty = bit-identique) — audit A
+    // #1 du 13/09. La contrainte normale « geometrique » qui fixe s_E, la plage
+    // coulomb et l amorcage du DIF etait pj·dn, alors que sous jointElastic =
+    // parabolic la loi transmet 2·pj·dn en compression : sigma_n divise par
+    // deux dans tout ce qui fixe une resistance de mode II (le cap, lui, lit
+    // la vraie traction). `law` pose pjN_ = 2 sous parabolic (1 sinon).
+    double pjN_ = 1.0;
+
     // jointShearRange = cohesion | coulomb (defaut cohesion, bit-identique).
     // Miroir exact du 2D (FdemSolver.hpp) : la plage d'adoucissement de mode
     // II est divisee a chaque pas par fs = c + tan(phi) |sigma_n| (compression
@@ -1148,6 +1156,15 @@ private:
     // joint mort (premier contact de deux corps) — `penalty` y injectait
     // ½ k delta0² (1 J a la naissance piston/bit, abort 2,9 us).
     bool birthRelay_ = false;
+    // potStiffnessByPhase = max | min (defaut max = bit-identique) — audit B #10.
+    // potP_ et potKt_ sont batis sur phases_.maxE() (600 GPa, carbure) pour
+    // TOUTES les paires : le contact roche/roche est 10x trop raide. `min` :
+    // la paire porte potPenaltyFactor * min(E_A, E_B) (et k_t au prorata).
+    bool potByPhase_ = false;
+    double potPF_ = 1.0;
+    // bulkDamagePhase = <nom> (defaut : toutes) — audit D : l endommagement de
+    // Yang n avait aucune garde de phase (acier et carbure endommageables).
+    int bdPhase_ = -1;
     double birthPenMin_ = 0.01, birthPenMax_ = 3.0;   // leurs deux bornes
     long nBirthScaled_ = 0;                           // mesure : paires calees
     double birthScaleSum_ = 0.0;                      // ... et facteur moyen

@@ -1,5 +1,5 @@
 #pragma once
-// KeysByMode.hpp — GENERE par tools/gen_keys_by_mode.py le 2026-09-12 01:25:51 : NE PAS EDITER.
+// KeysByMode.hpp — GENERE par tools/gen_keys_by_mode.py le 2026-09-12 02:30:31 : NE PAS EDITER.
 // Registre lisible : tools/keys_by_mode.json (methode dans la docstring du generateur).
 // Table des cles PROPRES A UN MODE (lues par un seul solveur) ; toute autre cle est commune.
 #include <stdexcept>
@@ -121,11 +121,13 @@ inline const Entry kTable[] = {
     {"weakPlaneTol", "fdem"},
     {"weakPlanes", "fdem"},
     {"writeJointState", "fdem"},
+    {"bulkDamagePhase", "fdem3d"},
     {"bulkViscosityGraded", "fdem3d"},
     {"cutterDia", "fdem3d"},
     {"dtBudgetTangential", "fdem3d"},
     {"fragBrushDirZ", "fdem3d"},
     {"lawPhase", "fdem3d"},
+    {"potStiffnessByPhase", "fdem3d"},
     {"trackGroup", "fdem3d"},
     {"trackGroups", "fdem3d"},
     {"viscousInInsertion", "fdem3d"},
@@ -212,6 +214,7 @@ inline const char* const kKnown[] = {
     "bulkDamageDelta0",
     "bulkDamageDeltaF",
     "bulkDamageDmax",
+    "bulkDamagePhase",
     "bulkFrictionDeg",
     "bulkFt",
     "bulkGf",
@@ -402,6 +405,7 @@ inline const char* const kKnown[] = {
     "jointFrictionMobilised",
     "jointFrictionScaled",
     "jointMixLaw",
+    "jointNormalProxy",
     "jointPenaltyFactor",
     "jointPrebrokenFrac",
     "jointPrebrokenSeed",
@@ -472,6 +476,7 @@ inline const char* const kKnown[] = {
     "platenPenaltyFactor",
     "platenTributary",
     "potPenaltyFactor",
+    "potStiffnessByPhase",
     "potTangentFactor",
     "potXi",
     "preBrokenAngleDeg",
@@ -677,6 +682,7 @@ inline const Readers kReaders[] = {
     {"bulkDamageDelta0", "fdem fdem3d"},
     {"bulkDamageDeltaF", "fdem fdem3d"},
     {"bulkDamageDmax", "fdem fdem3d"},
+    {"bulkDamagePhase", "fdem3d"},
     {"bulkFrictionDeg", "fdem fdem3d"},
     {"bulkFt", "fdem fdem3d"},
     {"bulkGf", "fdem fdem3d"},
@@ -867,6 +873,7 @@ inline const Readers kReaders[] = {
     {"jointFrictionMobilised", "fdem fdem3d"},
     {"jointFrictionScaled", "fdem fdem3d"},
     {"jointMixLaw", "fdem fdem3d"},
+    {"jointNormalProxy", "fdem fdem3d"},
     {"jointPenaltyFactor", "fdem fdem3d"},
     {"jointPrebrokenFrac", "fdem fdem3d"},
     {"jointPrebrokenSeed", "fdem"},
@@ -937,6 +944,7 @@ inline const Readers kReaders[] = {
     {"platenPenaltyFactor", "fdem"},
     {"platenTributary", "fdem"},
     {"potPenaltyFactor", "fdem fdem3d"},
+    {"potStiffnessByPhase", "fdem3d"},
     {"potTangentFactor", "fdem fdem3d"},
     {"potXi", "fdem"},
     {"preBrokenAngleDeg", "fdem"},

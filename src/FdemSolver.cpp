@@ -964,6 +964,15 @@ void FdemSolver::init() {
                       << "\n";
     }
     secRatchet_ = cfg_.getb("jointSecantRatchet", false);
+    {   // jointNormalProxy (audit A #1, 13/09) — voir Fdem3dSolver.cpp
+        std::string np = cfg_.gets("jointNormalProxy", "penalty");
+        if (np != "penalty" && np != "law")
+            throw std::runtime_error("jointNormalProxy must be penalty | law");
+        pjN_ = (np == "law" && paraElastic_) ? 2.0 : 1.0;
+        if (np == "law")
+            std::cout << "[FDEM] jointNormalProxy = law : sigma_n geometrique = "
+                      << pjN_ << " pj dn dans s_E, plage coulomb, amorcage DIF\n";
+    }
     if (secRatchet_)
         std::cout << "[FDEM] jointSecantRatchet = on : secantes de decharge "
                      "NON CROISSANTES (eq. 17 ; eq. 18 sous origin) — Phi >= 0\n";
@@ -5894,7 +5903,7 @@ void FdemSolver::jointForces() {
                 // la part geometrique pj*dn de la contrainte normale — la meme
                 // expression que la branche `origin` de la loi ci-dessous.
                 double sE = (J.coh + J.tanPhi
-                             * rockim::mcFrictionTerm(J.pj * dn, J.ft,
+                             * rockim::mcFrictionTerm(pjN_ * J.pj * dn, J.ft,
                                                       yangEnv_)) / J.pj;
                 if (sE < 0.0) sE = 0.0;
                 if (std::abs(delta.dot(e)) > sE) onset = true;
@@ -6014,10 +6023,10 @@ void FdemSolver::jointForces() {
             double slipRef = J.slipF;
             if (shearRangeCoulomb_ && !shearOrigin_) {
                 double sEp = (J.coh + J.tanPhi
-                              * rockim::mcFrictionTerm(J.pj * dn, J.ft,
+                              * rockim::mcFrictionTerm(pjN_ * J.pj * dn, J.ft,
                                                        yangEnv_)) / J.pj;
                 if (sEp < 0.0) sEp = 0.0;
-                double fsP = J.coh + J.tanPhi * std::max(0.0, -(J.pj * dn));
+                double fsP = J.coh + J.tanPhi * std::max(0.0, -(pjN_ * J.pj * dn));
                 if (fsP > J.coh)
                     slipRef = std::max(2.0 * sEp, J.slipF * (J.coh / fsP));
             }
@@ -6027,7 +6036,7 @@ void FdemSolver::jointForces() {
                 if (sm > J.smax[k]) J.smax[k] = sm;
                 smx = J.smax[k];
                 double sE = (J.coh + J.tanPhi
-                             * rockim::mcFrictionTerm(J.pj * dn, J.ft,
+                             * rockim::mcFrictionTerm(pjN_ * J.pj * dn, J.ft,
                                                       yangEnv_)) / J.pj;
                 if (sE < 0.0) sE = 0.0;
                 double den = J.slipF;
@@ -6043,7 +6052,7 @@ void FdemSolver::jointForces() {
                     // (yangEnv) avec clamp explicite — sinon la convention
                     // d enveloppe divergerait silencieusement de sE.
                     double fs = J.coh
-                              + J.tanPhi * std::max(0.0, -(J.pj * dn));
+                              + J.tanPhi * std::max(0.0, -(pjN_ * J.pj * dn));
                     if (fs > J.coh)
                         den = std::max(2.0 * sE, J.slipF * (J.coh / fs));
                 }
@@ -6347,7 +6356,7 @@ void FdemSolver::jointForces() {
                 if (secRatchet_ && !noTau && smx > 1e-30) {
                     double ks = tauEnv / smx;
                     if (J.ksr[k] >= 0.0 && ks > J.ksr[k]) ks = J.ksr[k];
-                    J.ksr[k] = ks;
+                    if (tauEnv < J.pj * smx) J.ksr[k] = ks;   // arme au cap (audit A #4)
                     tau = ks * sEff;
                 }
                 // en `yan`, D a deja ete mis a jour par l'eq. 16 au-dessus

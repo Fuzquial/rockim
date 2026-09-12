@@ -347,6 +347,24 @@ void Fdem3dSolver::init() {
         bdOn_ = bd == "yang";
     }
     if (bdOn_) {
+        {   // bulkDamagePhase (audit D, 13/09) : garde de phase, opt-in
+            const std::string bp = cfg_.gets("bulkDamagePhase", "");
+            bdPhase_ = -1;
+            if (!bp.empty()) {
+                for (int p = 0; p < phases_.n(); ++p)
+                    if (phases_.name[p] == bp) bdPhase_ = p;
+                if (bdPhase_ < 0)
+                    throw std::runtime_error("bulkDamagePhase = '" + bp
+                                             + "' : phase inconnue");
+                std::cout << "[FDEM3D] bulkDamagePhase = " << bp << " : l "
+                             "endommagement de volume (eq. 3-4) ne s applique "
+                             "qu a cette phase (acier et carbure exclus)\n";
+            } else if (phases_.n() > 1)
+                std::cout << "[FDEM3D] AVERTISSEMENT : bulkDamage = yang sans "
+                             "bulkDamagePhase — les eq. 3-4 (calibrees sur le "
+                             "granite) s appliquent a TOUTES les phases, acier "
+                             "et carbure compris (audit D du 13/09)\n";
+        }
         bdD0_   = cfg_.getd("bulkDamageDelta0", 1.4e-5);
         bdDf_   = cfg_.getd("bulkDamageDeltaF", 4.0e-4);
         bdDmax_ = cfg_.getd("bulkDamageDmax", 0.9);
@@ -720,6 +738,20 @@ void Fdem3dSolver::init() {
     // jointSecantRatchet (conseil du 12/09, M1/M7) : lu ici, agit dans
     // processJoint sur les secantes des eq. 17 et 18. Defaut off.
     secRatchet_ = cfg_.getb("jointSecantRatchet", false);
+    {   // jointNormalProxy (audit A #1, 13/09)
+        std::string np = cfg_.gets("jointNormalProxy", "penalty");
+        if (np != "penalty" && np != "law")
+            throw std::runtime_error("jointNormalProxy must be penalty | law "
+                                     "(penalty = pj·dn, historique ; law = la "
+                                     "pente reelle de la loi en compression, "
+                                     "2 pj sous jointElastic = parabolic)");
+        pjN_ = (np == "law" && paraElastic_) ? 2.0 : 1.0;
+        if (np == "law")
+            std::cout << "[FDEM3D] jointNormalProxy = law : s_E, plage coulomb et "
+                         "amorcage du DIF lisent sigma_n = " << pjN_
+                      << " pj dn (la pente de la loi), comme Solidity "
+                         "(sigma_tmp = pe o/el)\n";
+    }
     if (secRatchet_)
         std::cout << "[FDEM3D] jointSecantRatchet = on : secantes de decharge "
                      "NON CROISSANTES (mode I eq. 17 ; mode II eq. 18 sous "
@@ -1329,6 +1361,23 @@ void Fdem3dSolver::init() {
         potKt_ = cfg_.getd("potTangentFactor", 1.0) * phases_.maxE() * hmin_;
         std::cout << "[FDEM3D] contact: Munjiza potential (eq. 2-5, tet-tet)"
                      ", p = " << potP_ << " Pa, kt = " << potKt_ << " N/m\n";
+        {   // potStiffnessByPhase (audit B #10, 13/09)
+            potPF_ = cfg_.getd("potPenaltyFactor", 1.0);
+            std::string ps = cfg_.gets("potStiffnessByPhase", "max");
+            if (ps != "max" && ps != "min")
+                throw std::runtime_error("potStiffnessByPhase must be max | min "
+                                         "(max = E le plus grand des phases pour "
+                                         "toutes les paires, historique ; min = "
+                                         "potPenaltyFactor * min(E_A, E_B) par "
+                                         "paire, k_t au prorata)");
+            potByPhase_ = ps == "min";
+            if (potByPhase_)
+                std::cout << "[FDEM3D] potStiffnessByPhase = min : la penalite "
+                             "de chaque paire vaut " << potPF_ << " x min(E_A, "
+                             "E_B) (roche/roche 10x moins raide que sous max = "
+                             "E carbure) ; k_t au prorata ; le budget de dt "
+                             "garde potKt_ (conservatif)\n";
+        }
         // dtBudgetTangential : voir computeStableDt() pour le raisonnement
         // complet et la source. Defaut off = bit-identique.
         {
@@ -3629,7 +3678,11 @@ void Fdem3dSolver::computeStableDt() {
 // ===========================================================================
 
 void Fdem3dSolver::step() {
-    for (auto& fi : f_) fi.setZero();
+    {   // remise a zero parallele (audit C : 11,5 Mo en serie a chaque pas)
+        const int nN = (int)f_.size();
+#pragma omp parallel for schedule(static)
+        for (int i = 0; i < nN; ++i) f_[i].setZero();
+    }
     tool_.F.setZero();
     // tri des fragments : armement a l'instant demande (voir Fdem3dSolver.hpp)
     if (brushStart_ > 0.0 && !brushArmed_ && t_ >= brushStart_) armBrush();
@@ -3908,7 +3961,11 @@ void Fdem3dSolver::elementForces() {
         // sigma <- Cd (1 - D) sigma. Applique APRES les caps : le deck
         // choisit (principe VIII) — le granite de l article neutralise le
         // crushCap (1e12) et laisse ce modele seul degrader.
-        if (bdOn_ && !law_) {
+        if (bdOn_ && !law_ && (bdPhase_ < 0 || e.phase == bdPhase_)) {
+            // bulkDamagePhase (audit D, 13/09) : sans garde, l endommagement
+            // de Yang (eq. 3-4, calibre sur le granite) s appliquait aussi a
+            // l acier et au carbure (delta0 = 14 um contre h*eps ~ 9-13 um
+            // dans le piston et le bit a 175 MPa : marge 1,04 a 1,6).
             Eigen::Matrix3d ed = eps
                 - (eps.trace() / 3.0) * Eigen::Matrix3d::Identity();
             double dm = hEl_[eI] * std::sqrt(2.0 / 3.0) * ed.norm();
@@ -4077,7 +4134,7 @@ void Fdem3dSolver::jointForces() {
                 // la part geometrique pj*dn de la contrainte normale — la meme
                 // expression que la branche `origin` de la loi ci-dessous.
                 double sE = (J.coh + J.tanPhi
-                             * rockim::mcFrictionTerm(J.pj * dn, J.ft,
+                             * rockim::mcFrictionTerm(pjN_ * J.pj * dn, J.ft,
                                                       yangEnv_)) / J.pj;
                 if (sE < 0.0) sE = 0.0;
                 if (dt3.norm() > sE) onset = true;
@@ -4426,10 +4483,10 @@ void Fdem3dSolver::jointForces() {
             double slipRef = J.slipF;
             if (shearRangeCoulomb_ && !shearOrigin_) {
                 double sEp = (J.coh + J.tanPhi
-                              * rockim::mcFrictionTerm(J.pj * dn, J.ft,
+                              * rockim::mcFrictionTerm(pjN_ * J.pj * dn, J.ft,
                                                        yangEnv_)) / J.pj;
                 if (sEp < 0.0) sEp = 0.0;
-                double fsP = J.coh + J.tanPhi * std::max(0.0, -(J.pj * dn));
+                double fsP = J.coh + J.tanPhi * std::max(0.0, -(pjN_ * J.pj * dn));
                 if (fsP > J.coh)
                     slipRef = std::max(2.0 * sEp, J.slipF * (J.coh / fsP));
             }
@@ -4440,7 +4497,7 @@ void Fdem3dSolver::jointForces() {
                 if (sm > J.smax[k]) J.smax[k] = sm;
                 smx = J.smax[k];
                 double sE = (J.coh + J.tanPhi
-                             * rockim::mcFrictionTerm(J.pj * dn, J.ft,
+                             * rockim::mcFrictionTerm(pjN_ * J.pj * dn, J.ft,
                                                       yangEnv_)) / J.pj;
                 if (sE < 0.0) sE = 0.0;
                 double den = J.slipF;
@@ -4455,7 +4512,7 @@ void Fdem3dSolver::jointForces() {
                     // (yangEnv) avec clamp explicite — sinon la convention
                     // d enveloppe divergerait silencieusement de sE.
                     double fs = J.coh
-                              + J.tanPhi * std::max(0.0, -(J.pj * dn));
+                              + J.tanPhi * std::max(0.0, -(pjN_ * J.pj * dn));
                     if (fs > J.coh)
                         den = std::max(2.0 * sE, J.slipF * (J.coh / fs));
                 }
@@ -4639,7 +4696,11 @@ void Fdem3dSolver::jointForces() {
                 if (secRatchet_ && smx > 1e-30) {
                     double ks = tauEnv / smx;
                     if (J.ksr[k] >= 0.0 && ks > J.ksr[k]) ks = J.ksr[k];
-                    J.ksr[k] = ks;
+                    // arme au CAP seulement (audit A #4) : tant que la reponse
+                    // est elastique (tauEnv = pj smx) il n y a rien a memoriser,
+                    // et un joint ne peut pas naitre verrouille sur un tau_lim
+                    // transitoire de traction.
+                    if (tauEnv < J.pj * smx) J.ksr[k] = ks;
                     tau = ks * sEff;
                 }
                 // en `yan`, D a deja ete mis a jour par l'eq. 16 au-dessus
@@ -4769,12 +4830,26 @@ void Fdem3dSolver::jointForces() {
             dwT[t] = dw;
             jwT[t] = jw;
         }
-        for (int t = 0; t < nT; ++t) {
-            for (int i : touchedTL_[t]) {
-                f_[i] += fTL_[t][i];
-                fTL_[t][i].setZero();
-                seenTL_[t][i] = 0;
+        // ---- fusion des forces par fil, PARALLELE PAR NOEUD (audit C, 13/09)
+        // L ancienne fusion (boucle exterieure sur les fils, listes touchedTL_)
+        // etait SERIE : 1,4 M d acces aleatoires sur 161 Mo par pas, 30,7 ms
+        // des 32,4 ms des joints a s = 1 (95 % du poste, Amdahl sur 7/14 fils).
+        // Ici chaque noeud somme ses contributions dans le MEME ordre t = 0..nT-1
+        // que la boucle d origine : bit-identique par construction, et les
+        // tranches de noeuds se partagent entre les fils.
+        {
+            const int nN = (int)X0_.size();
+#pragma omp parallel for schedule(static)
+            for (int i = 0; i < nN; ++i) {
+                for (int t = 0; t < nT; ++t) {
+                    if (!seenTL_[t][i]) continue;
+                    f_[i] += fTL_[t][i];
+                    fTL_[t][i].setZero();
+                    seenTL_[t][i] = 0;
+                }
             }
+        }
+        for (int t = 0; t < nT; ++t) {
             nBroken_ += nbT[t];
             dampWork_ += dwT[t];
             jointWork_ += jwT[t];
@@ -5172,7 +5247,11 @@ void Fdem3dSolver::potentialContact() {
             r.code = (c.H->sepAxis == h0) ? 1 : (c.H->sepAxis < 8 ? 2 : 3);
             continue;
         }
-        r.code = pot3::pairForce(r.pa, r.pb, potP_, r.R) ? 0 : 4;
+        // potStiffnessByPhase = min : penalite de la paire = potPF_ x min(E)
+        const double pP = potByPhase_
+            ? potPF_ * std::min(phases_.mat[EA.phase].E, phases_.mat[EB.phase].E)
+            : potP_;
+        r.code = pot3::pairForce(r.pa, r.pb, pP, r.R) ? 0 : 4;
     }
     for (int ci = 0; ci < nCand; ++ci) {
         {
@@ -5301,8 +5380,13 @@ void Fdem3dSolver::potentialContact() {
                                 // 965), et non la penalite nominale.
                                 // (relay : seules les paires calees, H.penScale
                                 // >= 0, portent la raideur re-echelonnee.)
+                                const double ktP = potByPhase_
+                                    ? potKt_ * (std::min(phases_.mat[EA.phase].E,
+                                                         phases_.mat[EB.phase].E)
+                                                / phases_.maxE())
+                                    : potKt_;
                                 Ft -= ((birthPenalty_ || H.penScale >= 0.0)
-                                       ? sc * potKt_ : potKt_)
+                                       ? sc * ktP : ktP)
                                     * dt_ * vt;
                                 double cap = ctcMu(eLo, eHi) * Fn;  // WP6
                                 double Ftn = Ft.norm();

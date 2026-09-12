@@ -156,6 +156,34 @@ facettes toutes rompues autour : le critère d'insertion fait son travail, c'est
 Correction = loi de volume sur la roche (`lawPhase`, ci-dessus) ; premier essai `law = dpr` au §7
 du document.
 
+### Ajouté — le lot de l'audit (`rockim_g1y14.exe`, 13/09, 2 h 30 - 3 h) : proxy σ_n, ratchet armé au cap, garde de phase, raideur de contact par phase, joints ×6
+
+Fernando : « refais un audit pour vérifier s'il n'y a pas d'autres erreurs ou optimisations ». Quatre
+agents en parallèle (loi de joint, contact/dt/bilan, performance, deck contre Yang 2026), rapports
+et décisions dans `docs/AUDIT_2026-09-13.md`. Codé, tout opt-in ou bit-neutre par construction :
+- **`jointNormalProxy = penalty | law`** (2D + 3D ; audit A #1, BLOQUANT) : sous `jointElastic =
+  parabolic` la loi transmet 2·pj·dn en compression mais s_E, la plage coulomb et l'amorçage du DIF
+  lisaient pj·dn — σ_n divisé par deux dans tout ce qui fixe une résistance de mode II. `law` pose
+  le facteur 2 (Solidity lit σ_tmp = pe·o/el, la vraie contrainte). Le run s = 1 de 2 h 20 (g1y13)
+  portait ce défaut : relancé.
+- **ratchet de mode II armé au cap** (audit A #4) : `Joint::ksr` n'est mémorisé qu'une fois
+  τ_env < pj·s_max — un joint inséré sous traction ne peut plus naître verrouillé sur un τ_lim
+  transitoire. Change le comportement de `jointSecantRatchet = on` seulement (clé du 12/09).
+- **`bulkDamagePhase = <phase>`** (audit D) : les éq. 3-4 de Yang n'avaient aucune garde de phase —
+  acier et carbure endommageables (δ0 = 14 µm contre h·ε ≈ 9-13 µm à 175 MPa). Avertissement si
+  absent avec plusieurs phases.
+- **`potStiffnessByPhase = max | min`** (audit B #10) : potP_ et potKt_ étaient bâtis sur
+  phases_.maxE() = 600 GPa pour toutes les paires — roche/roche 10× trop raide. `min` : pénalité
+  de la paire = potPenaltyFactor × min(E_A, E_B), k_t au prorata ; le budget de dt garde potKt_.
+- **Fusion parallèle des forces de joint** (audit C #1) : l'ancienne fusion fTL_/touchedTL_ était
+  série (30,7 ms sur 32,4 ms de joints à s = 1, 95 %). Fusion par nœud, même ordre t = 0..nT−1 :
+  bit-identique par construction. Remise à zéro de f_ en parallèle (C #7). Ping-pong cur/nxt des
+  fragments dans `pot3::pairForce` (C #3, même geste que sur Poly3).
+- Registre régénéré (428 clés). Ancre 8/8 + 9ᵉ deck : voir results/bitid_g1y14*.log.
+Non codé, consigné dans l'audit : dtContactAudit, gcBirthWork, difLengths, relay figé/mesuré, CSR de
+grpsOfVert_, AVX2, remaillage 0,7/1,0 mm, masses du train de frappe (−6 à −9 %), forme de D (éq. 4
+vs Fig. 4a), T et fragBrush pour les critères 3 et 5.
+
 ### Ajouté — `facetAverage = max` en 2D (`rockim_g1y13.exe`, 12/09, 2 h) — le port du critère des impacts
 
 Item en attente depuis le 11/09 (ADAPTATIF §8). `FdemSolver::insertionSweep()`, branches OpenMP et

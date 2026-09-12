@@ -615,6 +615,10 @@ private:
     // 12/09 (M1, M7) : secantes de decharge des eq. 17 et 18 NON CROISSANTES
     // (Joint::knr, Joint::ksr), voir Fdem3dSolver.hpp.
     bool secRatchet_ = false;
+    // jointNormalProxy = penalty | law (defaut penalty) — audit A #1 : sous
+    // parabolic la loi transmet 2 pj dn ; s_E, plage coulomb et amorcage DIF
+    // lisaient pj dn. Voir Fdem3dSolver.hpp.
+    double pjN_ = 1.0;
 
     // jointShearRange = cohesion | coulomb (defaut cohesion, bit-identique).
     // `coulomb` : la PLAGE d'adoucissement de mode II est divisee a chaque pas
