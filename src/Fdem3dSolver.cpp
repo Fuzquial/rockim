@@ -7728,8 +7728,15 @@ void Fdem3dSolver::jbBuildMesh() {
     const Eigen::Vector3d e2 = n.cross(e1);
     jbN_ = n;
     jbS_ = e1;
+    // CORRECTIF (relecture V, 14/09) : le mode `cycle` (3) glisse DANS LE
+    // PLAN, comme `shear` — l ouverture normale est pilotee separement par
+    // jbNormal/jbNormal2. Sans ce cas explicite il tombait dans le `else` de
+    // `mixed` (45 deg) : la branche de « glissement » ouvrait alors le joint
+    // en traction jusqu a dnE et l endommageait (D = 1,1e-4 mesure), ce qui
+    // polluait precisement le critere (v) cense etre purement elastique.
     if (jbMode_ == 0)      jbDir_ = n;
     else if (jbMode_ == 1) jbDir_ = e1;
+    else if (jbMode_ == 3) jbDir_ = e1;
     else                   jbDir_ = (n + e1) / std::sqrt(2.0);
     // Axe de basculement (jbTilt) : dans le plan de la facette, a 15 deg de
     // l arete Q0Q1, decale du cote -e_b pour que TOUS les points (sommets et
@@ -7750,7 +7757,8 @@ void Fdem3dSolver::jbBuildMesh() {
                  "tetraedres reguliers d arete " << L << " m, facette A0 = "
               << J.A0 << " m2, h inscrit = " << hmin_ << " m ; tetra A fixe, "
                  "tetra B prescrit (mode "
-              << (jbMode_ == 0 ? "tension" : jbMode_ == 1 ? "shear" : "mixed")
+              << (jbMode_ == 0 ? "tension" : jbMode_ == 1 ? "shear"
+                : jbMode_ == 2 ? "mixed" : "cycle")
               << ")\n[JOINTBENCH]   n = (" << n.transpose() << "), e_s = ("
               << e1.transpose() << "), direction du chemin = ("
               << jbDir_.transpose() << ")\n";
