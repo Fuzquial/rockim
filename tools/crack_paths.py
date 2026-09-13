@@ -378,7 +378,8 @@ def write_csv(res, stem, label, rcore, skin):
             w.writerow(r)
 
 
-def figure(res, P, stem, title, lim, depth, sec, cx=CX, cy=CY, zsurf=Z_SURF):
+def figure(res, P, stem, title, lim, depth, sec, cx=CX, cy=CY, zsurf=Z_SURF,
+           faces=False, lw=0.6):
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
@@ -409,8 +410,14 @@ def figure(res, P, stem, title, lim, depth, sec, cx=CX, cy=CY, zsurf=Z_SURF):
     # (a) vue de dessus
     if res["n"]:
         po = (P[:, :, :2] - np.array([cx, cy])) * 1e3
-        A.add_collection(PolyCollection(po, facecolors=cols, edgecolors=cols,
-                                        linewidths=0.35, alpha=0.75))
+        # ARETES seules par defaut (14/09) : sur un maillage grossier les faces
+        # pleines se recouvrent et masquent le reseau. `--faces` restitue le
+        # rendu plein. (1, 1, 1, 0) et non "none" : matplotlib refuse "none"
+        # dans une PolyCollection avec des couleurs par element.
+        A.add_collection(PolyCollection(
+            po, facecolors=(cols if faces else [(1, 1, 1, 0)] * len(po)),
+            edgecolors=cols, linewidths=(0.35 if faces else lw),
+            alpha=(0.75 if faces else 1.0)))
     th = np.linspace(0, 2 * np.pi, 240)
     for r, c, ls, lb in ((R_INSERT, "#333", "--", "insert R 8,5"),
                          (R_CRAT_Y, "#1f4e79", ":", "Yang cratere 7"),
@@ -460,9 +467,10 @@ def figure(res, P, stem, title, lim, depth, sec, cx=CX, cy=CY, zsurf=Z_SURF):
         keep = np.abs(d.mean(axis=1)) < sec * 1e-3
         if keep.any():
             po = np.stack([s[keep] * 1e3, (P[keep, :, 2] - zsurf) * 1e3], axis=2)
-            B.add_collection(PolyCollection(po, facecolors=cols[keep],
-                                            edgecolors=cols[keep],
-                                            linewidths=0.35, alpha=0.8))
+            B.add_collection(PolyCollection(
+                po, facecolors=(cols[keep] if faces else [(1, 1, 1, 0)] * int(keep.sum())),
+                edgecolors=cols[keep], linewidths=(0.35 if faces else lw),
+                alpha=(0.8 if faces else 1.0)))
     B.axhline(0, color="#333", lw=0.9)
     for r, c, ls in ((R_INSERT, "#333", "--"), (R_CRAT_Y, "#1f4e79", ":"),
                      (R_RAD_Y, "#1f4e79", "-.")):
@@ -631,6 +639,11 @@ def main():
                          "a 7 et 10 mm restent visibles)")
     ap.add_argument("--depth", type=float, default=0.0,
                     help="profondeur du panneau (b), mm ; 0 = ajustee")
+    ap.add_argument("--faces", action="store_true",
+                    help="colorier les faces ; defaut = ARETES seules (sur un "
+                         "maillage grossier les faces pleines se recouvrent "
+                         "et cachent le reseau)")
+    ap.add_argument("--lw", type=float, default=0.6, help="epaisseur du trait")
     ap.add_argument("--nofig", action="store_true")
     ap.add_argument("--selftest", action="store_true")
     a = ap.parse_args()
@@ -681,7 +694,8 @@ def main():
             "(moyenne 12 secteurs)" % (
                 d["t"] * 1e6, res["n"], res["ncomp"], res["yang"] * 1e3,
                 res["crater"]["rmax"] * 1e3, res["crater"]["rmean_sect"] * 1e3)
-        figure(res, d["P"], stem, title, lim, depth, a.sec)
+        figure(res, d["P"], stem, title, lim, depth, a.sec,
+               faces=a.faces, lw=a.lw)
 
 
 if __name__ == "__main__":
