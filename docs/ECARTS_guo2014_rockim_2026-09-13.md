@@ -34,7 +34,7 @@ tel que configuré par le deck v3-P (`configs/yang2026_bench_s25_v3P.cfg`) et pa
 | 20 | Aucun amortissement numérique hors η | idem | `dampingLocal = 0`, `jointXi = 0` | aucun | — | rien |
 | 21 | DIF (absent de Guo) | Yang éq. 1-2, réévalué à chaque pas (dpeftdif) | `strainRateDIF = yang`, `strainRateDIFArm = continuous` | aucun | — | rien (coquille de l'exposant 0,07 notée) |
 | 22 | Pulvérisation (absente de Guo) | Yang éq. 3-4 dans la version interne : Cd, ε_d, définition de δ_m non publiés | `bulkDamage = yang` avec Cd = 1 et δ_m = h ε_vm déviatorique ; **inerte** dans nos runs (nPulv 0 jusqu'à 180 µs, 2 à 183 µs) | définition de δ_m, Cd, ε_d | **oui potentiellement** (leur noyau à D = 0,9 = ~360 éléments = 40 mm³) mais **en aval** de la réaction : sous 24 kN le continuum reste sous le seuil | après B : si la réaction monte, regarder si nPulv suit ; sinon demander Cd et δ_m |
-| 23 | **Maillage** : 1 mm dans la demi-boule R 12,5, 2 mm à R 25, 10 mm au bord, insert 0,7 ; 230 788 tétras ; dt 2,5 ns (Yang) | — | même champ de tailles, mais gmsh rend une **arête médiane de 1,37 mm** dans la boule (14 722 tétras au lieu de ~35 000 pour un vrai 1 mm) ; 120 185 tétras au total | notre « s = 1 » est **1,37× plus grossier** que le leur dans la zone broyée | **oui** : fissures, pulvérisation (nPulv compte des éléments), cratère — tout se lit à l'échelle de l'élément | SR ≈ 0,73 dans `make_impact_mesh.py` (×2,5 tétras dans la boule, dt ×0,73) — à décider avec le coût |
+| 23 | **Maillage** : 1 mm dans la demi-boule R 12,5, 2 mm à R 25, 10 mm au bord, insert 0,7 ; 230 788 tétras ; dt 2,5 ns (Yang) | — | même champ de tailles, mais gmsh rend une **arête médiane de 1,37 mm** dans la boule (14 722 tétras au lieu de ~35 000 pour un vrai 1 mm) ; 120 185 tétras au total | notre « s = 1 » est **1,37× plus grossier** que le leur dans la zone broyée | **à vérifier** (et non « handicapant » tranché) : tout se lit à l'échelle de l'élément — fissures, pulvérisation (nPulv compte des éléments), cratère. Mais une taille *annoncée* de 1 mm chez Yang n'établit pas une arête médiane de 1 mm, la série T3 garde un insert à 1,43 mm d'arête pour 0,7 annoncés, et « sept éléments dans la zone de processus » ne remplace pas une convergence de la fissuration (relecture V) | SR ≈ 0,73 dans `make_impact_mesh.py` (×2,5 tétras dans la boule, dt ×0,73) — à décider avec le coût |
 | 24 | Masses des corps : piston 1,173 kg, bit 1,509 kg (Yang 2026) | — | 1,057 et 1,367 kg (−10 % chacun) | géométrie du maillage (facettisation, longueurs) | **moyennement** (−10 % d'énergie et de quantité de mouvement ; le rapport piston/bit est le bon) | caler ρ de l'acier par corps (deux phases acier) ou corriger la géométrie |
 | 25 | Sensibilité au maillage (§2.4) : la zone plastique doit couvrir ≥ 3 éléments, sinon sa longueur est celle de l'élément | — | Kuru : l_pz ~ 0,4 E Gf/ft² ≈ 10 mm → 7 éléments à 1,37 mm, 10 à 1 mm | — | **non** | rien |
 | 26 | Groupes de contact après rupture (éq. 2.39-2.46) : les tétras des six nœuds du joint | i1elbe marqués à la rupture | `gcActivation = adaptive` (paires nées des joints morts + voisinage) | implémentation | **non** | rien |
@@ -152,11 +152,13 @@ déplacement de l'insert (estimateur de Yang 2025, `tools/fig_kinetics.py` T2) ;
 | Banc | Ce qui change par rapport à A | t_fin | p [mm] | F_roche max [kN] | v_ind pente [m/s] | rompus | eJnt [J] | verdict |
 |---|---|---|---|---|---|---|---|---|
 | A témoin | — | 300 µs | 1,18 | 53,5 | 5,20 | 375 | −2,2 | pas de retournement à 300 µs (bit 2,45 m/s) |
-| D | contact de Solidity seul (0,25 E, `gcBirth = penalty`) | 300 µs | 1,22 | 50,7 | 5,54 | 424 | −3,0 | **sans effet** : le contact n'est pas la cause |
+| D | contact de Solidity seul (0,25 E, `gcBirth = penalty`) | 300 µs | 1,22 | 50,7 | 5,54 | 424 | −3,0 | **ne resout pas** : F max −5 %, v_ind +6,5 %, ruptures +13 % par rapport a A. Ce changement de contact ne corrige pas le deficit sur ce maillage avec `plastic` ; il n exclut ni une interaction avec une autre loi ni un defaut de transmission apres rupture (correction de la relecture V) |
 | B2 | pénalité seule (`edge`, facteur 25 = 50 E) | 300 µs | 1,12 | 60,7 | 5,06 | 424 | −3,2 | léger raidissement (+13 % de F), bit 1,9 m/s à 300 µs |
 | B1 | **loi `solidity` seule** | **75 µs** | 0,14 | — | — | 2 028 | **+43,5** | **ENERGY ABORT** : 18,4 J créés (KE 49,9 J > 31,5 initiale) |
 | B | loi + pénalité + contact | **83 µs** | — | — | — | 2 020 | **+47,4** | **ENERGY ABORT** : 22,2 J créés (70 % de l'énergie du piston) |
 | C | B + viscosité η D (`bulkViscosity = 2000`) | **92 µs** | — | — | — | 1 560 | **+37,6** | **ENERGY ABORT** : 4,4 J créés malgré la viscosité |
+
+**Attention a la base de comparaison** (relecture V) : les ~57 kN de Yang sont une estimation de FREINAGE MOYEN deduite de la cinematique, alors que la colonne `F_roche max` donne des MAXIMA d un estimateur `m dv/dt` qui suppose le train RIGIDE — un maximum de 53,5 ou 60,7 kN ne prouve donc pas que la reaction est reproduite. Biais mesure par S2 : la plaque porte jusqu a 3 214 N sur le bit, soit 13,0 kN d erreur maximale (4,8 % de l echelle). La sortie `contactForcePairs` (force insert/roche mesuree dans le contact) devient la mesure principale a partir du run Kuru de la nuit.
 
 Lecture :
 - **La loi de joint de Solidity, transcrite mot à mot, crée de l'énergie** dès la première vague de ruptures
@@ -175,7 +177,7 @@ Lecture :
 ### 6 bis — la variante sans garde-fou tranche l'hypothèse (13/09, 17 h 15 - 22 h, banc B')
 
 `configs/yang2026_bench_s25_solidity_noabort.cfg` = banc B avec `budgetAbortPct = 0` : la loi fait ce
-qu'elle fait chez eux, dont le code n'a aucun bilan d'énergie. Arrêté à la main à 251 µs sur 300 (11 trames
+qu'elle fait chez eux, dont le code n'a aucun bilan d'énergie. Arrêté à la main à **261,06 µs** (dernière ligne du CSV ; « 251 » dans la première rédaction était la ligne lue en cours de run) sur 300 (11 trames
 conservées) parce que le verdict est acquis et monotone :
 
 | B' sans garde-fou | 80 µs | 100 µs | 150 µs | 200 µs | 250 µs |
@@ -184,7 +186,7 @@ conservées) parce que le verdict est acquis et monotone :
 | Joints rompus | 842 | 6 246 | 10 145 | 14 133 | 14 240 |
 | Énergie créée (poste joints) [J] | 16 | 369 | 1 320 | 2 732 | 2 745 |
 
-**2 745 J créés pour 31,5 J apportés par le piston (×87), la quasi-totalité des joints de la roche rompus,
+**2 745 J de travail CUMULE des tractions de joint (poste `eJnt` du bilan B4 — ni l énergie cinétique finale, ni le défaut global du bilan, qui valait 22,15 J pour B et 18,40 J pour B1 à l instant du garde-fou) pour 31,5 J apportés par le piston (×87), la quasi-totalité des joints de la roche rompus,
 et la réaction qui s'effondre de 22 kN à ~1 kN.** Conclusion : l'hypothèse « une part de leurs ~57 kN
 pourrait être de l'énergie créée » est FAUSSE dans cette forme — ici l'énergie créée détruit la roche et
 tue la réaction au lieu de la gonfler. La loi de Solidity transcrite mot à mot n'est pas utilisable comme
