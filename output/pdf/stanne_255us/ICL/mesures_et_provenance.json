@@ -1,0 +1,111 @@
+{
+  "run": "C:\\Users\\fuzquianoalricabi\\simulations\\FDEM\\rockim_g1\\out_stanne2025_rock137",
+  "frame": 17,
+  "time_us": 254.992,
+  "facets": 11327,
+  "connected_components": 58,
+  "largest_component_facets": 11238,
+  "branches": [],
+  "core_sensitivity": [
+    {
+      "rcore_mm": 6,
+      "branches": []
+    },
+    {
+      "rcore_mm": 8,
+      "branches": [
+        {
+          "n": 254,
+          "area": 0.0006947809270695284,
+          "rmin": 0.007073205474511021,
+          "rmax": 0.027864162003550554,
+          "length": 0.020790956529039534,
+          "dmin": 0.0,
+          "dmax": 0.03384507757499999,
+          "ner": 0.33384705978199647,
+          "nz": 0.3562639929241548,
+          "orient": "radiale",
+          "az": 100.92622362985848,
+          "tip": 834,
+          "id": 1
+        }
+      ]
+    },
+    {
+      "rcore_mm": 10,
+      "branches": [
+        {
+          "n": 383,
+          "area": 0.0012254513439429611,
+          "rmin": 0.00849064781243989,
+          "rmax": 0.03129738691649503,
+          "length": 0.02280673910405514,
+          "dmin": 0.0,
+          "dmax": 0.03358456674799999,
+          "ner": 0.3398059868488173,
+          "nz": 0.3931089279782859,
+          "orient": "radiale",
+          "az": -64.266586845385,
+          "tip": 4,
+          "id": 0
+        },
+        {
+          "n": 164,
+          "area": 0.0005320381175578106,
+          "rmin": 0.008486344176203399,
+          "rmax": 0.027864162003550554,
+          "length": 0.019377817827347155,
+          "dmin": 0.0,
+          "dmax": 0.03384507757499999,
+          "ner": 0.30919938843444944,
+          "nz": 0.3301182120419117,
+          "orient": "radiale",
+          "az": 100.95517945584594,
+          "tip": 834,
+          "id": 1
+        },
+        {
+          "n": 156,
+          "area": 0.0003923848776311437,
+          "rmin": 0.009416146829931697,
+          "rmax": 0.027820610974460765,
+          "length": 0.018404464144529068,
+          "dmin": 0.0,
+          "dmax": 0.021657054980999985,
+          "ner": 0.31801256446064263,
+          "nz": 0.46636565882372844,
+          "orient": "radiale",
+          "az": 176.23694057293608,
+          "tip": 7,
+          "id": 2
+        },
+        {
+          "n": 133,
+          "area": 0.00028012508926349324,
+          "rmin": 0.009225684263364932,
+          "rmax": 0.023783385463736283,
+          "length": 0.01455770120037135,
+          "dmin": 0.0,
+          "dmax": 0.019929863757999988,
+          "ner": 0.26203100123797085,
+          "nz": 0.5114398108960214,
+          "orient": "radiale",
+          "az": 30.244041532248154,
+          "tip": 3434,
+          "id": 3
+        }
+      ]
+    }
+  ],
+  "source_sha256": {
+    "fdem3d_joints_0006.vtu": "e2840fbe5d20ac2f85dbc3c2d5ae0c36957714d48aa8b035dffb5a93f3e579a8",
+    "fdem3d_joints_0008.vtu": "2076c046f4253a2dc5560de4ed866146d514f0a0a014c8fda8cdb7ed1771606e",
+    "fdem3d_joints_0009.vtu": "787b366e03210c6fe4c9fa077af531bb338e4d449ad68b26eb6829dafcfd338a",
+    "fdem3d_joints_0010.vtu": "7fbbdc9ce2059e2870d9a87d7b24a2438d131ee494c651fe214df08c0a9281bf",
+    "fdem3d_joints_0017.vtu": "412205603a292b7bb83d242fe6de1c376095bebf3680d2ca6dffc50831962e52"
+  },
+  "reference_geometry": true,
+  "all_broken_facets_kept": true,
+  "mode_warning": "jointBreakModeRef=slipF in effective deck; exported mode is indicative",
+  "rendering": "Opaque flat-shaded triangles, no edges, no smoothing. Exact planar sections."
+}
