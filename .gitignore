@@ -107,6 +107,21 @@ tests_f2/bitid/out_*/
 *.png
 *.gif
 *.pdf
+
+# ---- EXCEPTION du 14/09 : les FIGURES sont versionnees -------------------
+# Motif : Fernando ecrit un rapport et doit pouvoir recuperer les figures
+# depuis n importe quelle machine (`git pull`), pas seulement sur le poste de
+# calcul. Ce sont les LIVRABLES, pas des sorties brutes : quelques dizaines de
+# Mo de PDF vectoriels (Computer Modern, directement inclusibles en LaTeX) et
+# de PNG de relecture. Les VTU, maillages, journaux et exe restent exclus.
+# Entretien : si l historique gonfle (re-rendus quotidiens des memes figures),
+# elaguer les PNG anciens — les PDF suffisent pour un rapport.
+!results/fig/**/*.pdf
+!results/fig/**/*.png
+!results/fig/*.pdf
+!results/fig/*.png
+!output/pdf/**/*.pdf
+!output/pdf/**/*.png
 tunnel_edz/*.png
 bench_abuaisha/*.png
 bench_abuaisha/*.pdf

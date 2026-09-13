@@ -1,0 +1,18 @@
+metric,value,unit
+label,out_yang_bench_s25_v3P  trame 9  t = 200.0 us  (geometrie de reference),-
+nBroken,294,-
+nComponents,3,-
+noyauId,0,-
+noyauFacets,292,-
+nArms,6,-
+yangRadialLength,0.0,m
+longestArmAny,0.014011327266422832,m
+craterRmax,0.014011327266422832,m
+craterRmeanSect,0.007894394448782038,m
+craterRminSect,0.0034496589246263646,m
+craterCover,1.0,-
+rmaxAllVertices,0.014011327266422832,m
+rmaxAllCentroids,0.011887374194562884,m
+depthAll,0.010316644129999997,m
+rcore,0.006,m
+skin,0.001,m

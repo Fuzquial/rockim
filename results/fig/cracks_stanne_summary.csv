@@ -1,0 +1,18 @@
+metric,value,unit
+label,out_stanne2025_visc0  trame 5  t = 125.0 us  (geometrie de reference),-
+nBroken,421,-
+nComponents,5,-
+noyauId,0,-
+noyauFacets,417,-
+nArms,16,-
+yangRadialLength,0.010950631402584942,m
+longestArmAny,0.01500024467227878,m
+craterRmax,0.012830251623314581,m
+craterRmeanSect,0.007766418690207004,m
+craterRminSect,0.004097993257242157,m
+craterCover,0.75,-
+rmaxAllVertices,0.01500024467227878,m
+rmaxAllCentroids,0.012905422576230993,m
+depthAll,0.01661659466099999,m
+rcore,0.006,m
+skin,0.001,m

@@ -1,0 +1,18 @@
+metric,value,unit
+label,out_stanne2025_rock137  trame 12  t = 180.0 us  (geometrie de reference),-
+nBroken,6633,-
+nComponents,78,-
+noyauId,0,-
+noyauFacets,6520,-
+nArms,33,-
+yangRadialLength,0.019828451618632566,m
+longestArmAny,0.019828451618632566,m
+craterRmax,0.018265857720039892,m
+craterRmeanSect,0.0112582201308332,m
+craterRminSect,0.006606790853268558,m
+craterCover,1.0,-
+rmaxAllVertices,0.019828451618632566,m
+rmaxAllCentroids,0.019013825671818613,m
+depthAll,0.025963231202999995,m
+rcore,0.006,m
+skin,0.001,m

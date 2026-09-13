@@ -1,0 +1,18 @@
+metric,value,unit
+label,out_stanne2025_visc0  trame 19  t = 450.0 us  (geometrie de reference),-
+nBroken,1699,-
+nComponents,3,-
+noyauId,0,-
+noyauFacets,1697,-
+nArms,1,-
+yangRadialLength,0.0,m
+longestArmAny,0.041047973583713857,m
+craterRmax,0.016717814635766808,m
+craterRmeanSect,0.012311680676701582,m
+craterRminSect,0.005471764230979618,m
+craterCover,1.0,-
+rmaxAllVertices,0.041047973583713857,m
+rmaxAllCentroids,0.03835713733050867,m
+depthAll,0.036137059269999994,m
+rcore,0.006,m
+skin,0.001,m
