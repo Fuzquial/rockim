@@ -1,0 +1,7 @@
+# S2 : ancre bit-identite du chemin par defaut, exe = copie de build/rockim.exe sha256 c9f5953c4d2fa1208ffdb5ded16ca4b505edfb469650cc0d5db7f509de481063 (build incremental apres S1+S2), 4 fils
+[bitid] exe = C:\Users\FUZQUI~1\AppData\Local\Temp\claude\C--Users-fuzquianoalricabi-simulations\01c1f07a-4d93-418a-851e-98d14203ea97\scratchpad\s2\rockim_s2test.exe
+[bitid] exe_sha256 = c9f5953c4d2fa1208ffdb5ded16ca4b505edfb469650cc0d5db7f509de481063
+[bitid] ancre tools/bitid_refs_jointlaw.json : 1 decks, threads 4 — ancre = rockim_g1y10.exe (08e46e224b4e6664..., 2026-09-12 01:49:01)
+[bitid] 1 decks, OMP_NUM_THREADS = [4], sorties C:\Users\FUZQUI~1\AppData\Local\Temp\claude\C--Users-fuzquianoalricabi-simulations\01c1f07a-4d93-418a-851e-98d14203ea97\scratchpad\s2\bitid_y
+  IDENTIQUE  fdem3d_yang_v2_court             324.2 s  omp4  pic 0 N
+[bitid] 1/1 IDENTIQUE

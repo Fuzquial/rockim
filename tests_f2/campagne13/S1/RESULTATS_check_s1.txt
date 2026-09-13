@@ -1,0 +1,274 @@
+##### 2D (fdem) #####
+
+--- u_rupt_slipRef (C:/Users/FUZQUI~1/AppData/Local/Temp/claude/C--Users-fuzquianoalricabi-simulations/01c1f07a-4d93-418a-851e-98d14203ea97/scratchpad/s1b\out_u_rupt_slipRef)
+  joints VTU : fdem_joints_0002.vtu champs : ['bonded', 'breakMode', 'damage', 'dead', 'ftScale', 'openMax', 'tBreak', 'tInsert', 'type']
+  elems  VTU : fdem_0002.vtu champs : ['epsXX', 'fragment', 'grain', 'pMean', 'phase', 'sigmaXX', 'sigmaXY', 'sigmaYY', 'vonMises']
+  facettes : 3525 ; rompues (tBreak>=0) : 0 ; damage>=0.999 : 0 ; bmode 1/2 : 0/0
+  dead : 0 ; dead ET tBreak<0 (doit etre 0) : 0  -> OK
+  openMax : max 0.000e+00 m ; rompues ouvertes (tBreak>=0 & openMax>0) : 0 / 0 ; rompues fermees : 0
+  openMax>0 sur facettes NON rompues : 0 (ouverture elastique, attendu > 0 possible)
+  pMean : min -2.792e+07 Pa, max -1.999e+06 Pa, >0 : 0 / 2399
+
+--- u_co_slipF (C:/Users/FUZQUI~1/AppData/Local/Temp/claude/C--Users-fuzquianoalricabi-simulations/01c1f07a-4d93-418a-851e-98d14203ea97/scratchpad/s1b\out_u_co_slipF)
+  joints VTU : fdem_joints_0002.vtu champs : ['bonded', 'breakMode', 'damage', 'dead', 'ftScale', 'openMax', 'tBreak', 'tInsert', 'type']
+  elems  VTU : fdem_0002.vtu champs : ['epsXX', 'fragment', 'grain', 'pMean', 'phase', 'sigmaXX', 'sigmaXY', 'sigmaYY', 'vonMises']
+  facettes : 3525 ; rompues (tBreak>=0) : 0 ; damage>=0.999 : 0 ; bmode 1/2 : 0/0
+  dead : 0 ; dead ET tBreak<0 (doit etre 0) : 0  -> OK
+  openMax : max 0.000e+00 m ; rompues ouvertes (tBreak>=0 & openMax>0) : 0 / 0 ; rompues fermees : 0
+  openMax>0 sur facettes NON rompues : 0 (ouverture elastique, attendu > 0 possible)
+  pMean : min -2.792e+07 Pa, max -1.999e+06 Pa, >0 : 0 / 2399
+
+--- u_co_slipRef (C:/Users/FUZQUI~1/AppData/Local/Temp/claude/C--Users-fuzquianoalricabi-simulations/01c1f07a-4d93-418a-851e-98d14203ea97/scratchpad/s1b\out_u_co_slipRef)
+  joints VTU : fdem_joints_0002.vtu champs : ['bonded', 'breakMode', 'damage', 'dead', 'ftScale', 'openMax', 'tBreak', 'tInsert', 'type']
+  elems  VTU : fdem_0002.vtu champs : ['epsXX', 'fragment', 'grain', 'pMean', 'phase', 'sigmaXX', 'sigmaXY', 'sigmaYY', 'vonMises']
+  facettes : 3525 ; rompues (tBreak>=0) : 0 ; damage>=0.999 : 0 ; bmode 1/2 : 0/0
+  dead : 0 ; dead ET tBreak<0 (doit etre 0) : 0  -> OK
+  openMax : max 0.000e+00 m ; rompues ouvertes (tBreak>=0 & openMax>0) : 0 / 0 ; rompues fermees : 0
+  openMax>0 sur facettes NON rompues : 0 (ouverture elastique, attendu > 0 possible)
+  pMean : min -2.792e+07 Pa, max -1.999e+06 Pa, >0 : 0 / 2399
+
+--- u2_ref (C:/Users/FUZQUI~1/AppData/Local/Temp/claude/C--Users-fuzquianoalricabi-simulations/01c1f07a-4d93-418a-851e-98d14203ea97/scratchpad/s1b\out_u2_ref)
+  joints VTU : fdem_joints_0002.vtu champs : ['bonded', 'breakMode', 'damage', 'ftScale', 'tBreak', 'tInsert', 'type']
+  elems  VTU : fdem_0002.vtu champs : ['epsXX', 'fragment', 'grain', 'phase', 'sigmaXX', 'sigmaXY', 'sigmaYY', 'vonMises']
+  facettes : 3525 ; rompues (tBreak>=0) : 355 ; damage>=0.999 : 355 ; bmode 1/2 : 175/180
+
+--- u2_slipRef (C:/Users/FUZQUI~1/AppData/Local/Temp/claude/C--Users-fuzquianoalricabi-simulations/01c1f07a-4d93-418a-851e-98d14203ea97/scratchpad/s1b\out_u2_slipRef)
+  joints VTU : fdem_joints_0002.vtu champs : ['bonded', 'breakMode', 'damage', 'dead', 'ftScale', 'openMax', 'tBreak', 'tInsert', 'type']
+  elems  VTU : fdem_0002.vtu champs : ['epsXX', 'fragment', 'grain', 'pMean', 'phase', 'sigmaXX', 'sigmaXY', 'sigmaYY', 'vonMises']
+  facettes : 3525 ; rompues (tBreak>=0) : 355 ; damage>=0.999 : 355 ; bmode 1/2 : 175/180
+  dead : 149 ; dead ET tBreak<0 (doit etre 0) : 0  -> OK
+  openMax : max 2.316e-05 m ; rompues ouvertes (tBreak>=0 & openMax>0) : 355 / 355 ; rompues fermees : 0
+  openMax>0 sur facettes NON rompues : 940 (ouverture elastique, attendu > 0 possible)
+  pMean : min -5.042e+07 Pa, max 5.931e+06 Pa, >0 : 205 / 2399
+
+--- u2_co_slipF (C:/Users/FUZQUI~1/AppData/Local/Temp/claude/C--Users-fuzquianoalricabi-simulations/01c1f07a-4d93-418a-851e-98d14203ea97/scratchpad/s1b\out_u2_co_slipF)
+  joints VTU : fdem_joints_0002.vtu champs : ['bonded', 'breakMode', 'damage', 'dead', 'ftScale', 'openMax', 'tBreak', 'tInsert', 'type']
+  elems  VTU : fdem_0002.vtu champs : ['epsXX', 'fragment', 'grain', 'pMean', 'phase', 'sigmaXX', 'sigmaXY', 'sigmaYY', 'vonMises']
+  facettes : 3525 ; rompues (tBreak>=0) : 392 ; damage>=0.999 : 392 ; bmode 1/2 : 194/198
+  dead : 168 ; dead ET tBreak<0 (doit etre 0) : 0  -> OK
+  openMax : max 2.309e-05 m ; rompues ouvertes (tBreak>=0 & openMax>0) : 392 / 392 ; rompues fermees : 0
+  openMax>0 sur facettes NON rompues : 791 (ouverture elastique, attendu > 0 possible)
+  pMean : min -3.355e+07 Pa, max 5.727e+06 Pa, >0 : 237 / 2399
+
+--- u2_co_slipRef (C:/Users/FUZQUI~1/AppData/Local/Temp/claude/C--Users-fuzquianoalricabi-simulations/01c1f07a-4d93-418a-851e-98d14203ea97/scratchpad/s1b\out_u2_co_slipRef)
+  joints VTU : fdem_joints_0002.vtu champs : ['bonded', 'breakMode', 'damage', 'dead', 'ftScale', 'openMax', 'tBreak', 'tInsert', 'type']
+  elems  VTU : fdem_0002.vtu champs : ['epsXX', 'fragment', 'grain', 'pMean', 'phase', 'sigmaXX', 'sigmaXY', 'sigmaYY', 'vonMises']
+  facettes : 3525 ; rompues (tBreak>=0) : 392 ; damage>=0.999 : 392 ; bmode 1/2 : 192/200
+  dead : 168 ; dead ET tBreak<0 (doit etre 0) : 0  -> OK
+  openMax : max 2.309e-05 m ; rompues ouvertes (tBreak>=0 & openMax>0) : 392 / 392 ; rompues fermees : 0
+  openMax>0 sur facettes NON rompues : 791 (ouverture elastique, attendu > 0 possible)
+  pMean : min -3.355e+07 Pa, max 5.727e+06 Pa, >0 : 237 / 2399
+
+=== 2D UCS 6 ms : slipRef sans coulomb vs ref (0 etiquette changee attendu) : u2_ref vs u2_slipRef
+  history.csv  sha256 IDENTIQUE
+  frames.csv   sha256 IDENTIQUE
+  joints.damage     : 0 valeurs differentes / 3525
+  joints.tBreak     : 0 valeurs differentes / 3525
+  joints.breakMode  : 0 valeurs differentes / 3525
+  elems.vonMises   : 0 valeurs differentes / 2399
+  elems.sigmaXX    : 0 valeurs differentes / 2399
+
+=== 2D UCS 6 ms : slipF vs slipRef sous coulomb : u2_co_slipF vs u2_co_slipRef
+  history.csv  sha256 DIFFERENT
+  frames.csv   sha256 IDENTIQUE
+  joints.damage     : 0 valeurs differentes / 3525
+  joints.tBreak     : 0 valeurs differentes / 3525
+  joints.breakMode  : 2 valeurs differentes / 3525
+  elems.vonMises   : 0 valeurs differentes / 2399
+  elems.sigmaXX    : 0 valeurs differentes / 2399
+
+=== cles armees (sans coulomb) vs reference bitid : fdem_ucs_yan_adaptive_court vs u_rupt_slipRef
+  history.csv  sha256 IDENTIQUE
+  frames.csv   sha256 IDENTIQUE
+  joints.damage     : 0 valeurs differentes / 3525
+  joints.tBreak     : 0 valeurs differentes / 3525
+  joints.breakMode  : 0 valeurs differentes / 3525
+  elems.vonMises   : 0 valeurs differentes / 2399
+  elems.sigmaXX    : 0 valeurs differentes / 2399
+
+=== jointBreakModeRef slipF vs slipRef sous coulomb : u_co_slipF vs u_co_slipRef
+  history.csv  sha256 IDENTIQUE
+  frames.csv   sha256 IDENTIQUE
+  joints.damage     : 0 valeurs differentes / 3525
+  joints.tBreak     : 0 valeurs differentes / 3525
+  joints.breakMode  : 0 valeurs differentes / 3525
+  elems.vonMises   : 0 valeurs differentes / 2399
+  elems.sigmaXX    : 0 valeurs differentes / 2399
+
+=== compteur du cap 2D
+  [bitid ref] 4 lignes
+      [FDEM] meanTensionCapFactor = 3 : cap ACTIF sur la pression moyenne (pm <= 3 ft) ; les elements ecretes sont comptes a chaque trame (S1, 13/09)
+      [FDEM] meanTensionCap (3 ft) trame 0 : 0 el. ecretes au dernier pas (max 0 sur un pas depuis la trame precedente), exces max 0 MPa
+      10%   20%   30%   40%   50% [FDEM] meanTensionCap (3 ft) trame 1 : 0 el. ecretes au dernier pas (max 0 sur un pas depuis la trame precedente), exces max 0 MPa
+      [FDEM] meanTensionCap (3 ft) trame 2 : 0 el. ecretes au dernier pas (max 0 sur un pas depuis la trame precedente), exces max 0 MPa
+  [u_cap] 4 lignes
+      [FDEM] meanTensionCapFactor = 0.01 : cap ACTIF sur la pression moyenne (pm <= 0.01 ft) ; les elements ecretes sont comptes a chaque trame (S1, 13/09)
+      [FDEM] meanTensionCap (0.01 ft) trame 0 : 0 el. ecretes au dernier pas (max 0 sur un pas depuis la trame precedente), exces max 0 MPa
+      10%   20%   30%   40%   50% [FDEM] meanTensionCap (0.01 ft) trame 1 : 0 el. ecretes au dernier pas (max 2 sur un pas depuis la trame precedente), exces max 0.408243 MPa
+      [FDEM] meanTensionCap (0.01 ft) trame 2 : 0 el. ecretes au dernier pas (max 0 sur un pas depuis la trame precedente), exces max 0 MPa
+  [u_rupt_slipRef] 4 lignes
+      [FDEM] meanTensionCapFactor = 3 : cap ACTIF sur la pression moyenne (pm <= 3 ft) ; les elements ecretes sont comptes a chaque trame (S1, 13/09)
+      [FDEM] meanTensionCap (3 ft) trame 0 : 0 el. ecretes au dernier pas (max 0 sur un pas depuis la trame precedente), exces max 0 MPa
+      10%   20%   30%   40%   50% [FDEM] meanTensionCap (3 ft) trame 1 : 0 el. ecretes au dernier pas (max 0 sur un pas depuis la trame precedente), exces max 0 MPa
+      [FDEM] meanTensionCap (3 ft) trame 2 : 0 el. ecretes au dernier pas (max 0 sur un pas depuis la trame precedente), exces max 0 MPa
+
+##### 3D (fdem3d) #####
+
+--- k9_rupt (C:/Users/FUZQUI~1/AppData/Local/Temp/claude/C--Users-fuzquianoalricabi-simulations/01c1f07a-4d93-418a-851e-98d14203ea97/scratchpad/s1b\out_k9_rupt)
+  joints VTU : fdem3d_joints_0002.vtu champs : ['bonded', 'breakMode', 'damage', 'dead', 'difT', 'edotIns', 'ftScale', 'openMax', 'tBreak', 'type']
+  elems  VTU : fdem3d_0002.vtu champs : ['bulkD', 'fragment', 'grain', 'pMean', 'phase', 'sigma1', 'tauMax', 'vonMises']
+  facettes : 75622 ; rompues (tBreak>=0) : 0 ; damage>=0.999 : 0 ; bmode 1/2 : 0/0
+  dead : 0 ; dead ET tBreak<0 (doit etre 0) : 0  -> OK
+  openMax : max 0.000e+00 m ; rompues ouvertes (tBreak>=0 & openMax>0) : 0 / 0 ; rompues fermees : 0
+  openMax>0 sur facettes NON rompues : 0 (ouverture elastique, attendu > 0 possible)
+  pMean : min -2.908e+08 Pa, max 3.774e+02 Pa, >0 : 4631 / 39734
+
+--- k9_pl_slipF (C:/Users/FUZQUI~1/AppData/Local/Temp/claude/C--Users-fuzquianoalricabi-simulations/01c1f07a-4d93-418a-851e-98d14203ea97/scratchpad/s1b\out_k9_pl_slipF)
+  joints VTU : fdem3d_joints_0002.vtu champs : ['bonded', 'breakMode', 'damage', 'dead', 'difT', 'edotIns', 'ftScale', 'openMax', 'tBreak', 'type']
+  elems  VTU : fdem3d_0002.vtu champs : ['bulkD', 'fragment', 'grain', 'pMean', 'phase', 'sigma1', 'tauMax', 'vonMises']
+  facettes : 75622 ; rompues (tBreak>=0) : 0 ; damage>=0.999 : 0 ; bmode 1/2 : 0/0
+  dead : 0 ; dead ET tBreak<0 (doit etre 0) : 0  -> OK
+  openMax : max 0.000e+00 m ; rompues ouvertes (tBreak>=0 & openMax>0) : 0 / 0 ; rompues fermees : 0
+  openMax>0 sur facettes NON rompues : 0 (ouverture elastique, attendu > 0 possible)
+  pMean : min -2.908e+08 Pa, max 3.774e+02 Pa, >0 : 4631 / 39734
+
+--- k9_pl_slipRef (C:/Users/FUZQUI~1/AppData/Local/Temp/claude/C--Users-fuzquianoalricabi-simulations/01c1f07a-4d93-418a-851e-98d14203ea97/scratchpad/s1b\out_k9_pl_slipRef)
+  joints VTU : fdem3d_joints_0002.vtu champs : ['bonded', 'breakMode', 'damage', 'dead', 'difT', 'edotIns', 'ftScale', 'openMax', 'tBreak', 'type']
+  elems  VTU : fdem3d_0002.vtu champs : ['bulkD', 'fragment', 'grain', 'pMean', 'phase', 'sigma1', 'tauMax', 'vonMises']
+  facettes : 75622 ; rompues (tBreak>=0) : 0 ; damage>=0.999 : 0 ; bmode 1/2 : 0/0
+  dead : 0 ; dead ET tBreak<0 (doit etre 0) : 0  -> OK
+  openMax : max 0.000e+00 m ; rompues ouvertes (tBreak>=0 & openMax>0) : 0 / 0 ; rompues fermees : 0
+  openMax>0 sur facettes NON rompues : 0 (ouverture elastique, attendu > 0 possible)
+  pMean : min -2.908e+08 Pa, max 3.774e+02 Pa, >0 : 4631 / 39734
+
+--- h_pl_slipF (C:/Users/FUZQUI~1/AppData/Local/Temp/claude/C--Users-fuzquianoalricabi-simulations/01c1f07a-4d93-418a-851e-98d14203ea97/scratchpad/s1b\out_h_pl_slipF)
+  joints VTU : fdem3d_joints_0003.vtu champs : ['bonded', 'breakMode', 'damage', 'dead', 'ftScale', 'openMax', 'tBreak', 'type']
+  elems  VTU : fdem3d_0003.vtu champs : ['fragment', 'grain', 'pMean', 'phase', 'sigma1', 'tauMax', 'vonMises']
+  facettes : 35816 ; rompues (tBreak>=0) : 336 ; damage>=0.999 : 336 ; bmode 1/2 : 1/335
+  dead : 0 ; dead ET tBreak<0 (doit etre 0) : 0  -> OK
+  openMax : max 6.171e-05 m ; rompues ouvertes (tBreak>=0 & openMax>0) : 330 / 336 ; rompues fermees : 6
+  openMax>0 sur facettes NON rompues : 3943 (ouverture elastique, attendu > 0 possible)
+  pMean : min -8.949e+08 Pa, max 3.186e+07 Pa, >0 : 1309 / 18596
+
+--- h_pl_slipRef (C:/Users/FUZQUI~1/AppData/Local/Temp/claude/C--Users-fuzquianoalricabi-simulations/01c1f07a-4d93-418a-851e-98d14203ea97/scratchpad/s1b\out_h_pl_slipRef)
+  joints VTU : fdem3d_joints_0003.vtu champs : ['bonded', 'breakMode', 'damage', 'dead', 'ftScale', 'openMax', 'tBreak', 'type']
+  elems  VTU : fdem3d_0003.vtu champs : ['fragment', 'grain', 'pMean', 'phase', 'sigma1', 'tauMax', 'vonMises']
+  facettes : 35816 ; rompues (tBreak>=0) : 336 ; damage>=0.999 : 336 ; bmode 1/2 : 1/335
+  dead : 0 ; dead ET tBreak<0 (doit etre 0) : 0  -> OK
+  openMax : max 6.171e-05 m ; rompues ouvertes (tBreak>=0 & openMax>0) : 330 / 336 ; rompues fermees : 6
+  openMax>0 sur facettes NON rompues : 3943 (ouverture elastique, attendu > 0 possible)
+  pMean : min -8.949e+08 Pa, max 3.186e+07 Pa, >0 : 1309 / 18596
+
+--- h_ori_slipRef (C:/Users/FUZQUI~1/AppData/Local/Temp/claude/C--Users-fuzquianoalricabi-simulations/01c1f07a-4d93-418a-851e-98d14203ea97/scratchpad/s1b\out_h_ori_slipRef)
+  joints VTU : fdem3d_joints_0003.vtu champs : ['bonded', 'breakMode', 'damage', 'dead', 'ftScale', 'openMax', 'tBreak', 'type']
+  elems  VTU : fdem3d_0003.vtu champs : ['fragment', 'grain', 'pMean', 'phase', 'sigma1', 'tauMax', 'vonMises']
+  facettes : 35816 ; rompues (tBreak>=0) : 2 ; damage>=0.999 : 2 ; bmode 1/2 : 0/2
+  dead : 0 ; dead ET tBreak<0 (doit etre 0) : 0  -> OK
+  openMax : max 2.969e-05 m ; rompues ouvertes (tBreak>=0 & openMax>0) : 2 / 2 ; rompues fermees : 0
+  openMax>0 sur facettes NON rompues : 3284 (ouverture elastique, attendu > 0 possible)
+  pMean : min -8.868e+08 Pa, max 3.186e+07 Pa, >0 : 2506 / 18596
+
+--- v_slipRef (C:/Users/FUZQUI~1/AppData/Local/Temp/claude/C--Users-fuzquianoalricabi-simulations/01c1f07a-4d93-418a-851e-98d14203ea97/scratchpad/s1b\out_v_slipRef)
+  joints VTU : fdem3d_joints_0002.vtu champs : ['bonded', 'breakMode', 'damage', 'dead', 'ftScale', 'openMax', 'tBreak', 'type']
+  elems  VTU : fdem3d_0002.vtu champs : ['fragment', 'grain', 'pMean', 'phase', 'sigma1', 'tauMax', 'vonMises']
+  facettes : 11400 ; rompues (tBreak>=0) : 200 ; damage>=0.999 : 200 ; bmode 1/2 : 200/0
+  dead : 0 ; dead ET tBreak<0 (doit etre 0) : 0  -> OK
+  openMax : max 2.111e-05 m ; rompues ouvertes (tBreak>=0 & openMax>0) : 200 / 200 ; rompues fermees : 0
+  openMax>0 sur facettes NON rompues : 11200 (ouverture elastique, attendu > 0 possible)
+  pMean : min -3.486e+05 Pa, max 3.078e+05 Pa, >0 : 2649 / 6000
+
+--- v_co_slipF (C:/Users/FUZQUI~1/AppData/Local/Temp/claude/C--Users-fuzquianoalricabi-simulations/01c1f07a-4d93-418a-851e-98d14203ea97/scratchpad/s1b\out_v_co_slipF)
+  joints VTU : fdem3d_joints_0002.vtu champs : ['bonded', 'breakMode', 'damage', 'dead', 'ftScale', 'openMax', 'tBreak', 'type']
+  elems  VTU : fdem3d_0002.vtu champs : ['fragment', 'grain', 'pMean', 'phase', 'sigma1', 'tauMax', 'vonMises']
+  facettes : 11400 ; rompues (tBreak>=0) : 200 ; damage>=0.999 : 200 ; bmode 1/2 : 200/0
+  dead : 0 ; dead ET tBreak<0 (doit etre 0) : 0  -> OK
+  openMax : max 2.111e-05 m ; rompues ouvertes (tBreak>=0 & openMax>0) : 200 / 200 ; rompues fermees : 0
+  openMax>0 sur facettes NON rompues : 11200 (ouverture elastique, attendu > 0 possible)
+  pMean : min -3.486e+05 Pa, max 3.078e+05 Pa, >0 : 2649 / 6000
+
+--- v_co_slipRef (C:/Users/FUZQUI~1/AppData/Local/Temp/claude/C--Users-fuzquianoalricabi-simulations/01c1f07a-4d93-418a-851e-98d14203ea97/scratchpad/s1b\out_v_co_slipRef)
+  joints VTU : fdem3d_joints_0002.vtu champs : ['bonded', 'breakMode', 'damage', 'dead', 'ftScale', 'openMax', 'tBreak', 'type']
+  elems  VTU : fdem3d_0002.vtu champs : ['fragment', 'grain', 'pMean', 'phase', 'sigma1', 'tauMax', 'vonMises']
+  facettes : 11400 ; rompues (tBreak>=0) : 200 ; damage>=0.999 : 200 ; bmode 1/2 : 200/0
+  dead : 0 ; dead ET tBreak<0 (doit etre 0) : 0  -> OK
+  openMax : max 2.111e-05 m ; rompues ouvertes (tBreak>=0 & openMax>0) : 200 / 200 ; rompues fermees : 0
+  openMax>0 sur facettes NON rompues : 11200 (ouverture elastique, attendu > 0 possible)
+  pMean : min -3.486e+05 Pa, max 3.078e+05 Pa, >0 : 2649 / 6000
+
+=== heilman origin : cles armees vs ref bitid : fdem3d_cut3d_heilman_court vs h_ori_slipRef
+  history.csv  sha256 IDENTIQUE
+  frames.csv   sha256 IDENTIQUE
+  joints.damage     : 0 valeurs differentes / 35816
+  joints.tBreak     : 0 valeurs differentes / 35816
+  joints.breakMode  : 0 valeurs differentes / 35816
+  elems.vonMises   : 0 valeurs differentes / 18596
+  elems.sigma1     : 0 valeurs differentes / 18596
+
+=== heilman plastic+coulomb : slipF vs slipRef : h_pl_slipF vs h_pl_slipRef
+  history.csv  sha256 IDENTIQUE
+  frames.csv   sha256 IDENTIQUE
+  joints.damage     : 0 valeurs differentes / 35816
+  joints.tBreak     : 0 valeurs differentes / 35816
+  joints.breakMode  : 0 valeurs differentes / 35816
+  elems.vonMises   : 0 valeurs differentes / 18596
+  elems.sigma1     : 0 valeurs differentes / 18596
+
+=== visc_yan tension : slipRef sans coulomb vs ref bitid : fdem3d_visc_yan_3d vs v_slipRef
+  history.csv  sha256 IDENTIQUE
+  frames.csv   sha256 IDENTIQUE
+  joints.damage     : 0 valeurs differentes / 11400
+  joints.tBreak     : 0 valeurs differentes / 11400
+  joints.breakMode  : 0 valeurs differentes / 11400
+  elems.vonMises   : 0 valeurs differentes / 6000
+  elems.sigma1     : 0 valeurs differentes / 6000
+
+=== visc_yan tension coulomb : slipF vs slipRef : v_co_slipF vs v_co_slipRef
+  history.csv  sha256 IDENTIQUE
+  frames.csv   sha256 IDENTIQUE
+  joints.damage     : 0 valeurs differentes / 11400
+  joints.tBreak     : 0 valeurs differentes / 11400
+  joints.breakMode  : 0 valeurs differentes / 11400
+  elems.vonMises   : 0 valeurs differentes / 6000
+  elems.sigma1     : 0 valeurs differentes / 6000
+
+=== writeRuptureFields vs reference bitid : fdem3d_kuru9_court vs k9_rupt
+  history.csv  sha256 IDENTIQUE
+  frames.csv   sha256 IDENTIQUE
+  joints.damage     : 0 valeurs differentes / 75622
+  joints.tBreak     : 0 valeurs differentes / 75622
+  joints.breakMode  : 0 valeurs differentes / 75622
+  elems.vonMises   : 0 valeurs differentes / 39734
+  elems.sigma1     : 0 valeurs differentes / 39734
+  elems.bulkD      : 0 valeurs differentes / 39734
+
+=== jointBreakModeRef slipF vs slipRef (plastic + coulomb) : k9_pl_slipF vs k9_pl_slipRef
+  history.csv  sha256 IDENTIQUE
+  frames.csv   sha256 IDENTIQUE
+  joints.damage     : 0 valeurs differentes / 75622
+  joints.tBreak     : 0 valeurs differentes / 75622
+  joints.breakMode  : 0 valeurs differentes / 75622
+  elems.vonMises   : 0 valeurs differentes / 39734
+  elems.sigma1     : 0 valeurs differentes / 39734
+  elems.bulkD      : 0 valeurs differentes / 39734
+
+=== compteur du cap 3D
+  [bitid ref] 4 lignes
+      [FDEM3D] meanTensionCapFactor = 3 : cap ACTIF sur la pression moyenne (pm <= 3 ft) ; les elements ecretes sont comptes a chaque trame (S1, 13/09)
+      [FDEM3D] meanTensionCap (3 ft) trame 0 : 0 el. ecretes au dernier pas (max 0 sur un pas depuis la trame precedente), exces max 0 MPa
+      [FDEM3D] meanTensionCap (3 ft) trame 1 : 0 el. ecretes au dernier pas (max 0 sur un pas depuis la trame precedente), exces max 0 MPa
+      [FDEM3D] meanTensionCap (3 ft) trame 2 : 0 el. ecretes au dernier pas (max 0 sur un pas depuis la trame precedente), exces max 0 MPa
+  [k9_cap] 4 lignes
+      [FDEM3D] meanTensionCapFactor = 0.01 : cap ACTIF sur la pression moyenne (pm <= 0.01 ft) ; les elements ecretes sont comptes a chaque trame (S1, 13/09)
+      [FDEM3D] meanTensionCap (0.01 ft) trame 0 : 0 el. ecretes au dernier pas (max 0 sur un pas depuis la trame precedente), exces max 0 MPa
+      [FDEM3D] meanTensionCap (0.01 ft) trame 1 : 0 el. ecretes au dernier pas (max 0 sur un pas depuis la trame precedente), exces max 0 MPa
+      [FDEM3D] meanTensionCap (0.01 ft) trame 2 : 0 el. ecretes au dernier pas (max 0 sur un pas depuis la trame precedente), exces max 0 MPa
+  [k9_cap2] 4 lignes
+      [FDEM3D] meanTensionCapFactor = 1e-09 : cap ACTIF sur la pression moyenne (pm <= 1e-09 ft) ; les elements ecretes sont comptes a chaque trame (S1, 13/09)
+      [FDEM3D] meanTensionCap (1e-09 ft) trame 0 : 0 el. ecretes au dernier pas (max 0 sur un pas depuis la trame precedente), exces max 0 MPa
+      [FDEM3D] meanTensionCap (1e-09 ft) trame 1 : 148 el. ecretes au dernier pas (max 211 sur un pas depuis la trame precedente), exces max 0.000186427 MPa
+      [FDEM3D] meanTensionCap (1e-09 ft) trame 2 : 113 el. ecretes au dernier pas (max 148 sur un pas depuis la trame precedente), exces max 22.88 MPa
+  [k9_rupt] 4 lignes
+      [FDEM3D] meanTensionCapFactor = 3 : cap ACTIF sur la pression moyenne (pm <= 3 ft) ; les elements ecretes sont comptes a chaque trame (S1, 13/09)
+      [FDEM3D] meanTensionCap (3 ft) trame 0 : 0 el. ecretes au dernier pas (max 0 sur un pas depuis la trame precedente), exces max 0 MPa
+      [FDEM3D] meanTensionCap (3 ft) trame 1 : 0 el. ecretes au dernier pas (max 0 sur un pas depuis la trame precedente), exces max 0 MPa
+      [FDEM3D] meanTensionCap (3 ft) trame 2 : 0 el. ecretes au dernier pas (max 0 sur un pas depuis la trame precedente), exces max 0 MPa

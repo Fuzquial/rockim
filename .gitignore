@@ -126,6 +126,11 @@ tests_f2/bitid/out_*/
 !results/fig/*.png
 !output/pdf/**/*.pdf
 !output/pdf/**/*.png
+# Complement du 13/09 : les planches de fragments de St Anne (png + gif) sont
+# des livrables au meme titre, elles sortent hors de output/pdf/.
+!output/fragments_stanne/**/*.pdf
+!output/fragments_stanne/**/*.png
+!output/fragments_stanne/**/*.gif
 tunnel_edz/*.png
 bench_abuaisha/*.png
 bench_abuaisha/*.pdf

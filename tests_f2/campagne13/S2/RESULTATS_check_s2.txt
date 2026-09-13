@@ -1,0 +1,10 @@
+lignes history : 2123 ; colonnes Fc : ['Fc_piston_bit_x', 'Fc_piston_bit_y', 'Fc_piston_bit_z', 'Fc_bit_piston_x', 'Fc_bit_piston_y', 'Fc_bit_piston_z', 'Fc_insert_rock_x', 'Fc_insert_rock_y', 'Fc_insert_rock_z', 'Fc_rock_insert_x', 'Fc_rock_insert_y', 'Fc_rock_insert_z', 'Fc_plate_bit_x', 'Fc_plate_bit_y', 'Fc_plate_bit_z', 'Fc_rock_bit_x', 'Fc_rock_bit_y', 'Fc_rock_bit_z', 'Fc_insert_bit_x', 'Fc_insert_bit_y', 'Fc_insert_bit_z', 'Fc_circlip_bit_x', 'Fc_circlip_bit_y', 'Fc_circlip_bit_z']
+C1   OK    : max |Fc_insert_rock|, |Fc_rock_insert| = 0 N (attendu 0 exact)
+C2   OK    : premiere force non nulle a t = 2.234 us (ligne 158) : Fc_bit_piston_z = +7369 N, Fc_piston_bit_z = -7369 N ; max |Fc_bit_piston_z| = 2.721e+05 N a t = 8.907 us ; lignes > 0 : 1965, < 0 : 0
+C3   OK    : max |Fc_piston_bit + Fc_bit_piston| = 0 N (attendu 0 exact)
+C4   OK    : colonnes ['Fc_piston_bit_z', 'Fc_plate_bit_z', 'Fc_rock_bit_z', 'Fc_insert_bit_z', 'Fc_circlip_bit_z'] ; ecart absolu max 0.97 N ; ecart / tolerance d arrondi 6 chiffres max 0.965 (seuil 1) ; pire : t = 6.334 us : grpFz = -100697, somme = -100697.97, ecart 0.97 N, tolerance d arrondi 1 N
+C5   OK    : m_p = 0.776709 kg ; impulsion trapezes de Fc_bit_piston_z = 2.20393 N.s, pesanteur -0.000229 N.s ; m_p dv_p = 2.20543 N.s ; ecart 0.08 % (seuil 5 % ; 2123 lignes, pas moyen 0.0141 us)
+C6a  OK    : history.csv temoin == fc prive des Fc_* : 2124 lignes, 0 differentes
+C6b  OK    : 4 VTU, sha256 identiques : True
+C6c  OK    : journaux hors annonce, temps mur et comptage des cles : 0 lignes differentes (comptage fc « [rockim] cles : 278 consommees (86 du deck, 192 au defaut),  », ref « [rockim] cles : 278 consommees (85 du deck, 193 au defaut),  »)
+BILAN S2 : TOUS OK
