@@ -318,3 +318,47 @@ trois réserves nouvelles. Toutes les trois sont traitées :
 Les quatre décisions techniques de la relecture sont adoptées telles quelles et inscrites au §3 : témoin
 `plastic`, comparaison `origin` + ratchet, `solidity` hors campagnes longues mais gardée en régression,
 exploitation de la force insert/roche directe, puis St Anne, puis convergence de maillage à train identique.
+
+## 10 — St Anne 2025 : ce que le run grossier montre, et ce qu'il ne montre pas (14/09)
+
+Deck `configs/stanne2025_bench_s25_visc0.cfg` (Yang 2025, 10,66 m/s ; matériau Table 4 ; pénalité `edge`
+26,316 = p0/(2E) avec les 3 000 GPa de l'ARMA 2024 ; loi `plastic` ; **pulvérisation désactivée** ; sans
+viscosité ; train **figé** à s = 1 ; cap de traction moyenne neutralisé ; forces de contact mesurées),
+`rockim_g1y18`, 450 µs prévus.
+
+**Ce qu'il apporte tout de suite : la réaction n'était pas mesurée, elle était estimée.** La colonne
+`Fc_rock_insert_z` donne la force de la roche sur l'insert **lue dans le contact**. À 134 µs :
+
+| | réaction mesurée | estimateur `m dv/dt` du train rigide |
+|---|---|---|
+| Maximum sur 0-134 µs | 39,5 kN | 75,2 kN (**+90 %**) |
+| Impulsion sur 0-134 µs | 1,495 N·s | 1,444 N·s (−3,4 %) |
+| Allure | rampe monotone | oscillation entre −50 et +75 kN |
+
+L'impulsion coïncide à 3,4 %, le maximum non : l'estimateur du train rigide **lit les oscillations d'onde dans
+le train** et les attribue à la roche. **Conséquence rétroactive** : tous les maxima de réaction cités jusqu'ici
+(les 53,5 kN du témoin A, les 60,7 kN de B2, les 20-30 kN du s = 1) sont des maxima de cet estimateur et ne se
+comparent PAS aux ~57 kN de Yang, eux-mêmes un freinage moyen. Les comparaisons de force sont à refaire sur
+`contactForcePairs` et sur l'impulsion.
+
+**Ce qu'il ne montre pas : la fissuration.** Le maillage `rock25` a un cœur (r < 12,5 mm) de **839 tétraèdres,
+arête médiane 3,59 mm**. L'analyse connectée à 125 µs donne 421 facettes rompues, 16 bras, une « longueur
+radiale » de 10,95 mm et un cratère moyen de 7,77 mm — mais cette radiale vaut **trois facettes**. C'est
+exactement l'objection opposée aux bancs Kuru à s = 2,5, et elle vaut ici aussi : **ces chiffres ne valident
+pas la localisation**. Ma lecture initiale (« le moteur sait produire des fissures qui se propagent ») était
+prématurée.
+
+**Série de convergence à train identique** (seule variable : la résolution de la roche) :
+
+| maillage | tétraèdres | cœur r < 12,5 mm | arête médiane du cœur | h inscrit médian |
+|---|---|---|---|---|
+| `rock25` (run 1, mécanique) | 24 010 | 839 | 3,59 mm | 1,23 mm |
+| `rock137` (run 2, localisation) | 108 667 | 14 030 | 1,42 mm | 0,49 mm |
+| `rock073` (réserve) | 251 460 | 37 018 | **1,03 mm** | 0,36 mm |
+
+`rock073` est celui qui atteint le 1 mm *annoncé* par Yang, avec 37 018 tétraèdres dans le cœur — proche des
+~35 000 qu'un vrai 1 mm impose géométriquement. La nuit du 13 au 14 enchaîne : St Anne `rock25` jusqu'au bout
+(mécanique), puis St Anne `rock137` sur 300 µs (localisation, borne 3 h), puis le Kuru `train1_v5` sur
+`rock137` (borne 3 h). Si le run grossier ne montre pas de fissures nettes, **ce n'est pas une preuve d'échec
+de rockim** — c'est la limite du maillage.
+
