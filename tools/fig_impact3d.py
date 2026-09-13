@@ -38,6 +38,9 @@ import numpy as np
 from matplotlib.collections import LineCollection, PolyCollection
 from PIL import Image
 
+FIELD = "vonMises"    # --field : vonMises | sigma1 | pMean | tauMax
+CLIM = (0.0, 140.0)   # --clim MIN MAX [MPa]
+CMAP = "YlGnBu_r"     # --cmap ; sigma1 et pMean sont SIGNES -> divergent
 R = 0.00851           # rayon de l'insert [m]
 H0 = 0.100            # hauteur du bloc [m]
 XC = YC = 0.075       # axe d'impact [m]
@@ -278,11 +281,16 @@ def gif(runs, out, tmp="_gif3d"):
             s = rd("%s/fdem3d_%04d.vtu" % (D, kk))
             js = rd("%s/fdem3d_joints_%04d.vtu" % (D, kk))
             P, C = pts(s), cn(s, 4)
-            vm, bd = ar(s, "vonMises") / 1e6, crushed(s)
+            # --field (14/09) : quel champ colorie la coupe. Defaut
+            # vonMises, echelle 0-140 MPa = comportement d origine.
+            # sigma1 reproduit la fig. 16 de Yang (contrainte principale
+            # maximale, traction > 0) ; pMean la pression moyenne ;
+            # tauMax le cisaillement maximal.
+            vm, bd = ar(s, FIELD) / 1e6, crushed(s)
             po, ei = slice_tets(P, C, YC)
-            pc = PolyCollection(po, array=np.clip(vm[ei], 0, 140), cmap="YlGnBu_r",
-                                edgecolors="#5c686f", linewidths=.32)
-            pc.set_clim(0, 140)
+            pc = PolyCollection(po, array=np.clip(vm[ei], CLIM[0], CLIM[1]),
+                                cmap=CMAP, edgecolors="#5c686f", linewidths=.32)
+            pc.set_clim(*CLIM)
             axx.add_collection(pc)
             pv = bd[ei] > 0.5
             if pv.any():
@@ -336,6 +344,8 @@ def geometry_override(argv):
     annotations fausses — sur tout autre deck. Ces drapeaux sont OPTIONNELS et
     leurs defauts sont les valeurs d'origine : sans eux, comportement inchange.
 
+      --field vonMises|sigma1|pMean|tauMax   champ colorant la coupe (14/09)
+      --clim MIN MAX [MPa]           --cmap  nom matplotlib
       --R  rayon de l'outil [m]      --H   hauteur du bloc [m]
       --XC axe d'impact x [m]        --YC  axe d'impact y [m]
       --V0 vitesse d'entree [m/s]    --KE0 energie injectee [J]
@@ -345,6 +355,7 @@ def geometry_override(argv):
     --V0 n'est pas pose : hors du banc de Yang elles n'ont aucun sens.
     """
     global R, H0, XC, YC, V0, KE0, XL, XR, YB, YT, ON_YANG_BENCH
+    global FIELD, CLIM, CMAP
     global D_PUB, V_OUT, KE_OUT
     ON_YANG_BENCH = "--V0" not in argv
     if not ON_YANG_BENCH:
@@ -368,6 +379,21 @@ def geometry_override(argv):
             elif a == "--YC": YC = v
             elif a == "--V0": V0 = v
             else:            KE0 = v
+            i += 2
+        elif a == "--field" and i + 1 < len(argv):
+            FIELD = argv[i + 1]
+            if FIELD not in ("vonMises", "sigma1", "pMean", "tauMax"):
+                raise SystemExit("--field : vonMises | sigma1 | pMean | tauMax")
+            # defauts adaptes au champ, surchargeables par --clim / --cmap
+            if FIELD == "sigma1":   CLIM, CMAP = (-20.0, 20.0), "RdBu_r"
+            elif FIELD == "pMean":  CLIM, CMAP = (-200.0, 20.0), "RdBu_r"
+            elif FIELD == "tauMax": CLIM, CMAP = (0.0, 80.0), "YlGnBu_r"
+            i += 2
+        elif a == "--clim" and i + 2 < len(argv):
+            CLIM = (float(argv[i + 1]), float(argv[i + 2]))
+            i += 3
+        elif a == "--cmap" and i + 1 < len(argv):
+            CMAP = argv[i + 1]
             i += 2
         elif a == "--label" and i + 1 < len(argv):
             rest.append(("label", argv[i + 1]))
