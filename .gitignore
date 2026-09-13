@@ -14,6 +14,10 @@
 
 # --- produits de compilation ---
 *.exe
+# EXCEPTION du 14/09 : le binaire du run qui donne les radiales est versionne
+# (2,5 Mo) pour qu il soit utilisable sans reconstruire (Visual Studio 2022).
+# Les SOURCES font foi ; voir docs/REPRODUIRE_stanne_radiales_2026-09-14.md.
+!rockim_g1y19.exe
 *.obj
 *.lib
 *.pdb
