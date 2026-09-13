@@ -193,7 +193,7 @@ Lecture :
 ### 6 bis — la variante sans garde-fou tranche l'hypothèse (13/09, 17 h 15 - 22 h, banc B')
 
 `configs/yang2026_bench_s25_solidity_noabort.cfg` = banc B avec `budgetAbortPct = 0` : la loi fait ce
-qu'elle fait chez eux, dont le code n'a aucun bilan d'énergie. Arrêté à la main à **261,06 µs** (dernière ligne du CSV ; « 251 » dans la première rédaction était la ligne lue en cours de run) sur 300 (11 trames
+qu'ecrit le CODE PUBLIC, qui n'a aucun bilan d'energie (leur version interne n'est pas connue : le §7 dit pourquoi on ne peut pas l'affirmer pour Yang). Arrêté à la main à **261,06 µs** (dernière ligne du CSV ; « 251 » dans la première rédaction était la ligne lue en cours de run) sur 300 (11 trames
 conservées) parce que le verdict est acquis et monotone :
 
 | B' sans garde-fou | 80 µs | 100 µs | 150 µs | 200 µs | 250 µs |
