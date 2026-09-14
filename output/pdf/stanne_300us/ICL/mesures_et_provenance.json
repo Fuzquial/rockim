@@ -1,0 +1,80 @@
+{
+  "run": "C:\\Users\\fuzquianoalricabi\\simulations\\FDEM\\rockim_g1\\out_stanne2025_rock137",
+  "frame": 21,
+  "time_us": 300.001,
+  "facets": 12090,
+  "connected_components": 58,
+  "largest_component_facets": 12003,
+  "branches": [],
+  "core_sensitivity": [
+    {
+      "rcore_mm": 6,
+      "branches": []
+    },
+    {
+      "rcore_mm": 8,
+      "branches": []
+    },
+    {
+      "rcore_mm": 10,
+      "branches": [
+        {
+          "n": 680,
+          "area": 0.0019836402662806326,
+          "rmin": 0.00849064781243989,
+          "rmax": 0.03129738691649503,
+          "length": 0.02280673910405514,
+          "dmin": 0.0,
+          "dmax": 0.03358456674799999,
+          "ner": 0.3404359414762233,
+          "nz": 0.43070097186878953,
+          "orient": "radiale",
+          "az": -93.65549029336654,
+          "tip": 4,
+          "id": 0
+        },
+        {
+          "n": 172,
+          "area": 0.000582645430143557,
+          "rmin": 0.008486344176203399,
+          "rmax": 0.028232809078626867,
+          "length": 0.019746464902423468,
+          "dmin": 0.0,
+          "dmax": 0.03749999999999999,
+          "ner": 0.3306321644489593,
+          "nz": 0.32882740775490815,
+          "orient": "radiale",
+          "az": 100.22715053291564,
+          "tip": 872,
+          "id": 2
+        },
+        {
+          "n": 182,
+          "area": 0.00039449306048809597,
+          "rmin": 0.009225684263364932,
+          "rmax": 0.02474609648288544,
+          "length": 0.015520412219520507,
+          "dmin": 0.0,
+          "dmax": 0.020408089816999986,
+          "ner": 0.280447443340663,
+          "nz": 0.5481497111853083,
+          "orient": "radiale",
+          "az": 28.337130338691132,
+          "tip": 8,
+          "id": 1
+        }
+      ]
+    }
+  ],
+  "source_sha256": {
+    "fdem3d_joints_0006.vtu": "e2840fbe5d20ac2f85dbc3c2d5ae0c36957714d48aa8b035dffb5a93f3e579a8",
+    "fdem3d_joints_0008.vtu": "2076c046f4253a2dc5560de4ed866146d514f0a0a014c8fda8cdb7ed1771606e",
+    "fdem3d_joints_0009.vtu": "787b366e03210c6fe4c9fa077af531bb338e4d449ad68b26eb6829dafcfd338a",
+    "fdem3d_joints_0010.vtu": "7fbbdc9ce2059e2870d9a87d7b24a2438d131ee494c651fe214df08c0a9281bf",
+    "fdem3d_joints_0021.vtu": "4840910329507236e4a1e10d2f6434669aaaedc7e0f6c81ba1b368183c3da675"
+  },
+  "reference_geometry": true,
+  "all_broken_facets_kept": true,
+  "mode_warning": "jointBreakModeRef=slipF in effective deck; exported mode is indicative",
+  "rendering": "Opaque flat-shaded triangles, no edges, no smoothing. Exact planar sections."
+}

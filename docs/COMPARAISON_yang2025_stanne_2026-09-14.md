@@ -123,7 +123,58 @@ faces sub-verticales, 47 % de ruptures en traction.
    annoncé. `rock073` (1,03 mm, 251 460 tétraèdres) reste à jouer pour savoir ce qui, dans les écarts
    ci-dessus, est du maillage.
 
-## 6. Le montage, pour mémoire
+## 6. Le run est terminé (12 h 05) — valeurs finales et bilan d'énergie
+
+29 h 21 de calcul (105 690 s) sur 14 fils, 22 trames, arrêt propre à 300,001 µs.
+Rien n'a été enchaîné derrière : la file de nuit a été désarmée à la demande.
+
+**Le bilan d'énergie ferme, et c'est le résultat le plus solide du run.**
+
+| | |
+|---|---|
+| Énergie cinétique, début → fin | 60,12 → 3,28 J |
+| Résidu du budget B4 | −9,8e-8 J, soit **1,5e-7 %** de l'échelle |
+
+Après une semaine passée à traquer des lois de joint qui créaient de l'énergie, celle-ci n'en crée
+pas, sur 300 µs et 12 090 facettes rompues. C'est la validation que les bancs de cycle fermé
+annonçaient.
+
+**Les postes de dissipation**, à confronter à `yang2024energy` :
+
+| Poste | Valeur |
+|---|---:|
+| Rupture (Gc) | 34,5 J |
+| Frottement | 27,8 J |
+| Joints (élastique + adoucissement) | 14,5 J |
+| Élastique stocké | 18,1 J |
+
+Le frottement pèse enfin quelque chose : 27,8 J, contre les **0,66 J** mesurés sur les anciens bancs
+Kuru face aux 32 J publiés. C'est l'écart que la mémoire du projet identifiait comme le déficit
+principal, et il n'existe plus sur ce montage. ⚠️ Comparaison à prendre avec précaution : ce sont deux
+roches, deux vitesses et deux decks différents, et le chiffre de 32 J est celui du Kuru.
+
+**Valeurs finales des critères** (trame 21, 300 µs), qui ne changent pas les conclusions du §2 et §3 :
+
+| | 285 µs | 300 µs |
+|---|---:|---:|
+| Facettes rompues | 11 914 | 12 090 |
+| Fragments | 3 904 | 4 089 |
+| Rayon de cratère, peau | 11,84 mm | **12,00 mm** |
+| Rayon maximal rompu | 29,56 mm | 29,60 mm |
+| Volume détaché | 2 139 mm³ | 2 153 mm³ |
+| Masse brossée | 4,67 g | **4,70 g** |
+| Radiales, portée moyenne | 8,79 mm | 8,66 mm |
+
+**Un fait nouveau dans les quinze dernières microsecondes : la profondeur du réseau passe de 36,9 à
+40,9 mm**, +11 %, alors que tout le reste est figé. Une fissure descend pendant la décharge. C'est
+cohérent avec Yang, qui fait cesser les médianes à 291 µs, donc après la fin de charge. À vérifier
+sur les coupes avant d'en faire un résultat.
+
+**Le rebond n'est toujours pas mesurable** : à 300 µs l'insert repart à −0,33 m/s pendant que le
+taillant monte à 1,47 m/s et le piston à 1,07. Le train se décompose, il n'est pas sorti. Les énergies
+cinétiques finales valent 1,84 J pour le taillant et 1,36 J pour le piston, contre 60,1 J au départ.
+
+## 7. Le montage, pour mémoire
 
 Deck `configs/stanne2025_rock137_visc0.cfg`, binaire `rockim_g1y19.exe`, maillage
 `impact_yang_train1_rock137_hxt.msh` (108 667 tétraèdres, cœur 14 030 à 1,42 mm).
