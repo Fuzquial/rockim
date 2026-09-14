@@ -45,15 +45,22 @@ COL = {"insert": "vz_insert", "bit": "vz_bit", "piston": "vz_piston"}
 
 
 def load(run, corps):
+    """Retourne label, t[us], vz[m/s] et la force de contact roche/insert [kN].
+
+    La force est le CRITERE qui distingue une pause d'un retournement : sous une
+    pause elle reste plate, a un vrai retournement elle retombe. Sans elle on
+    date des croisements de vitesse qui n'en sont pas (erreur du 14/09).
+    """
     chemin = run.split(":")[0]
     label = run.split(":", 1)[1] if ":" in run else os.path.basename(chemin)
-    t, v = [], []
+    t, v, F = [], [], []
     with open(os.path.join(chemin, "history.csv")) as fh:
         r = csv.DictReader(fh)
         for row in r:
             t.append(float(row["t"]) * 1e6)
             v.append(float(row[COL[corps]]))
-    return label, np.asarray(t), np.asarray(v)
+            F.append(float(row.get("Fc_rock_insert_z", "nan")) / 1000.0)
+    return label, np.asarray(t), np.asarray(v), np.asarray(F)
 
 
 def periode_mesuree(t, v, tmin):
@@ -74,8 +81,12 @@ def periode_mesuree(t, v, tmin):
     i = 1
     while i < ac.size and ac[i] > 0.0:
         i += 1
+    # Une periode doit tenir plusieurs fois dans la fenetre, sinon ce n'est pas
+    # une oscillation mais la forme du signal : apres le rebond l'autocorrelation
+    # renvoyait 106 us sur une fenetre de 120, ce qui vidait la moyenne de sens.
+    imax = int((tt[-1] - tt[0]) / 3.0 / dt)
     meilleur, val = None, 0.15
-    while i < ac.size - 1:
+    while i < min(ac.size - 1, imax):
         if ac[i] > ac[i - 1] and ac[i] >= ac[i + 1] and ac[i] > val:
             meilleur, val = i, ac[i]
         i += 1
@@ -119,7 +130,14 @@ def main():
     eteinte = False
     mesure = None
     for k, run in enumerate(a.runs):
-        label, t, v = load(run, a.corps)
+        label, t, v, Fc = load(run, a.corps)
+        if k == 0 and np.isfinite(Fc).any():
+            hF = h.twinx()
+            hF.plot(t, Fc, color="C2", lw=1.0, alpha=.55)
+            hF.set_ylabel(u"force de contact roche/insert  [kN]", color="C2",
+                          fontsize=9)
+            hF.tick_params(axis="y", labelcolor="C2", labelsize=8)
+            hF.set_ylim(0, float(np.nanmax(Fc)) * 2.6)
         T = a.periode or periode_mesuree(t, v, a.depuis)
         source = "imposee" if a.periode else "mesuree"
         if T is None:
@@ -161,6 +179,10 @@ def main():
                 break
             h.axvline(t0, color="C3", lw=0.9, ls="--")
             h.plot([t0], [0.0], marker="x", ms=9, color="C3", mew=2)
+            h.annotate(u"pause %.0f µs\n(la force ne retombe pas)" % t0,
+                       xy=(t0, 0.0), xytext=(t0 - 6, 1.9),
+                       ha="right", va="bottom", color="C3", fontsize=8.5,
+                       arrowprops=dict(arrowstyle="->", color="C3", lw=0.8))
             print("%-24s croisement a %.2f us : PAUSE (%.0f %% du temps suivant "
                   "vz < 0), pas un retournement" % (label, t0, 100 * frac_neg))
         if mesure is None and mont.size:
