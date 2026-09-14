@@ -117,6 +117,7 @@ def main():
 
     fig, (h, b) = plt.subplots(2, 1, figsize=(7.2, 6.4), sharex=True)
     eteinte = False
+    mesure = None
     for k, run in enumerate(a.runs):
         label, t, v = load(run, a.corps)
         T = a.periode or periode_mesuree(t, v, a.depuis)
@@ -130,6 +131,21 @@ def main():
         h.plot(tc, vm, color=c, lw=1.9,
                label="%s  (periode %s : %.1f us)" % (label, source, T))
         b.plot(tc, vm, color=c, lw=1.9, label=label)
+
+        # --- si le retournement a EU LIEU, on le lit, on ne l'extrapole plus ----
+        apres = np.where((v > 0.0) & (t > a.depuis))[0]
+        if apres.size:
+            j = apres[0]
+            mesure = (t[j - 1] + (0.0 - v[j - 1]) * (t[j] - t[j - 1])
+                      / (v[j] - v[j - 1]))
+            h.axvline(mesure, color="0.15", lw=1.0, ls="-")
+            h.plot([mesure], [0.0], marker="*", ms=13, color="0.15")
+            h.annotate(u"retournement MESURÉ\n%.1f µs" % mesure,
+                       xy=(mesure, 0.0), xytext=(mesure - 8, -3.0),
+                       ha="right", va="top", color="0.15", fontsize=9.5,
+                       arrowprops=dict(arrowstyle="->", color="0.15", lw=0.9))
+            print("%-24s RETOURNEMENT MESURE a %.2f us "
+                  "(plus une extrapolation : une lecture)" % (label, mesure))
 
         m = tc >= a.depuis
         if m.sum() >= 3:
@@ -190,7 +206,10 @@ def main():
     h.legend(fontsize=8.5, loc="lower right")
     b.set_ylabel(r"$v_z$ moyennee sur une periode  [m/s]")
     b.set_xlabel(r"temps  [$\mu$s]")
-    if eteinte:
+    if mesure is not None:
+        h.set_title(u"Le retournement a eu lieu : il est mesuré, plus extrapolé")
+        b.set_title(u"Ce que la moyenne glissante prédisait, à comparer")
+    elif eteinte:
         h.set_title(u"L'oscillation s'est éteinte : c'est ICI que le zéro se lit")
         b.set_title(u"La moyenne, elle, traîne derrière et repousse le zéro à tort")
     else:
