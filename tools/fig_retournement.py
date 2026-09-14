@@ -82,6 +82,15 @@ def periode_mesuree(t, v, tmin):
     return None if meilleur is None else meilleur * dt
 
 
+def amplitude(t, v, centre, largeur=10.0):
+    """Ecart-type du residu autour de la droite locale = ce qui reste d'oscillation."""
+    m = (t >= centre - largeur / 2) & (t <= centre + largeur / 2)
+    if m.sum() < 20:
+        return None
+    a, b = np.polyfit(t[m], v[m], 1)
+    return float((v[m] - (a * t[m] + b)).std())
+
+
 def glissante(t, v, largeur):
     """Moyenne sur une fenetre centree de `largeur` us, bords exclus."""
     tc, vm = [], []
@@ -107,6 +116,7 @@ def main():
     a = p.parse_args()
 
     fig, (h, b) = plt.subplots(2, 1, figsize=(7.2, 6.4), sharex=True)
+    eteinte = False
     for k, run in enumerate(a.runs):
         label, t, v = load(run, a.corps)
         T = a.periode or periode_mesuree(t, v, a.depuis)
@@ -140,15 +150,52 @@ def main():
             else:
                 print("%-24s pente non decroissante : rien a extrapoler" % label)
 
+        # --- quand l'oscillation est morte, la moyenne glissante MENT -----------
+        # Elle est centree : tant que sa fenetre contient encore la partie
+        # oscillante, plus negative, elle traine derriere et repousse le zero.
+        # On compare donc l'amplitude residuelle du debut de la fenetre
+        # d'ajustement a celle de la fin ; si elle s'est effondree, on trace
+        # aussi l'extrapolation DIRECTE de la vitesse instantanee, qui est
+        # alors le bon estimateur.
+        a0 = amplitude(t, v, a.depuis + 10.0)
+        a1 = amplitude(t, v, t[-1] - 5.0)
+        if a0 and a1 and a1 < 0.30 * a0:
+            eteinte = True
+            for w, style in ((15.0, "-"), (6.0, ":")):
+                m = t >= t[-1] - w
+                if m.sum() < 10:
+                    continue
+                pe, o0 = np.polyfit(t[m], v[m], 1)
+                if pe <= 0:
+                    continue
+                t0 = -o0 / pe
+                xs = np.linspace(t[-1] - w, t0 * 1.01, 30)
+                h.plot(xs, pe * xs + o0, color="0.25", ls=style, lw=1.2)
+                if style == "-":
+                    h.plot([t0], [0.0], marker="s", ms=6, mfc="none", color="0.25")
+                    h.annotate(u"oscillation éteinte :\nzéro direct à %.0f µs" % t0,
+                               xy=(t0, 0.0), xytext=(t0 - 6, -3.4),
+                               ha="right", va="top", color="0.25", fontsize=9,
+                               arrowprops=dict(arrowstyle="->", color="0.25", lw=0.8))
+                print("%-24s amplitude residuelle %.3f -> %.3f m/s : OSCILLATION "
+                      "ETEINTE, extrapolation directe sur %.0f us -> zero a %.1f us"
+                      % (label, a0, a1, w, t0))
+            print("%-24s => la moyenne glissante est alors BIAISEE TARDIVE, "
+                  "c'est le zero direct qu'il faut lire" % label)
+
     for ax in (h, b):
         ax.axhline(0.0, color="0.4", lw=0.8)
         ax.grid(alpha=0.3)
     h.set_ylabel(r"$v_z$ de l'%s  [m/s]" % a.corps)
-    h.set_title("Le retournement ne se lit pas sur la vitesse instantanee")
     h.legend(fontsize=8.5, loc="lower right")
     b.set_ylabel(r"$v_z$ moyennee sur une periode  [m/s]")
     b.set_xlabel(r"temps  [$\mu$s]")
-    b.set_title("Sur la moyenne, il se date -- et le chiffre est une borne basse")
+    if eteinte:
+        h.set_title(u"L'oscillation s'est éteinte : c'est ICI que le zéro se lit")
+        b.set_title(u"La moyenne, elle, traîne derrière et repousse le zéro à tort")
+    else:
+        h.set_title(u"Tant que ça oscille, le zéro ne se lit pas ici")
+        b.set_title(u"Sur la moyenne il se date, et le chiffre est une borne basse")
     fig.tight_layout()
 
     os.makedirs(os.path.dirname(a.stem) or ".", exist_ok=True)
