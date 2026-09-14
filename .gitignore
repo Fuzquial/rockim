@@ -52,6 +52,16 @@ frames.csv
 probes.csv
 config_effective.cfg
 
+# EXCEPTION du 14/09 : results/data/<run>/ archive les DONNEES TEXTE d'un run
+# termine. Ce sont elles qui portent tous les chiffres publies dans docs/ et
+# qui permettent de refaire les courbes sans les 2 Go de trames VTU. Quelques
+# Mo par run. Le deck effectif y est joint : c'est lui, et non le .cfg source,
+# qui dit ce que le solveur a reellement lu.
+!results/data/**/*.csv
+!results/data/**/*.cfg
+!results/data/**/*.log
+!results/data/**/*.md
+
 # --- gros CSV de resultats de campagne (les petites tables de reference,
 #     versionnees a la main, sont ajoutees avec `git add -f`) ---
 *_results.csv

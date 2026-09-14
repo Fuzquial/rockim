@@ -1,0 +1,107 @@
+[FDEM3D] energyBodyForces = on : le travail de la pesanteur et celui du tri des fragments ENTRENT dans le bilan B4 (sumW et echelle), donc dans le verdict et dans budgetAbortPct. Bilan a sept postes, celui d ARMA 24-0952 eq. 3-7.
+[FDEM3D] groupBond: insert <-> bit — interface JOINTE (joints de frontiere, proprietes GBM moyennes x gb*)
+[FDEM3D] groupBond: bit <-> circlip — interface JOINTE (joints de frontiere, proprietes GBM moyennes x gb*)
+[FDEM3D] mesh = file: 'meshes/impact_yang_train1_rock137_hxt.msh' — 22607 nodes, 108667 tets, box 0.25 x 0.25 x 0.67504 m
+[FDEM3D] physical groups: 6 corps — rock (phase rock) insert (phase carbide) bit (phase steel) piston (phase steel) circlip (phase carbide) plate (phase steel)
+[FDEM3D] groupBond: 386 joints d interface crees entre corps lies
+[FDEM3D] groupContinuum.insert = true : corps CONTINU (aucun joint evalue, noeuds lies par groupes, hors budget CFL des ressorts)
+[FDEM3D] groupContinuum.bit = true : corps CONTINU (aucun joint evalue, noeuds lies par groupes, hors budget CFL des ressorts)
+[FDEM3D] groupContinuum.piston = true : corps CONTINU (aucun joint evalue, noeuds lies par groupes, hors budget CFL des ressorts)
+[FDEM3D] groupContinuum.circlip = true : corps CONTINU (aucun joint evalue, noeuds lies par groupes, hors budget CFL des ressorts)
+[FDEM3D] groupContinuum.plate = true : corps CONTINU (aucun joint evalue, noeuds lies par groupes, hors budget CFL des ressorts)
+[FDEM3D] groupContinuum : 32111 / 209380 facettes liees en permanence
+[FDEM3D] maillage translate de (0.125, 0.125, 0.15) m ; etendue en z de chaque corps dans le repere SOLVEUR :
+[FDEM3D]   rock : z = [0, 0.15] m (milieu 0.075)
+[FDEM3D]   insert : z = [0.15002, 0.17322] m (milieu 0.16162)
+[FDEM3D]   bit : z = [0.17322, 0.41502] m (milieu 0.29412)
+[FDEM3D]   piston : z = [0.41504, 0.67504] m (milieu 0.54504)
+[FDEM3D]   circlip : z = [0.18, 0.183] m (milieu 0.1815)
+[FDEM3D]   plate : z = [0.18305, 0.18905] m (milieu 0.18605)
+[FDEM3D] groupVel.piston = (0, 0, -10.66) m/s sur 3664 noeuds
+[FDEM3D] contactForcePairs : 3 paire(s) de corps — rock->insert piston->bit plate->bit : colonnes Fc_<a>_<b>_x/y/z de history.csv (force de contact exercee par a sur b au pas courant, normale + tangentielle, contact general seul — l outil analytique n est pas un corps ; S2, 13/09)
+[FDEM3D] gauge bit : 136 tets dans z = [0.28, 0.31] m
+[FDEM3D] joint softening: Yan et al. f(D), a = 0.63, b = 1.8, c = 6, int f(D) dD = 0.386307
+[FDEM3D] jointDeltaC = solidity (Y3Dfd.c l. 1099) : plage d adoucissement ot = max(2 dnE, 3 Gf/ft) et rupture a dnE + ot. Differe de `guo` par l offset dnE ET par le plancher 2 dnE — ce dernier ne mord que si 3 Gf/ft < 2 dnE, c est-a-dire en maillage FIN devant Gf/ft. Leur propre commentaire y porte deux fois /*need further investigation*/.
+[FDEM3D] jointFailRule = majority (Y3Dfd.c l. 1175, `nfail>1`) : la facette ne meurt qu au-dela d UN point d integration a D >= 1, donc 2 sur 3. Chaque point porte desormais SON endommagement (Joint::Dk) et sa propre traction : un point rompu cesse de transmettre pendant que les deux autres tiennent encore. J.D reste le max des points pour toutes les sorties.
+[FDEM3D] jointResidualMu = 0 : le frottement du joint glisse du PIC tan(frictionDeg) vers ce residuel par la meme f(D) que la cohesion. C est la distinction pic/fracture de Y-Geo (AbuAisha et al. 2015, eq. 7.5) et l equivalent du glissement que Solidity applique au joint rompu remis au contact (0,6 calcaire, 0,18 granite chez Yang et al.).
+[FDEM3D] jointShearRange = coulomb : plage de mode II divisee par fs(sigma_n) a chaque pas (plancher 2 sE) — branche plastic : le moteur |s_p|/plage lit la plage courante (12/09)
+[FDEM3D] jointNormalProxy = law : s_E, plage coulomb et amorcage du DIF lisent sigma_n = 2 pj dn (la pente de la loi), comme Solidity (sigma_tmp = pe o/el)
+[FDEM3D] jointSecantRatchet = on : secantes de decharge NON CROISSANTES (mode I eq. 17 ; mode II eq. 18 sous origin) — ni le DIF continu ni tau_lim(sigma_n) ne peuvent remonter une raideur a ouverture/glissement fixe (Phi >= 0)
+[FDEM3D] DIF (§2.2 eq. 13) : a_t = 0.17, a_s = 0.07
+[FDEM3D] jointPenaltyLength = edge : pj = pf E/h avec h = moyenne des trois aretes de la facette (el de Solidity, h de Guo) au lieu de hmin_ = 0.000252839 m
+[FDEM3D] groupContinuum (intrinseque) : 32111 facettes liees en permanence, 177269 joints de penalite evalues
+[FDEM3D] insertion intrinseque : penalite de joint 26.316 E/h (jointPenaltyFactor au deck)
+[FDEM3D] frottement de contact PAR PHASE (Table 1 Yang et al. 2026) :  rock = 0.6  steel = 0.6  carbide = 0.6 — regle de paire : le plus FAIBLE gouverne (Solidity Y3Did.c l. 1292)
+[FDEM3D] gcRestitution = 0.2 (DEFAUT) : detente normale du contact general a ce facteur — a figer au deck des que e ou l ejection est une metrique (NB : branche penalite seulement — inerte sous contact = potential)
+[FDEM3D] contact: Munjiza potential (eq. 2-5, tet-tet), p = 6e+11 Pa, kt = 2.16723e+08 N/m
+[FDEM3D] potStiffnessByPhase = min : la penalite de chaque paire vaut 1 x min(E_A, E_B) (roche/roche 10x moins raide que sous max = E carbure) ; k_t au prorata ; le budget de dt garde potKt_ (conservatif)
+[FDEM3D] contact activation: adaptive (Fukuda) — margin 2 cells, sweep <= every 64 steps
+[FDEM3D] AVERTISSEMENT : la raideur tangentielle du contact (potKt_ = 2.16723e+08 N/m) DEPASSE la raideur budgetee pour le pas de temps (1.51703e+08 N/m) d un facteur 1.4286.
+[FDEM3D]   Elle n entre PAS dans le budget : dtBudgetTangential = off (defaut, bit-identique). Xiang et al. (2009) p. 677 avertissent que le calcul des forces tangentielles exige un pas PLUS PETIT que le cas sans frottement.
+[FDEM3D]   Poser dtBudgetTangential = on pour l y faire entrer.
+[FDEM3D] pas de temps des ressorts commande par le noeud 131644 (element 32911, corps 'rock', phase rock, h inscrit 0.000322051 m, m = 4.82111e-08 kg) : K = 1.18634e+09 N/m = element 7.34275e+07 + joints 1.11292e+09 ; + contact outil 3.03407e+08 ; dt_ressorts = 1.13775e-08 s
+[FDEM3D] strainRateDIF = yang-fig2 (Yang et al., IJRMMS 191, 2025, eq. 2-3) : ft et Gf recoivent DIF_traction, cohesion et GfII recoivent DIF_compression, l angle de frottement est inchange. Facteurs REPRIS A CHAQUE PAS.
+[FDEM3D]   taux = principale max de sym(Fdot F^-1), strainRateFilter = none : taux BRUT, aucun lissage — ce que fait Solidity (Y3Dfd.c l. 1448). A n utiliser qu avec strainRateDIFArm = continuous : un pic de bruit ne dure alors qu un pas, la ou un armement a GEL le graverait dans le joint.
+[FDEM3D]   strainRateDIFArm = continuous : l architecture de Solidity (Y3Dfd.c l. 1448-1456), ou dpeftdif est une variable LOCALE de la boucle element, reevaluee a chaque pas. Aucun gel : ft, coh, Gf et GfII sont RECONSTRUITS a chaque pas depuis les valeurs de base, si bien que le facteur peut redescendre quand le taux retombe et ne se compose jamais. Le champ edotIns du resume porte donc le taux FINAL, pas celui d un instant de gel : il ne se lit pas comme celui des deux autres armements.
+[FDEM3D] 108667 tets, 209380 joints, 434668 nodes, dt = 1.70663e-09 s, steps = 175786
+[FDEM3D] voronoi: 6 grains, 3 phase(s), 386 grain-boundary joints, hmin = 0.000252839 m
+[rockim] cles : 273 consommees (83 du deck, 190 au defaut), 1 du deck non lues -> out_stanne2025_rock137/config_effective.cfg
+[FDEM3D] volume detache : 17789 elements ecartes (corps etrangers a la roche : outil maille, platines)
+[FDEM3D] volume detache : 17789 elements ecartes (corps etrangers a la roche : outil maille, platines)
+[FDEM3D] volume detache : 17789 elements ecartes (corps etrangers a la roche : outil maille, platines)
+  10% [FDEM3D] volume detache : 17789 elements ecartes (corps etrangers a la roche : outil maille, platines)
+[FDEM3D] volume detache : 17789 elements ecartes (corps etrangers a la roche : outil maille, platines)
+  20% [FDEM3D] volume detache : 17789 elements ecartes (corps etrangers a la roche : outil maille, platines)
+[FDEM3D] volume detache : 17789 elements ecartes (corps etrangers a la roche : outil maille, platines)
+  30% [FDEM3D] volume detache : 17789 elements ecartes (corps etrangers a la roche : outil maille, platines)
+[FDEM3D] volume detache : 17789 elements ecartes (corps etrangers a la roche : outil maille, platines)
+  40% [FDEM3D] volume detache : 17789 elements ecartes (corps etrangers a la roche : outil maille, platines)
+[FDEM3D] volume detache : 17789 elements ecartes (corps etrangers a la roche : outil maille, platines)
+  50% [FDEM3D] volume detache : 17789 elements ecartes (corps etrangers a la roche : outil maille, platines)
+[FDEM3D] volume detache : 17789 elements ecartes (corps etrangers a la roche : outil maille, platines)
+  60% [FDEM3D] volume detache : 17789 elements ecartes (corps etrangers a la roche : outil maille, platines)
+[FDEM3D] volume detache : 17789 elements ecartes (corps etrangers a la roche : outil maille, platines)
+  70% [FDEM3D] volume detache : 17789 elements ecartes (corps etrangers a la roche : outil maille, platines)
+[FDEM3D] volume detache : 17789 elements ecartes (corps etrangers a la roche : outil maille, platines)
+  80% [FDEM3D] volume detache : 17789 elements ecartes (corps etrangers a la roche : outil maille, platines)
+[FDEM3D] volume detache : 17789 elements ecartes (corps etrangers a la roche : outil maille, platines)
+  90% [FDEM3D] volume detache : 17789 elements ecartes (corps etrangers a la roche : outil maille, platines)
+[FDEM3D] volume detache : 17789 elements ecartes (corps etrangers a la roche : outil maille, platines)
+  100%
+[FDEM3D] volume detache : 17789 elements ecartes (corps etrangers a la roche : outil maille, platines)
+[FDEM3D] volume detache : 17789 elements ecartes (corps etrangers a la roche : outil maille, platines)
+
+[FDEM3D] ---- summary ----
+[FDEM3D] block kinetic energy at end: 3.28452 J
+[FDEM3D] net work by general contact: -34.5372 J
+[FDEM3D] potential stats: 29728373641 paires (1715339703 joint vivant, 20921068394 sep-hint, 253428375 sep-face, 135105506 sep-arete, 1276913115 clip-vide, 5426518548 clip-force), tGrid = 5135.29 s, tLoop = 92017.6 s
+[FDEM3D] joint dashpot work: 0 J  [OK, dissipative]
+[FDEM3D] energy budget (V2/B4): KE 60.1163 -> 3.28452 J
+[FDEM3D]   elements     : 18.0853 J preleve (stocke elastique 16.7427 J)
+[FDEM3D]   joints       : 14.4891 J cohesif (fissuration + stocke), dashpot -0 J
+[FDEM3D]   contact      : 34.5372 J (dont frottement 27.7752 J)
+[FDEM3D]   Cundall      : -0 J
+[FDEM3D]   frontieres   : -0 J (dont stocke ressorts 0 J)
+[FDEM3D]   outil->solide: 0 J, platines: 0 J
+[FDEM3D]   forces vol.  : pesanteur 0.0213818 J, tri des fragments 0 J  [DANS le bilan (energyBodyForces = on)]
+[FDEM3D]   integration  : +10.2585 J (correction leapfrog f^2 dt^2/2m)
+[FDEM3D]   residu       : -9.82035e-08 J (1.46282e-07 % de l'echelle) [OK]
+[FDEM3D] breakage mode: 5677 tensile, 6413 shear (53.0438 % shear)
+[FDEM3D] relais joint->contact: 12090 joints morts, dont 9222 EN COMPRESSION (76.2779 %) ; charge normale lachee au relais 1764.1 kN cumules, 1.63337 kN au maximum pour un joint
+[FDEM3D] strainRateDIF (sur 177269 joints inseres) : taux de deformation a l insertion, mediane 32.9793 /s, min 0.347713, max 100426 ; DIF_traction median 1.69282 (min 1.2926, max 1.85)
+[FDEM3D]   21.6795 % des insertions sont AU PLATEAU de DIF_traction (edot > 1e2 /s) : sur cette part le facteur ne discrimine plus rien.
+[FDEM3D] corps 'rock': KE = 0.0647635 J, vz moyenne = 0.00939353 m/s, masse = 20.0925 kg
+[FDEM3D] corps 'insert': KE = 0.00847348 J, vz moyenne = -0.332184 m/s, masse = 0.0645841 kg
+[FDEM3D] corps 'bit': KE = 1.83763 J, vz moyenne = 1.47381 m/s, masse = 1.2883 kg
+[FDEM3D] corps 'piston': KE = 1.36074 J, vz moyenne = 1.07177 m/s, masse = 1.05805 kg
+[FDEM3D] corps 'circlip': KE = 0.0129099 J, vz moyenne = 1.2682 m/s, masse = 0.0142373 kg
+[FDEM3D] corps 'plate': KE = 8.25209e-07 J, vz moyenne = -0.00294301 m/s, masse = 0.190551 kg
+[FDEM3D] adaptive contact activation: 13148 / 15908 exterior faces activated (82.6502 %)
+[FDEM3D] grains: 6, phases: rock 95.7278% (target 95.7204%) steel 4.20494% (target 4.20958%) carbide 0.0672512% (target 0.069993%)
+[FDEM3D] joints intra/homo/hetero: 208994/0/386, broken: 14138/0/0  (intergranular fraction 0 %)
+[FDEM3D] peak tool force   : 0 N
+[FDEM3D] tool work output  : 0 J
+[FDEM3D] broken joints     : 12090 / 209380
+[FDEM3D] fragments         : 4089 (detached vol 2.16303e-06 m^3)
+[FDEM3D] specific energy   : 0 J/m^3
+[rockim] wall time: 105690 s, output in 'out_stanne2025_rock137'
