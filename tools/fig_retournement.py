@@ -133,19 +133,58 @@ def main():
         b.plot(tc, vm, color=c, lw=1.9, label=label)
 
         # --- si le retournement a EU LIEU, on le lit, on ne l'extrapole plus ----
-        apres = np.where((v > 0.0) & (t > a.depuis))[0]
-        if apres.size:
-            j = apres[0]
-            mesure = (t[j - 1] + (0.0 - v[j - 1]) * (t[j] - t[j - 1])
-                      / (v[j] - v[j - 1]))
-            h.axvline(mesure, color="0.15", lw=1.0, ls="-")
-            h.plot([mesure], [0.0], marker="*", ms=13, color="0.15")
-            h.annotate(u"retournement MESURÉ\n%.1f µs" % mesure,
-                       xy=(mesure, 0.0), xytext=(mesure - 8, -3.0),
-                       ha="right", va="top", color="0.15", fontsize=9.5,
-                       arrowprops=dict(arrowstyle="->", color="0.15", lw=0.9))
-            print("%-24s RETOURNEMENT MESURE a %.2f us "
-                  "(plus une extrapolation : une lecture)" % (label, mesure))
+        # --- un croisement de zero n'est PAS un retournement --------------------
+        # Erreur commise le 14/09 : la vitesse a croise zero a 260,1 us, j'ai
+        # annonce le retournement et un accord a 2 % avec Yang. Elle est
+        # redescendue a -1,9 m/s et l'enfoncement a repris. C'etait une PAUSE
+        # sous charge maintenue (la force de contact n'est jamais retombee).
+        # Un retournement se verifie : apres lui la vitesse reste positive et
+        # l'enfoncement cesse de croitre. Tant que la fin de l'enregistrement
+        # ne le confirme pas, on marque le croisement comme provisoire.
+        # on parcourt TOUS les croisements montants, on retient le premier confirme
+        mont = np.where((v[:-1] <= 0.0) & (v[1:] > 0.0) & (t[1:] > a.depuis))[0]
+        crois = mont
+        for j in mont:
+            t0 = (t[j] + (0.0 - v[j]) * (t[j + 1] - t[j]) / (v[j + 1] - v[j]))
+            apres = t >= t0
+            frac_neg = float((v[apres] < 0.0).mean()) if apres.sum() else 1.0
+            if frac_neg < 0.15:
+                mesure = t0
+                h.axvline(t0, color="0.15", lw=1.1)
+                h.plot([t0], [0.0], marker="*", ms=13, color="0.15")
+                h.annotate(u"retournement CONFIRMÉ\n%.1f µs" % t0,
+                           xy=(t0, 0.0), xytext=(t0 - 8, -3.0),
+                           ha="right", va="top", color="0.15", fontsize=9.5,
+                           arrowprops=dict(arrowstyle="->", color="0.15", lw=0.9))
+                print("%-24s RETOURNEMENT CONFIRME a %.2f us "
+                      "(la vitesse reste positive ensuite)" % (label, t0))
+                break
+            h.axvline(t0, color="C3", lw=0.9, ls="--")
+            h.plot([t0], [0.0], marker="x", ms=9, color="C3", mew=2)
+            print("%-24s croisement a %.2f us : PAUSE (%.0f %% du temps suivant "
+                  "vz < 0), pas un retournement" % (label, t0, 100 * frac_neg))
+        if mesure is None and mont.size:
+            h.annotate(u"%d pause(s) sous charge,\naucun retournement confirmé"
+                       % mont.size,
+                       xy=(t[mont[0] + 1], 0.0), xytext=(t[mont[0] + 1] - 8, -3.0),
+                       ha="right", va="top", color="C3", fontsize=9,
+                       arrowprops=dict(arrowstyle="->", color="C3", lw=0.9))
+        # l'enfoncement maximal, lui, ne se discute pas
+        zmax = None
+        try:
+            import csv as _c
+            zz, tt2 = [], []
+            for r in _c.DictReader(open(os.path.join(a.runs[k].split(":")[0],
+                                                     "history.csv"))):
+                tt2.append(float(r["t"]) * 1e6)
+                zz.append(float(r["z_insert"]) * 1e3)
+            zz, tt2 = np.asarray(zz), np.asarray(tt2)
+            i = int(np.argmin(zz[tt2 > 100.0]))
+            zmax = float(tt2[tt2 > 100.0][i])
+            print("%-24s enfoncement MAXIMAL a %.1f us (%.4f mm)"
+                  % (label, zmax, zz[tt2 < 40].mean() - zz[tt2 > 100.0][i]))
+        except Exception:                                        # noqa: BLE001
+            pass
 
         m = tc >= a.depuis
         if m.sum() >= 3:
@@ -209,6 +248,9 @@ def main():
     if mesure is not None:
         h.set_title(u"Le retournement a eu lieu : il est mesuré, plus extrapolé")
         b.set_title(u"Ce que la moyenne glissante prédisait, à comparer")
+    elif 'crois' in dir() and crois.size:
+        h.set_title(u"La vitesse a croisé zéro, puis est repartie vers le bas")
+        b.set_title(u"Le retournement n'a pas eu lieu : rien à dater encore")
     elif eteinte:
         h.set_title(u"L'oscillation s'est éteinte : c'est ICI que le zéro se lit")
         b.set_title(u"La moyenne, elle, traîne derrière et repousse le zéro à tort")
