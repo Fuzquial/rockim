@@ -97,6 +97,9 @@ def main():
     ap.add_argument("msh")
     ap.add_argument("--out", default="results/montage_impact.png")
     ap.add_argument("--v0", type=float, default=9.0, help="vitesse piston m/s")
+    ap.add_argument("--cas", default="kuru2026",
+                    choices=["kuru2026", "stanne2025"],
+                    help="quel ARTICLE fournit les reperes de la chronologie")
     ap.add_argument("--dt", type=float, default=9.42436e-10,
                     help="pas de temps du solveur [s]")
     ap.add_argument("--spp", type=float, default=0.125,
@@ -148,11 +151,25 @@ def main():
     Lbit = zr["bit"][1] - zr["bit"][0]
     t1 = gpb / a.v0
     t2 = t1 + Lbit / c
+    # Les deux derniers reperes dependent de l'ARTICLE, et se tromper d'article
+    # met une fausse citation sous une figure de rapport. Le defaut « kuru2026 »
+    # est conserve pour ne rien changer aux figures deja faites ; « stanne2025 »
+    # porte les reperes du calcaire a 10,66 m/s, qui sont ceux du run rock137.
+    CAS = {
+        "kuru2026": ("Yang et al. 2026, Kuru",
+                     [("pic de force\n(leur fig. 9a)", t2 + 30e-6),
+                      ("rebond du bit\n(leur fig. 9d)", t2 + 400e-6)]),
+        "stanne2025": ("Yang et al. 2025, calcaire St Anne a 10,66 m/s",
+                       [("fin de la phase de charge\n(leur §5.1 : 254 us)",
+                         254e-6),
+                        ("arret des medianes\n(291 us)", 291e-6),
+                        ("arret des radiales\n(388 us)", 388e-6),
+                        ("arret des laterales\n(482 us)", 482e-6)]),
+    }
+    titre_cas, reperes = CAS[a.cas]
     ev = [("le piston part\n(jeu %.2f mm)" % (gpb * 1e3), 0.0),
           ("il touche le bit", t1),
-          ("l'onde sort du bit\net charge la roche", t2),
-          ("pic de force\n(leur fig. 9a)", t2 + 30e-6),
-          ("rebond du bit\n(leur fig. 9d)", t2 + 400e-6)]
+          ("l'onde sort du bit\net charge la roche", t2)] + reperes
     # Les trois premiers evenements tiennent dans 70 us sur une echelle de
     # 800 : empiles a la verticale ils se recouvrent. Chaque etiquette est
     # donc posee sur sa PROPRE ligne, reliee a son instant par un trait.
@@ -169,19 +186,20 @@ def main():
         C.annotate("%s  —  %.0f us,  %s pas,  %.1f h"
                    % (lab.replace("\n", " "), x, format(int(t / a.dt), ","),
                       t / a.dt * a.spp / 3600.0),
-                   (x, y), fontsize=8.5, ha="left" if x < 450 else "right",
+                   (x, y), fontsize=8.5, ha="left" if x < 240 else "right",
                    va="bottom")
     C.set_xlim(-50, 860)
-    C.set_ylim(-0.6, 4.3)
+    C.set_ylim(-0.6, 0.75 + 0.62 * len(ev) + 0.3)
     C.set_yticks([])
     C.set_xlabel("temps simule (us)")
     C.set_title("(c) Chronologie, et ce qu'elle coute")
     C.legend(fontsize=8, loc="lower right")
 
-    fig.suptitle("Montage d'impact Yang et al. 2026 — %s | %d tetraedres, "
-                 "231 471 joints, dt = %.2f ns, %.3f s/pas mesure"
-                 % (os.path.basename(a.msh), sum(len(v) for v in T.values()),
-                    a.dt * 1e9, a.spp), fontsize=12)
+    fig.suptitle("Montage d'impact — %s\n%s | %d tetraedres, "
+                 "dt = %.2f ns, %.3f s/pas"
+                 % (titre_cas, os.path.basename(a.msh),
+                    sum(len(v) for v in T.values()), a.dt * 1e9, a.spp),
+                 fontsize=11.5)
     fig.tight_layout()
     os.makedirs(os.path.dirname(a.out), exist_ok=True)
     fig.savefig(a.out, dpi=130)
