@@ -11,6 +11,12 @@ python tools/fig_mesh3d.py meshes/impact_yang_train1_rock137_hxt.msh \
        --out results/fig/config_stanne/maillage.png --impact 0 0 0 --zoom 0.03
 ```
 
+Ajouter `--split` aux deux commandes pour obtenir **une figure par panneau** au lieu de la planche
+groupée : six fichiers `montage_a_chaine`, `montage_b_insert`, `montage_c_chronologie`,
+`maillage_a_coupe`, `maillage_b_zoom`, `maillage_c_gradation`. C'est la forme à prendre pour un
+article, une planche à trois colonnes devenant illisible réduite à la largeur d'une colonne.
+Sans le drapeau, le comportement d'origine est inchangé.
+
 Le maillage n'est pas dans le dépôt, il se régénère à l'identique, graine fixée :
 `python tools/make_impact_mesh.py meshes/impact_yang_train1_rock137_hxt.msh 1.0 2e-5 1.37 gap=2e-5 quality=hxt train=fixed`
 

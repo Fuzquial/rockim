@@ -125,6 +125,8 @@ def main():
     ap = argparse.ArgumentParser(description="montrer un maillage 3D")
     ap.add_argument("msh")
     ap.add_argument("--out", default=None)
+    ap.add_argument("--split", action="store_true",
+                    help="une figure PAR PANNEAU au lieu de la planche a trois")
     ap.add_argument("--zoom", type=float, default=0.030,
                     help="demi-largeur du zoom autour de l'impact [m]")
     ap.add_argument("--steps", type=float, nargs="*", default=None,
@@ -152,14 +154,38 @@ def main():
                  for i, j in EDGES], axis=0)
     qual, V = tet_quality(P, T)
 
-    fig = plt.figure(figsize=(14.0, 9.0))
-    gs = fig.add_gridspec(2, 2, height_ratios=[1.25, 1.0])
-    A = fig.add_subplot(gs[0, :])
-    Bx = fig.add_subplot(gs[1, 0])
-    C = fig.add_subplot(gs[1, 1])
+    polys = slice_tets(P, T, 1, yC)
+    bandeau = ("%s — %d tetraedres, %d noeuds | qualite : mediane %.2f, "
+               "min %.3f, %d sous 0,10 | h de %.2f a %.1f mm"
+               % (os.path.basename(a.msh), len(T), len(P),
+                  np.median(qual), qual.min(), int((qual < 0.10).sum()),
+                  L.min() * 1e3, L.max() * 1e3))
+    out = a.out or (os.path.splitext(a.msh)[0] + "_vue.png")
+
+    if a.split:
+        # Une figure PAR PANNEAU (demande du 15/09) : la planche a trois cases
+        # devient illisible reduite a une colonne d'article, et on ne veut
+        # souvent qu'un seul des trois panneaux.
+        base, ext = os.path.splitext(out)
+        figs, A = {}, None
+        for suff, taille in (("a_coupe", (9.0, 7.6)),
+                             ("b_zoom", (7.2, 7.2)),
+                             ("c_gradation", (8.4, 5.4))):
+            f, ax = plt.subplots(figsize=taille)
+            figs[suff] = (f, ax, base + "_" + suff + ext)
+        A = figs["a_coupe"][1]
+        Bx = figs["b_zoom"][1]
+        C = figs["c_gradation"][1]
+        fig = None
+    else:
+        fig = plt.figure(figsize=(14.0, 9.0))
+        gs = fig.add_gridspec(2, 2, height_ratios=[1.25, 1.0])
+        A = fig.add_subplot(gs[0, :])
+        Bx = fig.add_subplot(gs[1, 0])
+        C = fig.add_subplot(gs[1, 1])
+        figs = None
 
     # ---- (a) coupe exacte par y = yC -----------------------------------
-    polys = slice_tets(P, T, 1, yC)
     A.add_collection(PolyCollection(polys, facecolors="none",
                                     edgecolors="0.25", linewidths=0.18))
     A.set_xlim(P[:, 0].min(), P[:, 0].max())
@@ -210,15 +236,19 @@ def main():
     C.legend(fontsize=8)
     C.grid(alpha=0.3)
 
-    fig.suptitle("%s — %d tetraedres, %d noeuds | qualite : mediane %.2f, "
-                 "min %.3f, %d sous 0,10 | h de %.2f a %.1f mm"
-                 % (os.path.basename(a.msh), len(T), len(P),
-                    np.median(qual), qual.min(), int((qual < 0.10).sum()),
-                    L.min() * 1e3, L.max() * 1e3), fontsize=12)
-    fig.tight_layout()
-    out = a.out or (os.path.splitext(a.msh)[0] + "_vue.png")
-    fig.savefig(out, dpi=130)
-    print("wrote " + out)
+    if figs is not None:
+        for suff in ("a_coupe", "b_zoom", "c_gradation"):
+            f, _, chemin = figs[suff]
+            f.suptitle(bandeau, fontsize=9.5)
+            f.tight_layout()
+            f.savefig(chemin, dpi=150, bbox_inches="tight")
+            plt.close(f)
+            print("wrote " + chemin)
+    else:
+        fig.suptitle(bandeau, fontsize=12)
+        fig.tight_layout()
+        fig.savefig(out, dpi=130)
+        print("wrote " + out)
     print("  %d tetraedres, %d noeuds" % (len(T), len(P)))
     print("  arete : min %.3f mm, mediane %.3f mm, max %.2f mm"
           % (L.min() * 1e3, np.median(L) * 1e3, L.max() * 1e3))
