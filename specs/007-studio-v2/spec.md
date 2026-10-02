@@ -239,3 +239,8 @@ Chaque jalon a de la valeur seul. Le noyau (J2) sert aux scripts même si l'inte
 
 **2026-10-02.** Spec rédigée après inventaire de g1 (scénario triaxial, maillage, GBM, pré-rupture,
 sorties, lancement, campagne `etude_triax_hetero`). Cas de référence mesuré : F7_disc_gbm_P020.
+
+**2026-10-02 (J1).** Prototypes C (web, WebGL2) et B (PySide6 + QtQuick3D) de l'écran Résultats,
+mesurés sur F7 : voir [j1/RESULTATS_J1.md](j1/RESULTATS_J1.md). C tient N1-N5 (démarrage 0,45 s,
+frame 16 ms, 60 i/s) ; B rate N1 (2,7 s) et N8 (environnement de 715 Mo). Recommandation C, en
+attente de la décision de Fernando.

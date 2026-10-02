@@ -1,0 +1,66 @@
+{
+ "vsync": true,
+ "dpr": 1.0,
+ "N1_demarrage_ms": 2718.6232999665663,
+ "N1_detail_ms": {
+  "imports": 606.2080999836326,
+  "qml_charge": 2475.537099991925,
+  "premiere_image": 2718.6232999665663
+ },
+ "N3_ouverture_initiale_ms": 61.334799975156784,
+ "run": "F7_disc_gbm_P020",
+ "N3_rechargement": [
+  {
+   "run": "F1_homog_P020",
+   "lecture_et_tampons_ms": 83.61349999904633,
+   "jusqu_image_ms": 100.1838999800384
+  },
+  {
+   "run": "F7_disc_gbm_P020",
+   "lecture_et_tampons_ms": 66.9740000157617,
+   "jusqu_image_ms": 80.69609996164218
+  }
+ ],
+ "N5_images_par_s": 59.9343459197835,
+ "N4_frame_moy_ms": 13.260872003156692,
+ "N4_frame_max_ms": 27.994000003673136,
+ "N4_frames_ms": [
+  16.1,
+  19.65,
+  27.99,
+  8.49,
+  8.73,
+  9.53,
+  13.08,
+  14.34,
+  16.24,
+  19.6,
+  7.05,
+  8.14,
+  10.79,
+  13.22,
+  14.72,
+  16.56,
+  20.11,
+  8.03,
+  8.04,
+  11.07,
+  12.09,
+  14.81,
+  18.86,
+  7.35,
+  6.93
+ ],
+ "N6_max_boucle_ui_ms": {
+  "repos_apres_demarrage": 2.32,
+  "N3": 11.64,
+  "N4": 6.3,
+  "N5": 2.43,
+  "capture": 6.81
+ },
+ "capture": "capture_qml.png",
+ "capture_taille": [
+  1600,
+  1000
+ ]
+}

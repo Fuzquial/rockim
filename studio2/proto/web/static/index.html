@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rockim · Résultats</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="barre">
+  <div class="marque">ROCKIM<span>Résultats</span></div>
+  <label class="champ-sel">
+    <span class="overline">Run</span>
+    <select id="selRun"></select>
+  </label>
+  <div class="groupe">
+    <span class="overline">Champ</span>
+    <div class="segments" id="segChamp"></div>
+  </div>
+  <div class="groupe">
+    <span class="overline">Fissures</span>
+    <div class="puces" id="puces">
+      <button class="puce actif" data-mode="1"><i class="pastille trac"></i>Traction</button>
+      <button class="puce actif" data-mode="2"><i class="pastille cis"></i>Cisaillement</button>
+      <button class="puce actif" data-mode="4"><i class="pastille pre"></i>Pré-rompus</button>
+    </div>
+  </div>
+</header>
+
+<main class="corps">
+  <section class="carte vue">
+    <canvas id="gl"></canvas>
+    <div class="incrust haut-gauche" id="infoVue"></div>
+    <div class="echelle" id="echelle">
+      <div class="echelle-titre" id="echelleTitre"></div>
+      <div class="echelle-corps"><div class="echelle-barre" id="echelleBarre"></div><div class="echelle-ticks" id="echelleTicks"></div></div>
+    </div>
+    <div class="incrust bas-gauche aide">molette : zoom · glisser : déplacer · double-clic : recadrer</div>
+  </section>
+
+  <aside class="colonne">
+    <section class="carte courbe">
+      <div class="carte-tete"><span class="titre">Déviateur q en fonction de ε axial</span><span class="overline">cliquer = aller à la frame</span></div>
+      <div class="courbe-zone"><canvas id="courbe"></canvas></div>
+    </section>
+    <section class="carte stats">
+      <div class="carte-tete"><span class="titre">Frame courante</span></div>
+      <table id="tabStats"></table>
+    </section>
+    <section class="carte mesures" id="carteMesures" hidden>
+      <div class="carte-tete"><span class="titre">Mesures N1-N6</span></div>
+      <pre id="mesures"></pre>
+    </section>
+  </aside>
+</main>
+
+<footer class="temps">
+  <button id="btnLecture" class="bouton-rond" title="Lecture / pause (espace)">▶</button>
+  <input id="curseur" type="range" min="0" max="0" value="0">
+  <div class="temps-lecture mono" id="lectureTemps"></div>
+</footer>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>
