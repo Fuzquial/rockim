@@ -289,5 +289,26 @@ du vrai F7 (367 grains, 12 995 éléments, 1 027 pré-rompus dont 424 libres) : 
 est un aperçu exact du maillage. Capture : [j1/apercu_maillage_F7.png](j1/apercu_maillage_F7.png).
 À reprendre en J4 : la biotite et les pré-rompus partagent le violet.
 
+**2026-10-02 (J3, S1 livré).** Clé `writeStrainFields` (défaut false) dans g1 :
+`strainXX/YY/XY` par élément (Biot V − I dans le repère GLOBAL, même décomposition polaire
+qu'`elementForces`, cisaillement tensoriel) et `displacement` nodal, calculés dans `writeFrame`
+seulement. Exécutables : `rockim_j3ref.exe` (HEAD avant J3, même taille que g1y19) et
+`rockim_j3.exe`. Vérification (GO de Fernando) : F7_disc_gbm_P020 tronqué à T = 8e-4 s
+(confinement 20 MPa puis début de l'axial), 4 frames, 1 fil, trois runs en parallèle de 580 s
+(1,2 µs simulée par seconde), script [j3/verif_j3.py](j3/verif_j3.py) :
+
+- A (référence) contre B (j3 sans la clé) : 15 fichiers, tous identiques octet à octet sauf
+  `config_effective.cfg`, qui liste la nouvelle clé à son défaut et nomme l'exécutable. Journaux
+  identiques hors temps mur. **Le défaut est intact.**
+- A contre C (j3 avec la clé) : history.csv, frames.csv, csv finaux et VTU de joints identiques
+  octet à octet ; VTU d'éléments identiques sur les 10 tableaux communs, 4 tableaux ajoutés.
+  **La clé ne change aucune trajectoire.**
+- Contrôles physiques sur la dernière frame : déplacement = x − x0 à 1e-13 m ; strainXX − epsXX
+  ≤ 1,4e-6 pour des déformations de 3e-3 (rotations faibles avant rupture) ; moyenne de strainYY
+  entre les jauges −1,529e-4 contre epsGauge 1,524e-4 dans history.csv (0,3 %, signe opposé par
+  convention : epsGauge est positif en compression) ; strainXX moyen −1,1e-3 sous 20 MPa latéraux.
+
+S3 (`--mesh-only`) abandonné : l'aperçu par run tronqué (J2) est exact au bit et prend 2,2 s.
+
 Hors J2, à décider : remplacer `gen_decks.py` par des appels au noyau (une seule implémentation),
 une fois l'interface en service.
