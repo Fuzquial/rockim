@@ -369,5 +369,29 @@ le suivant :
 
 Aucun lancement de g1 pendant le développement sans GO : la file est testée avec le faux solveur.
 
+**2026-10-02 (J4 livré).** Les cinq écrans sont en service (`python studio2/app/serveur.py`,
+http://localhost:8770 ; guide : [studio2/LISEZMOI.md](../../studio2/LISEZMOI.md)), 380 tests.
+Verdicts par lot :
+
+- J4.0 : pic filtré et traction par mors ; oracle depouille.py inchangé.
+- J4.1 : serveur stdlib, API testée sur espace jetable avec faux solveur.
+- J4.2 Résultats : comparaison et détail WebGL sur les runs de la campagne, déformations affichées
+  quand le run a `writeStrainFields`.
+- J4.3 File : actions vérifiées par clics réels (ordre côté serveur, suspension des lancements).
+- J4.4 Essai : **le formulaire reconstruit les 81 runs de la campagne à l'identique** à partir des
+  seuls choix d'écran (tests/test_formulaire.py) ; estimation de coût calée sur les mesures du jour.
+- J4.5 Maillage : aperçu réel par run tronqué, reconnu par sa clé de deck sans relancer g1 (testé
+  avec le vrai aperçu de F7) ; fissures dessinées à la souris jusqu'au deck. Lien de partage d'essai.
+- J4.6 Loi des joints : **la maquette se trompait sur le mode II** (cisaillement ramené à zéro) ;
+  le solveur n'adoucit que la cohésion et garde le frottement, τ -> tan φ σn. Loi de référence
+  `noyau/loi.py` confrontée à `tools/yan_point.cpp` (copie acceptant σn,
+  `tests/donnees/yan_point_sn.cpp`) à 1e-9 près en modes I et II (σn = 0 et 20 MPa), copie
+  JavaScript égale à la référence à 1e-12 (Node). Essai éclair identique aux decks validés.
+
+**Non vérifié** : aucun aperçu ni essai éclair n'a encore été lancé par l'interface sur g1 (les
+seuls runs réels du jour l'ont été par scripts, avec GO) ; la survie d'un calcul g1 à la fermeture
+du serveur ; l'aspect en thème clair. La forme du mode II est celle du point matériel, pas d'un
+joint dans un maillage.
+
 Hors J2, à décider : remplacer `gen_decks.py` par des appels au noyau (une seule implémentation),
 une fois l'interface en service.
