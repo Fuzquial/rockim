@@ -24,7 +24,7 @@ export async function monter(noeud, ctx) {
   await initialiser();
   R.innerHTML = `
   <div class="formulaire">
-    <section class="carte"><div class="carte-tete"><span class="titre">Essai</span><button class="bouton petit" id="e-raz">Repartir du défaut</button></div>
+    <section class="carte"><div class="carte-tete"><span class="titre">Essai</span><div style="display:flex;gap:6px"><button class="bouton petit" id="e-lien" title="Copie un lien qui recrée cet essai">Lien</button><button class="bouton petit" id="e-raz">Repartir du défaut</button></div></div>
       <div class="corps-carte">
         ${ligne("Nom", `<div class="nombre"><input data-cle="nom" data-texte="1" style="text-align:left"></div>`)}
         ${seg("type_essai", [["triaxial", "Triaxial"], ["traction", "Traction directe"]])}
@@ -109,6 +109,12 @@ function brancher() {
     else if (i.dataset.cle === "T" || i.dataset.cle === "vitesse") modifier({ [i.dataset.cle]: null });
   }));
   R.querySelector("#e-raz").onclick = () => reinitialiser();
+  R.querySelector("#e-lien").onclick = async () => {
+    const { lienDePartage } = await import("./etat_essai.js");
+    const m = R.querySelector("#e-message");
+    try { await navigator.clipboard.writeText(lienDePartage()); m.textContent = "Lien de l'essai copié."; m.className = "message ok"; }
+    catch (e) { m.textContent = lienDePartage(); m.className = "message"; }
+  };
   R.querySelector("#e-apercu").onclick = () => nav.ouvrir("maillage");
   R.querySelector("#e-ajouter").onclick = () => ajouter();
   R.querySelector("#e-varier").onclick = () => {

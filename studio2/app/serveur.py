@@ -32,7 +32,7 @@ STUDIO2 = os.path.dirname(ICI)
 G1 = os.path.dirname(STUDIO2)
 sys.path.insert(0, STUDIO2)
 
-from noyau import depouillement, formulaire, maillage, materiaux, resultats, validation   # noqa: E402
+from noyau import courts, depouillement, formulaire, maillage, materiaux, resultats, validation   # noqa: E402
 from noyau.essai import Essai                                         # noqa: E402
 from noyau.file import ETATS_FINAUX, File                             # noqa: E402
 
@@ -61,6 +61,9 @@ class Studio:
         self.file = File(self.espace, self.commande(), self.reglages["jobs"], self.reglages["fils"], cwd=G1)
         self.conversions = {}                    # id -> "en_cours" | "erreur: ..."
         self.pool = ThreadPoolExecutor(max_workers=1)
+        self.pool_courts = ThreadPoolExecutor(max_workers=2)
+        self.racine_courts = os.path.join(self.espace, "courts")
+        self.courts_en_cours = {}                 # clé -> "en_cours" | "echec: ..."
         self.arret = threading.Event()
         self.periode = periode
         self.fil = threading.Thread(target=self._boucle, daemon=True)
@@ -101,6 +104,7 @@ class Studio:
         self.arret.set()
         self.fil.join(timeout=5)
         self.pool.shutdown(wait=False)
+        self.pool_courts.shutdown(wait=False)
 
     # ------------------------------------------------------------ runs
     def runs(self):
@@ -125,6 +129,11 @@ class Studio:
         return out
 
     def run(self, ident):
+        if ident.startswith("court" + SEP):
+            c = ident.split(SEP, 1)[1]
+            d = courts.dossier(self.racine_courts, c)
+            return dict(id=ident, nom=c, source="court", etat="fini", sigma3_MPa=None,
+                        dossier=os.path.join(d, "out"), log=os.path.join(d, "run.log"))
         for r in self.runs():
             if r["id"] == ident:
                 return r
@@ -243,6 +252,55 @@ class Studio:
                           "alpha": materiaux.NIVEAUX[n]["gbAlpha"]}
         return {"defaut": formulaire.CHOIX_DEFAUT, "niveaux": niveaux}
 
+    # ------------------------------------------------------------ calculs courts
+    def essai_court(self, genre, choix, chargement=None):
+        if genre == "apercu":
+            return maillage.essai_apercu(formulaire.essai_depuis_choix(choix))
+        if chargement not in formulaire.ECLAIRS:
+            raise ValueError("chargement d'essai éclair inconnu : %s (traction, ucs, tx20)" % chargement)
+        return formulaire.essai_depuis_choix(formulaire.choix_eclair(choix, chargement))
+
+    def court_existant(self, genre, choix, chargement=None):
+        """État d'un calcul court SANS le lancer : sert à réafficher un aperçu déjà calculé."""
+        return self.etat_court(courts.cle(self.essai_court(genre, choix, chargement)))
+
+    def court(self, genre, choix, chargement=None):
+        """Aperçu de maillage ou essai éclair : lancé tout de suite (clic de l'utilisateur),
+        hors file, mis en cache par le contenu du deck."""
+        if genre not in ("apercu", "eclair"):
+            raise ValueError("calcul court inconnu : %s" % genre)
+        e = self.essai_court(genre, choix, chargement)
+        if validation.erreurs(validation.verifier(e)):
+            raise ValueError("l'essai a des erreurs : corriger avant de lancer")
+        c = courts.cle(e)
+        if not courts.termine(self.racine_courts, c) and self.courts_en_cours.get(c) != "en_cours":
+            self.courts_en_cours[c] = "en_cours"
+
+            def tache():
+                try:
+                    _, code = courts.lancer(e, self.racine_courts, self.commande(), cwd=G1, fils=1)
+                    self.courts_en_cours[c] = "fini" if code == 0 else "echec: code %d" % code
+                except Exception as ex:
+                    self.courts_en_cours[c] = "echec: %s" % ex
+            self.pool_courts.submit(tache)
+        return self.etat_court(c)
+
+    def etat_court(self, c):
+        ident = "court" + SEP + c
+        etat = "fini" if courts.termine(self.racine_courts, c) else self.courts_en_cours.get(c, "absent")
+        rep = {"cle": c, "id": ident, "etat": etat}
+        r = self.run(ident)
+        if etat == "fini":
+            rep["diagnostics"] = depouillement.diagnostics(r["log"])
+            rep["synthese"] = propre(depouillement.synthese(r["dossier"], r["log"]))
+            rep["cache"] = self.demander_cache(ident)
+        elif etat.startswith("echec"):
+            try:
+                rep["journal"] = open(r["log"], encoding="utf-8", errors="replace").read().splitlines()[-15:]
+            except OSError:
+                rep["journal"] = []
+        return rep
+
     def ajouter(self, d, sigma3_liste=None, lot=None):
         e = Essai.depuis_dict(d)
         if validation.erreurs(validation.verifier(e)):
@@ -348,7 +406,7 @@ def fabrique(studio):
                 a = p[1:]
                 if methode == "GET":
                     if a == ["etat"]:
-                        return self._json({"reglages": studio.reglages, "exes": studio.exes()})
+                        return self._json({"reglages": studio.reglages, "exes": studio.exes(), "espace": studio.espace})
                     if a == ["runs"]:
                         return self._json([{k: r[k] for k in ("id", "nom", "source", "etat", "sigma3_MPa")} for r in studio.runs()])
                     if len(a) == 3 and a[0] == "runs" and a[2] == "synthese":
@@ -359,6 +417,8 @@ def fabrique(studio):
                         return self._json(studio.etat_cache(a[1]))
                     if a == ["file"]:
                         return self._json(studio.etat_file())
+                    if len(a) == 2 and a[0] == "court":
+                        return self._json(propre(studio.etat_court(a[1])))
                     if a == ["formulaire"]:
                         return self._json(propre(studio.formulaire()))
                     if len(a) == 3 and a[0] == "file" and a[2] == "journal":
@@ -370,6 +430,13 @@ def fabrique(studio):
                         return self._json(studio.action_file(a[1], a[2]))
                     if a == ["reglages"]:
                         return self._json(studio.sauver_reglages(self._corps()))
+                    if a == ["court", "apercu", "existant"]:
+                        return self._json(propre(studio.court_existant("apercu", self._corps())))
+                    if a == ["court", "apercu"]:
+                        return self._json(propre(studio.court("apercu", self._corps())))
+                    if a == ["court", "eclair"]:
+                        c = self._corps()
+                        return self._json(propre(studio.court("eclair", c["choix"], c["chargement"])))
                     if a == ["essai", "construire"]:
                         return self._json(propre(studio.construire(self._corps())))
                     if a == ["essai", "verifier"]:

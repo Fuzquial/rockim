@@ -119,3 +119,25 @@ def estimation_cout(essai, fils=1):
     par_el = 0.1e-6 if essai.chargement.type_essai == "traction" else 0.3e-6
     s = pas * n_el * par_el * (1.0 if fils == 1 else 0.73)
     return {"elements": int(round(n_el)), "dt": dt, "pas_max": int(pas), "duree_max_s": s}
+
+
+# ---------------------------------------------------------------- essai éclair (spec 007 §2.6)
+# Banc mesuré le 2026-10-02 : Voronoï 20 x 40 mm, grains de 10 mm (10 grains), éléments de
+# 2,3 mm (36 par grain), une phase. Il reproduit le pic filtré de l'essai pleine taille à 5 %
+# près en 1 à 17 s. On garde le matériau, ses surcharges et la loi des joints du choix courant ;
+# tout le reste est celui du banc.
+ECLAIRS = {
+    "traction": dict(type_essai="traction", vitesse=0.08, T=8e-4),
+    "ucs": dict(type_essai="triaxial", sigma3_MPa=0.0, delai_axial=0.0, T=3e-3),
+    "tx20": dict(type_essai="triaxial", sigma3_MPa=20.0, T=5e-3),
+}
+
+
+def choix_eclair(choix, chargement):
+    c = complet(choix)
+    e = {k: c[k] for k in ("materiau", "surcharges", "loi", "deformations_historique", "champs_deformation")}
+    e.update(nom="eclair_" + chargement, W_mm=20.0, H_mm=40.0, maillage="voronoi", taille_grain_mm=10.0,
+             taille_element_mm=2.3, graine=12345, phases="une", tailles="uniformes", joints_grain="niveau",
+             diffus=False, plans=False, segments=[], frames=10, vitesse=None, sigma3_MPa=0.0)
+    e.update(ECLAIRS[chargement])
+    return e

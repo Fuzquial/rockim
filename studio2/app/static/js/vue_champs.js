@@ -86,7 +86,11 @@ export class VueChamps {
     this.couleursPhases = [css("--quartz"), css("--feldspath"), css("--biotite"), "#6BCB77", "#E77C8D", "#5A9CF8"];
     this._souris();
     new ResizeObserver(() => this.marquer()).observe(canvas);
-    const boucle = () => { if (this.sale) { this.dessiner(); this.sale = false; } requestAnimationFrame(boucle); };
+    this.apresDessin = null;                 // rappel après chaque image (calques SVG)
+    const boucle = () => {
+      if (this.sale) { this.dessiner(); this.sale = false; this.apresDessin?.(); }
+      requestAnimationFrame(boucle);
+    };
     requestAnimationFrame(boucle);
   }
 
@@ -169,8 +173,21 @@ export class VueChamps {
     this.marquer();
   }
 
+  // Coordonnées du SOLVEUR (m) <-> pixels CSS du canvas. La vue travaille en coordonnées
+  // décalées de l'origine de la boîte (précision float32) : on rajoute bbox[0..1].
+  versMonde(clientX, clientY) {
+    const r = this.cv.getBoundingClientRect(), [x0, y0] = this.meta.bbox;
+    return [x0 + this.cx + (clientX - r.left - r.width / 2) / this.k, y0 + this.cy - (clientY - r.top - r.height / 2) / this.k];
+  }
+  versEcran(x, y) {
+    const [x0, y0] = this.meta.bbox, w = this.cv.clientWidth, h = this.cv.clientHeight;
+    return [w / 2 + (x - x0 - this.cx) * this.k, h / 2 - (y - y0 - this.cy) * this.k];
+  }
+
   _souris() {
     const cv = this.cv;
+    // Un outil (dessin de fissure) prend la main sur le déplacement : { down, move, up } en coordonnées solveur.
+    this.outil = null;
     const monde = (x, y) => { const r = cv.getBoundingClientRect(); return [this.cx + (x - r.left - r.width / 2) / this.k, this.cy - (y - r.top - r.height / 2) / this.k]; };
     cv.addEventListener("wheel", (ev) => {
       ev.preventDefault();
@@ -179,13 +196,21 @@ export class VueChamps {
       this.marquer();
     }, { passive: false });
     let g = null;
-    cv.addEventListener("pointerdown", (ev) => { g = [ev.clientX, ev.clientY]; cv.setPointerCapture(ev.pointerId); });
+    cv.addEventListener("pointerdown", (ev) => {
+      cv.setPointerCapture(ev.pointerId);
+      if (this.outil && this.meta) return this.outil.down(...this.versMonde(ev.clientX, ev.clientY));
+      g = [ev.clientX, ev.clientY];
+    });
     cv.addEventListener("pointermove", (ev) => {
+      if (this.outil && this.meta) return this.outil.move(...this.versMonde(ev.clientX, ev.clientY));
       if (!g) return;
       this.cx -= (ev.clientX - g[0]) / this.k; this.cy += (ev.clientY - g[1]) / this.k;
       g = [ev.clientX, ev.clientY]; this.marquer();
     });
-    cv.addEventListener("pointerup", () => { g = null; });
+    cv.addEventListener("pointerup", (ev) => {
+      if (this.outil && this.meta) this.outil.up(...this.versMonde(ev.clientX, ev.clientY));
+      g = null;
+    });
     cv.addEventListener("dblclick", () => this.recadrer());
   }
 

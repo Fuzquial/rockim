@@ -10,6 +10,11 @@ export async function initialiser() {
   formulaire = await api("/api/formulaire");
   defaut = formulaire.defaut;
   try { choix = JSON.parse(localStorage.getItem(CLE)) || null; } catch (e) { choix = null; }
+  // Lien de partage : #<écran>?brouillon=<choix JSON encodé> remplace le brouillon local.
+  const partage = new URLSearchParams(location.hash.split("?")[1] || "").get("brouillon");
+  if (partage) {
+    try { choix = JSON.parse(partage); localStorage.setItem(CLE, partage); } catch (e) { /* lien abîmé : on l'ignore */ }
+  }
   choix = { ...defaut, ...(choix || {}) };
   await reconstruire();
 }
@@ -37,4 +42,10 @@ async function reconstruire() {
   if (v !== version) return;                       // une saisie plus récente est déjà partie
   resultat = r;
   abonnes.forEach((f) => f(resultat, choix));
+}
+
+// Lien qui recrée l'essai courant chez un collègue (même serveur ou un autre).
+export function lienDePartage() {
+  const modifie = Object.fromEntries(Object.entries(choix).filter(([k, v]) => JSON.stringify(v) !== JSON.stringify(defaut[k])));
+  return `${location.origin}${location.pathname}#essai?brouillon=${encodeURIComponent(JSON.stringify(modifie))}`;
 }

@@ -119,9 +119,18 @@ def diagnostics(chemin_log):
     m = re.search(r"(\d+) elements, (\d+) joints", txt)
     if m:
         d["elements"], d["joints"] = int(m.group(1)), int(m.group(2))
-    m = re.search(r"voronoi: (\d+) grains", txt)
+    m = re.search(r"voronoi: (\d+) grains, \d+ phase\(s\), (\d+) grain-boundary joints, hmin = ([\d.e+-]+)", txt)
     if m:
-        d["grains"] = int(m.group(1))
+        d["grains"], d["joints_de_grain"], d["hmin_m"] = int(m.group(1)), int(m.group(2)), float(m.group(3))
+    else:
+        m = re.search(r"voronoi: (\d+) grains", txt)
+        if m:
+            d["grains"] = int(m.group(1))
+    # aires de phase réalisées contre visées (fin du journal)
+    m = re.search(r"grains: \d+, phases: (.*)", txt)
+    if m:
+        d["phases_realisees"] = [{"nom": n, "realise_pct": float(r), "cible_pct": float(c)}
+                                 for n, r, c in re.findall(r"(\w+) ([\d.]+)% \(target ([\d.]+)%\)", m.group(1))]
     if "WARNING" in txt:
         d["avertissements"] = txt.count("WARNING")
     return d

@@ -257,3 +257,8 @@ button.lien:hover { text-decoration: underline; }
 .message a { color: var(--accent); }
 input.implicite { color: var(--texte3); }
 [hidden] { display: none !important; }
+
+/* Maillage */
+#e-maillage { grid-template-columns: minmax(0, 1fr) 380px; }
+.calque { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.vue-maillage .voile-attente { z-index: 2; }

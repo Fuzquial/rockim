@@ -127,3 +127,37 @@ def test_construire_depuis_les_choix(api):
     assert "phases = quartz feldspar biotite" in r["deck"]
     assert r["estimation"]["grains"] == 367 and r["estimation"]["duree_max_s"] > 0
     assert not [a for a in r["avis"] if a["niveau"] == "erreur"]
+
+
+APERCU_F7 = os.path.join(ICI, "..", "_travail", "j2_go")
+
+
+@pytest.mark.skipif(not os.path.isdir(APERCU_F7), reason="aperçu réel de F7 absent")
+def test_apercu_deja_calcule_reconnu_par_sa_cle(api):
+    """Le vrai aperçu de F7 (lancé le 2026-10-02 avec GO) est déposé dans l'espace : le serveur
+    doit le reconnaître par la clé du deck, sans relancer, et en tirer le maillage réalisé."""
+    import shutil
+    from campagne_triax_hetero import gen_decks
+    from test_formulaire import choix_du_cas
+    from noyau import courts, maillage
+    from noyau.formulaire import essai_depuis_choix
+    choix = choix_du_cas("F7_disc_gbm_P020", "F7_disc_gbm", 20, 4211)
+    c = courts.cle(maillage.essai_apercu(essai_depuis_choix(choix)))
+    etat = api("/api/etat")
+    racine = os.path.join(etat["espace"], "courts", c)
+    shutil.copytree(os.path.join(APERCU_F7, "out", "F7_disc_gbm_P020_apercu"), os.path.join(racine, "out"))
+    shutil.copy(os.path.join(APERCU_F7, "logs", "F7_disc_gbm_P020_apercu.log"), os.path.join(racine, "run.log"))
+    r = api("/api/court/apercu", corps=choix)
+    assert r["etat"] == "fini" and r["cle"] == c
+    d = r["diagnostics"]
+    assert (d["grains"], d["elements"], d["prerompus_libres"]) == (367, 12995, 424)
+    assert [p["nom"] for p in d["phases_realisees"]] == ["quartz", "feldspar", "biotite"]
+    t0 = time.time()
+    while api("/api/runs/%s/cache" % r["id"])["etat"] != "pret":
+        assert time.time() - t0 < 60
+        time.sleep(0.3)
+
+
+def test_eclair_a_chargement_inconnu_refuse(api):
+    r = api("/api/court/eclair", corps={"choix": {}, "chargement": "torsion"}, code=400)
+    assert "torsion" in r["erreur"]
