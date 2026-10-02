@@ -333,5 +333,26 @@ seulement. Exécutables : `rockim_j3ref.exe` (HEAD avant J3, même taille que g1
 
 S3 (`--mesh-only`) abandonné : l'aperçu par run tronqué (J2) est exact au bit et prend 2,2 s.
 
+**2026-10-02 (§2.6, mesure de l'essai éclair, GO de Fernando).** Trois runs construits par le
+noyau, `rockim_j3.exe`, 1 fil chacun en parallèle : Voronoï 20 × 40 mm, `grainSize = 0.010`
+(10 grains), `grainElemSize = 0.0023` (367 éléments, 36 par grain), jeu fragile une phase,
+insertion adaptative, `seed = 12345`. Durées murales : **traction 1,1 s, compression simple
+5,5 s, triaxial 20 MPa 16,9 s** (dt = 2,4e-8 s, 33 k / 124 k / 207 k pas). Figure :
+[j4/eclair_courbes.png](j4/eclair_courbes.png).
+
+- Traction : pic 1,38 MPa = 1,06 ft (joints de grain non atténués), 7 joints rompus, arrêt
+  0,24 ms après le départ.
+- Compression : **les maxima bruts sont des pointes parasites** (16 lignes sur 1 103 en UCS, 71
+  sur 1 896 en triaxial dépassent de plus de 5 MPa la médiane glissante). Le pic de l'enveloppe
+  (médiane glissante, stable de ±3 à ±15 lignes) vaut **48,3 MPa en UCS** (campagne Yan du 11/08 :
+  51 MPa, −5 %) et **89,7 MPa à σ₃ = 20 MPa** (F1_homog_P020, même matériau sur 36 × 72 mm :
+  93,3 MPa filtré, −4 %). Le banc éclair reproduit donc l'essai pleine taille à 5 % près, environ
+  300 fois plus vite.
+- Conséquences pour J4 : (1) le dépouillement doit donner un pic FILTRÉ à côté du maximum brut
+  (le brut reste, pour l'identité avec depouille.py) ; (2) en traction par mors, history.csv n'a ni
+  `epsGauge` ni `nBrokTen` : le dépouillement doit lire `epsAx` et les compteurs du résumé ;
+  (3) l'origine des pointes (contact des plateaux sur un maillage grossier ?) reste à établir,
+  hors J4.
+
 Hors J2, à décider : remplacer `gen_decks.py` par des appels au noyau (une seule implémentation),
 une fois l'interface en service.
