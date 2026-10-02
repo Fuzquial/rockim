@@ -27,15 +27,18 @@ export async function monter(noeud, ctx) {
     <section class="carte"><div class="carte-tete"><span class="titre">Essai</span><div style="display:flex;gap:6px"><button class="bouton petit" id="e-lien" title="Copie un lien qui recrée cet essai">Lien</button><button class="bouton petit" id="e-raz">Repartir du défaut</button></div></div>
       <div class="corps-carte">
         ${ligne("Nom", `<div class="nombre"><input data-cle="nom" data-texte="1" style="text-align:left"></div>`)}
-        ${seg("type_essai", [["triaxial", "Triaxial"], ["traction", "Traction directe"]])}
+        ${ligne("Préréglage d'essai", `<select id="e-preset"><option value="">—</option></select>`)}
+        ${seg("type_essai", [["triaxial", "Triaxial"], ["bresilien", "Brésilien"], ["traction", "Traction directe"]])}
         ${ligne("Confinement σ₃", num("sigma3_MPa", "MPa", 1, 1), "type_essai=triaxial")}
         ${ligne("Vitesse", num("vitesse", "m/s", 1, 2))}
         ${ligne("Arrêt après le pic", num("chute_arret", "% de chute", 100, 0), "type_essai=triaxial")}
-        ${aide("e-aide-charge", "type_essai=triaxial")}
+        ${aide("e-aide-charge", "type_essai!=traction")}
       </div></section>
     <section class="carte"><div class="carte-tete"><span class="titre">Éprouvette et matériau</span></div>
       <div class="corps-carte">
-        ${ligne("Largeur × hauteur", `<div class="deux">${num("W_mm", "mm", 1, 1)}${num("H_mm", "mm", 1, 1)}</div>`)}
+        ${ligne("Largeur × hauteur", `<div class="deux">${num("W_mm", "mm", 1, 1)}${num("H_mm", "mm", 1, 1)}</div>`, "type_essai!=bresilien")}
+        ${ligne("Diamètre du disque", num("D_mm", "mm", 1, 1), "type_essai=bresilien")}
+        ${ligne("Méplat · plateau", `<div class="deux">${num("aplatissement_deg", "° total", 1, 0)}${num("plateau_mm", "mm ½", 1, 2)}</div>`, "type_essai=bresilien")}
         ${ligne("Préréglage", `<select data-cle="materiau"><option value="fragile">Red Bohus, fragile (Yan 2023)</option><option value="bohus">Red Bohus, calibré</option></select>`)}
         ${aide("e-aide-mat")}
         <div class="loi-modifiee" id="e-loi" hidden></div>
@@ -81,7 +84,7 @@ export async function monter(noeud, ctx) {
       <div class="boutons">
         <button class="bouton" id="e-apercu">Aperçu du maillage</button>
         <button class="bouton primaire" id="e-ajouter">Ajouter à la file</button>
-        <div class="ligne" style="grid-template-columns:1fr auto"><div class="nombre"><input id="e-variation" value="0 10 20 40" style="text-align:left"><span>σ₃ MPa</span></div>
+        <div class="ligne" data-si="type_essai=triaxial" style="grid-template-columns:1fr auto"><div class="nombre"><input id="e-variation" value="0 10 20 40" style="text-align:left"><span>σ₃ MPa</span></div>
           <button class="bouton" id="e-varier" style="padding:0 12px">Varier σ₃</button></div>
         <div class="message" id="e-message"></div>
       </div></section>
@@ -109,6 +112,9 @@ function brancher() {
     else if (i.dataset.cle === "T" || i.dataset.cle === "vitesse") modifier({ [i.dataset.cle]: null });
   }));
   R.querySelector("#e-raz").onclick = () => reinitialiser();
+  const pr = R.querySelector("#e-preset"), presets = lireFormulaire().presets || {};
+  pr.innerHTML += Object.entries(presets).map(([k, v]) => `<option value="${k}">${v.description}</option>`).join("");
+  pr.onchange = () => { if (pr.value) { modifier({ ...lireFormulaire().defaut, ...presets[pr.value].choix }, true); pr.value = ""; } };
   R.querySelector("#e-lien").onclick = async () => {
     const { lienDePartage } = await import("./etat_essai.js");
     const m = R.querySelector("#e-message");
@@ -159,7 +165,9 @@ function afficher(r, c) {
   bn.textContent = `Niveau ${fr(niv.alpha, 1)}`;
   bn.title = `Atténuation des joints de grain du préréglage : gbAlpha = ${fr(niv.alpha, 1)}`;
   R.querySelector("#e-aide-mat").textContent = `E ${fr(m.E / 1e9, 0)} GPa · ν ${fr(m.nu, 2)} · ft ${fr(m.ft / 1e6, 1)} MPa · c ${fr(m.cohesion / 1e6, 1)} MPa · φ ${fr(m.frictionDeg, 1)}° · Gf ${fr(m.Gf, 1)} J/m²`;
-  R.querySelector("#e-aide-charge").textContent = `Confinement établi en ${fr(e.chargement.rampe_confinement * 1e3, 1)} ms, charge axiale à partir de ${fr(e.chargement.delai_axial * 1e3, 1)} ms.`;
+  R.querySelector("#e-aide-charge").textContent = c.type_essai === "bresilien"
+    ? `Arrêt ${fr(e.chargement.delai_arret_bresilien * 1e6, 0)} µs après la chute post-pic ; jauge élastique lue pour σt entre ${fr(e.chargement.jauge_elastique[0], 1)} et ${fr(e.chargement.jauge_elastique[1], 1)} ft.`
+    : `Confinement établi en ${fr(e.chargement.rampe_confinement * 1e3, 1)} ms, charge axiale à partir de ${fr(e.chargement.delai_axial * 1e3, 1)} ms.`;
   const mod = Object.keys(c.surcharges || {}).length + Object.keys(c.loi || {}).length;
   const zl = R.querySelector("#e-loi");
   zl.hidden = !mod;
@@ -204,7 +212,9 @@ function afficher(r, c) {
   const av = [...r.avis].sort((a, b) => ordre[a.niveau] - ordre[b.niveau]);
   const ne = av.filter((a) => a.niveau === "erreur").length, na = av.filter((a) => a.niveau === "alerte").length;
   R.querySelector("#e-bilan").textContent = `${ne} erreur${ne > 1 ? "s" : ""} · ${na} alerte${na > 1 ? "s" : ""}`;
-  R.querySelector("#e-avis").innerHTML = (ne + na ? "" : `<li class="ok">Recette ${c.type_essai === "triaxial" ? "triaxiale : plateaux, confinement latéral, arrêt après le pic" : "de traction directe par mors"}.</li>`) +
+  const recette = { triaxial: "triaxiale : plateaux, confinement latéral, arrêt après le pic",
+    traction: "de traction directe par mors", bresilien: "brésilienne : disque à méplats entre plateaux, jauge élastique de bande, arrêt après le pic" };
+  R.querySelector("#e-avis").innerHTML = (ne + na ? "" : `<li class="ok">Recette ${recette[c.type_essai]}.</li>`) +
     av.map((a) => `<li class="${cls[a.niveau]}">${a.message}</li>`).join("");
   R.querySelector("#e-ajouter").disabled = R.querySelector("#e-varier").disabled = ne > 0;
   R.querySelector("#e-apercu").disabled = ne > 0 || c.maillage !== "voronoi";
@@ -216,14 +226,23 @@ function afficher(r, c) {
 
 // ------------------------------------------------------------------ schéma à l'échelle
 function schema(c, r) {
-  const svg = R.querySelector("#e-schema"), Wm = c.W_mm, Hm = c.H_mm;
+  const svg = R.querySelector("#e-schema"), bd = c.type_essai === "bresilien";
+  const Wm = bd ? c.D_mm : c.W_mm, Hm = bd ? c.D_mm : c.H_mm;
   const k = Math.min(300 / Wm, 420 / Hm), W = Wm * k, H = Hm * k, x0 = 260 - W / 2, y0 = 320 - H / 2;
   const X = (mm) => x0 + mm * k, Y = (mm) => y0 + H - mm * k;            // repère du solveur : origine en bas à gauche
   const acc = css("--accent");
+  // disque à méplats : demi-angle alpha, cordes horizontales en haut et en bas
+  function disque(attr = "") {
+    const rr = W / 2, a = (c.aplatissement_deg / 2) * Math.PI / 180, cx = x0 + rr, cy = y0 + rr;
+    if (a <= 0) return `<circle cx="${cx}" cy="${cy}" r="${rr}" ${attr}/>`;
+    const sx = rr * Math.sin(a), sy = rr * Math.cos(a);
+    return `<path d="M${cx - sx},${cy - sy} L${cx + sx},${cy - sy} A${rr},${rr} 0 0 1 ${cx + sx},${cy + sy} L${cx - sx},${cy + sy} A${rr},${rr} 0 0 1 ${cx - sx},${cy - sy} Z" ${attr}/>`;
+  }
   const fl = (x1, y1, x2, y2) => `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${acc}" stroke-width="2" marker-end="url(#pointe)"/>`;
   let g = `<defs><marker id="pointe" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="${acc}"/></marker>
-    <clipPath id="eprouvette"><rect x="${x0}" y="${y0}" width="${W}" height="${H}"/></clipPath></defs>`;
-  g += `<rect x="${x0}" y="${y0}" width="${W}" height="${H}" fill="${css("--bg3")}" stroke="${css("--texte2")}"/>`;
+    <clipPath id="eprouvette">${bd ? disque() : `<rect x="${x0}" y="${y0}" width="${W}" height="${H}"/>`}</clipPath></defs>`;
+  g += bd ? disque(`fill="${css("--bg3")}" stroke="${css("--texte2")}"`)
+    : `<rect x="${x0}" y="${y0}" width="${W}" height="${H}" fill="${css("--bg3")}" stroke="${css("--texte2")}"/>`;
   // grains suggérés (pas le maillage réel : celui-ci est dans l'écran Maillage)
   if (c.maillage === "voronoi") {
     const d = c.taille_grain_mm * k;
@@ -259,7 +278,14 @@ function schema(c, r) {
     }
   }
   // chargement
-  if (c.type_essai === "triaxial") {
+  if (bd) {
+    const a = (c.aplatissement_deg / 2) * Math.PI / 180, rr = W / 2, yh = y0 + rr - rr * Math.cos(a), yb = y0 + rr + rr * Math.cos(a), lp = c.plateau_mm * k;
+    g += `<rect x="${260 - lp}" y="${yh - 12}" width="${2 * lp}" height="12" rx="2" fill="${css("--border-fort")}"/>`;
+    g += `<rect x="${260 - lp}" y="${yb}" width="${2 * lp}" height="12" rx="2" fill="${css("--border-fort")}"/>`;
+    g += fl(260, yh - 56, 260, yh - 16) + fl(260, yb + 52, 260, yb + 16);
+    g += `<text x="274" y="${yh - 30}" fill="${css("--texte2")}" font-size="13">plateaux, ${fr(r.essai.chargement.vitesse, 2)} m/s au total</text>`;
+    g += `<text x="${x0 - 10}" y="${y0 + rr}" fill="${css("--texte3")}" font-size="12" text-anchor="end">σt = 2P / (π D t)</text>`;
+  } else if (c.type_essai === "triaxial") {
     for (const [y, sens] of [[y0 - 16, 1], [y0 + H, -1]]) {
       g += `<rect x="${x0 - 20}" y="${y}" width="${W + 40}" height="16" rx="3" fill="${css("--border-fort")}"/>`;
       g += fl(260, sens > 0 ? y - 44 : y + 60, 260, sens > 0 ? y - 4 : y + 20);
@@ -276,7 +302,8 @@ function schema(c, r) {
     }
     g += `<text x="274" y="${y0 - 40}" fill="${css("--texte2")}" font-size="13">mors, ${fr(r.essai.chargement.vitesse, 2)} m/s</text>`;
   }
-  g += `<text x="${x0 + W / 2 + 60}" y="${y0 + H + 40}" fill="${css("--texte3")}" font-size="12" text-anchor="middle" font-family="monospace">${fr(Wm, 0)} mm</text>`;
-  g += `<text x="${x0 + W + 74}" y="320" fill="${css("--texte3")}" font-size="12" font-family="monospace" transform="rotate(90 ${x0 + W + 74} 320)" text-anchor="middle">${fr(Hm, 0)} mm</text>`;
+  if (!bd) g += `<text x="${x0 + W / 2 + 60}" y="${y0 + H + 40}" fill="${css("--texte3")}" font-size="12" text-anchor="middle" font-family="monospace">${fr(Wm, 0)} mm</text>`;
+  if (bd) g += `<text x="260" y="${y0 + H + 90}" fill="${css("--texte3")}" font-size="12" text-anchor="middle" font-family="monospace">D = ${fr(Wm, 1)} mm</text>`;
+  else g += `<text x="${x0 + W + 74}" y="320" fill="${css("--texte3")}" font-size="12" font-family="monospace" transform="rotate(90 ${x0 + W + 74} 320)" text-anchor="middle">${fr(Hm, 0)} mm</text>`;
   svg.innerHTML = g;
 }

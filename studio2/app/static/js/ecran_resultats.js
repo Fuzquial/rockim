@@ -6,6 +6,11 @@ import { BANDES, CHAMPS, couleurArc, VueChamps } from "./vue_champs.js";
 let R, nav, runs = [], coches = [], courbeComp, syntheses = {}, hist = {};
 let D = null;                                         // état du mode détail
 
+const COLONNES_BD = [
+  ["sigma_t_pic_filtre_MPa", "σt pic MPa", 2], ["sigma_t_pic_MPa", "max brut", 2], ["fermeture_pic_mm", "fermeture mm", 3],
+  ["jauge_elastique", "jauge élast.", 3], ["jauge_elastique_verdict", "verdict", -1], ["diametral_pct", "diamétral %", 1],
+  ["sigma_t_sur_ft", "σt / ft", 2], ["part_intergranulaire", "intergr.", 2], ["n_rompus", "rompus", 0],
+];
 const COLONNES = [
   ["q_pic_filtre_MPa", "q pic MPa", 1], ["q_pic_MPa", "max brut", 1], ["eps_pic_filtre_pct", "ε pic %", 3],
   ["E_secante_GPa", "E séc. GPa", 1], ["sigma3_atteint_MPa", "σ₃ atteint", 1], ["chute_post_pic", "chute", 2],
@@ -63,7 +68,7 @@ async function vueComparaison() {
   const d = R.querySelector("#r-droite");
   d.className = "comparaison-runs";
   d.innerHTML = `
-    <section class="carte trace-comp"><div class="carte-tete"><span class="titre">q en fonction de ε axial</span>
+    <section class="carte trace-comp"><div class="carte-tete"><span class="titre">Courbes superposées</span>
       <span class="overline">${coches.length ? "clic sur un nom : détail du run" : "cochez des runs à gauche"}</span></div>
       <canvas id="r-courbe"></canvas></section>
     <section class="carte synthese"><div class="carte-tete"><span class="titre">Synthèse</span>
@@ -75,10 +80,15 @@ async function vueComparaison() {
     syntheses[id] ||= await api(`/api/runs/${encodeURIComponent(id)}/synthese`);
   }
   const nom = (id) => runs.find((r) => r.id === id)?.nom || id.split("~")[1];
+  if (coches.length) courbeComp.titres(...hist[coches[0]].axes);
+  const tousBD = coches.length && coches.every((id) => syntheses[id].essai === "bresilien");
+  const aucunBD = !coches.some((id) => syntheses[id].essai === "bresilien");
+  const cols = tousBD ? COLONNES_BD : aucunBD ? COLONNES : [...COLONNES.slice(0, 3), ...COLONNES_BD.slice(0, 1), ...COLONNES_BD.slice(3, 6)];
+  const cell = (v, n) => v == null ? "—" : n === -1 ? v : n === 0 ? v.toLocaleString("fr-FR") : fr(v, n);
   courbeComp.definir(coches.map((id, i) => ({ x: hist[id].eps, y: hist[id].q, couleur: SERIES[i % 6], nom: nom(id) })));
-  d.querySelector("#r-synth").innerHTML = `<tr><th>Run</th>${COLONNES.map((c) => `<th>${c[1]}</th>`).join("")}</tr>` +
+  d.querySelector("#r-synth").innerHTML = `<tr><th>Run</th>${cols.map((c) => `<th>${c[1]}</th>`).join("")}</tr>` +
     coches.map((id, i) => `<tr data-id="${id}"><td><span class="trait" style="display:inline-block;margin-right:8px;background:${SERIES[i % 6]}"></span><a href="#resultats/${encodeURIComponent(id)}" class="lien-synth">${nom(id)}</a></td>` +
-      COLONNES.map(([k, , n]) => `<td>${n === 0 && syntheses[id][k] != null ? syntheses[id][k].toLocaleString("fr-FR") : fr(syntheses[id][k], n)}</td>`).join("") + "</tr>").join("");
+      cols.map(([k, , n]) => `<td>${cell(syntheses[id][k], n)}</td>`).join("") + "</tr>").join("");
   d.querySelectorAll(".lien-synth").forEach((a) => (a.onclick = (ev) => { ev.preventDefault(); nav.ouvrir("resultats", { run: a.closest("tr").dataset.id }); }));
 }
 
@@ -102,7 +112,7 @@ async function ouvrirDetail(id) {
       <div class="incrust bas-gauche aide">molette : zoom · glisser : déplacer · double-clic : recadrer</div>
       <div class="voile-attente" id="d-attente">Préparation de l'affichage…</div></section>
     <div class="colonne-detail">
-      <section class="carte courbe"><div class="carte-tete"><span class="titre">q en fonction de ε axial</span><span class="overline">clic : aller à la frame</span></div>
+      <section class="carte courbe"><div class="carte-tete"><span class="titre">Courbe de l'essai</span><span class="overline">clic : aller à la frame</span></div>
         <div class="courbe-zone"><canvas id="d-courbe"></canvas></div></section>
       <section class="carte stats"><div class="carte-tete"><span class="titre">Frame courante</span></div><table id="d-stats"></table></section>
     </div>
@@ -132,6 +142,7 @@ async function ouvrirDetail(id) {
   syntheses[id] ||= await api(`/api/runs/${encodeURIComponent(id)}/synthese`);
   await vue.charger(`/cache/${encodeURIComponent(id)}`, meta);
   D.meta = meta;
+  courbe.titres(...hist[id].axes);
 
   const seg = d.querySelector("#d-champs");
   seg.innerHTML = vue.champsDisponibles().map((c) => `<button data-c="${c}">${CHAMPS[c].nom}</button>`).join("");
@@ -167,12 +178,15 @@ function frame(f) {
   const { vue, courbe, meta, id } = D;
   vue.setFrame(f);
   R.querySelector("#d-curseur").value = f;
-  const k = meta.frameVersHist[f], h = hist[id], s = syntheses[id], c = vue.comptes[f];
+  const k = meta.frameVersHist[f], h = hist[id], s = syntheses[id], c = vue.comptes[f], bd = s.essai === "bresilien";
+  const nq = bd ? "σt" : "q", nx = bd ? "fermeture" : "ε axial", ux = bd ? "mm" : "%";
+  const pic = bd ? s.sigma_t_pic_filtre_MPa : s.q_pic_filtre_MPa, xpic = bd ? s.fermeture_pic_mm : s.eps_pic_filtre_pct;
   courbe.definir([{ x: h.eps, y: h.q, couleur: css("--accent"), nom: "", jusqua: k }], { serie: 0, index: k });
   R.querySelector("#d-temps").textContent = `frame ${String(f).padStart(2, "0")} / ${meta.nFrames - 1}   ·   t = ${fr(meta.temps[f] * 1e3, 3)} ms`;
-  R.querySelector("#d-info").innerHTML = `<div class="grand">${fr(h.q[k], 1)} MPa</div><div class="sous">q à ε = ${fr(h.eps[k], 3)} % · σ₃ = ${fr(meta.sigma3_MPa, 0)} MPa</div>`;
-  const lignes = [["Temps", `${fr(meta.temps[f] * 1e3, 3)} ms`], ["ε axial", `${fr(h.eps[k], 3)} %`], ["q", `${fr(h.q[k], 1)} MPa`],
-    ["q pic (filtré)", `${fr(s.q_pic_filtre_MPa, 1)} MPa à ${fr(s.eps_pic_filtre_pct, 3)} %`],
+  const jauge = bd && s.jauge_elastique != null ? ` · jauge élastique ${fr(s.jauge_elastique, 3)} ${s.jauge_elastique_verdict}` : "";
+  R.querySelector("#d-info").innerHTML = `<div class="grand">${fr(h.q[k], bd ? 2 : 1)} MPa</div><div class="sous">${nq} à ${nx} = ${fr(h.eps[k], 3)} ${ux}${bd ? jauge : ` · σ₃ = ${fr(meta.sigma3_MPa, 0)} MPa`}</div>`;
+  const lignes = [["Temps", `${fr(meta.temps[f] * 1e3, 3)} ms`], [nx, `${fr(h.eps[k], 3)} ${ux}`], [nq, `${fr(h.q[k], bd ? 2 : 1)} MPa`],
+    [`${nq} pic (filtré)`, `${fr(pic, bd ? 2 : 1)} MPa à ${fr(xpic, 3)} ${ux}`],
     ["Rompus en traction", c[1].toLocaleString("fr-FR")], ["Rompus en cisaillement", c[2].toLocaleString("fr-FR")],
     ["Pré-rompus", c[4].toLocaleString("fr-FR")], ["Éléments · joints", `${meta.nTri.toLocaleString("fr-FR")} · ${meta.nJoint.toLocaleString("fr-FR")}`]];
   R.querySelector("#d-stats").innerHTML = lignes.map(([a, b]) => `<tr><td>${a}</td><td>${b}</td></tr>`).join("");

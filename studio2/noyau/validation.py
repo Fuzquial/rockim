@@ -10,7 +10,7 @@ chacune d'elles sur un cas construit pour.
 import dataclasses as dc
 import math
 
-from .geometrie import elements_par_grain, nombre_elements
+from .geometrie import aire, elements_par_grain, nombre_elements
 
 ELEMENTS_PAR_GRAIN = (35.0, 90.0)       # règle du 2026-09-07 (60 runs perdus avec `fan`)
 
@@ -56,7 +56,7 @@ def verifier(essai):
                    "l'atténuation gbAlpha et les paires gb.* sont sans effet, sans avertissement du solveur.")
         if m.taille_element > 0:
             info("elements", "environ %d triangles (Gmsh, h = %g mm)."
-                 % (nombre_elements(e.W, e.H, m.taille_element), m.taille_element * 1e3))
+                 % (nombre_elements(aire(essai), 1.0, m.taille_element), m.taille_element * 1e3))
     elif m.taille_element > 0 and m.taille_grain > 0:
         if m.taille_element >= m.taille_grain:
             erreur("taille_element", "l'élément doit être plus petit que le grain.")
@@ -65,7 +65,13 @@ def verifier(essai):
             alerte("elements_par_grain", "environ %.0f éléments par grain, hors de la plage 35-90 "
                    "(règle du 2026-09-07)." % n)
         info("elements", "environ %d triangles, %.0f par grain."
-             % (nombre_elements(e.W, e.H, m.taille_element), n))
+             % (nombre_elements(aire(essai), 1.0, m.taille_element), n))
+    if m.type == "voronoi" and not m.aleatoire:
+        alerte("maillage_regle", "maillage Delaunay sans points intérieurs aléatoires (grainMeshRandom absent) : "
+               "la règle du 2026-09-07 l'impose en GBM. Admis seulement pour rejouer un deck antérieur.")
+    if essai.schema.penalite_joint is not None and essai.schema.insertion == "adaptive":
+        alerte("penalite_inerte", "jointPenaltyFactor est inerte en insertion adaptative (le solveur l'annonce) : "
+               "la pénalité effective est insertionPenaltyFactor.")
     if m.dispersion_tailles is not None:
         if not 0.0 <= m.dispersion_tailles <= 1.5:
             erreur("dispersion", "grainSizeSpread doit être dans [0 ; 1,5].")
@@ -111,7 +117,21 @@ def verifier(essai):
             erreur("segment_hors", "un segment pré-rompu sort de l'éprouvette : %s." % (s,))
 
     # ---- chargement
-    if c.type_essai not in ("triaxial", "traction"):
+    if c.type_essai == "bresilien":
+        R = e.W / 2
+        if abs(e.W - e.H) > 1e-12:
+            erreur("disque", "le brésilien se fait sur un disque : largeur et hauteur égales (le diamètre).")
+        if m.type == "gmsh":
+            erreur("bresilien_gmsh", "le disque du brésilien est construit par le solveur (discMesh = native) : "
+                   "pas de maillage Gmsh importé.")
+        if not 0.0 <= c.aplatissement_deg < 90.0:
+            erreur("aplatissement", "l'angle total du méplat doit être dans [0 ; 90[ degrés.")
+        if not 0.0 < c.demi_largeur_plateau <= R:
+            erreur("plateau", "la demi-largeur des plateaux doit être positive et au plus égale au rayon.")
+        lo, hi = c.jauge_elastique
+        if not 0.0 < lo < hi < 1.0:
+            erreur("jauge_elastique", "la bande de la jauge élastique doit vérifier 0 < bas < haut < 1 (× ft).")
+    if c.type_essai not in ("triaxial", "traction", "bresilien"):
         erreur("type_essai", "type d'essai inconnu : %s" % c.type_essai)
     if c.vitesse <= 0:
         erreur("vitesse", "la vitesse de chargement doit être positive.")

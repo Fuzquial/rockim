@@ -17,7 +17,7 @@ import sys
 
 import numpy as np
 
-from .geometrie import elements_par_grain, nombre_elements
+from .geometrie import aire, elements_par_grain, nombre_elements
 
 RACINE_G1 = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 SCRIPT_GMSH = os.path.join(RACINE_G1, "tools", "make_unstructured_mesh.py")
@@ -75,10 +75,10 @@ def stats_msh(maillage):
 
 def estimation_voronoi(essai):
     """Ce qu'on sait d'un maillage Voronoï AVANT de lancer quoi que ce soit."""
-    m, e = essai.maillage, essai.eprouvette
-    return dict(elements=int(round(nombre_elements(e.W, e.H, m.taille_element))),
+    m, A = essai.maillage, aire(essai)
+    return dict(elements=int(round(nombre_elements(A, 1.0, m.taille_element))),
                 elements_par_grain=elements_par_grain(m.taille_grain, m.taille_element),
-                grains=int(round(e.W * e.H / (0.785 * m.taille_grain ** 2))))
+                grains=int(round(A / (0.785 * m.taille_grain ** 2))))
 
 
 def essai_apercu(essai):

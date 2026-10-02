@@ -148,9 +148,10 @@ class Studio:
         r = self.run(ident)
         h = resultats.lire_historique(r["dossier"])
         if h is None:
-            return {"eps": [], "q": [], "t": []}
+            return {"eps": [], "q": [], "t": [], "axes": list(resultats.etiquettes(None))}
         e, q = resultats.courbe(h, resultats.delai_consolidation(r["dossier"]))
-        return {"eps": propre(list(e)), "q": propre(list(q)), "t": list(h["t"] * 1e3)}
+        return {"eps": propre(list(e)), "q": propre(list(q)), "t": list(h["t"] * 1e3),
+                "axes": list(resultats.etiquettes(h)), "bresilien": resultats.est_bresilien(h)}
 
     # ------------------------------------------------------------ caches d'affichage
     def dossier_cache(self, ident):
@@ -250,7 +251,8 @@ class Studio:
             m = materiaux.materiau(n)
             niveaux[n] = {"materiau": m.__dict__, "phases": [p.__dict__ for p in materiaux.phases(n)],
                           "alpha": materiaux.NIVEAUX[n]["gbAlpha"]}
-        return {"defaut": formulaire.CHOIX_DEFAUT, "niveaux": niveaux}
+        return {"defaut": formulaire.CHOIX_DEFAUT, "niveaux": niveaux,
+                "presets": {k: {"description": v["description"], "choix": v} for k, v in formulaire.PRESETS.items()}}
 
     # ------------------------------------------------------------ calculs courts
     def essai_court(self, genre, choix, chargement=None):
@@ -331,6 +333,12 @@ def tri_naturel(nom):
 
 def resume_essai(d):
     m, c = d["maillage"], d["chargement"]
+    if c["type_essai"] == "bresilien":
+        s = "Brésilien, disque de %g mm, méplat %g°" % (d["eprouvette"]["W"] * 1e3, c["aplatissement_deg"])
+        s += ", %d phase%s" % (max(1, len(d["phases"])), "s" if len(d["phases"]) > 1 else "")
+        if d["discontinuites"]["fraction_diffuse"]:
+            s += ", %g %% pré-rompus" % (100 * d["discontinuites"]["fraction_diffuse"])
+        return s
     s = "Voronoï" if m["type"] == "voronoi" else "Gmsh"
     s += ", %d phase%s" % (max(1, len(d["phases"])), "s" if len(d["phases"]) > 1 else "") if m["type"] == "voronoi" else ""
     s += ", σ₃ = %g MPa" % c["sigma3_MPa"] if c["type_essai"] == "triaxial" else ", traction directe"

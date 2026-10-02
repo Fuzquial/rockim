@@ -67,3 +67,20 @@ def test_estimation_du_cout_dans_le_bon_ordre_de_grandeur():
     assert 8 < ecl["duree_max_s"] < 40 and ecl["dt"] == pytest.approx(2.41e-8, rel=0.15)
     f7 = estimation_cout(essai_depuis_choix(dict(T=8e-4)))
     assert 300 < f7["duree_max_s"] < 1200 and f7["dt"] == pytest.approx(6.0e-9, rel=0.15)
+
+
+def test_banc_bresilien_de_yan_identique_au_deck_calibre():
+    from noyau.formulaire import PRESETS
+    from campagne_triax_hetero import RACINE_G1
+    e = essai_depuis_choix(PRESETS["bd_yan_calibre"])
+    ref = cfg.lire(os.path.join(RACINE_G1, "configs_yan", "bd_yan_calibre.cfg"))
+    assert cfg.differences(cfg.lire_texte(e.vers_cfg()), ref) == []
+    codes = {a.code for a in verifier(e)}
+    assert {"maillage_regle", "elements_par_grain", "penalite_inerte"} <= codes   # écarts signalés
+    assert not erreurs(verifier(e))
+
+
+def test_bresilien_n_ecrit_jamais_historyStrains():
+    d = cfg.lire_texte(essai_depuis_choix({"type_essai": "bresilien"}).vers_cfg())
+    assert "historyStrains" not in d and d["geometry"] == "disc" and d["W"] == d["H"] == "0.0508"
+    assert d["writeStrainFields"] == "true" and d["dampingLocal"] == "0.1"

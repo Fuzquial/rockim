@@ -28,8 +28,9 @@ class Eprouvette:
 
 @dc.dataclass
 class Chargement:
-    """Triaxial : confinement latéral établi AVANT la charge axiale par plateaux."""
-    type_essai: str = "triaxial"   # triaxial | traction
+    """Triaxial : confinement latéral établi AVANT la charge axiale par plateaux.
+    Brésilien : disque (diamètre = W = H) comprimé entre deux plateaux rigides."""
+    type_essai: str = "triaxial"   # triaxial | traction | bresilien
     sigma3_MPa: float = 20.0
     vitesse: float = 0.1           # m/s, vitesse de fermeture des plateaux (ou de traction)
     rampe_axiale: float = 2e-4     # s
@@ -42,6 +43,11 @@ class Chargement:
     jauge_bas: float = 0.25
     jauge_haut: float = 0.75
     delai_arret_traction: float = 5e-5
+    # brésilien (DOCUMENTATION §5.7, banc calibré configs_yan/bd_yan_calibre.cfg)
+    aplatissement_deg: float = 20.0      # discFlattenDeg : angle TOTAL 2 alpha du méplat (0 = disque rond)
+    demi_largeur_plateau: float = 0.0025  # platenHalfWidth, m
+    delai_arret_bresilien: float = 6e-5   # brazilianStopDelay
+    jauge_elastique: Tuple[float, float] = (0.3, 0.8)  # elasticGaugeLo/Hi, x ft
 
 
 @dc.dataclass
@@ -57,6 +63,9 @@ class Maillage:
     jitter: float = 0.5
     lloyd: int = 2
     fichier_msh: Optional[str] = None      # gmsh : chemin du .msh produit par maillage.py
+    # grainMeshRandom : OBLIGATOIRE en GBM (règle du 2026-09-07). False ne sert qu'à rejouer
+    # des decks antérieurs à la règle (banc brésilien de Yan d'août) ; la validation l'alerte.
+    aleatoire: bool = True
 
 
 @dc.dataclass
@@ -139,6 +148,7 @@ class Schema:
     mu_contact: float = 0.1
     amortissement_local: float = 0.7
     xi_joint: float = 0.0
+    penalite_joint: Optional[float] = None  # jointPenaltyFactor : INERTE en insertion adaptative
     # Forme de la loi des joints (éditeur, spec 007 §2.6). Écrites seulement hors défaut,
     # pour que les decks existants restent identiques.
     montee: str = "linear"                 # jointElastic : linear | parabolic
@@ -185,7 +195,8 @@ class Essai:
         return Essai(
             nom=d.get("nom", "essai"), description=d.get("description", ""),
             eprouvette=Eprouvette(**d.get("eprouvette", {})),
-            chargement=Chargement(**d.get("chargement", {})),
+            chargement=Chargement(**{k: tuple(v) if k == "jauge_elastique" else v
+                                     for k, v in d.get("chargement", {}).items()}),
             maillage=Maillage(**d.get("maillage", {})),
             materiau=Materiau(**d.get("materiau", {})),
             phases=[Phase(**p) for p in d.get("phases", [])],
@@ -217,17 +228,24 @@ class Essai:
     def vers_cfg(self):
         e, c, m, mat = self.eprouvette, self.chargement, self.maillage, self.materiau
         traction = c.type_essai == "traction"
-        titre = ["%s : %s" % (self.nom, "TRACTION DIRECTE" if traction else
-                              "TRIAXIAL 2D, sigma3 = %g MPa" % c.sigma3_MPa)]
+        bresilien = c.type_essai == "bresilien"
+        titre = ["%s : %s" % (self.nom, "TRACTION DIRECTE" if traction else "BRESILIEN, D = %g mm" % (e.W * 1e3)
+                              if bresilien else "TRIAXIAL 2D, sigma3 = %g MPa" % c.sigma3_MPa)]
         titre += [l for l in self.description.strip().splitlines() if l.strip()]
         w = cfg.Ecrivain(titre)
 
         w.cle("mode", "fdem")
-        w.cle("scenario", "tension")
-        w.cle("loading", "grips" if traction else "platens")
+        if bresilien:
+            w.cle("scenario", "brazilian")
+            w.cle("geometry", "disc")
+        else:
+            w.cle("scenario", "tension")
+            w.cle("loading", "grips" if traction else "platens")
         w.cle("T", self.sorties.T)
         w.cle("frames", self.sorties.frames)
-        if self.sorties.deformations_historique:
+        # historyStrains lit les quatre faces d'une BOÎTE : sur un disque le solveur s'arrête
+        # en erreur (« une face de la boite n a aucun noeud », FdemSolver.cpp:5011).
+        if self.sorties.deformations_historique and not bresilien:
             w.cle("historyStrains", True)
         if self.sorties.champs_deformation:
             w.cle("writeStrainFields", True, "exige un g1 compile apres le 2026-10-02 (spec 007 J3)")
@@ -249,7 +267,8 @@ class Essai:
             w.cle("grainJitter", m.jitter)
             w.cle("lloydIters", m.lloyd)
             w.cle("grainMesh", "delaunay")
-            w.cle("grainMeshRandom", True, "OBLIGATOIRE en GBM (DOC regle 8.4)")
+            if m.aleatoire:
+                w.cle("grainMeshRandom", True, "OBLIGATOIRE en GBM (DOC regle 8.4)")
             w.cle("grainElemSize", m.taille_element)
             if m.dispersion_tailles:
                 w.cle("grainSizeSpread", m.dispersion_tailles)
@@ -318,8 +337,22 @@ class Essai:
         w.cle("contactMu", s.mu_contact)
         w.cle("dampingLocal", s.amortissement_local)
         w.cle("jointXi", s.xi_joint)
+        if s.penalite_joint is not None:
+            w.cle("jointPenaltyFactor", s.penalite_joint, "INERTE en insertion adaptative (avertissement du solveur)")
 
-        if traction:
+        if bresilien:
+            w.section("bresilien : disque entre deux plateaux")
+            w.cle("brazilianLoading", "platens")
+            w.cle("discMesh", "native")
+            w.cle("discFlattenDeg", c.aplatissement_deg, "angle TOTAL du meplat, correction k de Wang")
+            w.cle("platenHalfWidth", c.demi_largeur_plateau)
+            w.cle("pullV", abs(c.vitesse), "fermeture TOTALE des deux plateaux")
+            w.cle("pullRamp", c.rampe_axiale)
+            w.cle("elasticGaugeLo", c.jauge_elastique[0])
+            w.cle("elasticGaugeHi", c.jauge_elastique[1])
+            w.cle("brazilianStopAfterPeak", c.arret_apres_pic)
+            w.cle("brazilianStopDelay", c.delai_arret_bresilien)
+        elif traction:
             w.section("traction directe")
             w.cle("pullV", abs(c.vitesse), "positif = on tire")
             w.cle("pullRamp", c.rampe_axiale)

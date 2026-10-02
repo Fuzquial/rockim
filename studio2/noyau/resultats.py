@@ -88,8 +88,23 @@ def deformation_axiale(h):
     return np.full_like(h["t"], np.nan)
 
 
+def est_bresilien(h):
+    return h is not None and "sigmaT" in h
+
+
+def etiquettes(h):
+    """Titres des axes de la courbe principale de l'essai."""
+    if est_bresilien(h):
+        return "fermeture des plateaux (mm)", "σt = 2P/(πDt) (MPa)"
+    return "ε axial (%)", "q (MPa)"
+
+
 def courbe(h, delai=0.0):
-    """(epsilon axial en %, q en MPa) selon la convention du dépôt."""
+    """Courbe principale de l'essai. Triaxial et traction : (epsilon axial en %, q en MPa),
+    convention du dépôt. Brésilien : (fermeture des plateaux en mm, sigma_t en MPa), la
+    fermeture étant la course du plateau supérieur (`drive`) depuis le départ."""
+    if est_bresilien(h):
+        return 1e3 * np.abs(h["drive"] - h["drive"][0]), h["sigmaT"] / 1e6
     sig = np.abs(h["sigma"])
     s0 = np.interp(delai, h["t"], sig) if delai > 0 else 0.0
     return 100.0 * deformation_axiale(h), (sig - s0) / 1e6
@@ -168,6 +183,7 @@ def convertir(run, cache):
                 champs=champs, bornes=bornes,
                 bbox=[float(p[:, 0].min()), float(p[:, 1].min()), float(p[:, 0].max()), float(p[:, 1].max())],
                 sigma3_MPa=float(d.get("confiningPressure", "0").split()[0]) / 1e6,
+                axes=list(etiquettes(h)),
                 conversion_s=round(time.perf_counter() - t0, 2))
     with open(os.path.join(cache, "meta.json"), "w", encoding="utf-8") as f:
         json.dump(meta, f, indent=1)

@@ -18,7 +18,7 @@ import re
 
 import numpy as np
 
-from .resultats import deformation_axiale, delai_consolidation, lire_historique
+from .resultats import courbe, deformation_axiale, delai_consolidation, est_bresilien, lire_historique
 
 
 def mesures(h, delai=0.0):
@@ -136,9 +136,75 @@ def diagnostics(chemin_log):
     return d
 
 
+def mesures_bresilien(h):
+    """Brésilien : sigma_t = 2P/(pi D t) écrit par le solveur à chaque ligne d'historique.
+    Le pic brut, le pic filtré (médiane glissante, comme en triaxial), la force et la
+    fermeture des plateaux au pic."""
+    if h is None or len(h["t"]) == 0:
+        return None
+    ferm, st = courbe(h)
+    st = st * 1e6
+    i = int(np.argmax(st))
+    sf = mediane_glissante(st, DEMI_FENETRE)
+    j = int(np.argmax(sf))
+
+    def fin(c):
+        return int(h[c][-1]) if c in h else 0
+
+    return dict(essai="bresilien", sigma_t_pic_MPa=st[i] / 1e6, sigma_t_pic_filtre_MPa=sf[j] / 1e6,
+                P_pic_N=float(np.abs(h["P"][i])), fermeture_pic_mm=float(ferm[i]), t_pic_ms=1e3 * h["t"][i],
+                pic_verrouille=fin("peakLocked"), n_rompus=fin("nBroken"), n_fragments=fin("nFrag"),
+                t_fin_ms=1e3 * h["t"][-1])
+
+
+def diagnostics_bresilien(chemin_log):
+    """Les verdicts du banc brésilien, imprimés par le solveur en fin de run
+    (FdemSolver.cpp, résumé « brazilian ») :
+      jauge élastique de BANDE : sigma_xx au centre / sigma_t sur sigma_t dans [0,3 ; 0,8] ft,
+        attendue à 1 (solution fermée du disque), PASS dans [0,85 ; 1,25] ;
+      diamétralité : part des joints rompus près de l'axe de charge ;
+      sigma_t au pic et son rapport à ft."""
+    if not os.path.exists(chemin_log):
+        return {}
+    txt = open(chemin_log, encoding="utf-8", errors="replace").read()
+    d = {}
+    m = re.search(r"-> ratio ([-\d.eE+]+)\s+\[(PASS|FAIL)\]\s+\(band 0\.85-1\.25; mean sigma_yy = ([-\d.eE+]+) MPa, "
+                  r"sigma_yy/sigma_xx = ([-\d.eE+]+)\)", txt)
+    if m:
+        d.update(jauge_elastique=float(m.group(1)), jauge_elastique_verdict=m.group(2),
+                 syy_sur_sxx=float(m.group(4)))
+    elif "ELASTIC-BAND gauge: NOT measured" in txt:
+        d["jauge_elastique_verdict"] = "non mesurée"
+    m = re.search(r"sigma_t = 2P/\(pi D t\) = ([-\d.eE+]+) MPa", txt)
+    if m:
+        d["sigma_t_solveur_MPa"] = float(m.group(1))
+    m = re.search(r"ratio to the bulk ft \(([-\d.eE+]+) MPa\) = ([-\d.eE+]+)", txt)
+    if m:
+        d["sigma_t_sur_ft"] = float(m.group(2))
+    m = re.search(r"\(([\d.]+) % diametral\)", txt)
+    if m:
+        d["diametral_pct"] = float(m.group(1))
+    m = re.search(r"peak force P = ([-\d.eE+]+) N", txt)
+    if m:
+        d["P_pic_solveur_N"] = float(m.group(1))
+    d["pic_verrouille_solveur"] = "peak LOCKED" in txt
+    m = re.search(r"early stop at t = [-\d.eE+]+ s \((\d+) / (\d+) steps\)", txt)
+    if m:
+        d["pas_effectues"], d["pas_plafond"] = int(m.group(1)), int(m.group(2))
+    return d
+
+
 def synthese(dossier_run, chemin_log=None):
     """Toutes les grandeurs d'un run, prêtes pour le tableau comparatif."""
-    m = mesures(lire_historique(dossier_run), delai_consolidation(dossier_run))
+    h = lire_historique(dossier_run)
+    if est_bresilien(h):
+        m = mesures_bresilien(h)
+        m.update(joints(os.path.join(dossier_run, "fdem_final_joints.csv")))
+        if chemin_log:
+            m.update(diagnostics(chemin_log))
+            m.update(diagnostics_bresilien(chemin_log))
+        return m
+    m = mesures(h, delai_consolidation(dossier_run))
     if m is None:
         return None
     m.update(joints(os.path.join(dossier_run, "fdem_final_joints.csv")))

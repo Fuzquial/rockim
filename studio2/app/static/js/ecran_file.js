@@ -105,13 +105,14 @@ async function detail(t) {
   R.querySelector("#f-etat").textContent = `${(LIB[t.etat] || [, t.etat])[1]} · ${fr(100 * t.avancement, 0)} %`;
   try {
     const h = await api(`/api/runs/${encodeURIComponent("espace~" + t.nom)}/historique`);
+    courbe.titres(...h.axes);
     courbe.definir(h.eps.length ? [{ x: h.eps, y: h.q, couleur: css("--accent"), nom: t.nom }] : []);
     const n = h.q.length - 1;
     const pic = n >= 0 ? Math.max(...h.q.filter((v) => v != null)) : null;
     R.querySelector("#f-chiffres").innerHTML = `
       <div><small>t simulé</small><b>${n >= 0 ? fr(h.t[n], 2) + " ms" : "—"}</b></div>
-      <div><small>q actuel</small><b>${n >= 0 ? fr(h.q[n], 1) + " MPa" : "—"}</b></div>
-      <div><small>q max (brut)</small><b>${pic != null ? fr(pic, 1) + " MPa" : "—"}</b></div>
+      <div><small>${h.bresilien ? "σt" : "q"} actuel</small><b>${n >= 0 ? fr(h.q[n], 1) + " MPa" : "—"}</b></div>
+      <div><small>${h.bresilien ? "σt" : "q"} max (brut)</small><b>${pic != null ? fr(pic, 1) + " MPa" : "—"}</b></div>
       <div><small>Lignes d'historique</small><b>${(n + 1).toLocaleString("fr-FR")}</b></div>`;
   } catch (e) { courbe.definir([]); }
   const j = await api(`/api/file/${t.id}/journal?n=80`);

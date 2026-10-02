@@ -73,3 +73,23 @@ def test_mu_residuel_par_defaut_vaut_le_frottement_de_pic():
     e.discontinuites.fraction_diffuse = 0.05
     assert "mu_residuel" not in codes(e)
     assert e.mu_residuel() == round(__import__("math").tan(__import__("math").radians(13.4)), 4)
+
+
+def bresilien():
+    from noyau.formulaire import essai_depuis_choix
+    e = essai_depuis_choix({"type_essai": "bresilien"})
+    assert erreurs(verifier(e)) == []
+    return e
+
+
+@pytest.mark.parametrize("code,faute", [
+    ("disque", lambda e: setattr(e.eprouvette, "H", 0.06)),
+    ("bresilien_gmsh", lambda e: (setattr(e.maillage, "type", "gmsh"), setattr(e.maillage, "fichier_msh", "x.msh"))),
+    ("aplatissement", lambda e: setattr(e.chargement, "aplatissement_deg", 95.0)),
+    ("plateau", lambda e: setattr(e.chargement, "demi_largeur_plateau", 0.05)),
+    ("jauge_elastique", lambda e: setattr(e.chargement, "jauge_elastique", (0.8, 0.3))),
+])
+def test_regles_du_bresilien(code, faute):
+    e = bresilien()
+    faute(e)
+    assert code in codes(e)

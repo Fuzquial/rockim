@@ -62,6 +62,17 @@ def elements_par_grain(taille_grain, taille_element):
 K_ELEMENTS_PAR_GRAIN = 12995.0 / 367.0 / (0.003 / 0.0007) ** 2
 
 
+def aire(essai):
+    """Aire de l'éprouvette : rectangle W x H, ou disque à méplats du brésilien. Chaque méplat
+    retire un segment circulaire d'angle theta = discFlattenDeg (angle TOTAL) :
+    A = R^2 (pi - theta + sin theta)."""
+    e, c = essai.eprouvette, essai.chargement
+    if c.type_essai == "bresilien":
+        R, th = e.W / 2, math.radians(c.aplatissement_deg)
+        return R * R * (math.pi - th + math.sin(th))
+    return e.W * e.H
+
+
 def nombre_elements(W, H, taille_element):
     """Triangles de Delaunay de côté h sur W x H. Contrôle F2 : 12 995 mesurés,
     W H / (0,41 h²) = 12 990 avec le coefficient 0,407 mesuré (aire moyenne)."""

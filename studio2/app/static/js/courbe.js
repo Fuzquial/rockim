@@ -15,6 +15,8 @@ export class Courbe {
     new ResizeObserver(() => this.dessiner()).observe(canvas);
   }
 
+  titres(x, y) { if (x) this.titreX = x; if (y) this.titreY = y; }
+
   // series : [{ x, y, couleur, nom, epais, jusqua }] ; marqueur : { serie, index }
   definir(series, marqueur = null) { this.series = series; this.marqueur = marqueur; this.dessiner(); }
 
