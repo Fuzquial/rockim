@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rockim</title>
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+<header class="barre">
+  <div class="marque">ROCKIM<span>Triaxial 2D · g1</span></div>
+  <nav class="onglets" id="onglets">
+    <button data-e="essai">Essai</button>
+    <button data-e="maillage">Maillage</button>
+    <button data-e="loi">Loi des joints</button>
+    <button data-e="file">File<span class="n" id="resumeFile"></span></button>
+    <button data-e="resultats">Résultats</button>
+  </nav>
+  <div class="etat-global"><span class="point" id="pointEtat"></span><span id="texteEtat">connexion…</span></div>
+</header>
+<div id="ecrans" style="min-height:0;display:grid"></div>
+<script type="module" src="js/main.js"></script>
+</body>
+</html>
