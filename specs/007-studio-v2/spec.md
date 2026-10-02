@@ -122,6 +122,29 @@ solveur séparé (géométrie de fente dans Gmsh, ou ouverture initiale des join
 | R7 | Tableau de synthèse de la série : σ₃ atteint, q pic, E sécant, ε au pic, chute post-pic, part intergranulaire (repris de `depouille.py`) |
 | R8 | Export figure PDF vectoriel, Computer Modern, fissures en rendu éléments (règle 5 du CLAUDE.md) |
 
+### 2.6 Modeler la loi des joints (ajout du 2026-10-02, demande de Fernando)
+
+Fernando veut « moduler la loi des joints par cliquer-glisser, varier le pic ou la courbe de
+montée, pour voir comment se comporte le matériau ». Tout est déjà réglable dans g1 ; il manque
+de le voir et de le toucher.
+
+| # | Exigence | Traduction g1 |
+|---|---|---|
+| J1 | Courbe σ(δ) du mode I, **calculée avec les formules du solveur** (`setJointLengths`, `YanSoftening.hpp`) | — |
+| J2 | Poignée du pic : verticale = `ft` ; horizontale = raideur de montée | `ft` ; `insertionPenaltyFactor` (p = k E / h) |
+| J3 | Poignée de fin d'adoucissement : l'aire sous la courbe = Gf | `Gf` |
+| J4 | Poignée de forme sur l'adoucissement | `jointSoftening = yan`, `yanC` (a, b fixes, champs avancés pour a, b) |
+| J5 | Montée linéaire ou parabolique ; adoucissement linéaire ou de Yan | `jointElastic`, `jointSoftening` |
+| J6 | Courbe τ(s) du mode II pour une contrainte normale choisie : pic c + tan φ σn, aire GfII | `cohesion`, `frictionDeg`, `gfShearFactor` |
+| J7 | Courbe de référence en fantôme (le préréglage), lectures chiffrées : δe, δF, I, Gf, longueur de zone cohésive l = E Gf / ft² et son rapport à la taille d'élément | — |
+| J8 | Clés modifiées listées, écrites dans le deck de l'essai | — |
+| J9 | **Essai éclair** : traction, compression simple ou triaxial sur le GBM de 10 grains (banc de calibration du 2026-09-07, 9 s par évaluation sous g0, 3,5 % d'écart sur σt/ft avec 255 grains), courbes successives superposées | run g1, lancé par un clic de l'utilisateur |
+
+La montée est 50 à 500 fois plus courte que l'adoucissement (fragile : δe = 15 nm pour une plage
+de 7,6 µm) : elle s'affiche dans une loupe à part. J1-J8 ne demandent aucun calcul et réagissent
+instantanément. J9 demande une mesure de coût sous g1 (insertion adaptative), soumise au GO de
+Fernando, avant de fixer sa taille et sa durée.
+
 ---
 
 ## 3. Exigences non fonctionnelles, mesurables

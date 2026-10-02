@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rockim · Loi des joints</title>
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="maquettes.css">
+<style>
+  #e-loi { display: grid; grid-template-columns: 1fr 380px; grid-template-rows: minmax(0, 1.35fr) minmax(0, 1fr); padding: 14px 20px; gap: 14px; min-height: 0; }
+  .trace { position: relative; overflow: hidden; }
+  .trace canvas.principal { position: absolute; top: 36px; left: 8px; right: 8px; bottom: 8px; width: calc(100% - 16px); height: calc(100% - 44px); cursor: default; }
+  .loupe { position: absolute; top: 44px; right: 18px; width: 250px; height: 170px; background: var(--bg1); border: 1px solid var(--border-fort); border-radius: var(--r-ctrl); }
+  .loupe canvas { width: 100%; height: 100%; display: block; }
+  .loupe .t { position: absolute; top: 4px; left: 8px; font-size: 10px; letter-spacing: 1px; text-transform: uppercase; color: var(--texte3); pointer-events: none; }
+  .bas { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; min-height: 0; }
+  #e-loi > .trace { grid-column: 1; grid-row: 1; }
+  #e-loi > .colonne-droite { grid-column: 2; grid-row: 1 / 3; }
+  #e-loi > .bas { grid-column: 1; grid-row: 2; }
+  .lectures td:last-child { font-family: var(--mono); }
+  .curseur-sn { display: flex; align-items: center; gap: 10px; padding: 0 12px; position: absolute; top: 8px; right: 10px; font-size: 12px; color: var(--texte2); }
+  .curseur-sn input { width: 140px; }
+  .cles { margin: 6px 12px 12px; font: 11px/1.6 var(--mono); color: var(--texte2); }
+  .cles b { color: var(--texte); font-weight: 400; }
+  .vide { position: absolute; inset: 36px 12px 12px; display: grid; place-items: center; text-align: center; color: var(--texte3); font-size: 12px; border: 1px dashed var(--border-fort); border-radius: var(--r-ctrl); }
+  .poignee-aide { position: absolute; left: 66px; top: 40px; font-size: 11px; color: var(--texte3); pointer-events: none; }
+</style>
+</head>
+<body>
+<header class="barre">
+  <div class="marque">ROCKIM<span>Triaxial 2D · g1</span></div>
+  <nav class="onglets">
+    <button>Essai</button><button>Maillage</button><button class="actif">Loi des joints</button><button>File</button><button>Résultats</button>
+  </nav>
+  <div class="etat-global"><span class="point"></span>calcul instantané, sans solveur</div>
+</header>
+
+<main id="e-loi">
+  <section class="carte trace">
+    <div class="carte-tete"><span class="titre">Mode I : contrainte normale en fonction de l'ouverture</span><span class="overline">fantôme = préréglage</span></div>
+    <canvas class="principal" id="cvI"></canvas>
+    <div class="loupe"><span class="t">Montée · loupe</span><canvas id="cvLoupe"></canvas></div>
+    <div class="poignee-aide">● pic : hauteur = ft · ● fin : aire = Gf · ◆ forme de l'adoucissement · loupe : raideur de montée</div>
+  </section>
+
+  <div class="colonne-droite">
+    <section class="carte">
+      <div class="carte-tete"><span class="titre">Réglages</span><button class="bouton" id="btnReset" style="height:26px;font-size:11px;padding:0 10px">Revenir au préréglage</button></div>
+      <div class="corps-carte">
+        <div class="ligne"><label>Préréglage</label><select id="selPreset"><option value="fragile">Red Bohus, fragile (Yan 2023)</option><option value="bohus">Red Bohus, calibré</option></select></div>
+        <div class="ligne"><label>Montée</label><div class="segments plein" id="segMontee"><button data-v="lin" class="actif">Linéaire</button><button data-v="para">Parabolique</button></div></div>
+        <div class="ligne"><label>Adoucissement</label><div class="segments plein" id="segAdou"><button data-v="lin">Linéaire</button><button data-v="yan" class="actif">Yan</button></div></div>
+        <div class="ligne"><label>ft</label><div class="nombre"><input id="inFt"><span>MPa</span></div></div>
+        <div class="ligne"><label>Gf</label><div class="nombre"><input id="inGf"><span>J/m²</span></div></div>
+        <div class="ligne"><label>Pénalité p</label><div class="nombre"><input id="inK"><span>× E / h</span></div></div>
+        <div class="ligne"><label>Forme (yanC)</label><div class="nombre"><input id="inC"><span>—</span></div></div>
+        <div class="ligne"><label>Cohésion · φ</label><div class="deux"><div class="nombre"><input id="inCoh"><span>MPa</span></div><div class="nombre"><input id="inPhi"><span>°</span></div></div></div>
+        <div class="ligne"><label>GfII / GfI</label><div class="nombre"><input id="inGfs"><span>—</span></div></div>
+      </div>
+    </section>
+    <section class="carte">
+      <div class="carte-tete"><span class="titre">Ce que ça change</span></div>
+      <table class="tab-phases lectures" id="tabLect" style="margin:8px 0 4px"></table>
+    </section>
+    <section class="carte">
+      <div class="carte-tete"><span class="titre">Clés du deck</span><span class="overline">écart au préréglage</span></div>
+      <div class="cles" id="cles"></div>
+    </section>
+  </div>
+
+  <div class="bas">
+    <section class="carte trace">
+      <div class="carte-tete"><span class="titre">Mode II : cisaillement en fonction du glissement</span></div>
+      <div class="curseur-sn">σn <input type="range" id="inSn" min="0" max="60" value="20"><span class="mono2" id="lblSn">20 MPa</span></div>
+      <canvas class="principal" id="cvII"></canvas>
+    </section>
+    <section class="carte trace">
+      <div class="carte-tete"><span class="titre">Essai éclair : GBM de 10 grains</span><span class="overline">≈ 9 s sous g0, à mesurer sous g1</span></div>
+      <div style="display:flex;gap:8px;padding:8px 12px 0">
+        <button class="bouton" style="flex:1">Traction</button><button class="bouton" style="flex:1">Compression simple</button><button class="bouton primaire" style="flex:1">Triaxial 20 MPa</button>
+      </div>
+      <div class="vide" style="top:84px">Chaque clic lancerait g1 sur 20 × 40 mm, 10 grains,<br>et superposerait la courbe σ-ε à celles des réglages précédents.<br><br>Durée sous g1 à mesurer avant de l'activer (GO).</div>
+    </section>
+  </div>
+</main>
+<div class="note-maquette">MAQUETTE J4 · loi des joints · formules de setJointLengths et YanSoftening.hpp</div>
+<script src="loi_joints.js"></script>
+</body>
+</html>
