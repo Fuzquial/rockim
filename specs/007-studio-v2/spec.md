@@ -413,6 +413,16 @@ historiques ; la cause n'est pas établie. Enquête proposée (solveur, hors int
 recompiler la source du 11/08 et rejouer le même deck pour séparer régression et deck.
 Capture : [j4/app_resultats_bresilien.png](j4/app_resultats_bresilien.png).
 
+**2026-10-02 (enquête, GO de Fernando).** Source du 11/08 (commit 04a222f) extraite dans
+`FDEM/rockim_g1_0811` (worktree détaché), compilée (`rockim_0811.exe`), même deck, 4 fils :
+**résultats identiques à g1 au dernier chiffre** (jauge 0,991762, σt = 5,30023 MPa, arrêt au pas
+166 623 / 172 585, 8 194 éléments, 63 grains). Pas de régression entre août et g1. Les valeurs
+notées dans le deck viennent d'un AUTRE maillage : leur plafond de 180 471 pas suppose dt =
+6,10e-9 s contre 6,37e-9 ici, cohérent avec la non-portabilité connue de la tessellation (CDP-06).
+Reste ouvert : sur ce maillage-ci, l'insertion ne se déclenche pas au centre du disque avant 2,6 ft
+de traction. Test suivant proposé (GO) : même deck avec grainMeshRandom = true, puis une autre
+graine, pour savoir si les 4 ft tiennent au maillage.
+
 **Non vérifié** : aucun aperçu ni essai éclair n'a encore été lancé par l'interface sur g1 (les
 seuls runs réels du jour l'ont été par scripts, avec GO) ; la survie d'un calcul g1 à la fermeture
 du serveur ; l'aspect en thème clair. La forme du mode II est celle du point matériel, pas d'un
