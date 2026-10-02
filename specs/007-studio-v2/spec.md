@@ -244,3 +244,43 @@ sorties, lancement, campagne `etude_triax_hetero`). Cas de référence mesuré :
 mesurés sur F7 : voir [j1/RESULTATS_J1.md](j1/RESULTATS_J1.md). C tient N1-N5 (démarrage 0,45 s,
 frame 16 ms, 60 i/s) ; B rate N1 (2,7 s) et N8 (environnement de 715 Mo). Recommandation C, en
 attente de la décision de Fernando.
+
+**2026-10-02 (décision).** Fernando retient C, l'application web locale. J2 lancé.
+
+Précision sur le critère de J2 « 86 decks identiques » : l'identité est **sémantique**, au sens
+du lecteur du solveur (`Config::load` : texte après `#` ignoré, coupure au premier `=`, la
+dernière occurrence d'une clé l'emporte). Mêmes clés, mêmes valeurs numériques ; les commentaires
+et l'ordre peuvent différer. Une identité au caractère près n'aurait aucun sens physique et
+obligerait le noyau à recopier les notes propres à la campagne.
+
+Constat d'inventaire utile à l'interface : dans la campagne, le témoin « homogène » n'est pas
+un maillage Gmsh mais une tessellation de Voronoï à une seule phase, de même graine que le GBM.
+Le choix présenté à l'utilisateur est donc à deux niveaux : maillage (Voronoï ou Gmsh), puis
+nombre de phases (une ou plusieurs, Voronoï seulement).
+
+**2026-10-02 (J2 livré).** Noyau sans interface dans `studio2/noyau/` (essai, materiaux,
+geometrie, validation, maillage, file, resultats, depouillement), 267 tests en 27 s
+(`python -m pytest studio2/tests`). Verdicts :
+
+- **Decks** : les 81 runs de MATRICE.csv sont réécrits à l'identique sémantique, contre les decks
+  sur disque ET contre `gen_decks.deck()` en mémoire. Le dossier `decks/` en compte 86 : les 5 de
+  plus (DIAG_gf7, DIAG_phi23, GF15, GF25, GF40) sont des diagnostics écrits à la main, hors
+  générateur. Contrôle falsifiant : un écart de 0,01 % sur E est détecté.
+- **Dépouillement** : identique à `depouille.py` (mesures, joints, diagnostics) sur les 20 runs de
+  `out/` qui ont un historique. Il n'existait aucun `RESULTATS_*.csv` : l'oracle est le script
+  lui-même, appelé en mémoire.
+- **Validation** : 17 règles, chacune déclenchée par un cas fautif ; la campagne passe sans
+  erreur ni alerte. Le nombre d'éléments par grain est estimé avec le coefficient mesuré sur F2
+  (367 grains, 12 995 éléments, soit 35,4) ; la formule théorique (33,3) aurait fait échouer la
+  règle 35-90 sur une campagne qui la respecte.
+- **File** : testée avec un faux solveur (parallélisme borné, ordre, échec, déjà fait, relance
+  sans suppression, arrêt, rattachement par PID après fermeture). **Non vérifié** : la survie
+  d'un vrai calcul g1 à la fermeture de l'interface, et tout lancement réel de g1 (règle :
+  chaque lancement est validé par Fernando, même un banc court).
+- **Maillage** : Gmsh `box2d` par le script existant (2,1 s, reproductible octet à octet à graine
+  égale). L'aperçu Voronoï passe par un run tronqué (T = 2 µs, une frame) dans la file ;
+  l'option solveur S3 reste souhaitable.
+- **Cache** : `resultats.convertir` produit un cache identique octet à octet à celui de J1.
+
+Hors J2, à décider : remplacer `gen_decks.py` par des appels au noyau (une seule implémentation),
+une fois l'interface en service.
