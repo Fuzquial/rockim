@@ -388,6 +388,31 @@ Verdicts par lot :
   `tests/donnees/yan_point_sn.cpp`) à 1e-9 près en modes I et II (σn = 0 et 20 MPa), copie
   JavaScript égale à la référence à 1e-12 (Node). Essai éclair identique aux decks validés.
 
+**2026-10-02 (brésilien et banc, GO de Fernando).** Essai brésilien ajouté (noyau, formulaire,
+validation, dépouillement, écrans). Préréglage = banc de Yan 2023 calibré, réécrit à l'identique
+de `configs_yan/bd_yan_calibre.cfg` (deck du 11/08, commit 04a222f) ; ses trois écarts aux règles
+de septembre sont signalés (pas de grainMeshRandom, ~123 éléments par grain, jointPenaltyFactor
+inerte). Garde-fou : `historyStrains` fait échouer g1 sur un disque, il n'est jamais écrit.
+
+Premier run lancé PAR L'INTERFACE (file de studio2/espace, rockim_j3.exe, 1 job x 4 fils) :
+fini, code 0, 130 s. Confronté aux mesures notées dans le deck :
+
+| | Deck (août) | g1 (j3) |
+|---|---|---|
+| jauge élastique de bande | 1,001 | 0,992 PASS ; σyy/σxx = -3,10 (théorie -3) |
+| arrêt après pic | pas 96 589 / 180 471 | pas 166 623 / 172 585 |
+| pic | t = 0,51 ms | t = 0,98 ms |
+| σt | ft + ~9 % de surcharge dynamique | 5,30 MPa = 4,1 ft (filtré 4,88) |
+
+**Verdict : l'élastique est exact, la rupture ne reproduit pas le banc.** Au dernier pas intact le
+centre porte σxx = 3,3 MPa (2,6 ft) avec 3 joints rompus : l'insertion ne se déclenche pas sous
+l'état biaxial du centre (σyy ≈ -3 σxx), alors qu'en traction directe g1 rompt à 1,06 ft (essai
+éclair). La courbe oscille fortement dès le début (dampingLocal = 0,1). Les nouvelles clés
+d'insertion de g1 (insertionCriterion, facetAverage, insertionHoldSteps) ont des défauts
+historiques ; la cause n'est pas établie. Enquête proposée (solveur, hors interface, GO requis) :
+recompiler la source du 11/08 et rejouer le même deck pour séparer régression et deck.
+Capture : [j4/app_resultats_bresilien.png](j4/app_resultats_bresilien.png).
+
 **Non vérifié** : aucun aperçu ni essai éclair n'a encore été lancé par l'interface sur g1 (les
 seuls runs réels du jour l'ont été par scripts, avec GO) ; la survie d'un calcul g1 à la fermeture
 du serveur ; l'aspect en thème clair. La forme du mode II est celle du point matériel, pas d'un
