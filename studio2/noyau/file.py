@@ -180,8 +180,9 @@ class File:
         self.procs[t["id"]], self.journaux[t["id"]] = p, log
         t.update(etat="en_cours", pid=p.pid, debut=time.time())
 
-    def pas(self):
-        """Récolte les runs terminés et lance les suivants. Rend la liste des changements."""
+    def pas(self, lancer=True):
+        """Récolte les runs terminés et lance les suivants (sauf lancer=False : file
+        suspendue, les runs en cours continuent). Rend la liste des changements."""
         changes = []
         for t in self.en_cours():
             p = self.procs.get(t["id"])
@@ -196,7 +197,7 @@ class File:
             else:
                 continue
             changes.append(t["id"])
-        for t in self.travaux:
+        for t in self.travaux if lancer else []:
             if len(self.en_cours()) >= self.jobs:
                 break
             if t["etat"] == "en_attente":

@@ -100,7 +100,7 @@ async function ouvrirDetail(id) {
       <div class="incrust haut-gauche" id="d-info"></div>
       <div class="echelle"><div class="echelle-titre" id="d-et"></div><div class="echelle-corps"><div class="echelle-barre" id="d-eb"></div><div class="echelle-ticks" id="d-tk"></div></div></div>
       <div class="incrust bas-gauche aide">molette : zoom · glisser : déplacer · double-clic : recadrer</div>
-      <div class="attente" id="d-attente">Préparation de l'affichage…</div></section>
+      <div class="voile-attente" id="d-attente">Préparation de l'affichage…</div></section>
     <div class="colonne-detail">
       <section class="carte courbe"><div class="carte-tete"><span class="titre">q en fonction de ε axial</span><span class="overline">clic : aller à la frame</span></div>
         <div class="courbe-zone"><canvas id="d-courbe"></canvas></div></section>

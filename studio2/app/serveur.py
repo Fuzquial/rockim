@@ -38,6 +38,7 @@ from noyau.file import ETATS_FINAUX, File                             # noqa: E4
 
 REGLAGES_DEFAUT = {
     "exe": "rockim_j3.exe",
+    "pause": False,
     "jobs": 4,
     "fils": 4,
     "bibliotheques": [{"nom": "etude_triax_hetero",
@@ -74,7 +75,7 @@ class Studio:
 
     def sauver_reglages(self, nouveaux):
         with self.verrou:
-            for k in ("exe", "jobs", "fils", "bibliotheques"):
+            for k in ("exe", "jobs", "fils", "bibliotheques", "pause"):
                 if k in nouveaux:
                     self.reglages[k] = nouveaux[k]
             json.dump(self.reglages, open(self.chemin_reglages, "w", encoding="utf-8"), indent=1)
@@ -91,7 +92,7 @@ class Studio:
         while not self.arret.is_set():
             try:
                 with self.verrou:
-                    self.file.pas()
+                    self.file.pas(lancer=not self.reglages.get("pause"))
             except Exception:
                 traceback.print_exc()
             self.arret.wait(self.periode)
@@ -191,7 +192,7 @@ class Studio:
                 d["lot"] = t.get("lot")
                 out.append(d)
             return {"travaux": out, "jobs": self.file.jobs, "fils": self.file.fils,
-                    "exe": os.path.basename(self.file.commande[-1])}
+                    "exe": os.path.basename(self.file.commande[-1]), "pause": bool(self.reglages.get("pause"))}
 
     def action_file(self, ident, action):
         with self.verrou:
@@ -383,8 +384,11 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--espace", default=os.path.join(STUDIO2, "espace"))
     ap.add_argument("--port", type=int, default=8770)
+    ap.add_argument("--faux-solveur", action="store_true",
+                    help="démonstration et tests : la file lance tests/faux_rockim.py au lieu de g1")
     a = ap.parse_args()
-    studio, serveur = demarrer(a.espace, a.port)
+    faux = [sys.executable, os.path.join(STUDIO2, "tests", "faux_rockim.py")] if a.faux_solveur else None
+    studio, serveur = demarrer(a.espace, a.port, commande=faux)
     print("Rockim : http://localhost:%d  (espace %s)" % (a.port, studio.espace), flush=True)
     try:
         serveur.serve_forever()

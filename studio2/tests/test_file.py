@@ -126,3 +126,12 @@ def test_retirer_et_deplacer(tmp_path):
     assert [t["nom"] for t in File(tmp_path, FAUX).travaux] == ["c", "b"]
     with pytest.raises(ValueError):
         f.ajouter(essai("b"))                            # doublon en attente refusé
+
+
+def test_suspension_des_lancements(tmp_path):
+    f = File(tmp_path, FAUX, jobs=2)
+    a, b = f.ajouter(essai("s1")), f.ajouter(essai("s2"))
+    f.pas(lancer=False)
+    assert (a["etat"], b["etat"]) == ("en_attente", "en_attente")
+    f.attendre(delai=30)
+    assert (a["etat"], b["etat"]) == ("fini", "fini")
