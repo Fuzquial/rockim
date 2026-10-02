@@ -117,3 +117,13 @@ def test_ordre_et_retrait(api, monkeypatch):
 
 def test_page_d_accueil(api):
     assert b"<!doctype html>" in api("/").lower()
+
+
+def test_construire_depuis_les_choix(api):
+    f = api("/api/formulaire")
+    assert f["defaut"]["materiau"] == "fragile" and len(f["niveaux"]["bohus"]["phases"]) == 3
+    r = api("/api/essai/construire", corps={"nom": "x", "phases": "trois", "diffus": True})
+    assert r["essai"]["discontinuites"]["fraction_diffuse"] == 0.05
+    assert "phases = quartz feldspar biotite" in r["deck"]
+    assert r["estimation"]["grains"] == 367 and r["estimation"]["duree_max_s"] > 0
+    assert not [a for a in r["avis"] if a["niveau"] == "erreur"]

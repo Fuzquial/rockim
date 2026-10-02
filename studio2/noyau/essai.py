@@ -139,6 +139,12 @@ class Schema:
     mu_contact: float = 0.1
     amortissement_local: float = 0.7
     xi_joint: float = 0.0
+    # Forme de la loi des joints (éditeur, spec 007 §2.6). Écrites seulement hors défaut,
+    # pour que les decks existants restent identiques.
+    montee: str = "linear"                 # jointElastic : linear | parabolic
+    yan_a: float = 0.63
+    yan_b: float = 1.8
+    yan_c: float = 6.0
 
 
 @dc.dataclass
@@ -302,6 +308,12 @@ class Essai:
         w.section("schema numerique")
         w.cle("insertion", s.insertion)
         w.cle("jointSoftening", s.adoucissement)
+        if s.adoucissement == "yan":
+            for cle, v, defaut in (("yanA", s.yan_a, 0.63), ("yanB", s.yan_b, 1.8), ("yanC", s.yan_c, 6.0)):
+                if v != defaut:
+                    w.cle(cle, v)
+        if s.montee != "linear":
+            w.cle("jointElastic", s.montee, "montee de Guo (eq. 2.31), exige jointSoftening = yan")
         w.cle("insertionPenaltyFactor", s.penalite_insertion)
         w.cle("contactMu", s.mu_contact)
         w.cle("dampingLocal", s.amortissement_local)

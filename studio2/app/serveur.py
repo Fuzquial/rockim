@@ -32,7 +32,7 @@ STUDIO2 = os.path.dirname(ICI)
 G1 = os.path.dirname(STUDIO2)
 sys.path.insert(0, STUDIO2)
 
-from noyau import depouillement, maillage, resultats, validation   # noqa: E402
+from noyau import depouillement, formulaire, maillage, materiaux, resultats, validation   # noqa: E402
 from noyau.essai import Essai                                         # noqa: E402
 from noyau.file import ETATS_FINAUX, File                             # noqa: E402
 
@@ -225,6 +225,24 @@ class Studio:
         est = maillage.estimation_voronoi(e) if e.maillage.type == "voronoi" else {}
         return {"avis": [a.__dict__ for a in validation.verifier(e)], "estimation": est, "deck": e.vers_cfg()}
 
+    def construire(self, choix):
+        """Choix de l'écran Essai -> essai, vérifications, estimations, deck."""
+        e = formulaire.essai_depuis_choix(choix)
+        est = maillage.estimation_voronoi(e) if e.maillage.type == "voronoi" else {}
+        cout = formulaire.estimation_cout(e, fils=int(self.reglages["fils"]))
+        return {"essai": e.vers_dict(), "avis": [a.__dict__ for a in validation.verifier(e)],
+                "estimation": dict(est, **cout), "deck": e.vers_cfg(),
+                "segments_prerompus": [list(x) for x in e.segments_prerompus()]}
+
+    def formulaire(self):
+        """Valeurs par défaut et préréglages, pour construire l'écran."""
+        niveaux = {}
+        for n in materiaux.NIVEAUX:
+            m = materiaux.materiau(n)
+            niveaux[n] = {"materiau": m.__dict__, "phases": [p.__dict__ for p in materiaux.phases(n)],
+                          "alpha": materiaux.NIVEAUX[n]["gbAlpha"]}
+        return {"defaut": formulaire.CHOIX_DEFAUT, "niveaux": niveaux}
+
     def ajouter(self, d, sigma3_liste=None, lot=None):
         e = Essai.depuis_dict(d)
         if validation.erreurs(validation.verifier(e)):
@@ -341,6 +359,8 @@ def fabrique(studio):
                         return self._json(studio.etat_cache(a[1]))
                     if a == ["file"]:
                         return self._json(studio.etat_file())
+                    if a == ["formulaire"]:
+                        return self._json(propre(studio.formulaire()))
                     if len(a) == 3 and a[0] == "file" and a[2] == "journal":
                         return self._json(studio.journal(a[1], int(q.get("n", ["200"])[0])))
                 if methode == "POST":
@@ -350,6 +370,8 @@ def fabrique(studio):
                         return self._json(studio.action_file(a[1], a[2]))
                     if a == ["reglages"]:
                         return self._json(studio.sauver_reglages(self._corps()))
+                    if a == ["essai", "construire"]:
+                        return self._json(propre(studio.construire(self._corps())))
                     if a == ["essai", "verifier"]:
                         return self._json(studio.verifier(self._corps()))
                     if a == ["essai", "ajouter"]:

@@ -53,5 +53,9 @@ async function etat() {
 etat();
 setInterval(etat, 2000);
 
-const [nom, run] = location.hash.slice(1).split("?")[0].split("/");
-ouvrir(nom || "resultats", run ? { run: decodeURIComponent(run) } : {});
+function suivreAncre() {
+  const [nom, run] = location.hash.slice(1).split("?")[0].split("/");
+  ouvrir(nom || "resultats", run ? { run: decodeURIComponent(run) } : {});
+}
+addEventListener("hashchange", suivreAncre);
+suivreAncre();

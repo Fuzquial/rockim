@@ -244,3 +244,16 @@ a.lien-run:hover, a.lien-synth:hover { color: var(--accent); text-decoration: un
 .badge.arrete { background: var(--bg3); color: var(--texte3); }
 /* l'en-tête de lot garde sa casse : « σ₃ » deviendrait « Σ₃ » en majuscules */
 .groupe-lot td { text-transform: none; letter-spacing: .3px; font-size: 11px; }
+
+/* Essai */
+#e-essai { grid-template-columns: 440px minmax(0, 1fr) 360px; }
+.bouton.petit { height: 26px; font-size: 11px; padding: 0 10px; }
+.bouton:disabled { opacity: .45; cursor: not-allowed; }
+.loi-modifiee { font-size: 11.5px; color: var(--attention); background: var(--bg1); border: 1px solid var(--border); border-radius: var(--r-ctrl); padding: 6px 8px; line-height: 1.5; }
+button.lien { background: none; border: 0; color: var(--accent); cursor: pointer; font: inherit; padding: 0 0 0 8px; }
+button.lien:hover { text-decoration: underline; }
+.message { font-size: 12px; min-height: 16px; }
+.message.ok { color: var(--ok); } .message.err { color: var(--erreur); }
+.message a { color: var(--accent); }
+input.implicite { color: var(--texte3); }
+[hidden] { display: none !important; }
