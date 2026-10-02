@@ -4,7 +4,8 @@ export const css = (n) => getComputedStyle(document.documentElement).getProperty
 
 export function fr(v, n = 1) {
   if (v === null || v === undefined || Number.isNaN(v)) return "—";
-  return Number(v).toLocaleString("fr-FR", { minimumFractionDigits: n, maximumFractionDigits: n });
+  const x = Math.abs(v) < 0.5 * 10 ** -n ? 0 : Number(v);      // pas de « -0 »
+  return x.toLocaleString("fr-FR", { minimumFractionDigits: n, maximumFractionDigits: n });
 }
 
 export async function api(chemin, corps) {

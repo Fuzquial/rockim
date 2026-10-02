@@ -31,7 +31,7 @@ export async function ouvrir(nom, params = {}) {
   }
   montes[nom].mod.activer?.(params);
   const h = "#" + nom + (params.run ? "/" + encodeURIComponent(params.run) : "");
-  if (location.hash !== h) history.replaceState(null, "", h);
+  if (location.hash.split("?")[0] !== h) history.replaceState(null, "", h);
 }
 
 document.querySelectorAll("#onglets button").forEach((b) => (b.onclick = () => ouvrir(b.dataset.e)));
@@ -53,5 +53,5 @@ async function etat() {
 etat();
 setInterval(etat, 2000);
 
-const [nom, run] = location.hash.slice(1).split("/");
+const [nom, run] = location.hash.slice(1).split("?")[0].split("/");
 ouvrir(nom || "resultats", run ? { run: decodeURIComponent(run) } : {});

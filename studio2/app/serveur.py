@@ -113,11 +113,13 @@ class Studio:
         for i, b in enumerate(self.reglages["bibliotheques"]):
             if not os.path.isdir(b["out"]):
                 continue
-            for nom in sorted(os.listdir(b["out"])):
+            for nom in sorted(os.listdir(b["out"]), key=tri_naturel):
                 d = os.path.join(b["out"], nom)
                 if nom.startswith("_") or not os.path.exists(os.path.join(d, "history.csv")):
                     continue
-                out.append(dict(id="b%d" % i + SEP + nom, nom=nom, source=b["nom"], etat="fini",
+                # Un run arrêté avant sa première ligne d'historique n'a rien à montrer.
+                vide = resultats.dernier_temps(d) is None
+                out.append(dict(id="b%d" % i + SEP + nom, nom=nom, source=b["nom"], etat="vide" if vide else "fini",
                                 dossier=d, log=os.path.join(b["logs"], nom + ".log"), sigma3_MPa=None))
         return out
 
@@ -243,6 +245,11 @@ class Studio:
                 ajoutes.append(t["id"])
             self.file._sauver()
         return {"ajoutes": ajoutes}
+
+
+def tri_naturel(nom):
+    """F2 avant F10 : les nombres sont comparés comme des nombres."""
+    return [int(x) if x.isdigit() else x.lower() for x in re.split(r"(\d+)", nom)]
 
 
 def resume_essai(d):
