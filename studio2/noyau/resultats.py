@@ -19,7 +19,8 @@ import numpy as np
 
 from . import cfg
 
-CHAMPS = ["sigmaXX", "sigmaYY", "sigmaXY", "vonMises", "epsXX"]
+CHAMPS = ["sigmaXX", "sigmaYY", "sigmaXY", "vonMises", "epsXX",
+          "strainXX", "strainYY", "strainXY"]      # strain* : writeStrainFields (g1 >= J3)
 
 
 # ---------------------------------------------------------------- historique

@@ -55,5 +55,5 @@ def essai_du_cas(G, nom_run, cas, sigma3, graine):
         joints_grain=jg,
         discontinuites=disc,
         sorties=Sorties(T=float(c.get("T", G.T_RUN)), frames=G.FRAMES,
-                        deformations_historique=False),
+                        deformations_historique=False, champs_deformation=False),
     )

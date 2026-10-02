@@ -146,6 +146,7 @@ class Sorties:
     T: float = 1e-2                        # s, borne haute (l'arrêt après pic coupe avant)
     frames: int = 24
     deformations_historique: bool = True   # historyStrains : epsAx, epsLat, epsVol
+    champs_deformation: bool = True        # writeStrainFields : strainXX/YY/XY + déplacement (g1 >= J3)
 
 
 @dc.dataclass
@@ -222,6 +223,8 @@ class Essai:
         w.cle("frames", self.sorties.frames)
         if self.sorties.deformations_historique:
             w.cle("historyStrains", True)
+        if self.sorties.champs_deformation:
+            w.cle("writeStrainFields", True, "exige un g1 compile apres le 2026-10-02 (spec 007 J3)")
 
         w.section("eprouvette")
         if m.type != "gmsh":           # en Gmsh, W et H sont recalculés depuis le maillage

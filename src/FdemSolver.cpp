@@ -457,6 +457,8 @@ void FdemSolver::init() {
     // ---- S1 (campagne du 13/09), miroir du 3D : instrumentation de rupture
     // (voir Fdem3dSolver.cpp pour le commentaire complet). Sorties seules.
     writeRupture_ = cfg_.getb("writeRuptureFields", false);
+    // Spec 007 (J3) : champs de deformation pour l interface graphique.
+    writeStrain_ = cfg_.getb("writeStrainFields", false);
     {
         std::string br = cfg_.gets("jointBreakModeRef", "slipF");
         if (br != "slipF" && br != "slipRef")
@@ -9408,8 +9410,42 @@ void FdemSolver::writeFrame(int frame) {
         for (std::size_t e = 0; e < el_.size(); ++e) pmv[e] = el_[e].pm;
         ef["pMean"] = &pmv;
     }
-    vtk::writeTriMesh(out_ + name, pts, tris, ef,
-                      {{"velocity", &vel}});
+    // ---- writeStrainFields (spec 007, J3) : le tenseur de deformation dans
+    // le repere GLOBAL et le deplacement nodal. `epsXX` ne suffit pas : c est
+    // la composante xx de U - I dans le repere CO-ROTE (jauges SHPB), et les
+    // deux autres composantes n etaient pas ecrites. On refait la decomposition
+    // polaire F = R U d elementForces, a l identique, et on ecrit
+    // V - I = R (U - I) R^T : la deformation de Biot que le solveur utilise,
+    // ramenee dans le repere global. Cisaillement TENSORIEL (pas gamma).
+    // SORTIE PURE, sous cle : sans elle le VTU reste byte-identique.
+    std::vector<double> gxx, gyy, gxy;
+    vtk::VectorField pf{{"velocity", &vel}};
+    if (writeStrain_) {
+        gxx.resize(el_.size());
+        gyy.resize(el_.size());
+        gxy.resize(el_.size());
+        for (std::size_t e = 0; e < el_.size(); ++e) {
+            const Elem& el = el_[e];
+            Eigen::Matrix2d F = Eigen::Matrix2d::Zero();
+            for (int a = 0; a < 3; ++a)
+                F += (X0_[el.n[a]] + u_[el.n[a]]) * el.dN.col(a).transpose();
+            double c1 = F(0, 0) + F(1, 1);
+            double c2 = F(1, 0) - F(0, 1);
+            double hyp = std::sqrt(c1 * c1 + c2 * c2);
+            Eigen::Matrix2d R;
+            if (hyp > 1e-14) R << c1 / hyp, -c2 / hyp, c2 / hyp, c1 / hyp;
+            else             R.setIdentity();
+            Eigen::Matrix2d V = F * R.transpose();           // F = V R
+            gxx[e] = V(0, 0) - 1.0;
+            gyy[e] = V(1, 1) - 1.0;
+            gxy[e] = 0.5 * (V(0, 1) + V(1, 0));
+        }
+        ef["strainXX"] = &gxx;
+        ef["strainYY"] = &gyy;
+        ef["strainXY"] = &gxy;
+        pf["displacement"] = &u_;
+    }
+    vtk::writeTriMesh(out_ + name, pts, tris, ef, pf);
     // S1(c) : journal du cap de traction moyenne, a chaque trame (compteur
     // pur, elementForces). Imprime seulement quand le cap est ACTIF et sous
     // writeRuptureFields = true (relecture V : journal inchange sinon).
