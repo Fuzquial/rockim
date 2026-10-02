@@ -262,3 +262,26 @@ input.implicite { color: var(--texte3); }
 #e-maillage { grid-template-columns: minmax(0, 1fr) 380px; }
 .calque { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
 .vue-maillage .voile-attente { z-index: 2; }
+
+/* Loi des joints */
+#e-loi { grid-template-columns: minmax(0, 1fr) 380px; grid-template-rows: minmax(0, 1.25fr) minmax(0, 1fr); }
+#e-loi > .loi-I { grid-column: 1; grid-row: 1; }
+#e-loi > .colonne-droite { grid-column: 2; grid-row: 1 / 3; }
+#e-loi > .bas { grid-column: 1; grid-row: 2; display: grid; grid-template-columns: 1fr 1fr; gap: 14px; min-height: 0; }
+.trace { position: relative; overflow: hidden; }
+.trace canvas.principal { position: absolute; top: 36px; left: 8px; right: 8px; bottom: 8px; width: calc(100% - 16px); height: calc(100% - 44px); }
+.loupe { position: absolute; top: 44px; right: 18px; width: 250px; height: 170px; background: var(--bg1); border: 1px solid var(--border-fort); border-radius: var(--r-ctrl); }
+.loupe canvas { width: 100%; height: 100%; display: block; }
+.loupe .t { position: absolute; top: 4px; left: 8px; font-size: 10px; letter-spacing: 1px; text-transform: uppercase; color: var(--texte3); pointer-events: none; }
+.poignee-aide { position: absolute; left: 66px; top: 40px; font-size: 11px; color: var(--texte3); pointer-events: none; }
+.curseur-sn { display: flex; align-items: center; gap: 10px; position: absolute; top: 8px; right: 10px; font-size: 12px; color: var(--texte2); }
+.curseur-sn input { width: 140px; }
+.cles { margin: 6px 12px 12px; font: 11px/1.6 var(--mono); color: var(--texte2); }
+.cles b { color: var(--texte); font-weight: 400; }
+.eclair { display: flex; flex-direction: column; min-height: 0; }
+.eclair-boutons { display: flex; gap: 8px; padding: 8px 12px 0; align-items: center; }
+.eclair-boutons .bouton:not(.petit) { flex: 1; }
+.eclair-corps { flex: 1; min-height: 0; display: grid; grid-template-rows: minmax(0, 1fr) auto; }
+.eclair-corps canvas { width: 100%; height: 100%; min-height: 0; }
+/* les en-têtes de tableau gardent leur casse : ε, σ, φ deviendraient Ε, Σ, Φ en majuscules */
+.tab-phases th { text-transform: none; letter-spacing: 0; font-size: 11px; }
