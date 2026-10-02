@@ -429,7 +429,12 @@ async function demarrer() {
   const n3 = await chargerRun(selRun.value);
   const n1 = performance.now();                 // depuis le début de la navigation
   if (MESURE) await mesurer(n1, n3);
-  else majFrame(Math.min(20, E.meta.nFrames - 1));
+  else {
+    const q = new URLSearchParams(location.search);
+    const ch = CHAMPS.find((c) => c.id === q.get("champ"));
+    if (ch) majChamp(ch);
+    majFrame(Math.min(+(q.get("frame") ?? 20), E.meta.nFrames - 1));
+  }
 }
 
 async function mesurer(n1, n3) {

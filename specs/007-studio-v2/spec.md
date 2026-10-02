@@ -282,5 +282,12 @@ geometrie, validation, maillage, file, resultats, depouillement), 267 tests en 2
   l'option solveur S3 reste souhaitable.
 - **Cache** : `resultats.convertir` produit un cache identique octet à octet à celui de J1.
 
+**2026-10-02 (premier lancement réel, GO de Fernando).** Aperçu tronqué de F7_disc_gbm_P020
+(deck F7 sauf `T = 2e-6`, `frames = 1`), `rockim_g1y19.exe`, 1 job x 4 fils, lancé par la file
+du noyau : code 0 en 2,2 s. La frame 0 et ses joints sont **identiques octet à octet** à ceux
+du vrai F7 (367 grains, 12 995 éléments, 1 027 pré-rompus dont 424 libres) : le run tronqué
+est un aperçu exact du maillage. Capture : [j1/apercu_maillage_F7.png](j1/apercu_maillage_F7.png).
+À reprendre en J4 : la biotite et les pré-rompus partagent le violet.
+
 Hors J2, à décider : remplacer `gen_decks.py` par des appels au noyau (une seule implémentation),
 une fois l'interface en service.
