@@ -18,7 +18,7 @@ import re
 
 import numpy as np
 
-from .resultats import delai_consolidation, lire_historique
+from .resultats import deformation_axiale, delai_consolidation, lire_historique
 
 
 def mesures(h, delai=0.0):
@@ -28,7 +28,7 @@ def mesures(h, delai=0.0):
     sb = np.abs(h["sigma"])
     s0 = np.interp(delai, t, sb) if delai > 0 else 0.0
     sig = sb - s0
-    eps = np.abs(h["epsGauge"]) if "epsGauge" in h else np.full_like(t, np.nan)
+    eps = deformation_axiale(h)
     ipk = int(np.argmax(sig))
     spk = sig[ipk]
     conf = np.max(np.abs(h["confAchieved"])) if "confAchieved" in h else 0.0
@@ -50,11 +50,29 @@ def mesures(h, delai=0.0):
     def fin(c):
         return int(h[c][-1]) if c in h else 0
 
+    sf = mediane_glissante(sig, DEMI_FENETRE)
+    jf = int(np.argmax(sf))
     return dict(sigma3_atteint_MPa=conf / 1e6, q_pic_MPa=spk / 1e6, sigma_pic_MPa=(spk + s0) / 1e6,
                 E_secante_GPa=E / 1e9, eps_pic_pct=100.0 * eps[ipk], t_pic_ms=1e3 * t[ipk],
                 chute_post_pic=chute, pic_verrouille=fin("peakLocked"), n_rompus=fin("nBroken"),
                 n_tension=fin("nBrokTen"), n_cisaillement=fin("nBrokShear"), n_insere=fin("nInserted"),
-                n_fragments=fin("nFrag"), t_fin_ms=1e3 * t[-1])
+                n_fragments=fin("nFrag"), t_fin_ms=1e3 * t[-1],
+                q_pic_filtre_MPa=sf[jf] / 1e6, eps_pic_filtre_pct=100.0 * eps[jf])
+
+
+# Pic FILTRÉ (spec 007 §2.6, mesure du 2026-10-02) : sur le banc de 10 grains, des pointes
+# isolées de contrainte (16 lignes sur 1 103 en UCS) faisaient passer le maximum brut de 48 à
+# 75 MPa. La médiane glissante sur ±7 lignes d'historique (sur ~2 000) les écarte sans
+# déplacer le pic de l'enveloppe (stable de ±3 à ±15 lignes). Le maximum brut reste
+# rendu (q_pic_MPa), pour l'identité avec depouille.py.
+DEMI_FENETRE = 7
+
+
+def mediane_glissante(y, k):
+    if len(y) == 0:
+        return y
+    p = np.pad(y, k, mode="edge")
+    return np.median(np.lib.stride_tricks.sliding_window_view(p, 2 * k + 1), axis=1)
 
 
 def joints(chemin):

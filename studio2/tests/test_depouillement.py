@@ -35,8 +35,9 @@ def comparer(noyau, oracle):
     if oracle is None:                   # run arrêté avant sa première ligne d'historique
         assert noyau is None
         return
-    assert set(noyau) == set(oracle)
-    faux = {k: (noyau[k], oracle[k]) for k in noyau if not egaux(noyau[k], oracle[k])}
+    # Le noyau peut rendre PLUS que l'oracle (pic filtré), jamais moins ni autre chose.
+    assert set(oracle) <= set(noyau)
+    faux = {k: (noyau[k], oracle[k]) for k in oracle if not egaux(noyau[k], oracle[k])}
     assert faux == {}
 
 
@@ -73,3 +74,34 @@ def test_historique_en_cours_d_ecriture(tmp_path):
     h = R.lire_historique(str(tmp_path))
     assert len(h["t"]) == 49
     assert R.dernier_temps(str(tmp_path)) == h["t"][-1]
+
+
+ECLAIR = os.path.join(os.path.dirname(__file__), "..", "_travail", "eclair")
+
+
+@pytest.mark.skipif(not os.path.isdir(ECLAIR), reason="runs de l'essai éclair absents")
+def test_pic_filtre_ecarte_les_pointes_du_banc_eclair():
+    """Mesure du 2026-10-02 : maximum brut 74,8 MPa, enveloppe 48,3 MPa en UCS."""
+    d = os.path.join(ECLAIR, "eclair_ucs", "out", "eclair_ucs")
+    m = D.mesures(R.lire_historique(d), R.delai_consolidation(d))
+    assert m["q_pic_MPa"] == pytest.approx(74.8, abs=0.1)
+    assert m["q_pic_filtre_MPa"] == pytest.approx(48.3, abs=0.2)
+
+
+@pytest.mark.skipif(not os.path.isdir(ECLAIR), reason="runs de l'essai éclair absents")
+def test_traction_par_mors_lit_epsAx():
+    d = os.path.join(ECLAIR, "eclair_traction", "out", "eclair_traction")
+    m = D.mesures(R.lire_historique(d), R.delai_consolidation(d))
+    assert m["q_pic_MPa"] == pytest.approx(1.379, abs=1e-3)
+    assert 0 < m["eps_pic_pct"] < 0.02                  # epsAx lu, plus de NaN
+
+
+def test_pic_filtre_sur_courbe_lisse_egale_le_brut():
+    import numpy as np
+    t = np.linspace(0, 1, 500)
+    h = {"t": t, "sigma": -np.sin(np.pi * t) * 1e8, "epsGauge": t * 1e-2}
+    m = D.mesures(h)
+    # Sur un pic lisse la médiane de ±7 points rend la 8e valeur sur 15 : sin(pi (0,5 ± 0,007))
+    # = 1 - 2,4e-4. Le biais est de cet ordre, négligeable devant les pointes qu'on écarte.
+    assert m["q_pic_filtre_MPa"] == pytest.approx(m["q_pic_MPa"], rel=1e-3)
+    assert m["q_pic_filtre_MPa"] <= m["q_pic_MPa"]

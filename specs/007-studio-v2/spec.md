@@ -354,5 +354,20 @@ insertion adaptative, `seed = 12345`. Durées murales : **traction 1,1 s, compre
   (3) l'origine des pointes (contact des plateaux sur un maillage grossier ?) reste à établir,
   hors J4.
 
+**2026-10-02 (J4 lancé, maquettes validées par Fernando).** Découpage, chaque lot testé avant
+le suivant :
+
+| Lot | Contenu | Test qui le ferme |
+|---|---|---|
+| J4.0 | noyau : pic filtré, traction par mors | tests unitaires, oracle depouille.py inchangé |
+| J4.1 | `studio2/app/` : serveur stdlib (API JSON sur le noyau, file pilotée en tâche de fond), coquille à onglets | tests d'API sur un espace de travail jetable |
+| J4.2 | Résultats : liste des runs (espace + dossiers de campagne), vue WebGL de J1, comparaison, synthèse | navigateur, sur les runs existants |
+| J4.3 | File : état en direct, arrêt, relance, ordre, courbe et journal du run choisi | faux solveur |
+| J4.4 | Essai : formulaire, schéma, validation, deck, ajout, variation de σ₃ | aller-retour formulaire -> deck = noyau |
+| J4.5 | Maillage : aperçu par run tronqué, dessin de fissures | GO de Fernando pour le premier aperçu réel |
+| J4.6 | Loi des joints + essai éclair | mode II confronté à tools/yan_point.cpp ; GO pour le premier éclair |
+
+Aucun lancement de g1 pendant le développement sans GO : la file est testée avec le faux solveur.
+
 Hors J2, à décider : remplacer `gen_decks.py` par des appels au noyau (une seule implémentation),
 une fois l'interface en service.

@@ -79,11 +79,20 @@ def delai_consolidation(dossier):
         return 0.0
 
 
+def deformation_axiale(h):
+    """Extensomètre central (plateaux), sinon epsAx (traction par mors : history.csv
+    n'y a pas d'epsGauge), sinon rien."""
+    for c in ("epsGauge", "epsAx"):
+        if c in h:
+            return np.abs(h[c])
+    return np.full_like(h["t"], np.nan)
+
+
 def courbe(h, delai=0.0):
     """(epsilon axial en %, q en MPa) selon la convention du dépôt."""
     sig = np.abs(h["sigma"])
     s0 = np.interp(delai, h["t"], sig) if delai > 0 else 0.0
-    return 100.0 * np.abs(h["epsGauge"]), (sig - s0) / 1e6
+    return 100.0 * deformation_axiale(h), (sig - s0) / 1e6
 
 
 # ---------------------------------------------------------------- frames et cache
