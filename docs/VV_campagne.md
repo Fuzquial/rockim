@@ -17,7 +17,7 @@ dans `vv/`, un dossier par banc.
 | P1.1 | onde de compression dans une barre | d'Alembert | fait : fem3d passe ; fdem3d adaptatif passe sauf le bilan ; fdem3d intrinsèque biaisé de −3 % | II.1 |
 | P1.2 | plaque trouée en 3D | Kirsch | prévu (fait en 2D, tunnel EDZ) | |
 | P1.3 | cube sous chargement biaxial, patch test | élasticité linéaire | prévu | |
-| P2.1 | bloc glissant jusqu'à l'arrêt | L = v²/(2µg) | prévu | |
+| P2.1 | bloc glissant jusqu'à l'arrêt | L = v²/(2µg) | fait : potential passe (L à 1,7 % au plus) ; penalty échoue (le bloc bascule) | II.2 |
 | P2.2 | sphère sur un plan | conservation de l'énergie, Hertz | prévu | |
 | P3.1 | fissure pressurisée, sensibilité au maillage | Guo §2.4 ; ténacité K_Ic | prévu | |
 | P3.2 | énergie de fissuration | Gf × aire rompue | prévu | |
@@ -381,6 +381,66 @@ l'ajustement.
 - La barre est confinée latéralement. La propagation dans une barre à faces libres, dispersive,
   n'est pas couverte par V1.
 
+### II.2 P2.1, bloc glissant jusqu'à l'arrêt
+
+#### Objectif et problème
+
+Vérifier le frottement de Coulomb du contact général entre deux corps, avec le cas de Xiang et al.
+(2009, §3) repris en 3D par Fukuda et al. (2020, fig. 9). Un cube de 50 mm (ρ = 2 650 kg/m³,
+E = 1 GPa comme chez Xiang, ν = 0,25) posé sur une dalle fixe de 600 × 100 × 20 mm reçoit une
+vitesse horizontale v₀ ; la pesanteur (g = 9,81 m/s², selon −z) et le frottement µ = 0,5 le
+freinent. Les deux corps sont continus (`groupContinuum.<corps> = true`, aucun joint), leurs
+maillages ne coïncident pas à l'interface, et seul le contact général les relie.
+
+Solution exacte, tant que le bloc glisse sans basculer (µ < 1 pour un cube) :
+x(t) = v₀t − µgt²/2 jusqu'à t_s = v₀/(µg), puis distance d'arrêt L = v₀²/(2µg).
+
+#### Mise en œuvre et critères
+
+Script `vv/P2_bloc/p2_bloc.py`, maillage Gmsh de 3 662 tétraèdres (h = 12,5 mm), mesure par
+`force.bloc = 0 0 0` (déplacement moyen du bloc). Trois vitesses, 0,5, 1 et 2 m/s (L = 25,5,
+101,9 et 407,8 mm), deux lois de contact (`penalty`, le défaut, et `potential`). Critères fixés
+avant calcul : |L/L_exact − 1| ≤ 2 % et erreur L² relative sur x(t) ≤ 2 %.
+
+#### Résultats (2026-10-04)
+
+| Contact | v₀ (m/s) | L (mm) | L exact (mm) | Écart | Erreur L² sur x(t) | Soulèvement max | Résidu B4 | Verdict |
+|---|---|---|---|---|---|---|---|---|
+| potential | 0,5 | 25,93 | 25,48 | +1,74 % | 0,97 % | 6 µm | 6,0e-12 % | passe |
+| potential | 1 | 102,92 | 101,94 | +0,96 % | 0,59 % | 0,57 mm | 1,3e-12 % | passe |
+| potential | 2 | 410,26 | 407,75 | +0,62 % | 0,35 % | 0,59 mm | 2,3e-12 % | passe |
+| penalty | 0,5 | −0,46 | 25,48 | −102 % | 85 % | 4,77 mm | 7,2e-12 % | échec |
+
+Figure `vv/P2_bloc/fig_bloc.pdf` : x(t) simulé contre la solution exacte.
+
+#### Interprétation
+
+Le contact par potentiel reproduit la cinématique du frottement de Coulomb : la distance d'arrêt
+est juste à 1,7 % au plus, et l'écart décroît avec la vitesse (+1,74, +0,96 puis +0,62 %). Le bloc
+glisse un peu trop loin, ce qui est cohérent avec la régularisation du frottement par une
+tangente hyperbolique sous `contactVreg` = 1 mm/s : le frottement s'efface aux très faibles
+vitesses de glissement, à la fin de chaque essai. Sur le premier millimètre, le travail du
+frottement vaut µmg fois la distance à 1e-5 près (essai de contrôle de 1 ms).
+
+Le contact par pénalité, défaut de rockim, échoue. Le bloc accroche par son arête avant les
+triangles de la dalle, bascule (son centre monte de 4,7 mm), retombe en arrière et finit 0,46 mm
+derrière son point de départ. Le bilan d'énergie ferme pourtant (7e-12 %) : rien n'est créé,
+mais 77 % de l'énergie cinétique part dans le contact, dont 42 % seulement en frottement, le
+reste en chocs normaux parasites au passage des arêtes. Les deux autres vitesses n'ont pas été
+calculées en pénalité, l'échec étant établi au premier run. Règle qui en découle pour les decks :
+`contact = potential` dès qu'un corps glisse sur un autre à travers des maillages non
+coïncidents (le deck v3P l'utilise déjà).
+
+#### Réserves
+
+- À 1 et 2 m/s, le déplacement vertical moyen du bloc monte progressivement jusqu'à 0,57 et
+  0,59 mm après environ 200 mm de glissement, puis retombe à l'arrêt. Il peut s'agir d'un léger
+  tangage sous le couple de frottement ou d'une remontée sur les marches du maillage non
+  coïncident ; la rotation n'a pas été mesurée. L'effet reste sous 1,2 % de la taille du bloc et
+  ne dégrade pas la distance d'arrêt.
+- Les trois runs en potentiel ont tourné avec `build_nofma/rockim`, bit-identique au binaire de
+  campagne `build_vv` sur deux decks de P1.1.
+
 ## Partie III : validation par benchmark (reproduction d'articles)
 
 Aucun banc nouveau n'est encore ouvert. Les reproductions antérieures (B4 à B7) sont documentées
@@ -392,6 +452,7 @@ Aucun banc n'est encore ouvert.
 
 ## Journal
 
+- 2026-10-04 : P2.1 bloc glissant ; sept bancs préparés par des agents en parallèle, lanceur de fond `vv/run_daemon.py` ; binaire de campagne `build_vv` (HEAD b80a4ac).
 - 2026-10-03 : balayage de la pénalité intrinsèque (pf = 10 à 200) ; prédiction tenue à 0,05 point.
 - 2026-10-03 : démarche en deux temps retenue (validation physique, puis benchmark d'articles), après relecture de Guo, Lisjak, Xiang, Fukuda et Lei.
 - 2026-10-03 : cadre, inventaire de l'existant et plan (partie I). Banc V1 écrit, lancé et dépouillé (11 runs) ; figures du maillage et de la propagation.

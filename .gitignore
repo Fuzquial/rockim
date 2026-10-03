@@ -169,3 +169,12 @@ _gif3d_frames/
 # campagne V&V : sorties brutes et apercus PNG regenerables par les scripts de vv/
 vv/*/out/
 vv/*/*.png
+vv/*/PRET
+vv/*/FINI
+vv/*/ECHEC
+vv/*/analyse.log
+vv/run_daemon.log
+vv/run_queue.log
+vv/STOP
+vv/*/ENCOURS
+vv/*/queue.log
