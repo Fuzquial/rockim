@@ -6852,12 +6852,29 @@ void FdemSolver::jointForces() {
         dwT[t] = dw;
         jwT[t] = jw;
     }
+    // (2026-10-03, performances) fusion PARALLELE PAR NOEUD sur les grands
+    // maillages, comme en 3D (audit C du 13/09) : chaque noeud somme ses
+    // contributions dans le MEME ordre t = 0..nT-1 que la boucle serie
+    // ci-dessous, donc bit-identique ; le seuil ne choisit que la voie.
+    const int nNm = (int)X0_.size();
+    const bool parMerge = (long)nNm * nT >= 200000;
+    if (parMerge) {
+#pragma omp parallel for schedule(static)
+        for (int i = 0; i < nNm; ++i)
+            for (int t = 0; t < nT; ++t) {
+                if (!seenTL_[t][i]) continue;
+                f_[i] += fTL_[t][i];
+                fTL_[t][i].setZero();
+                seenTL_[t][i] = 0;
+            }
+    }
     for (int t = 0; t < nT; ++t) {                     // deterministic order
-        for (int i : touchedTL_[t]) {
-            f_[i] += fTL_[t][i];
-            fTL_[t][i].setZero();
-            seenTL_[t][i] = 0;
-        }
+        if (!parMerge)
+            for (int i : touchedTL_[t]) {
+                f_[i] += fTL_[t][i];
+                fTL_[t][i].setZero();
+                seenTL_[t][i] = 0;
+            }
         nBroken_ += nbT[t];
         nDead_ += ndT[t];
         dampWork_ += dwT[t];
@@ -7141,10 +7158,16 @@ void FdemSolver::potentialContact() {
     static std::vector<char> einb;
     einb.resize(elems.size());
     static std::vector<std::vector<int>> eg;
+    // (2026-10-03, performances) seuls les seaux remplis au pas precedent
+    // sont vides (egUsed) : meme grille, sans balayer les seaux vides.
+    static std::vector<std::size_t> egUsed;
     {
         std::size_t nC = (std::size_t)egx * egy;
-        if (eg.size() != nC) eg.assign(nC, {});
-        else for (auto& c : eg) c.clear();
+        if (eg.size() != nC) { eg.assign(nC, {}); egUsed.clear(); }
+        else {
+            for (std::size_t c : egUsed) eg[c].clear();
+            egUsed.clear();
+        }
     }
     for (int q = 0; q < (int)elems.size(); ++q) {
         const Elem& E = el_[elems[q]];
@@ -7164,8 +7187,11 @@ void FdemSolver::potentialContact() {
         int y0 = std::clamp(int((lo.y() - egMin.y()) / cl), 0, egy - 1);
         int y1 = std::clamp(int((hi.y() - egMin.y()) / cl), 0, egy - 1);
         for (int cy = y0; cy <= y1; ++cy)
-            for (int cx = x0; cx <= x1; ++cx)
-                eg[(std::size_t)cy * egx + cx].push_back(q);
+            for (int cx = x0; cx <= x1; ++cx) {
+                const std::size_t c = (std::size_t)cy * egx + cx;
+                if (eg[c].empty()) egUsed.push_back(c);
+                eg[c].push_back(q);
+            }
     }
 
     // ---- (3) paires candidates, en ordre CANONIQUE -----------------------
@@ -7455,10 +7481,16 @@ void FdemSolver::generalContact() {
     gy_ = std::max(1, int(span.y() / cell_) + 1);
     // reuse the buckets instead of destroying them: assign() frees every
     // inner vector every step, clear() keeps their capacity (bit-neutral)
+    // (2026-10-03, performances) seuls les seaux remplis au pas precedent
+    // sont vides (gridUsed) : meme grille, sans balayer les seaux vides.
+    static std::vector<std::size_t> gridUsed;
     {
         std::size_t nCells = (std::size_t)gx_ * gy_;
-        if (grid_.size() != nCells) grid_.assign(nCells, {});
-        else for (auto& c : grid_) c.clear();
+        if (grid_.size() != nCells) { grid_.assign(nCells, {}); gridUsed.clear(); }
+        else {
+            for (std::size_t c : gridUsed) grid_[c].clear();
+            gridUsed.clear();
+        }
     }
     for (std::size_t k = 0; k < act_.size(); ++k) {
         if (!inBox[k]) continue;
@@ -7473,8 +7505,11 @@ void FdemSolver::generalContact() {
         int cy0 = std::clamp(int((std::min(P.y(), Q.y()) - gmin_.y()) / cell_), 0, gy_ - 1);
         int cy1 = std::clamp(int((std::max(P.y(), Q.y()) - gmin_.y()) / cell_), 0, gy_ - 1);
         for (int cy = cy0; cy <= cy1; ++cy)
-            for (int cx = cx0; cx <= cx1; ++cx)
-                grid_[(std::size_t)cy * gx_ + cx].push_back((int)k);
+            for (int cx = cx0; cx <= cx1; ++cx) {
+                const std::size_t c = (std::size_t)cy * gx_ + cx;
+                if (grid_[c].empty()) gridUsed.push_back(c);
+                grid_[c].push_back((int)k);
+            }
     }
 
     double cap = 0.6 * hmin_;                          // deep-pen sanity cap

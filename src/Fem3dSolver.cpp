@@ -2170,12 +2170,22 @@ void Fem3dSolver::elementForces() {
                 processElem(el_[eI], addF, acc);
             eroT[t] = acc;
         }
+        // (2026-10-03, performances) fusion PARALLELE PAR NOEUD (patron de
+        // Fdem3dSolver::jointForces, audit C du 13/09) : chaque noeud somme
+        // ses contributions dans le MEME ordre t = 0..nT-1 que l ancienne
+        // boucle serie sur les listes touchedTL_ — bit-identique.
+        {
+            const int nN = (int)X0_.size();
+#pragma omp parallel for schedule(static)
+            for (int i = 0; i < nN; ++i)
+                for (int t = 0; t < nT; ++t) {
+                    if (!seenTL_[t][i]) continue;
+                    f_[i] += fTL_[t][i];
+                    fTL_[t][i].setZero();
+                    seenTL_[t][i] = 0;
+                }
+        }
         for (int t = 0; t < nT; ++t) {
-            for (int i : touchedTL_[t]) {
-                f_[i] += fTL_[t][i];
-                fTL_[t][i].setZero();
-                seenTL_[t][i] = 0;
-            }
             nEro += eroT[t].law;
             nEroGeo += eroT[t].geo;
             vEroLaw += eroT[t].vLaw;
