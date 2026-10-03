@@ -223,6 +223,11 @@ TESTS = [
     dict(name="selftest_potential3d", tier="fast", selftest="selftest-potential3d",
          checks=[("pot3_ke", 0.0, 1e-5, True), ("pot3_mom", 0.0, 1e-12, True),
                  ("pass_tag", None, 0, True)]),
+    # potForce = volume (2026-10-03, Liu et al. 2022) : memes collisions,
+    # champ conservatif (mesure 1,2e-11, contre 2e-8 pour Munjiza).
+    dict(name="selftest_potvolume3d", tier="fast", selftest="selftest-potvolume3d",
+         checks=[("pot3_ke", 0.0, 1e-9, True), ("pot3_mom", 0.0, 1e-12, True),
+                 ("pass_tag", None, 0, True)]),
     dict(name="yan_integral", tier="fast", cfg="verify_fdem_tension.cfg",
          over=["jointSoftening = yan", "T = 2e-6"],
          # stdout n'imprime que 6 décimales : la vérification à 1e-12 vit dans

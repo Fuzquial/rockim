@@ -1,5 +1,5 @@
 #pragma once
-// KeysByMode.hpp — GENERE par tools/gen_keys_by_mode.py le 2026-10-03 16:30:38 : NE PAS EDITER.
+// KeysByMode.hpp — GENERE par tools/gen_keys_by_mode.py le 2026-10-03 18:40:54 : NE PAS EDITER.
 // Registre lisible : tools/keys_by_mode.json (methode dans la docstring du generateur).
 // Table des cles PROPRES A UN MODE (lues par un seul solveur) ; toute autre cle est commune.
 #include <stdexcept>
@@ -140,7 +140,9 @@ inline const Entry kTable[] = {
     {"jbUnloadAt", "fdem3d"},
     {"jointPenaltyLength", "fdem3d"},
     {"lawPhase", "fdem3d"},
+    {"potForce", "fdem3d"},
     {"potStiffnessByPhase", "fdem3d"},
+    {"potVolumeFactor", "fdem3d"},
     {"trackGroup", "fdem3d"},
     {"trackGroups", "fdem3d"},
     {"viscousInInsertion", "fdem3d"},
@@ -505,9 +507,11 @@ inline const char* const kKnown[] = {
     "platenHalfWidth",
     "platenPenaltyFactor",
     "platenTributary",
+    "potForce",
     "potPenaltyFactor",
     "potStiffnessByPhase",
     "potTangentFactor",
+    "potVolumeFactor",
     "potXi",
     "preBrokenAngleDeg",
     "preBrokenJoints",
@@ -995,9 +999,11 @@ inline const Readers kReaders[] = {
     {"platenHalfWidth", "fdem"},
     {"platenPenaltyFactor", "fdem"},
     {"platenTributary", "fdem"},
+    {"potForce", "fdem3d"},
     {"potPenaltyFactor", "fdem fdem3d"},
     {"potStiffnessByPhase", "fdem3d"},
     {"potTangentFactor", "fdem fdem3d"},
+    {"potVolumeFactor", "fdem3d"},
     {"potXi", "fdem"},
     {"preBrokenAngleDeg", "fdem"},
     {"preBrokenJoints", "fdem"},

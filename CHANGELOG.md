@@ -5,6 +5,49 @@ plan de robustesse du 2026-09-05). L'arbre `g0` est sous git depuis le tag `g0-0
 reçoit les lignes exigées par les règles déjà en vigueur — dont **toute ancre de bit-identité changée**
 (`tools/bitid_refs.json`, règle de `tools/BITID.md`).
 
+## [Non publié] — arbre g1, 2026-10-03 : contact par volume de recouvrement `potForce = volume` (Liu et al. 2022)
+
+### Ajouté (opt-in, défaut bit-identique)
+
+- **`potForce = volume`** et **`potVolumeFactor`** (5) (fdem3d, sous `contact = potential`) : force
+  fondée sur le volume de recouvrement (Liu, Ma, Liu, Tang & Fish, CMAME 395, 2022), appliquée face par
+  face du polyèdre de recouvrement, champ conservatif. `pot3::pairForceVolume`. DOCUMENTATION §5,
+  lignes `potForce` et `potVolumeFactor`.
+- `rockim selftest-potvolume3d` et le repère `selftest_potvolume3d` (tier fast) : ΔKE/KE₀ = 7e-15
+  (frontal), 1,2e-11 (oblique).
+- `tools/potvolume_partiel.cpp` : deux tétras en recouvrement partiel, volume contre Munjiza.
+- Registre des clés régénéré (`potForce`, `potVolumeFactor` propres à fdem3d).
+
+### Mesuré
+
+- **Ce n'est pas la même loi.** À enfoncement égal la force volume croît comme l'aire² de contact, celle
+  de Munjiza comme l'aire : le facteur 8/3 ne les égale que face contre face entre tétras égaux ; à 47 %
+  de face couverte, rapport 0,49 ; tétra moitié plus petit, 0,77.
+- Banc Yang s = 2,5 (v3P, T = 1e-4, Linux 4 fils) :
+
+| loi | temps | contact / pas | pic F_z outil-roche | impulsion | joints rompus |
+|---|---|---|---|---|---|
+| Munjiza | 398 s | 7,07 ms | 11 400 N | 0,264 N·s | 57 |
+| volume ×8/3 | 256 s | 3,35 ms | 6 850 N | 0,167 N·s | 56 |
+| volume ×4 | 254 s | 3,26 ms | 10 770 N | 0,230 N·s | 36 |
+| volume ×5 (défaut) | 255 s | 3,28 ms | 10 650 N | 0,223 N·s | 53 |
+
+  La dispersion des ruptures (36 à 57) n'est pas encore séparée du bruit propre à la fragmentation.
+- Kuru9 court sur Mac mini M4 (10 cœurs, `tools/bench_threads.sh`) : ×1,63 à 10 fils avec `dtUpdate`,
+  inchangé par `potForce = volume` (peu de débris).
+
+### Performances de la campagne sur Mac mini M4 (`tools/bench_threads.sh`, Kuru9 court)
+
+| fils | avant (aac12f8) | après, défaut | + dtUpdate | + dtUpdate + volume |
+|---|---|---|---|---|
+| 1 | 49,8 s | 45,2 s (×1,10) | 37,0 s (×1,35) | 36,1 s (×1,38) |
+| 2 | 33,2 s | 28,1 s (×1,18) | 22,8 s (×1,46) | 22,1 s (×1,51) |
+| 4 | 24,6 s | 18,4 s (×1,33) | 14,7 s (×1,67) | 13,9 s (×1,76) |
+| 10 | 21,0 s | 15,8 s (×1,33) | 12,9 s (×1,63) | 12,9 s (×1,63) |
+
+Le gain par défaut croît avec le nombre de fils (travail série retiré) ; de 4 à 10 fils on ne gagne que
+14 % (6 cœurs efficacité du M4, partage statique des boucles).
+
 ## [Non publié] — arbre g1, 2026-10-03 : pas de temps variable `dtUpdate = inserted` (Wu et al. 2024)
 
 ### Ajouté (opt-in, défaut bit-identique)
