@@ -42,7 +42,8 @@ adaptative. Documentation : `DOCUMENTATION_rockim.md` §5.21. Code : `src/Fdem3d
   intrinsèque concordent (§5.21).
 - Rupture adaptative écrite par groupes contre `scenario = tension` : 408 joints insérés et 2 rompus
   des deux côtés, pic 12,27 MPa des deux côtés, force d'appui à 0,1 % (vitesse lue à t + dt/2).
-- Bit-identité : vérification en cours (binaire d avant contre binaire d après, decks de `tools/bitid.py`).
+- Bit-identité : binaire d'avant contre binaire d'après, même machine (Linux g++), 4 fils, sur les 7 decks de `tools/bitid.py` dont le maillage est au dépôt (fdem3d Heilman, Kuru9, visc Yan ; fdem toolcontact Signorini, UCS Yan adaptatif ; fem3d dpr T1, sk2011 cylindre) : `history.csv`, `frames.csv` et fichiers finaux **identiques octet pour octet** (seul l'en-tête de `config_effective.cfg` change : il porte le nom de l'exécutable). Non joués : `fem3d_cdp_PQ_court` et `fdem3d_yang_v2_court`, maillages absents du clone.
+- Exemple `exemples/barre_encastree/` : barre encastrée à gauche, pression à droite.
 
 ## [Non publié] — arbre g1, 2026-09-11 soir : le point sur les impacts Yang/Solidity
 
