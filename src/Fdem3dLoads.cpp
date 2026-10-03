@@ -14,6 +14,7 @@
 // faux, et aucune autre instruction du solveur ne change (bit-identite).
 // ---------------------------------------------------------------------------
 #include "rockim/Fdem3dSolver.hpp"
+#include "rockim/GroupLoads.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -26,37 +27,8 @@ namespace rockim {
 
 namespace {
 
-std::vector<std::string> tokens(const std::string& s) {
-    std::istringstream iss(s);
-    std::vector<std::string> out;
-    std::string t;
-    while (iss >> t) out.push_back(t);
-    return out;
-}
-
-// nombre strict : la virgule decimale et les suffixes parasites sont refuses
-// (meme regle que Config::getd), avec le nom de la cle dans le message
-double num(const std::string& key, const std::string& t) {
-    std::size_t pos = 0;
-    double v = 0.0;
-    bool ok = true;
-    try { v = std::stod(t, &pos); } catch (...) { ok = false; }
-    if (!ok || pos != t.size() || !std::isfinite(v))
-        throw std::runtime_error(key + " : valeur numerique invalide '" + t
-                                 + "' (point decimal obligatoire)");
-    return v;
-}
-
-std::vector<double> nums(const std::string& key, const std::string& s,
-                         std::size_t n) {
-    auto tk = tokens(s);
-    if (tk.size() != n)
-        throw std::runtime_error(key + " : attendu " + std::to_string(n)
-                                 + " valeurs, lu '" + s + "'");
-    std::vector<double> v;
-    for (const auto& t : tk) v.push_back(num(key, t));
-    return v;
-}
+using grouploads::num;
+using grouploads::nums;
 
 std::array<int, 3> faceKey(const std::vector<int>& vOf,
                            const std::array<int, 3>& n) {
@@ -69,27 +41,13 @@ std::array<int, 3> faceKey(const std::vector<int>& vOf,
 
 double Fdem3dSolver::userAmp(int k, double t) const {
     const UAmp& A = uAmp_[k];
-    if (A.smooth) {
-        const double T = A.t[1];
-        if (t <= 0.0) return 0.0;
-        if (t >= T) return 1.0;
-        return 0.5 * (1.0 - std::cos(M_PI * t / T));
-    }
-    if (t <= A.t.front()) return A.a.front();
-    if (t >= A.t.back()) return A.a.back();
-    std::size_t j = 1;
-    while (A.t[j] < t) ++j;
-    const double s = (t - A.t[j - 1]) / (A.t[j] - A.t[j - 1]);
-    return A.a[j - 1] + s * (A.a[j] - A.a[j - 1]);
+    return grouploads::ampAt(A.t, A.a, A.smooth, t);   // GroupLoads.hpp
 }
 
 void Fdem3dSolver::setupUserLoads() {
-    static const char* const kPre[] = {"fix.", "velocity.", "traction.",
-                                       "pressure.", "force.", "amplitude.",
-                                       "point.", "box."};
     std::map<std::string, std::vector<std::string>> keys;   // prefixe -> cles
     bool any = false;
-    for (const char* p : kPre) {
+    for (const char* p : grouploads::kPrefixes) {
         keys[p] = cfg_.keysWithPrefix(p);
         if (!keys[p].empty()) any = true;
     }
@@ -237,29 +195,11 @@ void Fdem3dSolver::setupUserLoads() {
     std::map<std::string, int> ampOf;
     for (const auto& k : keys["amplitude."]) {
         const std::string nm = k.substr(10);
-        auto tk = tokens(cfg_.gets(k, ""));
+        const grouploads::Amp P = grouploads::parseAmp(k, cfg_.gets(k, ""));
         UAmp A;
-        if (!tk.empty() && tk[0] == "ramp") {
-            if (tk.size() != 2)
-                throw std::runtime_error(k + " : attendu 'ramp T' (T > 0 [s])");
-            double T = num(k, tk[1]);
-            if (!(T > 0.0))
-                throw std::runtime_error(k + " : ramp T exige T > 0 [s]");
-            A.smooth = true;
-            A.t = {0.0, T};
-            A.a = {0.0, 1.0};
-        } else {
-            if (tk.size() < 2 || tk.size() % 2 != 0)
-                throw std::runtime_error(k + " : attendu 't0 a0 t1 a1 ...' "
-                    "(paires temps [s], facteur) ou 'ramp T'");
-            for (std::size_t q = 0; q < tk.size(); q += 2) {
-                A.t.push_back(num(k, tk[q]));
-                A.a.push_back(num(k, tk[q + 1]));
-                if (A.t.size() > 1 && !(A.t.back() > A.t[A.t.size() - 2]))
-                    throw std::runtime_error(k + " : les temps doivent etre "
-                                             "strictement croissants");
-            }
-        }
+        A.t = P.t;
+        A.a = P.a;
+        A.smooth = P.smooth;
         ampOf[nm] = (int)uAmp_.size();
         uAmp_.push_back(A);
     }
@@ -313,36 +253,14 @@ void Fdem3dSolver::setupUserLoads() {
         if (cfg_.has("velocity." + nm))
             throw std::runtime_error(k + " et velocity." + nm + " portent sur "
                 "le meme groupe : un seul des deux (fix = velocity 0)");
-        int mask = 0;
-        for (const auto& t : tokens(cfg_.gets(k, ""))) {
-            if (t == "all" || t == "xyz") mask |= 7;
-            else if (t.find_first_not_of("xyz") == std::string::npos)
-                for (char c : t) mask |= 1 << (c - 'x');
-            else
-                throw std::runtime_error(k + " : axes attendus parmi x y z "
-                                         "all, lu '" + t + "'");
-        }
-        if (mask == 0)
-            throw std::runtime_error(k + " : aucun axe (x y z | all)");
+        const int mask = grouploads::parseFixMask(k, cfg_.gets(k, ""));
         int g = groupFor(k, nm);
         addBc(k, g, mask, Eigen::Vector3d::Zero());
     }
     for (const auto& k : keys["velocity."]) {
         const std::string nm = k.substr(9);
-        auto tk = tokens(cfg_.gets(k, ""));
-        if (tk.size() != 3)
-            throw std::runtime_error(k + " : attendu 'vx vy vz' [m/s], 'free' "
-                                     "pour un axe libre");
-        int mask = 0;
-        Eigen::Vector3d v = Eigen::Vector3d::Zero();
-        for (int a = 0; a < 3; ++a) {
-            if (tk[a] == "free") continue;
-            v(a) = num(k, tk[a]);
-            mask |= 1 << a;
-        }
-        if (mask == 0)
-            throw std::runtime_error(k + " : les trois axes sont 'free' — la "
-                                     "cle n'imposerait rien");
+        Eigen::Vector3d v;
+        const int mask = grouploads::parseVelocity(k, cfg_.gets(k, ""), v);
         int g = groupFor(k, nm);
         addBc(k, g, mask, v);
     }
