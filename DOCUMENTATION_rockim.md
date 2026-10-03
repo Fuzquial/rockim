@@ -292,7 +292,7 @@ Colonne « portée » : modes qui lisent la clé. Défauts entre parenthèses.
 | clé (défaut) | rôle | portée |
 |---|---|---|
 | `mode` (fem) | fem \| fem3d \| dem \| dem3d \| fdem \| fdem3d | — |
-| `scenario` (percussion) | percussion \| shear \| tension ; + `bar_wave` (fem) ; + `brazilian`, `shpb` (fdem) ; + **`jointbench`** (fdem3d, **S3 du 13/09** : banc de joint cinématique à un seul joint entre deux tétraèdres, §5.4 sexies — construit son maillage, refuse `mesh`/`W`/`D`/`H`/`nx`/`ny`/`nz`) ; + **`loads`** (fdem3d, 2026-10-03 : ni outil, ni appui implicite, `dampingLocal` = 0 par défaut — le montage est entièrement décrit par les clés de §5.21) | tous |
+| `scenario` (percussion) | percussion \| shear \| tension ; + `bar_wave` (fem) ; + `brazilian`, `shpb` (fdem) ; + **`jointbench`** (fdem3d, **S3 du 13/09** : banc de joint cinématique à un seul joint entre deux tétraèdres, §5.4 sexies — construit son maillage, refuse `mesh`/`W`/`D`/`H`/`nx`/`ny`/`nz`) ; + **`loads`** (fdem3d et fem3d, 2026-10-03 : ni outil, ni appui implicite, `dampingLocal` = 0 par défaut — le montage est entièrement décrit par les clés de §5.21) | tous |
 | `geometry` (box ; disc si brazilian, shpb si shpb) | box \| disc (fdem) ; box \| cylinder (fem3d) | fdem, fem3d |
 | `mesh` (grid) | grid \| voronoi (GBM) \| **file** (maillage non structuré importé, « à la Yan ») | fdem, fdem3d |
 | `meshFile` (requis si mesh = file) | chemin d'un Gmsh MSH 2.2 ASCII (type 2 en 2D, type 4 en 3D) ; boîte translatée à l'origine, W/H/D relus de l'enveloppe ; générer via `tools/make_unstructured_mesh.py` — variantes `box3d`, `box2d`, `bench1` (bloc + insert spherique), **`bench1g`** (idem GRADUE : `bench1g W D H R gap h hIns hFin rFin dFin out.msh [seed]`, champ de taille en rampe, fin dans un cylindre de rayon `rFin` et profondeur `dFin` sous l'axe d'impact — resserrer sur le rayon de contact de Hertz, pas sur l'etendue du champ visible), `tunnel` | fdem, fdem3d |
@@ -2425,14 +2425,16 @@ pullDelay = 3 rampes, OMP 4, 7 s par run) : à la fin de la consolidation σ_xx 
 −0,03 %, 501 points) ; variante **qui doit échouer** (pullDelay = 0) : σ_zz = −31,3 MPa à la jauge de
 confinement (écart 18,7 MPa > 10 ; −2νP = −29 MPa attendu à ε_zz = 0). `python check_bench.py out_delay out_nodelay`.
 
-### 5.21 Charges et conditions aux limites par groupes (`fdem3d`, 2026-10-03)
+### 5.21 Charges et conditions aux limites par groupes (`fdem3d` et `fem3d`, 2026-10-03)
 
 **Pourquoi.** Jusqu'ici un deck ne pouvait charger le solide que par les montages câblés des scénarios
 (outil analytique, fond encastré en percussion, mors en traction, pression de confinement uniforme).
 Le code public de Solidity porte, lui, une table de conditions aux limites par nœud (`/YD/YDB/` :
 vitesse imposée par axe, force nodale, accélération ; `Y3Drd.c` l. 1221-1260, `Y3Dsd.c` l. 80-102 et
 238), remplie par le préprocesseur. rockim fait la même chose **par groupes nommés**, avec une
-amplitude en temps, et **compatible avec l'insertion adaptative**. Code : `src/Fdem3dLoads.cpp`.
+amplitude en temps, et **compatible avec l'insertion adaptative**. Code : `src/Fdem3dLoads.cpp` ;
+portage `fem3d` du même jour : `src/Fem3dLoads.cpp` (§ « Mode fem3d » ci-dessous) ; briques communes
+(nombres stricts, amplitudes, axes) : `include/rockim/GroupLoads.hpp`.
 Tout est opt-in : sans aucune des clés ci-dessous, aucune instruction ne change (bit-identité vérifiée
 par `tools/bitid.py`, §ci-dessous).
 
@@ -2529,8 +2531,55 @@ la réaction R = m·a − f. La rupture, elle, est la même.
 **Bit-identité.** `tools/bitid.py` sur ses neuf decks (fem3d, fdem3d dont Kuru et Yang v2, fdem),
 binaire d'avant contre binaire d'après, même machine et 4 fils : voir CHANGELOG.
 
-**Ce qui n'est pas fait.** Les modes `fdem` (2D) et `fem3d` ne lisent pas ces clés : un deck de ces
-modes qui les porte est refusé (clé non lue). L'accélération imposée de Solidity (`D1BNA*`) n'a pas
+**Mode `fem3d` (portage du 2026-10-03).** Mêmes clés, même sémantique, mêmes messages d'erreur, mêmes
+colonnes `history.csv` (en toute fin de ligne, après `wDampLocal`) et même ligne de résumé `groupe <g> :
+U = … ; RF = … ; F = …` : un deck passe d'un mode à l'autre en changeant la ligne `mode` (et les clés
+propres à chaque mode : `insertion`, `ft`… côté fdem3d, `law` côté fem3d). Différences de structure :
+
+- nœuds partagés, sans copies ni insertion : un sommet = un nœud. Les groupes « corps » sont les
+  volumes physiques de `mesh = file` (`all` sans volume nommé) ; `point.` retient le nœud porteur de
+  masse le plus proche ; `box.` marche aussi sur `mesh = grid` et `mesh = voronoi` ;
+- une face dont l'élément est **érodé** ne reçoit plus de traction ni de pression (même règle que
+  `confiningPressure`) ;
+- `scenario = loads` : ni outil (`toolShape` refusée sauf `none`, `toolPulseForce` refusée), fond non
+  encastré, `dampingLocal` = 0 par défaut, `absorbing` permis ; `symmetryY` et `quarterModel` refusées
+  (elles annulent des vitesses hors du bilan : poser `fix.<g> = y`). Dans les autres scénarios les clés
+  restent permises, avec la même garde « nœud déjà tenu par le montage » ;
+- **bilan d'énergie.** fem3d n'avait pas de bilan B4 : il en reçoit un, imprimé en `scenario = loads`
+  seulement (ailleurs : la ligne `charges … liaisons …` et le résumé par groupe). Postes cumulés au sens
+  f · v(n−½) dt : éléments, outil, confinement, charges, liaisons, ressorts de champ lointain, Cundall,
+  Lysmer (variation exacte d'énergie cinétique de la division implicite), plus la correction
+  saute-mouton (f² dt²/2m sur les axes libres, f (v_imp − v)/2 dt sur les axes imposés). Le résidu est
+  un zéro d'arrondi quand la comptabilité est complète. Coût : deux sommes f · v par pas, seulement si
+  une clé est posée. L'intégration d'un nœud libre passe alors par `Fem3dSolver::integrateUserNode`
+  (mêmes formules que la boucle d'origine) ; sans les clés la boucle d'origine est intacte.
+
+Validation fem3d (Linux g++, même maillage `meshes/loads_bar_h4.msh`, 477 nœuds, 1 662 tets, `law =
+elastic`, E = 50 GPa, ν = 0,25, deck `configs/verify_fem3d_loads.cfg` : traction 5 MPa sur `top` en
+`ramp 1e-4`, `fix.bottom = z`, `fix.c000 = x y`, `fix.c100 = y`, `dampingLocal = 0,3`, T = 3e-4 s,
+dt = 5,14e-8 s, 5 833 pas, 2 s de calcul) :
+
+| variante | U_top_z (exact 4,000e-6 m) | RF_bottom_z (exact −2 000 N) | résidu du bilan |
+|---|---|---|---|
+| `traction.top = 0 0 5e6` | 4,00108e-6 | −2 000,50 | 3e-17 J (4e-13 %) |
+| `pressure.top = -5e6` (suiveuse) | 4,00087e-6 | −2 000,39 (F appliquée 1 999,9 N) | −1e-17 J (2e-13 %) |
+| `force.top = 0 0 2000` | 4,00108e-6 | −2 000,50 | −5e-17 J (6e-13 %) |
+| traction, T = 6e-4 s | 3,99991e-6 | −1 999,98 | 3e-17 J |
+
+Travail prélevé par les éléments 4,005e-3 J pour ½ F U = 4,001e-3 J (énergie élastique stockée, écart
+0,1 % = dynamique non amortie à T = 3e-4 s ; 0,07 % à 6e-4 s), Cundall 3,9e-5 J. Contraction
+latérale du centre de `top` : U_x = −2,29e-7 m (fdem3d : −2,28e-7). Les deux modes concordent à
+0,004 % sur U_top_z. Variantes contrôlées hors suite (résidu ≤ 4e-13 % chaque fois) : vitesse imposée
+`velocity.top = 0 0 0.05` en `ramp 5e-5` sur `fix.bottom = all` (liaisons mobiles, eBc = 3,63e-3 J),
+force de corps `force.solid` + `box.` + `point.` avec une amplitude tabulée, `absorbing = sides`
+(Lysmer 1,27e-4 J et ressorts 6,65e-4 J dans le bilan), et une force ponctuelle en `scenario =
+percussion` (pas de bilan, ligne charges seule). Gardes testées une à une, messages identiques à
+fdem3d (seul le compte de ddl en conflit diffère : fdem3d compte les copies). Repères de la suite :
+`loads_traction_fem3d` (tier `fast`), `loads_pression_fem3d`, `loads_force_fem3d` (tier `full`) :
+U_top_z à 2e-8 m (0,5 %), réaction à 1 N, résidu à 1e-9 J — mêmes bandes que les repères fdem3d.
+
+**Ce qui n'est pas fait.** Le mode `fdem` (2D) ne lit pas ces clés : un deck de ce mode qui les porte
+est refusé (clé non lue). L'accélération imposée de Solidity (`D1BNA*`) n'a pas
 d'équivalent : une vitesse imposée avec une amplitude linéaire par morceaux couvre le même besoin.
 
 ## 6. Sorties

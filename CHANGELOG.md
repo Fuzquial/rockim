@@ -45,6 +45,38 @@ adaptative. Documentation : `DOCUMENTATION_rockim.md` §5.21. Code : `src/Fdem3d
 - Bit-identité : binaire d'avant contre binaire d'après, même machine (Linux g++), 4 fils, sur les 7 decks de `tools/bitid.py` dont le maillage est au dépôt (fdem3d Heilman, Kuru9, visc Yan ; fdem toolcontact Signorini, UCS Yan adaptatif ; fem3d dpr T1, sk2011 cylindre) : `history.csv`, `frames.csv` et fichiers finaux **identiques octet pour octet** (seul l'en-tête de `config_effective.cfg` change : il porte le nom de l'exécutable). Non joués : `fem3d_cdp_PQ_court` et `fdem3d_yang_v2_court`, maillages absents du clone.
 - Exemple `exemples/barre_encastree/` : barre encastrée à gauche, pression à droite.
 
+### Ajouté — portage `fem3d` (même jour, opt-in, défaut bit-identique)
+
+- **`scenario = loads`** et les clés `fix.<g>`, `velocity.<g>`, `traction.<g>`, `pressure.<g>`,
+  `force.<g>`, `amplitude.<g>`, `point.<g>`, `box.<g>` en **fem3d** (`src/Fem3dLoads.cpp`) : même
+  sémantique, mêmes messages d'erreur, mêmes colonnes `history.csv` (`U_<g>_*`, `RF_<g>_*`, `F_<g>_*`,
+  `eLoad`, `eBc`, en toute fin de ligne) et même ligne de résumé qu'en fdem3d — un deck change de mode
+  par sa ligne `mode`. Un sommet = un nœud (pas de copies) ; une face d'élément érodé ne reçoit plus de
+  charge. `buildMeshFile` de fem3d lit les groupes physiques de dimension 0, 1 et 2.
+- **Bilan d'énergie par postes en fem3d** (`scenario = loads` seulement) : éléments, outil,
+  confinement, charges, liaisons, ressorts, Cundall, Lysmer (exact), correction saute-mouton ; verdict
+  `[OK]/[CHECK]` à 1 % de l'échelle comme le B4 de fdem3d. Ailleurs : ligne `charges … liaisons …` et
+  résumé par groupe seulement.
+- Briques communes aux deux modes : `include/rockim/GroupLoads.hpp` (nombres stricts, amplitudes,
+  axes de `fix.`, vitesses de `velocity.`). `src/Fdem3dLoads.cpp` s'en sert sans changer de
+  comportement (repères `loads_*_3d` identiques au chiffre imprimé près).
+- Deck `configs/verify_fem3d_loads.cfg` ; repères `loads_traction_fem3d` (fast),
+  `loads_pression_fem3d`, `loads_force_fem3d` (full). Registre des clés régénéré (`Fem3dLoads`
+  appartient à fem3d ; aucune clé ne change de statut).
+
+### Mesuré — portage `fem3d`
+
+- Même barre (`meshes/loads_bar_h4.msh`, `law = elastic`), traction 5 MPa : U_top_z = 4,00108e-6 m
+  (exact 4,0e-6), RF_bottom_z = −2 000,50 N, résidu du bilan 3e-17 J (4e-13 %) ; pression suiveuse
+  4,00087e-6 m / −2 000,39 N ; force totale 4,00108e-6 m / −2 000,50 N. 2 s de calcul par variante.
+- Bit-identité (binaire d'avant `rockim_final` contre binaire d'après, même machine, 4 fils) :
+  `fem3d_dpr_T1_court`, `fem3d_sk2011_cyl_court` et `fdem3d_cut3d_heilman_court` :
+  `history.csv`, `frames.csv` et fichiers finaux **identiques octet pour octet** (seul l'en-tête de
+  `config_effective.cfg` change). Console identique pour les deux decks fem3d ; pour Heilman seul le
+  résidu B4 imprimé bouge au dernier chiffre (4,7e-16 contre 4,4e-16 J) — le binaire d'avant, relancé,
+  imprime lui-même 5,0e-16 J : ordre de la réduction OpenMP, pas une différence de code. Non joué :
+  `fem3d_cdp_PQ_court` (maillage absent du clone, refusé à la lecture par les deux binaires).
+
 ## [Non publié] — arbre g1, 2026-09-11 soir : le point sur les impacts Yang/Solidity
 
 Point demandé par Fernando (« à chaque fois une nouvelle erreur, c'est infini »). Document :
