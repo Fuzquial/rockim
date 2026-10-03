@@ -1412,10 +1412,13 @@ private:
     // jointForces() — ni morts ni lies — en ordre croissant d indice, et
     // noeuds qu ils touchent. Le balayage des 75 k structures Joint (~500
     // octets) pour lire dead/bonded coutait l essentiel de la boucle des
-    // joints en adaptatif. Reconstruite quand jLiveDirty_ : activateJoint()
-    // (seul point ou bonded repasse a faux) et toute mort de joint.
+    // joints en adaptatif. Construite au premier appel (jLiveDirty_), puis
+    // tenue a jour : activateJoint() (seul point ou bonded repasse a faux)
+    // empile l indice dans jLiveAdd_, fusionne au pas suivant ; les morts
+    // sont retirees apres la boucle des joints.
     std::vector<int> jLive_;
     std::vector<int> jLiveNodes_;            // noeuds des joints vivants, tries
+    std::vector<int> jLiveAdd_;              // joints inseres depuis le dernier appel
     bool jLiveDirty_ = true;
     long actStamp_ = -1;
     double cell_ = 0.0;

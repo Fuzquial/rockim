@@ -25,6 +25,7 @@
 #include "rockim/ToolPdc3d.hpp"
 
 #include <algorithm>
+#include <iterator>
 #include <cmath>
 #include <cstdio>
 #include <fstream>
@@ -3480,7 +3481,7 @@ void Fdem3dSolver::activateJoint(int jI, double sig,
     Joint& J = jt_[jI];
     if (!J.bonded || J.perm) return;      // perm : groupContinuum, jamais inseree
     J.bonded = false;
-    jLiveDirty_ = true;                    // jointForces : liste des vivants
+    jLiveAdd_.push_back(jI);               // jointForces : liste des vivants
     // ---- DIF de Yang et al. 2025, FIGE ICI ------------------------------
     // Applique AVANT les decalages de continuite de contrainte ci-dessous,
     // qui lisent J.ft, J.coh et J.pj. Se COMPOSE avec le facteur statistique
@@ -5469,9 +5470,10 @@ void Fdem3dSolver::jointForces() {
     // ---- (2026-10-03, performances) liste compacte des joints vivants ----
     // processJoint() sort aussitot sur un joint mort ou lie : ne visiter que
     // les autres, DANS LE MEME ORDRE d indice, ne change aucune operation
-    // flottante. La liste est reconstruite sur jLiveDirty_ (insertion) ;
-    // les morts du pas sont retirees apres la boucle (un joint qui meurt est
-    // encore evalue au pas de sa mort, comme avant).
+    // flottante. La liste est batie au premier appel, les joints inseres
+    // depuis (jLiveAdd_, empiles par activateJoint) y sont fusionnes en
+    // ordre, et les morts du pas sont retirees apres la boucle (un joint qui
+    // meurt est encore evalue au pas de sa mort, comme avant).
     const int nJ = (int)jt_.size();
     if (jLiveDirty_) {
         jLive_.clear();
@@ -5483,7 +5485,29 @@ void Fdem3dSolver::jointForces() {
         jLiveNodes_.clear();
         for (int i = 0; i < (int)X0_.size(); ++i)
             if (mk[i]) jLiveNodes_.push_back(i);
+        jLiveAdd_.clear();
         jLiveDirty_ = false;
+    } else if (!jLiveAdd_.empty()) {
+        std::sort(jLiveAdd_.begin(), jLiveAdd_.end());
+        std::vector<int> merged(jLive_.size() + jLiveAdd_.size());
+        std::merge(jLive_.begin(), jLive_.end(), jLiveAdd_.begin(),
+                   jLiveAdd_.end(), merged.begin());
+        jLive_.swap(merged);
+        std::vector<int> nodes;
+        nodes.reserve(6 * jLiveAdd_.size());
+        for (int j : jLiveAdd_)
+            for (int k = 0; k < 3; ++k) {
+                nodes.push_back(jt_[j].a[k]);
+                nodes.push_back(jt_[j].b[k]);
+            }
+        std::sort(nodes.begin(), nodes.end());
+        nodes.erase(std::unique(nodes.begin(), nodes.end()), nodes.end());
+        std::vector<int> uni;
+        uni.reserve(jLiveNodes_.size() + nodes.size());
+        std::set_union(jLiveNodes_.begin(), jLiveNodes_.end(), nodes.begin(),
+                       nodes.end(), std::back_inserter(uni));
+        jLiveNodes_.swap(uni);
+        jLiveAdd_.clear();
     }
     const int nL = (int)jLive_.size();
     bool anyDead = false;
