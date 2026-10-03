@@ -1,25 +1,42 @@
 # Campagne de vérification et de validation de rockim
 
-Document vivant de la campagne V&V, commencée le 2026-10-03. La partie I fixe le cadre et fait
-l'inventaire de l'existant ; la partie II décrit chaque banc de vérification, sa solution de
-référence, sa mise en œuvre, ses critères et ses résultats ; la partie III est réservée à la
-validation expérimentale. Les scripts et les decks sont dans `vv/`, un dossier par banc.
+Document vivant de la campagne V&V, commencée le 2026-10-03. La démarche reprend celle des codes
+FDEM publiés (Guo 2014 pour Solidity, Lisjak 2013 pour Y-Geo, Fukuda et al. 2020, Lei et al. 2016
+pour HOSS ; synthèse en I.5) en deux temps, chacun avec des critères d'acceptation fixés avant le
+calcul, ce que ces travaux ne font pas.
 
-| Banc | Objet | Statut | Section |
-|---|---|---|---|
-| V1 | onde de compression dans une barre | fait : fem3d passe ; fdem3d adaptatif passe sauf le bilan ; fdem3d intrinsèque biaisé de −3 % | II.1 |
-| V2 | joint seul, modes I, II et mixte, énergie Gf | prévu | |
-| V3 | énergie de fissuration en traction directe | prévu | |
-| V4 | contact de Hertz sphère-plan | prévu | |
-| V5 | choc de deux barres | prévu | |
-| V6 | patch test | prévu | |
-| V7 | convergence en h et en dt | couvert en partie par V1 | II.1 |
-| V8 | objectivité de la rupture | prévu | |
-| V9 | bloc sur plan incliné | prévu | |
+La partie II, validation physique, confronte rockim à des solutions exactes et à des résultats
+théoriques sur les cas canoniques : élément et ondes, contact, rupture, essais de laboratoire,
+sensibilités. La partie III, validation par benchmark, reproduit les résultats chiffrés d'articles
+publiés sur les mêmes cas, pour comparer rockim aux autres codes. La partie IV confronte un jeu de
+paramètres calé une fois à des essais qui n'ont pas servi au calage. Les scripts et les decks sont
+dans `vv/`, un dossier par banc.
 
-Environnement des résultats de la partie II, sauf mention contraire : macOS 27 arm64, AppleClang
-21, OpenMP de Homebrew (libomp 21.1.6), `-O3 -ffp-contract=off`, binaire `build_nofma/rockim` de la
-branche `claude/rockim-version-check-4ugw9e`.
+| Banc | Objet | Référence | Statut | Section |
+|---|---|---|---|---|
+| P1.1 | onde de compression dans une barre | d'Alembert | fait : fem3d passe ; fdem3d adaptatif passe sauf le bilan ; fdem3d intrinsèque biaisé de −3 % | II.1 |
+| P1.2 | plaque trouée en 3D | Kirsch | prévu (fait en 2D, tunnel EDZ) | |
+| P1.3 | cube sous chargement biaxial, patch test | élasticité linéaire | prévu | |
+| P2.1 | bloc glissant jusqu'à l'arrêt | L = v²/(2µg) | prévu | |
+| P2.2 | sphère sur un plan | conservation de l'énergie, Hertz | prévu | |
+| P3.1 | fissure pressurisée, sensibilité au maillage | Guo §2.4 ; ténacité K_Ic | prévu | |
+| P3.2 | énergie de fissuration | Gf × aire rompue | prévu | |
+| P3.3 | fissure en aile | mécanique linéaire de la rupture | prévu | |
+| P4.1 | flexion trois points | théorie des poutres | prévu | |
+| P4.2 | essai brésilien | Hondros, σt = 2F/(πDt) | prévu | |
+| P4.3 | compression polyaxiale | Mohr-Coulomb | fait (`bench_polyaxial`, suite) | |
+| P5 | sensibilités : maillage, vitesse de chargement, pénalité | protocole de Guo et Lisjak | pénalité faite (balayage, loi c_eff/c = (1 + 1,24/pf)^(−1/2)) | II.1 |
+| B1 | Guo 2014, §2.4 et chapitre 3 | valeurs de Solidity | prévu | |
+| B2 | Lisjak 2013, fissure en aile | 7,0 MPa (Y-Geo) | prévu | |
+| B3 | Fukuda et al. 2020, frottement et brésilien | Y-HFDEM 3D | prévu | |
+| B4 | AbuAisha et al. 2017, hydro-mécanique | Y-Geo | fait (`bench_abuaisha/`) | |
+| B5 | Wang et al. 2024, tunnel | MultiFracS | fait (`tunnel_edz/`) | |
+| B6 | Yan et al. 2023, UCS adaptatif | article | fait (`ucs_yan_adaptive`) | |
+| B7 | Yang et al. 2025 et 2026, impact d'insert | Solidity | partiel | |
+
+Environnement des résultats, sauf mention contraire : macOS 27 arm64, AppleClang 21, OpenMP de
+Homebrew (libomp 21.1.6), `-O3 -ffp-contract=off`, binaire `build_nofma/rockim` de la branche
+`claude/rockim-version-check-4ugw9e`.
 
 ## Partie I : cadre et inventaire (2026-10-03)
 
@@ -134,55 +151,35 @@ Les lacunes de la validation sont les suivantes.
 4. Aucune incertitude expérimentale ni critère d'acceptation n'est fixé avant le calcul, sauf
    pour la comparaison Abaqus du 31/07.
 
-### 5. Plan proposé
+### 5. Ce que font les autres codes, et le plan qui en découle
 
-#### 5.1 Vérification
+Cinq démarches publiées ont été relues (2026-10-03).
 
-| Rang | Cas | Référence | Grandeur et critère | Solveurs |
-|---|---|---|---|---|
-| V1 | Barre 1D sous impulsion | c = √(E/ρ), σ = ρcv, réflexion | temps d'arrivée à 1 %, amplitude à 2 %, convergence en h | fem3d, fdem3d intrinsèque et adaptatif |
-| V2 | Joint seul, modes I, II et mixte | loi de traction-séparation, énergie Gf | courbe à 1e-6, énergie dissipée égale à Gf·A à 0,1 % | fdem 2D et 3D |
-| V3 | Énergie de fissuration en traction directe | Gf·A, A mesurée sur la fissure | écart inférieur à 5 %, pour trois tailles de maille | fdem3d |
-| V4 | Hertz sphère-plan, quasi statique | F = (4/3) E* √R δ^(3/2) | force à 3 % sur la plage élastique, convergence en h | fem3d, fdem3d avec pénalité et potentiel |
-| V5 | Choc de deux barres | durée 2L/c, vitesses de sortie | durée à 2 %, quantité de mouvement exacte | fdem3d |
-| V6 | Patch test | champ uniforme exact | erreur au niveau de l'arrondi | fem3d, fdem3d |
-| V7 | Convergence en h et en dt sur un cas élastique | V1 ou Kirsch | ordre observé contre ordre théorique | fem3d, fdem3d |
-| V8 | Objectivité de la rupture | invariance attendue de Gf | pic et énergie en fonction de h et de la pénalité, tendance documentée | fdem3d |
-| V9 | Bloc sur plan incliné | seuil tan φ, accélération g(sin θ − μ cos θ) | accélération à 1 % | fdem3d |
+| Source | Élément | Contact | Rupture | Essais de laboratoire | Critère chiffré |
+|---|---|---|---|---|---|
+| Guo 2014, Solidity 3D | renvoi à Munjiza | renvoi à Munjiza | fissure pressurisée sur cinq maillages, sans convergence ; flexion trois points | brésilien 1,96 MPa pour ft = 3 MPa (−35 %) ; polyaxial, angles jugés sur figure | aucun |
+| Lisjak 2013, Y-Geo 2D | renvoi à Mahabadi | renvoi à Mahabadi | fissure en aile 7,0 MPa, dans l'intervalle 5,1 à 14,6 MPa de quatre modèles de LEFM | calage sur UCS et brésilien, validation à paramètres gelés sur le confinement et le litage | aucun |
+| Xiang et al. 2009, Y | aucun | bloc glissant, L = v²/(2µg), accord lu sur figure | aucun | aucun | aucun |
+| Fukuda et al. 2020, Y-HFDEM 3D | aucun | sphère sur un plan ; bloc glissant | effet du maillage structuré sur le mode de rupture | UCS calé, brésilien contre Hondros ; SHPB calé sur l'essai même | aucun |
+| Lei et al. 2016, élément de HOSS | cube biaxial et plaque de Kirsch, convergence mesurée | aucun | aucun | cylindres entaillés, écart de 4 à 5 fois | aucun |
 
-V1, V2 et V4 viennent en premier : ce sont les trois phénomènes qui gouvernent la percussion,
-et chacun coûte quelques minutes de calcul. Les 24 tests de pic contre ft reçoivent en plus un
-critère absolu, par exemple |écart| inférieur à 5 %, en conservant la référence figée pour la
-non-régression.
+Ces démarches partagent un socle de cas à solution exacte (bloc glissant, sphère sur un plan,
+Kirsch, cube), les essais de laboratoire classiques (flexion trois points, brésilien, UCS,
+polyaxial) et des études de sensibilité au maillage, à la vitesse de chargement et à la pénalité.
+Aucune ne fixe de critère d'acceptation avant le calcul, la plupart des comparaisons sont visuelles
+ou portent sur les données du calage, et aucune ne montre la convergence de la rupture en maillage.
+Les auteurs de HOSS (Knight et al. 2020) relèvent eux-mêmes l'absence de bancs d'essai standard
+pour la rupture des milieux discontinus.
 
-#### 5.2 Validation
+La campagne de rockim suit le même socle en deux temps : la validation physique (partie II,
+blocs P1 à P5 du tableau de tête) puis la reproduction chiffrée des articles (partie III, bancs
+B1 à B7). La validation sur des essais indépendants du calage (partie IV) vient en dernier : calage
+unique sur Red Bohus (UCS, brésilien, triaxial à 20 et 50 MPa), puis prédiction du triaxial à 75
+et 100 MPa sans retouche.
 
-| Niveau | Essai | Rôle | Statut des données |
-|---|---|---|---|
-| 1 | UCS, brésilien, triaxial Red Bohus | calibration | disponibles (`calibration_redbohus/targets/`) |
-| 2 | Triaxial à 75 et 100 MPa, non utilisé pour le calage | validation quasi statique | disponibles ; à retirer du jeu de calage |
-| 3 | SHPB ou brésilien dynamique sur granite | validation de la loi de taux | à rechercher dans la littérature |
-| 4 | Force-pénétration de Kuru, impact d'Aising | validation de l'impact d'un insert | numérisation à faire |
-| 5 | Cratère et fragments de Saint-Anne | validation du système | lecture de figures à ±10 %, réserve à porter |
+## Partie II : validation physique
 
-Chaque comparaison de validation fixe avant le calcul la grandeur comparée, l'incertitude de
-l'essai, le critère d'acceptation et les paramètres gelés. Les paramètres calés au niveau 1 ne
-sont plus modifiés aux niveaux 2 à 5.
-
-#### 5.3 Livrables
-
-- `tools/verify_suite.py` : une étiquette `kind` par test (`analytique`, `invariant`,
-  `regression`, `validation`) et un rapport qui compte les tests par étiquette.
-- `configs/vv/` : un deck par cas V1 à V9, avec un script de dépouillement qui trace la
-  simulation contre la référence.
-- `data/experimental/` : les références numérisées au format CSV, avec leur source et leur
-  incertitude.
-- Un chapitre de méthode pour la thèse, construit sur la matrice des sections 5.1 et 5.2.
-
-
-## Partie II : bancs de vérification
-
-### II.1 V1, onde de compression dans une barre
+### II.1 P1.1, onde de compression dans une barre (V1)
 
 #### Objectif
 
@@ -340,8 +337,38 @@ les 4,5 % d'allongement supplémentaire mesurés en statique sur la barre en tra
 joints par unité de longueur croît comme 1/h et compense le gain de précision des éléments. En
 percussion, cela signifie qu'avec ce réglage toutes les ondes du bloc arrivent environ 3 % en
 retard et que l'impédance ρc, donc la force de contact initiale, est sous-estimée d'environ 3 %,
-indépendamment du maillage. Seul le facteur de pénalité règle ce biais ; un balayage de pf à h =
-4 mm est le complément naturel de V1.
+indépendamment du maillage. Seul le facteur de pénalité règle ce biais ; le balayage ci-dessous le
+quantifie.
+
+#### Balayage du facteur de pénalité intrinsèque
+
+La pénalité des joints intrinsèques vaut p = pf·E/h. Un modèle de joints en série avec le continu
+donne M_eff = M/(1 + α/pf), soit c_eff/c = (1 + α/pf)^(−1/2), avec α indépendant de h. La
+prédiction a été écrite dans `v1_onde.py` avant le balayage, avec α = 1,21 calé sur le seul point
+pf = 20, h = 4 mm.
+
+| pf | h (mm) | Erreur de célérité | Prédite | Erreur de force | e_u(s2) | dt (s) | Temps (s) |
+|---|---|---|---|---|---|---|---|
+| 10 | 4 | −5,54 % | −5,55 % | −5,56 % | 14,2 % | 6,72e-9 | 41 |
+| 20 | 4 | −2,92 % | −2,89 % | −2,93 % | 7,7 % | 4,89e-9 | 58 |
+| 20 | 2,83 | −3,01 % | −2,89 % | −2,96 % | 7,9 % | 2,59e-9 | 368 |
+| 20 | 2 | −3,23 % | −2,89 % | −3,27 % | 8,6 % | 1,47e-9 | 1 345 |
+| 50 | 4 | −1,23 % | −1,19 % | −1,23 % | 3,3 % | 3,14e-9 | 87 |
+| 100 | 4 | −0,65 % | −0,60 % | −0,64 % | 1,8 % | 2,24e-9 | 123 |
+| 200 | 4 | −0,35 % | −0,30 % | −0,34 % | 1,0 % | 1,59e-9 | 181 |
+| 200 | 2,83 | −0,35 % | −0,30 % | −0,32 % | 0,95 % | 8,29e-10 | 1 008 |
+
+La prédiction tient à 0,05 point près de pf = 10 à 200 ; l'ajustement sur les huit points donne
+α = 1,239. L'erreur de célérité est indépendante de h à pf = 200 (−0,347 et −0,345 %) et croît de
+0,3 point entre h = 4 et 2 mm à pf = 20. La force de plateau suit la célérité, l'impédance ρc étant
+réduite d'autant. Le pas de temps décroît en 1/√pf (rapport 0,32 entre pf = 20 et 200 pour 1/√10 =
+0,316).
+
+La règle de choix qui en découle, pour un biais de célérité visé ε, est pf ≥ α/(2ε) ≈ 0,62/ε :
+pf = 62 pour 1 %, pf = 124 pour 0,5 %. Le coût en pas de temps est un facteur √(pf/20) par
+rapport au réglage actuel des decks d'impact, soit 1,8 pour pf = 62 et 2,5 pour pf = 124. La figure
+`fig_penalite.pdf` trace le retard de célérité en fonction de pf avec la prédiction et
+l'ajustement.
 
 #### Réserves
 
@@ -354,10 +381,17 @@ indépendamment du maillage. Seul le facteur de pénalité règle ce biais ; un 
 - La barre est confinée latéralement. La propagation dans une barre à faces libres, dispersive,
   n'est pas couverte par V1.
 
-## Partie III : validation expérimentale
+## Partie III : validation par benchmark (reproduction d'articles)
 
-Aucun banc n'est encore ouvert. Le plan est en section I.5.2.
+Aucun banc nouveau n'est encore ouvert. Les reproductions antérieures (B4 à B7) sont documentées
+dans leurs dossiers et seront résumées ici.
+
+## Partie IV : validation sur essais indépendants du calage
+
+Aucun banc n'est encore ouvert.
 
 ## Journal
 
+- 2026-10-03 : balayage de la pénalité intrinsèque (pf = 10 à 200) ; prédiction tenue à 0,05 point.
+- 2026-10-03 : démarche en deux temps retenue (validation physique, puis benchmark d'articles), après relecture de Guo, Lisjak, Xiang, Fukuda et Lei.
 - 2026-10-03 : cadre, inventaire de l'existant et plan (partie I). Banc V1 écrit, lancé et dépouillé (11 runs) ; figures du maillage et de la propagation.

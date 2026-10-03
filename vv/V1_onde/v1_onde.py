@@ -67,6 +67,19 @@ VARIANTS = {
         "mode = fdem3d", "insertion = intrinsic", "jointPenaltyFactor = 20",
         "ft = 50e6", "cohesion = 100e6", "frictionDeg = 40", "Gf = 70"]),
 }
+# ---- balayage du facteur de penalite intrinseque (p = pf E / h) -------------
+# h = 4 mm pour tous, 2,83 mm pour pf = 200 (independance en h). dt ~ 1/sqrt(pf).
+SWEEP_PF = {10: [4], 50: [4], 100: [4], 200: [4, 2.83]}
+for _pf, _hs in SWEEP_PF.items():
+    VARIANTS[f"fdem3d_intrinsic_pf{_pf}"] = dict(h=_hs, sweep=True, pf=_pf, keys=[
+        "mode = fdem3d", "insertion = intrinsic", f"jointPenaltyFactor = {_pf}",
+        "ft = 50e6", "cohesion = 100e6", "frictionDeg = 40", "Gf = 70"])
+VARIANTS["fdem3d_intrinsic_pf20"]["pf"] = 20
+# PREDICTION ecrite AVANT le balayage (2026-10-03) : joints en serie avec le
+# continu, M_eff = M / (1 + ALPHA / pf), donc c_eff / c = (1 + ALPHA / pf)^(-1/2).
+# ALPHA cale sur le seul point pf = 20, h = 4 mm (c_err = -2,92 %) : 1,21.
+# Predit : pf 10 -5,6 % ; 50 -1,2 % ; 100 -0,60 % ; 200 -0,30 %.
+PF_ALPHA_PRED = 1.21
 
 # ---- criteres d'acceptation (fixes AVANT le calcul) ------------------------
 # appliques au maillage le plus fin de chaque variante continue
@@ -228,6 +241,8 @@ def figures(results, sigs):
                          "mathtext.fontset": "stix", "font.size": 10})
     # 1. signaux du maillage le plus fin de chaque variante
     for var, runs in sigs.items():
+        if VARIANTS[var].get("sweep"):
+            continue                          # balayage : pas de figure par run
         hmin = min(runs)
         sig, (t, Fs, Fe) = runs[hmin]
         fig, ax = plt.subplots(2, 1, figsize=(6.3, 5.2), sharex=True)
@@ -250,6 +265,8 @@ def figures(results, sigs):
     fig, ax = plt.subplots(figsize=(4.8, 3.8))
     for var, res in results.items():
         hs = sorted(res["runs"], key=float)
+        if VARIANTS[var].get("sweep") or len(hs) < 2:
+            continue
         ax.loglog([float(h) for h in hs], [res["runs"][h]["e_u_s2"] for h in hs], "o-", label=var)
     hh = np.array([1.0, 4.0])
     ax.loglog(hh, 0.01 * (hh / 1.0) ** 2, "k:", lw=0.8, label="pente 2")
@@ -260,6 +277,45 @@ def figures(results, sigs):
     fig.tight_layout()
     fig.savefig(os.path.join(HERE, "fig_convergence.pdf"))
     plt.close(fig)
+    # 3. balayage du facteur de penalite
+    sw = penalty_sweep(results)
+    if len(sw["points"]) >= 2:
+        fig, ax = plt.subplots(figsize=(4.8, 3.6))
+        pp = np.logspace(np.log10(8), np.log10(250), 200)
+        for alpha, st, lab in ((PF_ALPHA_PRED, "k:", rf"prédiction, $\alpha$ = {PF_ALPHA_PRED}"),
+                               (sw["alpha_fit"], "k-", rf"ajustement, $\alpha$ = {sw['alpha_fit']:.3f}")):
+            ax.loglog(pp, 100 * (1 - (1 + alpha / pp) ** -0.5), st, lw=0.9, label=lab)
+        for h, mk in (("4", "o"), ("2.83", "s")):
+            pts = [q for q in sw["points"] if q["h"] == h]
+            if pts:
+                ax.loglog([q["pf"] for q in pts], [-100 * q["c_err"] for q in pts], mk,
+                          label=f"rockim, h = {h.replace('.', ',')} mm")
+        ax.set_xlabel("facteur de pénalité pf (p = pf E/h)")
+        ax.set_ylabel("retard de célérité (%)")
+        ax.legend(fontsize=8, frameon=False)
+        fig.tight_layout()
+        fig.savefig(os.path.join(HERE, "fig_penalite.pdf"))
+        plt.close(fig)
+
+
+def penalty_sweep(results):
+    """points (pf, h, erreurs) des variantes intrinseques et alpha ajuste par
+    moindres carres sur (c_eff/c)^-2 - 1 = alpha / pf"""
+    pts = []
+    for var, res in results.items():
+        pf = VARIANTS[var].get("pf")
+        if pf is None:
+            continue
+        for h, r in res["runs"].items():
+            pts.append(dict(pf=pf, h=h, c_err=r["c_err"], F_err=r["F_err"],
+                            e_u_s2=r["e_u_s2"], wall=r["wall"], dt=r["dt"]))
+    pts.sort(key=lambda q: (q["pf"], -float(q["h"])))
+    alpha = float("nan")
+    if pts:
+        x = np.array([1.0 / q["pf"] for q in pts])
+        y = np.array([(1.0 + q["c_err"]) ** -2 - 1.0 for q in pts])
+        alpha = float(np.sum(x * y) / np.sum(x * x))
+    return dict(points=pts, alpha_fit=alpha, alpha_pred=PF_ALPHA_PRED)
 
 
 def analyse(variants):
@@ -293,7 +349,8 @@ def analyse(variants):
     ref = dict(c=C, M=M, F_plateau=RHO * C * V0 * A, L=L, W=W, rho=RHO, E=E, nu=NU,
                v0=V0, amp=AMP, T=T, criteres=CRIT)
     with open(os.path.join(HERE, "resultats.json"), "w") as f:
-        json.dump(dict(reference=ref, variantes=results), f, indent=1)
+        json.dump(dict(reference=ref, variantes=results,
+                       balayage_penalite=penalty_sweep(results)), f, indent=1)
     # table console
     print(f"\nreference : c = {C:.2f} m/s, F_plateau = {RHO * C * V0 * A:.4f} N")
     print(f"{'variante':24s} {'h':>5s} {'ntet':>7s} {'e_u s1':>8s} {'e_u s2':>8s} {'e_u s3':>8s} "
@@ -306,6 +363,15 @@ def analyse(variants):
                   f"{r['F_err']:+8.4f} {r['budget_pct']:9.1e} {r['wall']:7.1f}")
         print(f"{'':24s} ordre observe {res['ordre']:.2f} ; verdict "
               f"{'PASSE' if res['passe'] else 'ECHEC'} {res['verdict']}")
+    sw = penalty_sweep(results)
+    if sw["points"]:
+        print(f"\nbalayage de penalite : alpha ajuste {sw['alpha_fit']:.4f} "
+              f"(prediction {PF_ALPHA_PRED})")
+        for q in sw["points"]:
+            pred = (1 + PF_ALPHA_PRED / q["pf"]) ** -0.5 - 1
+            print(f"  pf {q['pf']:4d}  h {q['h']:>5s}  c_err {100 * q['c_err']:+7.3f} %  "
+                  f"(predit {100 * pred:+7.3f} %)  F_err {100 * q['F_err']:+7.3f} %  "
+                  f"e_u {100 * q['e_u_s2']:6.2f} %  dt {q['dt']:.3e}  {q['wall']:7.1f} s")
     figures(results, sigs)
     return results
 
