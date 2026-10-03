@@ -69,6 +69,29 @@ double f3now() {
                std::chrono::steady_clock::now().time_since_epoch()).count();
 }
 
+// (2026-10-03, performances) tri par base (LSD, chiffres de 11 bits) des
+// cles de paires du contact par potentiel. Les cles sont DISTINCTES : la
+// suite triee est unique, identique a celle de std::sort. Les chiffres
+// constants sur tout le tableau (bits de poids fort des indices) sont sautes.
+void radixSortU64(std::vector<uint64_t>& v, std::vector<uint64_t>& tmp) {
+    const std::size_t n = v.size();
+    if (n < 256) { std::sort(v.begin(), v.end()); return; }
+    uint64_t orAll = 0, andAll = ~(uint64_t)0;
+    for (uint64_t x : v) { orAll |= x; andAll &= x; }
+    const uint64_t varying = orAll ^ andAll;
+    tmp.resize(n);
+    std::size_t cnt[2048];
+    for (int sh = 0; sh < 64; sh += 11) {
+        if (((varying >> sh) & 0x7FFu) == 0) continue;
+        std::fill(cnt, cnt + 2048, (std::size_t)0);
+        for (uint64_t x : v) ++cnt[(x >> sh) & 0x7FFu];
+        std::size_t acc = 0;
+        for (int d = 0; d < 2048; ++d) { std::size_t c = cnt[d]; cnt[d] = acc; acc += c; }
+        for (uint64_t x : v) tmp[cnt[(x >> sh) & 0x7FFu]++] = x;
+        v.swap(tmp);
+    }
+}
+
 // ---------------------------------------------------------------------------
 //  §2.2 eq. 13 — DIF de CISAILLEMENT a exposant libre a_s
 //
@@ -3457,6 +3480,7 @@ void Fdem3dSolver::activateJoint(int jI, double sig,
     Joint& J = jt_[jI];
     if (!J.bonded || J.perm) return;      // perm : groupContinuum, jamais inseree
     J.bonded = false;
+    jLiveDirty_ = true;                    // jointForces : liste des vivants
     // ---- DIF de Yang et al. 2025, FIGE ICI ------------------------------
     // Applique AVANT les decalages de continuite de contrainte ci-dessous,
     // qui lisent J.ft, J.coh et J.pj. Se COMPOSE avec le facteur statistique
@@ -5442,6 +5466,28 @@ void Fdem3dSolver::jointForces() {
         }
     };
 
+    // ---- (2026-10-03, performances) liste compacte des joints vivants ----
+    // processJoint() sort aussitot sur un joint mort ou lie : ne visiter que
+    // les autres, DANS LE MEME ORDRE d indice, ne change aucune operation
+    // flottante. La liste est reconstruite sur jLiveDirty_ (insertion) ;
+    // les morts du pas sont retirees apres la boucle (un joint qui meurt est
+    // encore evalue au pas de sa mort, comme avant).
+    const int nJ = (int)jt_.size();
+    if (jLiveDirty_) {
+        jLive_.clear();
+        for (int j = 0; j < nJ; ++j)
+            if (!jt_[j].dead && !jt_[j].bonded) jLive_.push_back(j);
+        std::vector<char> mk(X0_.size(), 0);
+        for (int j : jLive_)
+            for (int k = 0; k < 3; ++k) mk[jt_[j].a[k]] = mk[jt_[j].b[k]] = 1;
+        jLiveNodes_.clear();
+        for (int i = 0; i < (int)X0_.size(); ++i)
+            if (mk[i]) jLiveNodes_.push_back(i);
+        jLiveDirty_ = false;
+    }
+    const int nL = (int)jLive_.size();
+    bool anyDead = false;
+
 #ifdef _OPENMP
     int nT = omp_get_max_threads();
     if (nT > 1) {
@@ -5453,6 +5499,7 @@ void Fdem3dSolver::jointForces() {
         }
         std::vector<long> nbT(nT, 0);
         std::vector<double> dwT(nT, 0.0), jwT(nT, 0.0);
+        std::vector<char> deadT(nT, 0);
 #pragma omp parallel
         {
             int t = omp_get_thread_num();
@@ -5466,12 +5513,35 @@ void Fdem3dSolver::jointForces() {
                 if (!seen[i]) { seen[i] = 1; tl.push_back(i); }
                 fb[i] += v3;
             };
-#pragma omp for schedule(static)
-            for (int jI = 0; jI < (int)jt_.size(); ++jI)
-                processJoint(jt_[jI], addF, nb, dw, jw);
+            // Tranche de CE fil dans l ancien `omp for schedule(static)` sur
+            // [0, nJ) : c est cette partition qui fixe l arithmetique (somme
+            // par fil dans l ordre des joints, puis fusion t = 0..nT-1). On la
+            // relit aupres du runtime lui-meme, par la meme boucle dans la
+            // meme equipe (corps vide : quelques dizaines de microsecondes),
+            // puis le fil ne parcourt que les vivants de sa tranche — memes
+            // sommes partielles, bit pour bit.
+            int lo = nJ, hi = nJ - 1;
+            bool first = true;
+#pragma omp for schedule(static) nowait
+            for (int jI = 0; jI < nJ; ++jI) {
+                if (first) { lo = jI; first = false; }
+                hi = jI;
+            }
+            if (first) { lo = nJ; hi = nJ - 1; }    // tranche vide
+            const int k0 = (int)(std::lower_bound(jLive_.begin(), jLive_.end(),
+                                                  lo) - jLive_.begin());
+            const int k1 = (int)(std::lower_bound(jLive_.begin(), jLive_.end(),
+                                                  hi + 1) - jLive_.begin());
+            char dd = 0;
+            for (int k = k0; k < k1; ++k) {
+                Joint& J = jt_[jLive_[k]];
+                processJoint(J, addF, nb, dw, jw);
+                if (J.dead) dd = 1;
+            }
             nbT[t] = nb;
             dwT[t] = dw;
             jwT[t] = jw;
+            deadT[t] = dd;
         }
         // ---- fusion des forces par fil, PARALLELE PAR NOEUD (audit C, 13/09)
         // L ancienne fusion (boucle exterieure sur les fils, listes touchedTL_)
@@ -5479,11 +5549,14 @@ void Fdem3dSolver::jointForces() {
         // des 32,4 ms des joints a s = 1 (95 % du poste, Amdahl sur 7/14 fils).
         // Ici chaque noeud somme ses contributions dans le MEME ordre t = 0..nT-1
         // que la boucle d origine : bit-identique par construction, et les
-        // tranches de noeuds se partagent entre les fils.
+        // tranches de noeuds se partagent entre les fils. Depuis le 2026-10-03
+        // la fusion ne parcourt que les noeuds des joints vivants (les autres
+        // n ont aucune contribution : seen = 0 pour tout t).
         {
-            const int nN = (int)X0_.size();
+            const int nN = (int)jLiveNodes_.size();
 #pragma omp parallel for schedule(static)
-            for (int i = 0; i < nN; ++i) {
+            for (int q = 0; q < nN; ++q) {
+                const int i = jLiveNodes_[q];
                 for (int t = 0; t < nT; ++t) {
                     if (!seenTL_[t][i]) continue;
                     f_[i] += fTL_[t][i];
@@ -5496,17 +5569,31 @@ void Fdem3dSolver::jointForces() {
             nBroken_ += nbT[t];
             dampWork_ += dwT[t];
             jointWork_ += jwT[t];
+            if (deadT[t]) anyDead = true;
         }
-        return;
-    }
+    } else
 #endif
-    long nb1 = 0;                        // 1 thread: bit-identical to serial
-    double dw1 = 0.0, jw1 = 0.0;
-    auto addF1 = [&](int i, const Eigen::Vector3d& v3) { f_[i] += v3; };
-    for (auto& J : jt_) processJoint(J, addF1, nb1, dw1, jw1);
-    nBroken_ += nb1;
-    dampWork_ += dw1;
-    jointWork_ += jw1;
+    {
+        long nb1 = 0;                    // 1 thread: bit-identical to serial
+        double dw1 = 0.0, jw1 = 0.0;
+        auto addF1 = [&](int i, const Eigen::Vector3d& v3) { f_[i] += v3; };
+        for (int k = 0; k < nL; ++k) {
+            Joint& J = jt_[jLive_[k]];
+            processJoint(J, addF1, nb1, dw1, jw1);
+            if (J.dead) anyDead = true;
+        }
+        nBroken_ += nb1;
+        dampWork_ += dw1;
+        jointWork_ += jw1;
+    }
+    // morts du pas : retirees de la liste (les noeuds restent dans
+    // jLiveNodes_, sur-ensemble sans effet sur la fusion)
+    if (anyDead) {
+        int w = 0;
+        for (int k = 0; k < nL; ++k)
+            if (!jt_[jLive_[k]].dead) jLive_[w++] = jLive_[k];
+        jLive_.resize(w);
+    }
 }
 
 void Fdem3dSolver::rebuildContactFaces() {
@@ -5689,6 +5776,12 @@ void Fdem3dSolver::activationSweep() {
 // incremental vectoriel. Serie et deterministe.
 // ---------------------------------------------------------------------------
 void Fdem3dSolver::potentialContact() {
+    // (2026-10-03, performances) table element -> joints (CSR), batie avec
+    // jointOfPair_ : la recherche du joint d une paire lit les <= 4 joints
+    // de eLo au lieu d une table de hachage (un defaut de cache par paire).
+    // Meme reponse : jointOfPair_ garde le DERNIER j ecrit pour une cle,
+    // soit le plus grand indice — la recherche prend le plus grand aussi.
+    static std::vector<int> jOfElOff, jOfEl;
     if (jointOfPair_.empty() && !jt_.empty()) {
         jointOfPair_.reserve(2 * jt_.size());
         for (int j = 0; j < (int)jt_.size(); ++j) {
@@ -5696,7 +5789,25 @@ void Fdem3dSolver::potentialContact() {
             uint64_t b = (uint64_t)std::max(jt_[j].eA, jt_[j].eB);
             jointOfPair_[(a << 32) | b] = j;
         }
+        jOfElOff.assign(el_.size() + 1, 0);
+        for (const Joint& J : jt_) { ++jOfElOff[J.eA + 1]; ++jOfElOff[J.eB + 1]; }
+        for (std::size_t e = 0; e < el_.size(); ++e) jOfElOff[e + 1] += jOfElOff[e];
+        jOfEl.assign(jOfElOff.back(), -1);
+        std::vector<int> fill(jOfElOff.begin(), jOfElOff.end() - 1);
+        for (int j = 0; j < (int)jt_.size(); ++j) {
+            jOfEl[fill[jt_[j].eA]++] = j;
+            jOfEl[fill[jt_[j].eB]++] = j;
+        }
     }
+    auto jointOf = [&](int eLo, int eHi) {
+        int jI = -1;
+        if (jOfElOff.empty()) return jI;
+        for (int k = jOfElOff[eLo]; k < jOfElOff[eLo + 1]; ++k) {
+            const Joint& J = jt_[jOfEl[k]];
+            if ((J.eA == eHi || J.eB == eHi) && jOfEl[k] > jI) jI = jOfEl[k];
+        }
+        return jI;
+    };
     // ---- (1) elements uniques du jeu actif -------------------------------
     static std::vector<long> emark;
     static std::vector<int> elems;
@@ -5733,10 +5844,19 @@ void Fdem3dSolver::potentialContact() {
     static std::vector<char> einb;
     einb.resize(elems.size());
     static std::vector<std::vector<int>> eg;
+    // (2026-10-03, performances) seaux NON VIDES du pas precedent : la
+    // remise a zero ne vide plus que ceux-la. L ancienne boucle balayait les
+    // 1,6 M de seaux de la grille dense a chaque pas (4,3 ms SERIE sur 10 ms
+    // de contact, kuru9 a 2 fils) pour quelques milliers de seaux occupes.
+    // Meme contenu de grille a l entree du binning : bit-neutre.
+    static std::vector<std::size_t> egUsed;
     {
         std::size_t nC = (std::size_t)egx * egy * egz;
-        if (eg.size() != nC) eg.assign(nC, {});
-        else for (auto& c : eg) c.clear();
+        if (eg.size() != nC) { eg.assign(nC, {}); egUsed.clear(); }
+        else {
+            for (std::size_t c : egUsed) eg[c].clear();
+            egUsed.clear();
+        }
     }
     // (2026-09-11) AABB en parallele (ecritures par q, independantes), puis
     // rangement en seaux en serie (push_back partage). Meme contenu de grille.
@@ -5769,8 +5889,11 @@ void Fdem3dSolver::potentialContact() {
         int z1 = std::clamp(int((hi.z() - egMin.z()) / cl), 0, egz - 1);
         for (int cz = z0; cz <= z1; ++cz)
             for (int cy = y0; cy <= y1; ++cy)
-                for (int cx = x0; cx <= x1; ++cx)
-                    eg[ecid(cx, cy, cz)].push_back(q);
+                for (int cx = x0; cx <= x1; ++cx) {
+                    const std::size_t c = ecid(cx, cy, cz);
+                    if (eg[c].empty()) egUsed.push_back(c);
+                    eg[c].push_back(q);
+                }
     }
 
     // ---- (3) paires candidates, en ordre CANONIQUE (voir 2D) -------------
@@ -5785,7 +5908,9 @@ void Fdem3dSolver::potentialContact() {
 #ifdef _OPENMP
     nT3 = std::max(1, omp_get_max_threads());
 #endif
+    static std::vector<std::vector<uint64_t>> sortTmpTL;   // tri par base
     if ((int)pstampTL.size() < nT3) { pstampTL.resize(nT3); pairsTL.resize(nT3); }
+    if ((int)sortTmpTL.size() < nT3) sortTmpTL.resize(nT3);
     for (int t = 0; t < nT3; ++t) {
         if (pstampTL[t].size() != elems.size()) pstampTL[t].assign(elems.size(), -1);
         else std::fill(pstampTL[t].begin(), pstampTL[t].end(), -1);
@@ -5814,20 +5939,39 @@ void Fdem3dSolver::potentialContact() {
                         out.push_back((a << 32) | b);
                     }
     };
+    // (2026-10-03, performances) chaque fil TRIE sa liste dans la region
+    // parallele, puis les listes triees sont fusionnees deux a deux. Les cles
+    // sont des paires DISTINCTES (une paire n est emise que par son q le plus
+    // petit, une seule fois grace a pstamp) : la suite triee est unique, donc
+    // identique a celle de l ancien std::sort serie (1,4 ms a 2 fils sur
+    // kuru9), quel que soit l algorithme — ici un tri par base.
 #ifdef _OPENMP
 #pragma omp parallel num_threads(nT3)
     {
         const int t = omp_get_thread_num();
 #pragma omp for schedule(static)
         for (int q = 0; q < nEl; ++q) genPairs(q, pstampTL[t], pairsTL[t]);
+        radixSortU64(pairsTL[t], sortTmpTL[t]);
     }
 #else
     for (int q = 0; q < nEl; ++q) genPairs(q, pstampTL[0], pairsTL[0]);
+    radixSortU64(pairsTL[0], sortTmpTL[0]);
 #endif
-    pairs.clear();
-    for (int t = 0; t < nT3; ++t)
-        pairs.insert(pairs.end(), pairsTL[t].begin(), pairsTL[t].end());
-    std::sort(pairs.begin(), pairs.end());
+    {
+        static std::vector<uint64_t> mtmp;
+        int nL = nT3;                          // fusion en arbre : log2(nT)
+        for (int w = 1; w < nL; w *= 2)        // passes sur les listes
+            for (int t = 0; t + w < nL; t += 2 * w) {
+                mtmp.resize(pairsTL[t].size() + pairsTL[t + w].size());
+                std::merge(pairsTL[t].begin(), pairsTL[t].end(),
+                           pairsTL[t + w].begin(), pairsTL[t + w].end(),
+                           mtmp.begin());
+                pairsTL[t].swap(mtmp);
+                pairsTL[t + w].clear();
+            }
+        pairs.swap(pairsTL[0]);                // pairsTL[0] repart vide au
+        pairsTL[0].clear();                    // prochain pas (clear ci-dessus)
+    }
     {
         auto t1 = std::chrono::steady_clock::now();
         potStats_.tGrid += std::chrono::duration<double>(t1 - potTic).count();
@@ -5857,16 +6001,43 @@ void Fdem3dSolver::potentialContact() {
     static std::vector<PCand> cand;
     static std::vector<PRes> res;
     cand.clear();
-    for (uint64_t pk : pairs) {
+    // (2026-10-03, performances) phase A en deux temps. Les RECHERCHES
+    // (jointOf, potFt_.find : acces const concurrents, aucun
+    // ecrivain pendant la boucle) passent en parallele ; seule l INSERTION
+    // d une paire nouvelle dans potFt_ reste serie, dans l ordre canonique
+    // des paires comme avant — meme suite d insertions, meme table.
+    static std::vector<int> pairJ;             // joint de la paire, -1 sinon
+    static std::vector<PotHist*> pairH;        // entree existante, nullptr sinon
+    static std::vector<char> pairLive;         // 1 = joint vivant, paire ecartee
+    const int nPairs = (int)pairs.size();
+    pairJ.resize(pairs.size());
+    pairH.resize(pairs.size());
+    pairLive.resize(pairs.size());
+#ifdef _OPENMP
+#pragma omp parallel for schedule(static) if (nPairs >= 256)
+#endif
+    for (int i = 0; i < nPairs; ++i) {
+        const uint64_t pk = pairs[i];
+        const int jI = jointOf((int)(pk >> 32), (int)(pk & 0xFFFFFFFFu));
+        pairJ[i] = jI;
+        pairLive[i] = (jI >= 0 && !jt_[jI].dead) ? 1 : 0;
+        pairH[i] = nullptr;
+        if (!pairLive[i]) {
+            auto itH = potFt_.find(pk);
+            if (itH != potFt_.end()) pairH[i] = &itH->second;
+        }
+    }
+    for (int i = 0; i < nPairs; ++i) {
+        const uint64_t pk = pairs[i];
         const int eLo = (int)(pk >> 32);
         const int eHi = (int)(pk & 0xFFFFFFFFu);
-        auto itJ = jointOfPair_.find(pk);
-        const int jI = (itJ != jointOfPair_.end()) ? itJ->second : -1;
-        if (jI >= 0 && !jt_[jI].dead) {
+        const int jI = pairJ[i];
+        if (pairLive[i]) {
             ++potStats_.joint;
             continue;      // le joint vivant porte la paire
         }
-        cand.push_back({pk, eLo, eHi, &potFt_[pk], jI});
+        PotHist* H = pairH[i] ? pairH[i] : &potFt_[pk];
+        cand.push_back({pk, eLo, eHi, H, jI});
     }
     const int nCand = (int)cand.size();
     res.resize(cand.size());
@@ -6145,15 +6316,24 @@ void Fdem3dSolver::generalContact() {
     } else {
         // reuse the buckets instead of destroying them: assign() frees every
         // inner vector every step, clear() keeps their capacity (bit-neutral)
+        // (2026-10-03, performances) seuls les seaux remplis au pas
+        // precedent sont vides (gridUsed) : meme grille, sans le balayage
+        // serie des millions de seaux vides de la grille dense.
+        static std::vector<std::size_t> gridUsed;
         std::size_t nCells = (std::size_t)gx_ * gy_ * gz_;
-        if (grid_.size() != nCells) grid_.assign(nCells, {});
-        else for (auto& c : grid_) c.clear();
+        if (grid_.size() != nCells) { grid_.assign(nCells, {}); gridUsed.clear(); }
+        else {
+            for (std::size_t c : gridUsed) grid_[c].clear();
+            gridUsed.clear();
+        }
         for (std::size_t k = 0; k < act_.size(); ++k) {
             if (!inBox[k]) continue;
             int cx = std::clamp(int((cen[k].x() - gmin_.x()) / cell_), 0, gx_ - 1);
             int cy = std::clamp(int((cen[k].y() - gmin_.y()) / cell_), 0, gy_ - 1);
             int cz = std::clamp(int((cen[k].z() - gmin_.z()) / cell_), 0, gz_ - 1);
-            grid_[cidx(cx, cy, cz)].push_back((int)k);
+            const std::size_t c = cidx(cx, cy, cz);
+            if (grid_[c].empty()) gridUsed.push_back(c);
+            grid_[c].push_back((int)k);
         }
     }
 
