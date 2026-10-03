@@ -152,7 +152,7 @@ private:
     enum Flag { FREE = 0, FIXED = 1, PRESCRIBED = 2 };
     // JOINTBENCH (S3, campagne du 13/09) : banc de joint cinematique, un
     // seul joint entre deux tetraedres, tetra B en translation prescrite.
-    enum class Scenario { PERCUSSION, SHEAR, TENSION, JOINTBENCH };
+    enum class Scenario { PERCUSSION, SHEAR, TENSION, JOINTBENCH, LOADS };
 
     struct Elem {
         std::array<int, 4> n;
@@ -438,6 +438,13 @@ private:
     void setupConfinement();
     void confiningForces();
     double achievedConfinement() const;
+    // chargements et conditions aux limites par groupes (Fdem3dLoads.cpp)
+    void setupUserLoads();
+    void userLoadForces();
+    void userHistoryHeader(std::ostream& os) const;
+    void userHistoryRow(std::ostream& os) const;
+    void userSummary() const;
+    double userAmp(int k, double t) const;
     void computeStableDt();
 
     void elementForces();
@@ -1497,6 +1504,73 @@ private:
     std::vector<BFace> confFaces_;         // faces LATERALES d'origine seulement
     bool confLatched_ = false;
     double confAchieved_ = 0.0;
+
+    // ---- Chargements et conditions aux limites PAR GROUPES (2026-10-03) ----
+    // Le pendant des tables /YD/YDB/ de Solidity (vitesse imposee par axe,
+    // force nodale), mais adresse par GROUPES NOMMES au lieu d un numero de
+    // propriete par noeud, avec une amplitude en temps. Cles (toutes opt-in,
+    // absentes = rien ne change au bit pres) :
+    //   fix.<g>       = x y z | all          (sous-ensemble des axes)
+    //   velocity.<g>  = vx vy vz             ('free' = axe libre) [m/s]
+    //   traction.<g>  = tx ty tz             [Pa] charge morte, aire de reference
+    //   pressure.<g>  = p                    [Pa] suiveuse, > 0 comprime
+    //   force.<g>     = Fx Fy Fz             [N] force TOTALE sur le groupe
+    //   amplitude.<g> = t0 a0 t1 a1 ... | ramp T   (defaut : 1)
+    //   point.<g>     = x y z                groupe = sommet le plus proche
+    //   box.<g>       = x0 y0 z0 x1 y1 z1    groupe = faces exterieures dans la boite
+    // Groupes : physiques Gmsh de dimension 0, 1, 2 (mesh = file), corps
+    // (volumes physiques), point.<g>, box.<g>. Coordonnees : repere SOLVEUR.
+    // INSERTION ADAPTATIVE : une face exterieure appartient a UN tetra, donc
+    // traction et pression vont aux copies de CE tetra et restent sur la
+    // matiere de surface quand un joint s insere dessous ; une force sur un
+    // sommet est partagee entre ses copies au prorata des masses (la somme
+    // est exacte tant qu elles sont liees, et reste exacte apres la
+    // scission) ; une vitesse imposee contraint TOUTES les copies, si bien
+    // qu un groupe lie reste lie et qu un groupe scinde reste tenu.
+    struct UGroup {
+        std::string name;
+        int dim = -1;                          // 0 point, 1 courbe, 2 surface, 3 volume
+        std::vector<BFace> faces;              // dim 2 : faces exterieures
+        std::vector<int> verts;                // sommets virtuels (vOf_)
+        std::vector<int> copies;               // copies de noeuds du groupe
+        long missing = 0;                      // triangles hors frontiere
+    };
+    struct UAmp {
+        std::vector<double> t, a;
+        bool smooth = false;                   // ramp T : montee en cosinus
+    };
+    struct ULoad {
+        int grp = -1, kind = 0;                // 0 traction, 1 pression, 2 force
+        Eigen::Vector3d val = Eigen::Vector3d::Zero();
+        int amp = -1;
+        std::vector<std::pair<int, double>> nodeW;  // force hors surface
+        double area0 = 0.0;
+        Eigen::Vector3d Fnow = Eigen::Vector3d::Zero();
+    };
+    struct UBc {
+        int grp = -1, mask = 0, amp = -1;
+        Eigen::Vector3d v = Eigen::Vector3d::Zero();
+    };
+    struct UMsh {                              // groupes physiques dim 0-2
+        std::string name;
+        int dim = 0;
+        std::vector<int> verts;
+        std::vector<std::array<int, 3>> tris;
+    };
+    std::vector<UMsh> mshLow_;                 // lus par buildMeshFile
+    Eigen::Vector3d meshOrigin_ = Eigen::Vector3d::Zero();
+    bool uOn_ = false;
+    std::vector<UGroup> uGrp_;
+    std::vector<UAmp> uAmp_;
+    std::vector<int> uGrpAmp_;                 // amplitude par groupe (-1 = 1)
+    std::vector<ULoad> uLoad_;
+    std::vector<UBc> uBc_;
+    std::vector<unsigned char> uMask_;         // par copie : bits x,y,z imposes
+    std::vector<Eigen::Vector3d> uVel_;        // vitesse imposee de base
+    std::vector<std::array<int, 3>> uAmpOf_;   // amplitude par axe
+    std::vector<Eigen::Vector3d> uR_;          // reaction du pas, par copie
+    double uLoadW_ = 0.0;                      // travail des charges -> solide
+    double uBcW_ = 0.0;                        // travail des liaisons -> solide
 
     // ---- physical groups Gmsh (mesh = file) — V1 ---------------------------
     // $PhysicalNames (dim 3) -> un GROUPE par volume physique : materiau par

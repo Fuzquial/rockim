@@ -1,5 +1,5 @@
 #pragma once
-// KeysByMode.hpp — GENERE par tools/gen_keys_by_mode.py le 2026-09-13 01:15:59 : NE PAS EDITER.
+// KeysByMode.hpp — GENERE par tools/gen_keys_by_mode.py le 2026-10-03 08:49:47 : NE PAS EDITER.
 // Registre lisible : tools/keys_by_mode.json (methode dans la docstring du generateur).
 // Table des cles PROPRES A UN MODE (lues par un seul solveur) ; toute autre cle est commune.
 #include <stdexcept>
@@ -631,6 +631,8 @@ inline const char* const kKnown[] = {
 // C1 (w21) : familles de cles construites dynamiquement ("phase." + nom...) :
 // une cle de ces familles non lue = nom de phase/groupe inconnu.
 inline const char* const kDynamicPrefix[] = {
+    "amplitude.",
+    "box.",
     "contactMu.",
     "gauge.",
     "gb.",
@@ -639,6 +641,8 @@ inline const char* const kDynamicPrefix[] = {
     "groupPhase.",
     "groupVel.",
     "phase.",
+    "point.",
+    "velocity.",
     nullptr
 };
 

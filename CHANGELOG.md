@@ -5,6 +5,45 @@ plan de robustesse du 2026-09-05). L'arbre `g0` est sous git depuis le tag `g0-0
 reçoit les lignes exigées par les règles déjà en vigueur — dont **toute ancre de bit-identité changée**
 (`tools/bitid_refs.json`, règle de `tools/BITID.md`).
 
+## [Non publié] — arbre g1, 2026-10-03 : charges et conditions aux limites par groupes (fdem3d)
+
+Demande de Fernando : « une forme géométrique quelconque, une force ponctuelle ou surfacique », en
+reprenant ce que fait Solidity (tables `/YD/YDB/` de leur code public) sans perdre l'insertion
+adaptative. Documentation : `DOCUMENTATION_rockim.md` §5.21. Code : `src/Fdem3dLoads.cpp`.
+
+### Ajouté (opt-in, défaut bit-identique)
+
+- **`scenario = loads`** (fdem3d) : ni outil analytique, ni appui implicite, `dampingLocal` = 0 par
+  défaut. Le montage est décrit par les clés ci-dessous.
+- **`fix.<g>`**, **`velocity.<g>`** (axes `free` permis), **`traction.<g>`** (charge morte),
+  **`pressure.<g>`** (suiveuse), **`force.<g>`** (force totale), **`amplitude.<g>`** (table
+  linéaire ou `ramp T`), **`point.<g>`**, **`box.<g>`**. Valables dans tous les scénarios fdem3d
+  sauf `jointbench`, refusées sur un nœud déjà tenu par le montage du scénario.
+- Lecture des groupes physiques Gmsh de dimension 0, 1 et 2 (`buildMeshFile`) ; un groupe de surface
+  est apparié aux faces extérieures du maillage.
+- Insertion adaptative : traction et pression sur les copies du tétra de surface, force de sommet
+  partagée entre copies au prorata des masses, vitesse imposée sur toutes les copies. L'intégrateur
+  (branche par groupes et branche par nœud) ne met ni ressort, ni amortisseur, ni Cundall sur un axe
+  imposé.
+- Bilan B4 : postes `charges` et `liaisons` (sources extérieures, dans `sumW`, dans l'échelle et dans
+  la borne d'énergie de `budgetAbortPct`). `history.csv` : `U_<g>_*`, `RF_<g>_*`, `F_<g>_*`, `eLoad`,
+  `eBc` en fin de ligne. Résumé : une ligne `groupe <g> : U = … ; RF = … ; F = …` par groupe.
+- `make_unstructured_mesh.py box3dbc` : bloc avec faces et coins nommés. Maillage de la suite
+  `meshes/loads_bar_h4.msh` (exception `.gitignore`), decks `configs/verify_fdem3d_loads.cfg` et
+  `configs/fdem3d_loads_rupture.cfg`. Repères `loads_traction_3d` (fast), `loads_pression_3d`,
+  `loads_force_3d`, `loads_intrinseque_3d` (full).
+- Registre des clés régénéré (`Fdem3dLoads` appartient à fdem3d ; préfixes `amplitude.`, `box.`,
+  `point.`, `velocity.`).
+
+### Mesuré
+
+- Barre élastique 20 × 20 × 40 mm, traction 5 MPa : allongement 4,00122e-6 m (exact 4,0e-6),
+  réaction −2 000,49 N (exact −2 000), résidu B4 7e-13 %. Pression suiveuse, force totale et
+  intrinsèque concordent (§5.21).
+- Rupture adaptative écrite par groupes contre `scenario = tension` : 408 joints insérés et 2 rompus
+  des deux côtés, pic 12,27 MPa des deux côtés, force d'appui à 0,1 % (vitesse lue à t + dt/2).
+- Bit-identité : vérification en cours (binaire d avant contre binaire d après, decks de `tools/bitid.py`).
+
 ## [Non publié] — arbre g1, 2026-09-11 soir : le point sur les impacts Yang/Solidity
 
 Point demandé par Fernando (« à chaque fois une nouvelle erreur, c'est infini »). Document :

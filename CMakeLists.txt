@@ -83,6 +83,7 @@ add_executable(rockim
   src/DfhPlusBench.cpp
   src/Dem3dSolver.cpp
   src/DemSolver.cpp
+  src/Fdem3dLoads.cpp
   src/Fdem3dSolver.cpp
   src/FdemSolver.cpp
   src/Fem3dSolver.cpp

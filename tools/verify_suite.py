@@ -55,6 +55,9 @@ RX = {
     # l outil injectait 408 fois son travail de corps rigide.
     "toolinj":   r"injection outil.*= ratio ([\d.eE+-]+)",
     "toolvb":    r"v nodale max.*= ([\d.eE+-]+) x 2 v_outil",
+    # --- charges et CL par groupes (2026-10-03) : bilan par groupe en fin de run
+    "ld_utop_z":  r"groupe top : U = \S+ \S+ (\S+) m",
+    "ld_rfbot_z": r"groupe bottom : U = \S+ \S+ \S+ m ; RF = \S+ \S+ (\S+) N",
     # --- pas de temps stable, ajoute 2026-08-29 (chantier A11) -------------
     # Le budget de pas de temps du 3D ignorait la raideur TANGENTIELLE du
     # contact par potentiel, alors que le 2D la prend depuis longtemps. Xiang,
@@ -1065,6 +1068,38 @@ TESTS = [
          over=["meshFile = " + os.path.join(ROOT, "meshes", "bench1_insert.msh")],
          checks=[("broken", 12, 0, True), ("gcwork", 0.0, 1.0, True),
                  ("budget", 0.0, 0.026, True)]),   # V2/B4 : residu <= 1 % de KE0
+    # --- charges et CL par groupes (fdem3d, 2026-10-03, §5.21) ---------------
+    # Barre 20 x 20 x 40 mm, traction 5 MPa sur `top`, appuis isostatiques.
+    # Solution EXACTE (continuum EF, etat homogene) : U_top_z = sigma.L/E =
+    # 4,000e-6 m, reaction de l appui = -2 000 N. Les quatre variantes
+    # changent la FACON de charger (charge morte, pression suiveuse, force
+    # totale) ou d integrer (copies liees vs joints de penalite) : l equilibre
+    # doit tenir dans les quatre, l allongement est exact dans les trois
+    # premieres et porte la souplesse des joints (+4,5 %) dans la quatrieme.
+    dict(name="loads_traction_3d", tier="fast", cfg="verify_fdem3d_loads.cfg",
+         over=["meshFile = " + os.path.join(ROOT, "meshes", "loads_bar_h4.msh")],
+         checks=[("ld_utop_z", 4.00122e-06, 2e-8, True),
+                 ("ld_rfbot_z", -2000.49, 1.0, True),
+                 ("budget", 0.0, 1e-9, True),
+                 ("broken", 0.0, 0, True)]),
+    dict(name="loads_pression_3d", tier="full", cfg="verify_fdem3d_loads.cfg",
+         over=["traction.top = 0 0 0", "pressure.top = -5e6",
+               "meshFile = " + os.path.join(ROOT, "meshes", "loads_bar_h4.msh")],
+         checks=[("ld_utop_z", 4.00102e-06, 2e-8, True),
+                 ("ld_rfbot_z", -2000.40, 1.0, True),
+                 ("budget", 0.0, 1e-9, True)]),
+    dict(name="loads_force_3d", tier="full", cfg="verify_fdem3d_loads.cfg",
+         over=["traction.top = 0 0 0", "force.top = 0 0 2000",
+               "meshFile = " + os.path.join(ROOT, "meshes", "loads_bar_h4.msh")],
+         checks=[("ld_utop_z", 4.00122e-06, 2e-8, True),
+                 ("ld_rfbot_z", -2000.49, 1.0, True),
+                 ("budget", 0.0, 1e-9, True)]),
+    dict(name="loads_intrinseque_3d", tier="full", cfg="verify_fdem3d_loads.cfg",
+         over=["insertion = intrinsic", "jointPenaltyFactor = 20",
+               "meshFile = " + os.path.join(ROOT, "meshes", "loads_bar_h4.msh")],
+         checks=[("ld_utop_z", 4.17871e-06, 2e-8, True),
+                 ("ld_rfbot_z", -1999.96, 1.0, True),
+                 ("budget", 0.0, 1e-9, True)]),
 ]
 
 TIERS = {"fast": ["fast"], "full": ["fast", "full"], "all": ["fast", "full", "all"]}

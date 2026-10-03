@@ -292,7 +292,7 @@ Colonne « portée » : modes qui lisent la clé. Défauts entre parenthèses.
 | clé (défaut) | rôle | portée |
 |---|---|---|
 | `mode` (fem) | fem \| fem3d \| dem \| dem3d \| fdem \| fdem3d | — |
-| `scenario` (percussion) | percussion \| shear \| tension ; + `bar_wave` (fem) ; + `brazilian`, `shpb` (fdem) ; + **`jointbench`** (fdem3d, **S3 du 13/09** : banc de joint cinématique à un seul joint entre deux tétraèdres, §5.4 sexies — construit son maillage, refuse `mesh`/`W`/`D`/`H`/`nx`/`ny`/`nz`) | tous |
+| `scenario` (percussion) | percussion \| shear \| tension ; + `bar_wave` (fem) ; + `brazilian`, `shpb` (fdem) ; + **`jointbench`** (fdem3d, **S3 du 13/09** : banc de joint cinématique à un seul joint entre deux tétraèdres, §5.4 sexies — construit son maillage, refuse `mesh`/`W`/`D`/`H`/`nx`/`ny`/`nz`) ; + **`loads`** (fdem3d, 2026-10-03 : ni outil, ni appui implicite, `dampingLocal` = 0 par défaut — le montage est entièrement décrit par les clés de §5.21) | tous |
 | `geometry` (box ; disc si brazilian, shpb si shpb) | box \| disc (fdem) ; box \| cylinder (fem3d) | fdem, fem3d |
 | `mesh` (grid) | grid \| voronoi (GBM) \| **file** (maillage non structuré importé, « à la Yan ») | fdem, fdem3d |
 | `meshFile` (requis si mesh = file) | chemin d'un Gmsh MSH 2.2 ASCII (type 2 en 2D, type 4 en 3D) ; boîte translatée à l'origine, W/H/D relus de l'enveloppe ; générer via `tools/make_unstructured_mesh.py` — variantes `box3d`, `box2d`, `bench1` (bloc + insert spherique), **`bench1g`** (idem GRADUE : `bench1g W D H R gap h hIns hFin rFin dFin out.msh [seed]`, champ de taille en rampe, fin dans un cylindre de rayon `rFin` et profondeur `dFin` sous l'axe d'impact — resserrer sur le rayon de contact de Hertz, pas sur l'etendue du champ visible), `tunnel` | fdem, fdem3d |
@@ -2424,6 +2424,114 @@ pullDelay = 3 rampes, OMP 4, 7 s par run) : à la fin de la consolidation σ_xx 
 −49,97 / −49,86 MPa (tol ±0,5), KE 3,5e-7 J, ε_vol = −P/K à 0,13 % ; phase axiale q/ε_ax = 77,64 GPa (E à
 −0,03 %, 501 points) ; variante **qui doit échouer** (pullDelay = 0) : σ_zz = −31,3 MPa à la jauge de
 confinement (écart 18,7 MPa > 10 ; −2νP = −29 MPa attendu à ε_zz = 0). `python check_bench.py out_delay out_nodelay`.
+
+### 5.21 Charges et conditions aux limites par groupes (`fdem3d`, 2026-10-03)
+
+**Pourquoi.** Jusqu'ici un deck ne pouvait charger le solide que par les montages câblés des scénarios
+(outil analytique, fond encastré en percussion, mors en traction, pression de confinement uniforme).
+Le code public de Solidity porte, lui, une table de conditions aux limites par nœud (`/YD/YDB/` :
+vitesse imposée par axe, force nodale, accélération ; `Y3Drd.c` l. 1221-1260, `Y3Dsd.c` l. 80-102 et
+238), remplie par le préprocesseur. rockim fait la même chose **par groupes nommés**, avec une
+amplitude en temps, et **compatible avec l'insertion adaptative**. Code : `src/Fdem3dLoads.cpp`.
+Tout est opt-in : sans aucune des clés ci-dessous, aucune instruction ne change (bit-identité vérifiée
+par `tools/bitid.py`, §ci-dessous).
+
+**Les groupes.** Un nom de groupe vient de l'une de ces sources (un nom défini deux fois est refusé) :
+
+| source | dimension | ce qui est retenu |
+|---|---|---|
+| groupe physique Gmsh de **surface** (`$PhysicalNames` dim 2, triangles type 2) | 2 | ses triangles, appariés aux faces EXTÉRIEURES du maillage, et leurs sommets |
+| groupe physique Gmsh de **courbe** ou de **point** (dim 1, dim 0) | 1, 0 | ses sommets |
+| **corps** (volume physique, dim 3 ; `all` sans groupes physiques) | 3 | toutes les copies de nœuds de ses tétraèdres |
+| `point.<g> = x y z` | 0 | le sommet le plus proche (distance imprimée) |
+| `box.<g> = x0 y0 z0 x1 y1 z1` | 2 | les faces extérieures dont les trois sommets sont dans la boîte |
+
+Coordonnées de `point.` et `box.` : **repère solveur** (le maillage est translaté pour que sa boîte
+englobante parte de l'origine ; la translation est imprimée). `box.` marche aussi sur `mesh = grid` et
+`mesh = voronoi`. Générateur avec faces nommées : `make_unstructured_mesh.py box3dbc W D H h out.msh`
+(volume `solid`, faces `xmin xmax ymin ymax bottom top`, coins `c000` … `c111`).
+
+**Les clés.**
+
+| clé | rôle |
+|---|---|
+| `fix.<g> = x y z \| all` | vitesse nulle sur les axes donnés (`xy`, `x z`, `all`… acceptés) |
+| `velocity.<g> = vx vy vz` | vitesse imposée [m/s] ; `free` laisse un axe libre (`free free -0.05`) ; exclusive de `fix.<g>` |
+| `traction.<g> = tx ty tz` | charge **morte** [Pa] sur une surface, aire de référence, répartie A/3 par nœud |
+| `pressure.<g> = p` | pression **suiveuse** [Pa] sur une surface, aire et normale COURANTES, `p > 0` comprime (comme `confiningPressure`) |
+| `force.<g> = Fx Fy Fz` | force **totale** [N] : surface → au prorata des aires ; point ou courbe → parts égales par sommet ; corps → au prorata des masses |
+| `amplitude.<g> = t0 a0 t1 a1 …` | facteur en temps, linéaire par morceaux, constant hors de la table ; `ramp T` = montée en cosinus de 0 à 1 sur T, puis 1. S'applique à toutes les clés du groupe. Sans elle : 1 dès t = 0 |
+
+Les vitesses imposées sont évaluées à mi-pas (t + dt/2, la vitesse du schéma saute-mouton), les forces
+à t. Traction et pression exigent une surface dont **tous** les triangles sont des faces extérieures :
+un triangle intérieur à un corps, ou posé sur l'interface de deux corps non liés (deux faces
+extérieures superposées, ambiguë), est refusé avec son compte.
+
+**Insertion adaptative — pourquoi ça reste juste.** Une face extérieure appartient à UN tétraèdre :
+traction et pression vont aux copies de nœuds de CE tétraèdre, donc la charge reste sur la matière de
+surface quand un joint s'insère dessous. Une force de sommet est partagée entre les copies du sommet
+au prorata de leurs masses : tant qu'elles sont liées la somme est la force voulue, et elle le reste
+après la scission (chaque fragment reçoit sa part). Une vitesse imposée contraint **toutes** les copies
+du sommet : un groupe lié reste lié, un groupe scindé reste tenu. Dans l'intégrateur, un axe imposé ne
+reçoit ni ressort absorbant, ni amortisseur de Lysmer, ni Cundall, et sort du terme de correction
+saute-mouton ; les axes libres du même nœud sont intégrés normalement.
+
+**Gardes.** Groupe inconnu (la liste des groupes disponibles est imprimée) ; traction ou pression sur
+un groupe qui n'est pas une surface ; nombres à virgule ; `fix.` et `velocity.` sur le même groupe ;
+deux groupes qui imposent des valeurs DIFFÉRENTES au même ddl (arête ou coin commun) ; une liaison sur
+un nœud déjà tenu par le montage du scénario (fond encastré en percussion et coupe, mors en traction :
+poser `scenario = loads`) ; `amplitude.`, `point.` ou `box.` qui ne servent à aucune charge ni liaison ;
+`scenario = jointbench`.
+
+**Sorties.** `history.csv`, en fin de ligne, pour chaque groupe utilisé (groupes de `fix.`, puis
+`velocity.`, `traction.`, `pressure.`, `force.`, par ordre alphabétique dans chaque famille ; l'en-tête fait foi) : `U_<g>_x/y/z` (déplacement moyen des copies), `RF_<g>_x/y/z` (réaction
+du pas, R = m(v_imposée − v)/dt − f, sur les axes que CE groupe impose) si le groupe est tenu,
+`F_<g>_x/y/z` (charge appliquée au pas) s'il est chargé ; puis `eLoad` (travail cumulé des charges) et
+`eBc` (travail des liaisons). Résumé : ligne `charges : … J, liaisons … J`. Les deux postes entrent dans
+le bilan B4, dans son échelle et dans la borne d'énergie de `budgetAbortPct` (ce sont des sources
+extérieures). Une arête commune à deux groupes tenus compte dans les deux réactions.
+
+**Validation (2026-10-03, Linux g++, maillage `tests_f2/loads/bar_h4.msh`, barre 20 × 20 × 40 mm,
+1 662 tets, E = 50 GPa, ν = 0,25).** Deck `tests_f2/loads/bar_traction.cfg` : traction 5 MPa sur `top`
+en `ramp 1e-4`, `fix.bottom = z`, `fix.c000 = x y`, `fix.c100 = y` (appuis isostatiques),
+`dampingLocal = 0,3`, insertion adaptative sans rupture (continuum exact) :
+
+| variante | U_top_z (exact 4,000e-6 m) | RF_bottom_z (exact −2 000 N) | résidu B4 |
+|---|---|---|---|
+| `traction.top = 0 0 5e6` | 4,00122e-6 | −2 000,49 | 7e-13 % |
+| `pressure.top = -5e6` (suiveuse) | 4,00102e-6 | −2 000,40 (F appliquée 1 999,9 : l'aire se contracte de 2νε) | 1e-12 % |
+| `force.top = 0 0 2000` | 4,00122e-6 | −2 000,49 | 6e-14 % |
+| traction, `insertion = intrinsic`, `jointPenaltyFactor = 20` | 4,17871e-6 (+4,5 % : souplesse des joints de pénalité) | −1 999,96 | 4e-13 % |
+
+Contraction latérale du centre de `top` : U_x = −2,28e-7 m pour −νεW/2 = −2,5e-7 m (le coin `c000`
+est tenu, pas le centre). L'écart résiduel de 0,03 % sur U est la dynamique non encore amortie à
+T = 3e-4 s.
+
+**Rupture avec insertion adaptative, contre le scénario `tension` (deck `configs/fdem3d_loads_rupture.cfg`).**
+Même maillage, ft = 10 MPa, `dampingLocal = 0`, T = 3e-4 s. `scenario = tension` (`pullV = 0,05`,
+`pullRamp = 5e-5`) contre `scenario = loads` avec `fix.bottom = all`, `velocity.top = 0 0 0.05`,
+`amplitude.top = ramp 5e-5`, c'est-à-dire le même montage écrit par groupes :
+
+| | `tension` (mors câblés) | `loads` (groupes) |
+|---|---|---|
+| joints insérés / rompus | 408 / 2 | 408 / 2 |
+| pic de contrainte | 12,27 MPa | 12,27 MPa |
+| résidu B4 | −4,58925e-8 J | −4,58925e-8 J |
+| écart max de la force d'appui sur 2 061 lignes | — | 4,75 N sur 4 910 N (0,1 %) |
+
+L'écart de 0,1 % est attendu et ne vient pas d'une erreur : `tension` lit la vitesse des mors à t et
+rapporte la somme des forces internes des nœuds tenus, `loads` lit la vitesse à t + dt/2 et rapporte
+la réaction R = m·a − f. La rupture, elle, est la même.
+
+**Repères de la suite.** `loads_traction_3d` (tier `fast`), `loads_pression_3d`, `loads_force_3d`,
+`loads_intrinseque_3d` (tier `full`) : U_top_z à 2e-8 m, réaction à 1 N, résidu B4 à 1e-9 J.
+
+**Bit-identité.** `tools/bitid.py` sur ses neuf decks (fem3d, fdem3d dont Kuru et Yang v2, fdem),
+binaire d'avant contre binaire d'après, même machine et 4 fils : voir CHANGELOG.
+
+**Ce qui n'est pas fait.** Les modes `fdem` (2D) et `fem3d` ne lisent pas ces clés : un deck de ces
+modes qui les porte est refusé (clé non lue). L'accélération imposée de Solidity (`D1BNA*`) n'a pas
+d'équivalent : une vitesse imposée avec une amplitude linéaire par morceaux couvre le même besoin.
 
 ## 6. Sorties
 

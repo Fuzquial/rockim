@@ -487,8 +487,9 @@ void Fdem3dSolver::init() {
     else if (sc == "shear")      scen_ = Scenario::SHEAR;
     else if (sc == "tension")    scen_ = Scenario::TENSION;
     else if (sc == "jointbench") scen_ = Scenario::JOINTBENCH;   // S3 (13/09)
+    else if (sc == "loads")      scen_ = Scenario::LOADS;   // 2026-10-03
     else throw std::runtime_error("fdem3d scenario must be percussion | shear | "
-                                  "tension | jointbench");
+                                  "tension | jointbench | loads");
 
     // ---- S3 (campagne du 13/09, DIAGNOSTIC §6.2) : scenario = jointbench ---
     // Les cles jb* ne sont lues QUE sous ce scenario ; posees ailleurs elles
@@ -586,7 +587,10 @@ void Fdem3dSolver::init() {
     ny_ = cfg_.geti("ny", 20);
     nz_ = cfg_.geti("nz", 15);
     T_ = cfg_.getd("T", 2e-4);
-    damping_ = cfg_.getd("dampingLocal", scen_ == Scenario::TENSION ? 0.7 : 0.05);
+    // scenario = loads : aucun amortissement par defaut — le bilan des
+    // charges et des liaisons doit se lire sans poste parasite
+    damping_ = cfg_.getd("dampingLocal", scen_ == Scenario::TENSION ? 0.7
+                         : scen_ == Scenario::LOADS ? 0.0 : 0.05);
 
     buildMesh();
 
@@ -1699,6 +1703,7 @@ void Fdem3dSolver::init() {
     placeTool();
     setupBoundaries();
     setupConfinement();
+    setupUserLoads();                      // no-op sans fix./force./...
     // ---- viscosite de Yan : mu par element ------------------------------
     // mu = xi h sqrt(E rho) : xi est le taux d amortissement a l echelle de
     // la MAILLE. xi = 2 est exactement l amortissement critique de Munjiza
@@ -2046,6 +2051,8 @@ void Fdem3dSolver::buildMeshFile() {
     std::vector<std::array<int, 4>> tets;
     std::vector<long> tetPhys;             // tag physique par tet (0 = aucun)
     std::map<long, std::string> physVol;   // id physique (dim 3) -> nom
+    std::map<long, int> physLow;           // id physique (dim 0-2) -> mshLow_
+    mshLow_.clear();
     bool sawFormat = false;
     while (std::getline(in, line)) {
         if (line.rfind("$MeshFormat", 0) == 0) {
@@ -2067,7 +2074,11 @@ void Fdem3dSolver::buildMeshFile() {
                 auto q1 = nm.rfind('"');
                 if (q0 != std::string::npos && q1 > q0)
                     nm = nm.substr(q0 + 1, q1 - q0 - 1);
-                if (dim == 3) physVol[id] = nm;        // surfaces : plus tard
+                if (dim == 3) physVol[id] = nm;
+                else if (dim >= 0 && dim <= 2) {       // charges/CL (10/2026)
+                    physLow[id] = (int)mshLow_.size();
+                    mshLow_.push_back({nm, dim, {}, {}});
+                }
             }
         } else if (line.rfind("$Nodes", 0) == 0) {
             long n = 0;
@@ -2097,8 +2108,21 @@ void Fdem3dSolver::buildMeshFile() {
                         + std::to_string(type) + " unsupported (tets only; "
                         "export a pure tetrahedral mesh)");
                 std::array<int, 4> vv{};
+                // groupe physique de dimension 0-2 : ses sommets (et ses
+                // triangles) servent aux charges et CL (fix., force., ...)
+                auto pl = nn < 4 ? physLow.find(phys) : physLow.end();
+                if (pl != physLow.end() && nn - 1 != mshLow_[pl->second].dim)
+                    pl = physLow.end();
                 for (int q = 0; q < nn; ++q) {
                     long nid; in >> nid;
+                    if (pl != physLow.end()) {
+                        auto it = id2idx.find(nid);
+                        if (it == id2idx.end())
+                            throw std::runtime_error("meshFile: element "
+                                + std::to_string(id) + " reference le noeud "
+                                "inconnu id " + std::to_string(nid));
+                        vv[q] = it->second;
+                    }
                     if (nn == 4) {
                         auto it = id2idx.find(nid);
                         if (it == id2idx.end())
@@ -2111,6 +2135,10 @@ void Fdem3dSolver::buildMeshFile() {
                 if (nn == 4) {                         // points/lines/tris:
                     tets.push_back(vv);                // boundary — skipped
                     tetPhys.push_back(phys);
+                } else if (pl != physLow.end()) {
+                    UMsh& G = mshLow_[pl->second];
+                    for (int q = 0; q < nn; ++q) G.verts.push_back(vv[q]);
+                    if (nn == 3) G.tris.push_back({vv[0], vv[1], vv[2]});
                 }
             }
         }
@@ -2126,6 +2154,7 @@ void Fdem3dSolver::buildMeshFile() {
     Eigen::Vector3d lo = vpos[0], hi = vpos[0];
     for (const auto& p : vpos) { lo = lo.cwiseMin(p); hi = hi.cwiseMax(p); }
     for (auto& p : vpos) p -= lo;
+    meshOrigin_ = lo;
     W_ = hi.x() - lo.x();
     D_ = hi.y() - lo.y();
     H_ = hi.z() - lo.z();
@@ -3573,6 +3602,15 @@ void Fdem3dSolver::placeTool() {
     // (physical group + groupVel), et toolContact / tool_.integrate sont
     // court-circuites DUR (lecon du disque fantome brezilien 2D).
     std::string sh = cfg_.gets("toolShape", "sphere");
+    // scenario = loads : AUCUN outil analytique, AUCUN appui implicite — le
+    // montage est entierement decrit par fix./velocity./force./...
+    if (scen_ == Scenario::LOADS) {
+        if (cfg_.has("toolShape") && sh != "none")
+            throw std::runtime_error("scenario = loads n a pas d outil "
+                "analytique : retirer toolShape (ou poser toolShape = none) et "
+                "charger par force./traction./pressure./velocity.");
+        sh = "none";
+    }
     // OUTIL FANTOME (mesure du 2026-09-11) : un deck a corps MAILLE lance par
     // groupVel qui oublie toolShape = none recoit EN PLUS la sphere analytique
     // par defaut (0,5 kg a 8 m/s, 16 J) — masse et energie non voulues au
@@ -3586,6 +3624,13 @@ void Fdem3dSolver::placeTool() {
                   << cfg_.getd("impactSpeed", 8.0) << " m/s). Si l outil est "
                      "le corps maille, poser toolShape = none.\n\n";
     if (sh == "none") {
+        if (scen_ == Scenario::LOADS) {
+            toolNone_ = true;
+            tool_.free = false;
+            tool_.x = {1e9, 1e9, 1e9};
+            tool_.v.setZero();
+            return;
+        }
         // reprise post-revue 2026-08-28 : le piege du relais mord autant
         // avec un insert MAILLE — la notice ne doit pas etre sautee.
         if (scen_ == Scenario::PERCUSSION && !deathOnDamage_)
@@ -3766,9 +3811,9 @@ void Fdem3dSolver::setupBoundaries() {
                         cAbs_[nid](a) += mp.rho * c * At3;
                         kAbs_[nid](a) += sF * G / (a == 2 ? R : 2.0 * R) * At3;
                     }
-                } else {                       // percussion AND shear: the
-                    flag_[nid] = FIXED;        // block needs its support
-                }
+                } else if (scen_ != Scenario::LOADS) { // percussion AND
+                    flag_[nid] = FIXED;        // shear: the block needs its
+                }                              // support (loads : fix.<g>)
             }
         }
     }
@@ -4121,6 +4166,7 @@ void Fdem3dSolver::step() {
         toolContact();
     }
     confiningForces();                     // no-op si confiningPressure = 0
+    if (uOn_) userLoadForces();            // force./traction./pressure.
     if (confP_ > 0.0 && !confLatched_
         && t_ >= std::max(cfg_.getd("confineGaugeTime", 3.0 * confRamp_),
                           20.0 * dt_)) {
@@ -4158,7 +4204,8 @@ void Fdem3dSolver::step() {
     // B8, scenarios SANS outil (traction, cisaillement) : miroir exact du 2D —
     // on fige tant qu'aucun joint n'a rompu, si bien que le dernier releve est
     // celui du pas precedant la premiere fissure.
-    if (scen_ == Scenario::TENSION || scen_ == Scenario::SHEAR)
+    if (scen_ == Scenario::TENSION || scen_ == Scenario::SHEAR
+        || scen_ == Scenario::LOADS)
         if (nBroken_ == 0) scanSubCriticalDamage();
     if (jbOn_) jbRecord();                 // S3 : etat du joint a t_
 
@@ -4240,6 +4287,10 @@ void Fdem3dSolver::checkEnergyAbort() {
         sumW  += gravWork_ + brushWork_;
         gross += std::abs(gravWork_) + std::abs(brushWork_);
     }
+    if (uOn_) {                            // charges et liaisons par groupes
+        sumW  += uLoadW_ + uBcW_;
+        gross += std::abs(uLoadW_) + std::abs(uBcW_);
+    }
     double scale = std::max({keInit_, ke, gross, 1e-30});
     if (scale < 1e-12) return;             // charge nulle : pas de verdict
     double resid = (ke - keInit_) - sumW;
@@ -4256,6 +4307,7 @@ void Fdem3dSolver::checkEnergyAbort() {
     {
         double ext = toolWork_ + bcWork_ + confWork_;
         if (eBody_) ext += gravWork_ + brushWork_;
+        if (uOn_) ext += uLoadW_ + uBcW_;
         const double excess = ke - keInit_ - std::max(0.0, ext);
         if (excess > 0.01 * eAbortPct_ * scale && excess > eAbortMin_) {
             int iw = 0; double vw = 0.0;
@@ -6520,6 +6572,9 @@ void Fdem3dSolver::integrate() {
         keInit_ = ke0;
     }
     double cw = 0.0, lw = 0.0, bw = 0.0, bias = 0.0;  // V2/B4 compteurs
+    double ubw = 0.0;                      // liaisons fix./velocity. (10/2026)
+    // vitesse imposee a mi-pas (leapfrog : v_ vit en t + dt/2)
+    const double tMid = t_ + 0.5 * dt_;
     // insertion = none : les groupes lies doivent AUSSI integrer comme UN
     // noeud, sinon les copies bougent independamment et le maillage se
     // comporte comme un NUAGE de tetraedres libres (bug observe le
@@ -6533,7 +6588,7 @@ void Fdem3dSolver::integrate() {
         // 2D solver. Copies of a group share flags (same position) and stay
         // bit-identical: groups only ever split, never merge.
 #ifdef _OPENMP
-#pragma omp parallel for schedule(static) reduction(+:cw,lw,bw,bias)
+#pragma omp parallel for schedule(static) reduction(+:cw,lw,bw,bias,ubw)
 #endif
         for (int vv = 0; vv < nVert_; ++vv) {
             for (const auto& g : grpsOfVert_[vv]) {
@@ -6578,10 +6633,13 @@ void Fdem3dSolver::integrate() {
                 Eigen::Vector3d F = Eigen::Vector3d::Zero();
                 Eigen::Vector3d cS = Eigen::Vector3d::Zero();
                 double M = 0.0;
+                // axes imposes par fix./velocity. : ni ressort, ni
+                // amortisseur, ni Cundall (le ddl ne bouge pas librement)
+                const unsigned mk = uOn_ ? uMask_[i0] : 0u;
                 for (int i : g) {
                     F += f_[i];
                     for (int a = 0; a < 3; ++a)
-                        if (kAbs_[i](a) > 0) {
+                        if (kAbs_[i](a) > 0 && !((mk >> a) & 1u)) {
                             double fk = kAbs_[i](a) * u_[i](a);
                             F(a) -= fk;
                             lw -= fk * v_[i0](a) * dt_;   // V2/B4 ressort
@@ -6591,17 +6649,39 @@ void Fdem3dSolver::integrate() {
                 }
                 if (damping_ > 0)
                     for (int a = 0; a < 3; ++a) {
+                        if ((mk >> a) & 1u) continue;
                         double fd = damping_ * std::abs(F(a))
                                 * (v_[i0](a) > 0 ? 1.0 : (v_[i0](a) < 0 ? -1.0 : 0.0));
                         F(a) -= fd;
                         cw -= fd * v_[i0](a) * dt_;       // V2/B4 Cundall
                     }
-                bias += F.squaredNorm() * dt_ * dt_ / (2.0 * M);
+                if (mk == 0u)
+                    bias += F.squaredNorm() * dt_ * dt_ / (2.0 * M);
+                else
+                    for (int a = 0; a < 3; ++a)
+                        if (!((mk >> a) & 1u))
+                            bias += F(a) * F(a) * dt_ * dt_ / (2.0 * M);
                 Eigen::Vector3d vn = v_[i0] + (dt_ / M) * F;
                 for (int a = 0; a < 3; ++a)
-                    if (cS(a) > 0) {
+                    if (cS(a) > 0 && !((mk >> a) & 1u)) {
                         vn(a) /= 1.0 + dt_ * cS(a) / M;
                         lw -= cS(a) * vn(a) * vn(a) * dt_;  // V2/B4 amortisseur
+                    }
+                if (mk != 0u)                  // fix./velocity. : meme formule
+                    for (int a = 0; a < 3; ++a) {   // que les platines (R = m a - f)
+                        if (!((mk >> a) & 1u)) continue;
+                        const int k = uAmpOf_[i0][a];
+                        const double vt = k < 0 ? uVel_[i0](a)
+                                        : uVel_[i0](a) * userAmp(k, tMid);
+                        const double vo = v_[i0](a);
+                        double Ra = 0.0;
+                        for (int i : g) {
+                            double Ri = m_[i] * (vt - vo) / dt_ - f_[i](a);
+                            uR_[i](a) = Ri;
+                            Ra += Ri;
+                        }
+                        ubw += Ra * 0.5 * (vt + vo) * dt_;
+                        vn(a) = vt;
                     }
                 if (facetNodal_ && !accN_.empty()) {   // partition dynamique
                     const Eigen::Vector3d acc = (vn - v_[i0]) / dt_;
@@ -6617,11 +6697,12 @@ void Fdem3dSolver::integrate() {
         lysWork_ += lw;
         bcWork_ += bw;
         biasW_ += bias;
+        uBcW_ += ubw;
         if (scen_ != Scenario::TENSION && !toolNone_) tool_.integrate(dt_);
         return;
     }
 #ifdef _OPENMP
-#pragma omp parallel for schedule(static) reduction(+:cw,lw,bw,bias)
+#pragma omp parallel for schedule(static) reduction(+:cw,lw,bw,bias,ubw)
 #endif
     for (int i = 0; i < (int)X0_.size(); ++i) {
         if (flag_[i] == FIXED) {
@@ -6660,7 +6741,9 @@ void Fdem3dSolver::integrate() {
             u_[i] += dt_ * v_[i];
             continue;
         }
+        const unsigned mk = uOn_ ? uMask_[i] : 0u;   // fix./velocity.
         for (int a = 0; a < 3; ++a) {
+            if ((mk >> a) & 1u) continue;      // axe impose : ni ressort ni amortisseur
             if (kAbs_[i](a) > 0) {
                 double fk = kAbs_[i](a) * u_[i](a);
                 f_[i](a) -= fk;
@@ -6672,6 +6755,29 @@ void Fdem3dSolver::integrate() {
                 f_[i](a) -= fd;
                 cw -= fd * v_[i](a) * dt_;     // V2/B4 : Cundall (<= 0)
             }
+        }
+        if (mk != 0u) {                        // fix./velocity. (10/2026)
+            for (int a = 0; a < 3; ++a) {
+                if ((mk >> a) & 1u) {
+                    const int k = uAmpOf_[i][a];
+                    const double vt = k < 0 ? uVel_[i](a)
+                                    : uVel_[i](a) * userAmp(k, tMid);
+                    const double vo = v_[i](a);
+                    const double Ri = m_[i] * (vt - vo) / dt_ - f_[i](a);
+                    uR_[i](a) = Ri;
+                    ubw += Ri * 0.5 * (vt + vo) * dt_;
+                    v_[i](a) = vt;
+                } else {
+                    bias += f_[i](a) * f_[i](a) * dt_ * dt_ / (2.0 * m_[i]);
+                    v_[i](a) += (dt_ / m_[i]) * f_[i](a);
+                    if (cAbs_[i](a) > 0) {
+                        v_[i](a) /= 1.0 + dt_ * cAbs_[i](a) / m_[i];
+                        lw -= cAbs_[i](a) * v_[i](a) * v_[i](a) * dt_;
+                    }
+                }
+            }
+            u_[i] += dt_ * v_[i];
+            continue;
         }
         bias += f_[i].squaredNorm() * dt_ * dt_ / (2.0 * m_[i]);
         v_[i] += (dt_ / m_[i]) * f_[i];
@@ -6686,6 +6792,7 @@ void Fdem3dSolver::integrate() {
     lysWork_ += lw;
     bcWork_ += bw;
     biasW_ += bias;
+    uBcW_ += ubw;
     if (scen_ != Scenario::TENSION && !toolNone_) tool_.integrate(dt_);
 }
 
@@ -7096,6 +7203,7 @@ void Fdem3dSolver::historyHeader(std::ostream& os) const {
                << "_y,Fc_" << groupName_[p.first] << "_" << groupName_[p.second]
                << "_z";
         if (eBreak_) os << ",eVp,eDamT,eDamC";         // §3.2 eq. 26
+        if (uOn_) userHistoryHeader(os);
         os << "\n";
         return;
     }
@@ -7116,6 +7224,7 @@ void Fdem3dSolver::historyHeader(std::ostream& os) const {
     os << ",eEl,eJnt,eGc,eFric,eCund,eLys";
     if (bdOn_) os << ",nPulv,bdWork";
     if (eBreak_) os << ",eVp,eDamT,eDamC";             // §3.2 eq. 26
+    if (uOn_) userHistoryHeader(os);
     os << "\n";
 }
 
@@ -7149,6 +7258,7 @@ void Fdem3dSolver::historyRow(std::ostream& os) const {
         for (const auto& s : fcSum_)                   // S2 : forces a -> b
             os << "," << s.x() << "," << s.y() << "," << s.z();
         if (eBreak_) energyBreakdownRow(os);           // §3.2 eq. 26
+        if (uOn_) userHistoryRow(os);
         os << "\n";
         return;
     }
@@ -7211,6 +7321,7 @@ void Fdem3dSolver::historyRow(std::ostream& os) const {
        << gcFricWork_ << "," << cundWork_ << "," << lysWork_;   // V2/B4
     if (bdOn_) os << "," << nPulv_ << "," << bdWork_;
     if (eBreak_) energyBreakdownRow(os);               // §3.2 eq. 26
+    if (uOn_) userHistoryRow(os);
     os << "\n";
 }
 
@@ -7273,6 +7384,7 @@ void Fdem3dSolver::finalize() {
         double sumW = elWork_ + jointWork_ + gcWork_ + cundWork_ + lysWork_
                     + toolWork_ + bcWork_ + confWork_ + biasW_;
         if (eBody_) sumW += gravWork_ + brushWork_;
+        if (uOn_) sumW += uLoadW_ + uBcW_;
         double dKE = keBlock - keInit_;
         double resid = dKE - sumW;
         // echelle du verdict : le flux BRUT echange (la somme signee est ~0
@@ -7284,6 +7396,7 @@ void Fdem3dSolver::finalize() {
                      + std::abs(lysWork_) + std::abs(toolWork_)
                      + std::abs(bcWork_) + std::abs(confWork_);
         if (eBody_) gross += std::abs(gravWork_) + std::abs(brushWork_);
+        if (uOn_) gross += std::abs(uLoadW_) + std::abs(uBcW_);
         double scale = std::max({keInit_, keBlock, gross, 1e-30});
         // a charge nulle l'echelle est elle-meme un zero machine : le ratio
         // de deux zeros n'a pas de sens, le verdict se rend sur l'absolu
@@ -7339,6 +7452,12 @@ void Fdem3dSolver::finalize() {
         if (confP_ > 0.0)                  // sortie inchangee si pas confine
             std::cout << "[FDEM3D]   confinement  : " << confWork_
                       << " J (pression suiveuse -> solide)\n";
+        if (uOn_)                          // sortie inchangee sans fix./force.
+            std::cout << "[FDEM3D]   charges      : " << uLoadW_
+                      << " J (force./traction./pressure. -> solide), "
+                         "liaisons " << uBcW_
+                      << " J (fix./velocity. -> solide)\n";
+        if (uOn_) userSummary();
         if (gravity_ > 0.0 || brushArmed_)
             std::cout << "[FDEM3D]   forces vol.  : pesanteur " << gravWork_
                       << " J, tri des fragments " << brushWork_ << " J  ["

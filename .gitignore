@@ -78,6 +78,8 @@ smoke_*.csv
 !meshes/cut3d_h50.msh
 !meshes/impact_kuru_s15.msh
 !meshes/t1_toolcontact.msh
+# charges et CL par groupes (2026-10-03) : maillage de la suite, 86 ko
+!meshes/loads_bar_h4.msh
 !etude_lois_fem/meshes/T1_c05_clean.msh
 
 # --- dossiers de CAMPAGNE (restent dans rockim_f2, gele) --------------------
