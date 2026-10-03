@@ -165,3 +165,7 @@ __pycache__/
 *.pyc
 _gif_frames/
 _gif3d_frames/
+
+# campagne V&V : sorties brutes et apercus PNG regenerables par les scripts de vv/
+vv/*/out/
+vv/*/*.png
