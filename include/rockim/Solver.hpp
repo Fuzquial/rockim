@@ -30,6 +30,11 @@ public:
     // false, so every existing solver runs to T with no change of behaviour.
     virtual bool finished() const { return false; }
 
+    // Pas de temps VARIABLE (2026-10-03, dtUpdate = inserted en fdem3d) :
+    // le pilote boucle alors sur le TEMPS (sorties aux instants k T/frames)
+    // au lieu d un nombre de pas fixe. Faux par defaut : boucle historique.
+    virtual bool variableDt() const { return false; }
+
     double time()     const { return t_; }
     double dt()       const { return dt_; }
     double duration() const { return T_; }

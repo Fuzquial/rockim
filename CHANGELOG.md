@@ -5,6 +5,28 @@ plan de robustesse du 2026-09-05). L'arbre `g0` est sous git depuis le tag `g0-0
 reçoit les lignes exigées par les règles déjà en vigueur — dont **toute ancre de bit-identité changée**
 (`tools/bitid_refs.json`, règle de `tools/BITID.md`).
 
+## [Non publié] — arbre g1, 2026-10-03 : pas de temps variable `dtUpdate = inserted` (Wu et al. 2024)
+
+### Ajouté (opt-in, défaut bit-identique)
+
+- **`dtUpdate = inserted`** (fdem3d, exige `insertion = adaptive`) : le pas initial ne compte plus la
+  raideur des joints LIÉS, qui n'exercent aucune force ; elle entre dans le budget à l'insertion, et le
+  pas diminue alors si le nœud devient critique. Boucle principale pilotée par le temps quand le pas
+  varie (`Solver::variableDt()`, faux par défaut). DOCUMENTATION §5.1.
+- Repères `dtupdate_elastique_3d`, `dtupdate_rupture_3d` (tier full).
+
+### Mesuré (Linux, 4 fils, mesures alternées)
+
+| banc | pas de temps | justesse | temps |
+|---|---|---|---|
+| barre élastique (`verify_fdem3d_loads`) | ×1,9 | allongement 4,00122 µm identique, réaction −2 000,5 N | — |
+| rupture adaptative (`fdem3d_loads_rupture`) | ×1,9 puis 1,33e-8 s après insertions | 408 insérés / 2 rompus identiques ; pic 12,2749 contre 12,2745 MPa ; écart max 0,017 MPa | **−37 %** (90,7 → 57,0 s) |
+| impact Kuru9 court | ×1,24 | KE finale 417,488 contre 417,476 J ; mêmes énergies par corps | **−21 %** (35,0 → 27,7 s) |
+
+Sans la clé : sorties octet pour octet identiques (decks bitid). Le résidu B4 est plus grand sous la
+clé (9e-4 % contre 7e-5 % sur la rupture) : le saute-mouton est d'ordre 1 aux instants où le pas
+change.
+
 ## [Non publié] — arbre g1, 2026-10-03 : performances (contact, joints, VTK), sans changer un résultat
 
 Trois commits (`fdem3d : contact par potentiel et joints plus rapides`, `fdem 2D et fem3d : fusions et

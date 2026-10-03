@@ -1094,6 +1094,20 @@ TESTS = [
          checks=[("ld_utop_z", 4.00122e-06, 2e-8, True),
                  ("ld_rfbot_z", -2000.49, 1.0, True),
                  ("budget", 0.0, 1e-9, True)]),
+    # dtUpdate = inserted (2026-10-03, Wu et al. 2024) : pas variable sans la
+    # raideur des joints lies. Barre elastique : meme allongement exact ;
+    # rupture adaptative : memes joints inseres et rompus que le pas fixe.
+    dict(name="dtupdate_elastique_3d", tier="full", cfg="verify_fdem3d_loads.cfg",
+         over=["meshFile = " + os.path.join(ROOT, "meshes", "loads_bar_h4.msh"),
+               "dtUpdate = inserted"],
+         checks=[("ld_utop_z", 4.00122e-06, 2e-8, True),
+                 ("ld_rfbot_z", -2000.5, 1.0, True),
+                 ("budget", 0.0, 1e-9, True)]),
+    dict(name="dtupdate_rupture_3d", tier="full", cfg="fdem3d_loads_rupture.cfg",
+         over=["meshFile = " + os.path.join(ROOT, "meshes", "loads_bar_h4.msh"),
+               "dtUpdate = inserted"],
+         checks=[("inserted", 408, 0, True), ("broken", 2, 0, True),
+                 ("budget", 0.0, 1e-5, True)]),
     dict(name="loads_intrinseque_3d", tier="full", cfg="verify_fdem3d_loads.cfg",
          over=["insertion = intrinsic", "jointPenaltyFactor = 20",
                "meshFile = " + os.path.join(ROOT, "meshes", "loads_bar_h4.msh")],

@@ -391,6 +391,45 @@ int main(int argc, char** argv) {
         auto t0 = std::chrono::steady_clock::now();
         int frame = 0;
         long nextPct = 10;
+        if (solver->variableDt()) {
+            // Pas VARIABLE (dtUpdate = inserted) : boucle pilotee par le
+            // TEMPS. Trames aux instants k T / frames, historique tous les
+            // T / 2000, comme la boucle a pas fixe le fait en nombre de pas.
+            const double T = solver->duration();
+            const double dtOut = T / std::max(1, nFrames);
+            const double dtHist = T / 2000.0;
+            double nextOut = 0.0, nextHist = 0.0;
+            long nStep = 0;
+            bool early = false;
+            while (solver->time() < T * (1.0 - 1e-12)) {
+                if (solver->time() >= nextOut) { solver->writeFrame(frame++); nextOut += dtOut; }
+                if (solver->time() >= nextHist) { histRow(); nextHist += dtHist; }
+                solver->step();
+                ++nStep;
+                if (solver->finished()) {
+                    std::cout << "\n[rockim] solver requested an early stop at t = "
+                              << solver->time() << " s (" << nStep << " steps)\n";
+                    solver->writeFrame(frame++);
+                    histRow();
+                    early = true;
+                    break;
+                }
+                if (100.0 * solver->time() / T >= nextPct) {
+                    std::cout << "  " << nextPct << "%" << std::flush
+                              << (nextPct == 100 ? "\n" : " ");
+                    nextPct += 10;
+                }
+            }
+            if (!early) { solver->writeFrame(frame); histRow(); }
+            solver->finalize();
+            std::cout << "[rockim] pas variable : " << nStep << " pas, dt final "
+                      << solver->dt() << " s\n";
+            auto t1v = std::chrono::steady_clock::now();
+            std::cout << "[rockim] wall time: "
+                      << std::chrono::duration<double>(t1v - t0).count()
+                      << " s, output in '" << out << "'\n";
+            return 0;
+        }
         for (long i = 0; i < nSteps; ++i) {
             if (i % outEvery == 0) solver->writeFrame(frame++);
             if (i % histEvery == 0) histRow();

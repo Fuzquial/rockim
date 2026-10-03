@@ -842,6 +842,19 @@ void Fdem3dSolver::init() {
             throw std::runtime_error("insertion must be intrinsic | adaptive "
                                      "| none (got '" + ins + "')");
         adaptive_ = ins == "adaptive";
+        {   // dtUpdate = fixed (defaut) | inserted (2026-10-03, Wu 2024)
+            std::string du = cfg_.gets("dtUpdate", "fixed");
+            if (du != "fixed" && du != "inserted")
+                throw std::runtime_error("dtUpdate must be fixed | inserted");
+            dtIns_ = du == "inserted";
+            if (dtIns_ && !adaptive_)
+                throw std::runtime_error("dtUpdate = inserted exige insertion "
+                    "= adaptive : en intrinseque chaque joint exerce sa force "
+                    "des t = 0 et sa raideur borne le pas");
+            if (dtIns_ && cfg_.gets("scenario", "percussion") == "jointbench")
+                throw std::runtime_error("dtUpdate = inserted est sans objet "
+                                         "sous scenario = jointbench");
+        }
         // insertion = none : CONTINUUM PUR — miroir exact du 2D, voir
         // FdemSolver.cpp pour la mesure qui a motive la cle (impact 3D
         // DP-DFH du 2026-08-25 : 53 J devenus -89 GJ en 10 us par
@@ -3576,6 +3589,33 @@ void Fdem3dSolver::activateJoint(int jI, double sig,
     rebindVertex(vOf_[J.a[0]]);
     rebindVertex(vOf_[J.a[1]]);
     rebindVertex(vOf_[J.a[2]]);
+    if (dtIns_) dtOnInsert(J);             // dtUpdate = inserted
+}
+
+// dtUpdate = inserted : la raideur du joint qui vient d etre insere entre dans
+// le budget de ses 6 noeuds ; le pas diminue si l un d eux devient critique.
+// Meme formule que computeStableDt (kPara pj A0/3, 2 sqrt(m/K), dtFactor),
+// et la borne CFL des elements et la borne visqueuse, deja dans le pas
+// initial, ne peuvent que rester satisfaites puisque le pas ne remonte pas.
+// Les deux grandeurs mises en cache a partir du pas sont recalculees.
+void Fdem3dSolver::dtOnInsert(const Joint& J) {
+    const double kPara = paraElastic_ ? 2.0 : 1.0;
+    const double k = noJoints_ ? 0.0 : kPara * J.pj * J.A0 / 3.0;
+    double dtNew = dt_;
+    for (int q = 0; q < 3; ++q)
+        for (int i : {J.a[q], J.b[q]}) {
+            Kdt_[i] += k;
+            const double dti = dtFacDt_ * 2.0
+                             * std::sqrt(m_[i] / (Kdt_[i] + kExtraDt_));
+            if (dti < dtNew) dtNew = dti;
+        }
+    if (dtNew < dt_) {
+        dt_ = dtNew;
+        relax_ = std::exp(-dt_ / cfg_.getd("gcBirthTau", 1e-6));
+        srRelax_ = (!srFilterOff_ && srTau_ > 0.0) ? std::exp(-dt_ / srTau_)
+                                                   : 0.0;
+        ++dtCuts_;
+    }
 }
 
 void Fdem3dSolver::placeTool() {
@@ -3993,6 +4033,7 @@ void Fdem3dSolver::computeStableDt() {
             k = std::max(k0, kPara * J.pj) * J.A0 / 3.0;
         }
         const double kb = noJoints_ ? 0.0 : kPara * J.pj * J.A0 / 3.0;
+        if (dtIns_ && J.bonded) continue;  // joint lie : aucune force (Wu 2024)
         for (int q = 0; q < 3; ++q) {
             K[J.a[q]] += k;   K[J.b[q]] += k;
             Kb[J.a[q]] += kb; Kb[J.b[q]] += kb;
@@ -4109,6 +4150,17 @@ void Fdem3dSolver::computeStableDt() {
                                         * hEl_[eI] / (4.0 * muEl_[eI]));
     double dtSpr = std::min(dtMin, cfl);
     dt_ = cfg_.getd("dtFactor", 0.15) * std::min(dtSpr, dtVis);
+    if (dtIns_) {                          // dtUpdate = inserted : etat garde
+        Kdt_ = K;
+        kExtraDt_ = nExtra * kContact;
+        dtFacDt_ = cfg_.getd("dtFactor", 0.15);
+        dtStart_ = dt_;
+        std::cout << "[FDEM3D] dtUpdate = inserted : pas initial " << dt_
+                  << " s sans la raideur des joints LIES (ils n exercent "
+                     "aucune force en insertion adaptative, Wu et al. 2024) ; "
+                     "il diminue a chaque insertion qui raidit un noeud "
+                     "critique. Boucle pilotee par le temps.\n";
+    }
     // ---- COMPARAISON HONNETE du pas sous camacho et sous penalty ---------
     // computeStableDt n est appele qu UNE FOIS, a l initialisation : le pas
     // est fige pour tout le run, et le budget camacho ci-dessus porte donc

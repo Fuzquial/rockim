@@ -878,6 +878,22 @@ private:
     // credit — il excluait les facettes liees, et le run a explose).
     // Ecrit une fois par computeStableDt.
     double dtBonded_ = -1.0;
+    // ---- dtUpdate = inserted (2026-10-03, Wu et al. 2024, Comput. Geotech.
+    // 174) : sous insertion adaptative un joint LIE n exerce aucune force (ses
+    // copies integrent comme un seul noeud), sa raideur ne borne donc pas la
+    // stabilite. Le pas initial ne compte que les elements et le contact ; a
+    // chaque insertion, la raideur du joint insere est ajoutee a ses 6 noeuds
+    // et le pas DIMINUE si l un d eux le commande (jamais il ne remonte).
+    bool dtIns_ = false;
+    std::vector<double> Kdt_;              // raideur par noeud (sans joints lies)
+    double kExtraDt_ = 0.0;                // nExtra * kContact
+    double dtFacDt_ = 0.15;                // dtFactor
+    double dtStart_ = 0.0;                 // pas initial (resume)
+    long dtCuts_ = 0;                      // nombre de reductions du pas
+    void dtOnInsert(const Joint& J);
+public:
+    bool variableDt() const override { return dtIns_; }
+private:
     // §3.2, controle propre a l insertion adaptative : nombre de facettes
     // INSEREES mais jamais ouvertes au-dela de 0,05 delta_m^f. Si cette part
     // n est pas marginale, n_h ou le seuil sont trop bas.
