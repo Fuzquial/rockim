@@ -1673,6 +1673,23 @@ void Fdem3dSolver::init() {
     if (contactPot_) {
         potP_ = cfg_.getd("potPenaltyFactor", 1.0) * phases_.maxE();
         jcAdaptive_ = cfg_.gets("jointContactPenalty", "fixed") == "adaptive";
+        {   // potForce = munjiza (defaut) | volume (2026-10-03, Liu et al. 2022)
+            std::string pf = cfg_.gets("potForce", "munjiza");
+            if (pf != "munjiza" && pf != "volume")
+                throw std::runtime_error("potForce must be munjiza | volume");
+            potVol_ = pf == "volume";
+            potVolF_ = cfg_.getd("potVolumeFactor", 5.0);
+            if (potVol_ && !(potVolF_ > 0.0))
+                throw std::runtime_error("potVolumeFactor must be > 0");
+            if (potVol_)
+                std::cout << "[FDEM3D] potForce = volume : force normale par le "
+                             "VOLUME de recouvrement (Liu et al., CMAME 395, "
+                             "2022 ; Phi = kn V^2 / 2V', V' = 2 VA VB/(VA+VB)), "
+                             "appliquee face par face ; kn = " << potVolF_
+                          << " x la penalite de Munjiza (Liu : 3 a 10, 5 retenu). "
+                             "L integration exacte aux 12 plans de cassure "
+                             "n est plus calculee.\n";
+        }
         if (jcAdaptive_)
             std::cout << "[FDEM3D] jointContactPenalty = adaptive : k- = "
                          "k+(D) = (1-D) pj (EPFL arXiv:2511.14323 sec. 4)\n";
@@ -6141,7 +6158,13 @@ void Fdem3dSolver::potentialContact() {
         const double pP = potByPhase_
             ? potPF_ * std::min(phases_.mat[EA.phase].E, phases_.mat[EB.phase].E)
             : potP_;
-        r.code = pot3::pairForce(r.pa, r.pb, pP, r.R) ? 0 : 4;
+        if (potVol_) {                     // potForce = volume
+            const double VA = EA.V0, VB = EB.V0;
+            r.code = pot3::pairForceVolume(r.pa, r.pb, potVolF_ * pP,
+                                           2.0 * VA * VB / (VA + VB), r.R)
+                   ? 0 : 4;
+        } else
+            r.code = pot3::pairForce(r.pa, r.pb, pP, r.R) ? 0 : 4;
     }
     for (int ci = 0; ci < nCand; ++ci) {
         {
@@ -8624,7 +8647,7 @@ void Fdem3dSolver::jbReport() {
 // travail de convention solveur (f.v avant le kick) — la conservation se
 // juge sur dKE, comme en 2D.
 // ---------------------------------------------------------------------------
-int potentialSelftest3d(const std::string& csvPath) {
+int potentialSelftest3d(const std::string& csvPath, bool volumeForce) {
     using V3 = Eigen::Vector3d;
     using M3 = Eigen::Matrix3d;
     std::ofstream csv(csvPath);
@@ -8689,6 +8712,16 @@ int potentialSelftest3d(const std::string& csvPath) {
 
         double KE0 = 0.5 * A.m * A.v.squaredNorm();
         V3 P0 = A.m * A.v + B.m * B.v;
+        double vRefTet;
+        {
+            V3 pa0[4], pb0[4];
+            A.pos(pa0);
+            B.pos(pb0);
+            pot3::Bary4 ba, bb;
+            ba.set(pa0[0], pa0[1], pa0[2], pa0[3]);
+            bb.set(pb0[0], pb0[1], pb0[2], pb0[3]);
+            vRefTet = 2.0 * ba.vol * bb.vol / (ba.vol + bb.vol);
+        }
         double W = 0.0, volMax = 0.0;
         long nTouch = 0;
 
@@ -8700,7 +8733,12 @@ int potentialSelftest3d(const std::string& csvPath) {
             pot3::PairForce3 Rp;
             V3 FA = V3::Zero(), FB = V3::Zero();
             V3 tA = V3::Zero(), tB = V3::Zero();
-            if (pot3::pairForce(pa, pb, p, Rp)) {
+            // potForce = volume : meme collision, loi de Liu et al. 2022
+            // (kn = 5 p, V' = volume commun des deux tets egaux)
+            const bool hit = volumeForce
+                ? pot3::pairForceVolume(pa, pb, 5.0 * p, vRefTet, Rp)
+                : pot3::pairForce(pa, pb, p, Rp);
+            if (hit) {
                 ++nTouch;
                 volMax = std::max(volMax, Rp.vol);
                 for (int k = 0; k < 4; ++k) {
@@ -8763,6 +8801,12 @@ int potentialSelftest3d(const std::string& csvPath) {
               << "pot3_mom_rel = " << worstP << "\n";
     bool ok = fails == 0 && worstW < 5e-3 && worstKE < 1e-4
               && worstP < 1e-10;
+    if (volumeForce) {
+        std::cout << (ok ? "[PASS]" : "[FAIL]")
+                  << " selftest-potvolume3d : contact par volume de "
+                     "recouvrement (Liu et al. 2022) en 3D, memes criteres\n";
+        return ok ? 0 : 1;
+    }
     std::cout << (ok ? "[PASS]" : "[FAIL]")
               << " selftest-potential3d : contact conservatif de Munjiza en "
                  "3D (conservation jugee sur dKE ; biais O(dt) du compteur "

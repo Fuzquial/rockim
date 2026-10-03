@@ -277,8 +277,12 @@ struct Poly3 {
 
 // Coupe le polyedre par le demi-espace n.(X - O) <= 0 (on garde l'interieur
 // de la face de B d'outward n) et referme par la face de coupe (normale +n).
+// tagIn/tagOut (2026-10-03, potForce = volume) : etiquette d ORIGINE par
+// face (0 = face de A, 1 = face de coupe portee par un plan de B). Facultatif :
+// sous nullptr (chemin historique) rien n est lu ni ecrit, memes flottants.
 inline void clipHalf(Poly3& P, const V3& n, const V3& O, Poly3& out,
-                     double tol) {
+                     double tol, const int* tagIn = nullptr,
+                     int* tagOut = nullptr) {
     out.clear();
     V3 cut[4 * Poly3::MAXF];
     int nCut = 0;
@@ -313,6 +317,7 @@ inline void clipHalf(Poly3& P, const V3& n, const V3& O, Poly3& out,
         if (k >= 3 && out.nF < Poly3::MAXF) {
             out.nV[out.nF] = k;
             for (int i = 0; i < k; ++i) out.v[out.nF][i] = buf[i];
+            if (tagOut) tagOut[out.nF] = tagIn ? tagIn[f] : 0;
             ++out.nF;
         }
     }
@@ -354,6 +359,7 @@ inline void clipHalf(Poly3& P, const V3& n, const V3& O, Poly3& out,
             if (k >= 3) {
                 out.nV[out.nF] = k;
                 for (int i = 0; i < k; ++i) out.v[out.nF][i] = buf[i];
+                if (tagOut) tagOut[out.nF] = 1;
                 ++out.nF;
             }
         }
@@ -617,6 +623,129 @@ inline bool pairForce(const V3 pa[4], const V3 pb[4], double p,
     return true;
 }
 
+// ---------------------------------------------------------------------------
+// potForce = volume (2026-10-03) : force de contact fondee sur le VOLUME de
+// recouvrement, Feng et al. (cadre general), forme de Liu, Ma, Liu, Tang &
+// Fish, CMAME 395 (2022) 114981, eq. (1)-(4), (9)-(12), (55)-(56).
+// Potentiel Phi(V) = 1/2 kn V^2 / V', V' = 2 VA VB / (VA + VB) ; force sur A
+// F_A = - dPhi/dx_A = - (kn V / V') sum_{faces de S sur dA} a_i n_i, ou n_i est
+// la normale sortante de A (translation rigide de A : dV = sum a_i n_i . dx).
+// F_B = - F_A EXACTEMENT : la somme des aires vectorielles d un polyedre clos
+// est nulle, donc la part de dB vaut l oppose. Appliquee au CENTROIDE du
+// recouvrement et repartie par les fonctions de forme des deux tets (eq. 56).
+// Meme decoupage (clip de A par les 4 demi-espaces de B), memes gardes
+// (plancher de volume, fermeture) que pairForce ; ce qui disparait, c est
+// l integration exacte du potentiel de Munjiza sur les faces subdivisees par
+// les 12 plans de cassure, l essentiel du cout en regime de contact persistant.
+// Raideur : Liu et al. section 2.6, kn_volume ~ 3 a 10 kn_Munjiza (5 retenu),
+// le facteur est porte par l appelant (potVolumeFactor).
+// ---------------------------------------------------------------------------
+inline bool pairForceVolume(const V3 pa[4], const V3 pb[4], double kn,
+                            double Vref, PairForce3& R) {
+    Bary4 bA, bB;
+    bA.set(pa[0], pa[1], pa[2], pa[3]);
+    bB.set(pb[0], pb[1], pb[2], pb[3]);
+    if (!bA.ok || !bB.ok || !(Vref > 0.0)) return false;
+    static const int TF[4][3] = {{1, 2, 3}, {0, 3, 2}, {0, 1, 3}, {0, 2, 1}};
+    Poly3 PA, PB;
+    Poly3* src = &PA;
+    Poly3* dst = &PB;
+    int tA[Poly3::MAXF], tB[Poly3::MAXF];
+    int* tsrc = tA;
+    int* tdst = tB;
+    src->clear();
+    for (int f = 0; f < 4; ++f) {
+        src->nV[src->nF] = 3;
+        for (int i = 0; i < 3; ++i) src->v[src->nF][i] = pa[TF[f][i]];
+        tsrc[src->nF] = 0;
+        ++src->nF;
+    }
+    double scale = 0.0;
+    for (int k = 1; k < 4; ++k)
+        scale = std::max({scale, (pa[k] - pa[0]).norm(),
+                          (pb[k] - pb[0]).norm()});
+    const double tol = 1e-12 * scale;
+    for (int f = 0; f < 4; ++f) {
+        const V3& A = pb[TF[f][0]];
+        V3 n = (pb[TF[f][1]] - A).cross(pb[TF[f][2]] - A);
+        double nn = n.norm();
+        if (nn < 1e-300) return false;
+        clipHalf(*src, n / nn, A, *dst, tol, tsrc, tdst);
+        std::swap(src, dst);
+        std::swap(tsrc, tdst);
+        if (src->nF < 3) return false;
+    }
+    const Poly3& P = *src;
+    V3 g = V3::Zero();
+    int ng = 0;
+    for (int f = 0; f < P.nF; ++f)
+        for (int i = 0; i < P.nV[f]; ++i) { g += P.v[f][i]; ++ng; }
+    g /= ng;
+    double vol = 0.0;
+    V3 cen = V3::Zero(), closure = V3::Zero(), gradA = V3::Zero();
+    double aTot = 0.0;
+    for (int f = 0; f < P.nF; ++f) {
+        V3 nr = V3::Zero();
+        const int m = P.nV[f];
+        for (int i = 0; i < m; ++i)
+            nr += P.v[f][i].cross(P.v[f][(i + 1) % m]);
+        closure += nr;
+        aTot += nr.norm();
+        if (tsrc[f] == 0) gradA += 0.5 * nr;   // aire vectorielle, face de A
+        for (int i = 1; i + 1 < m; ++i) {
+            const V3& a = P.v[f][0];
+            const V3& b = P.v[f][i];
+            const V3& c = P.v[f][i + 1];
+            double vt = (a - g).cross(b - g).dot(c - g) / 6.0;
+            vol += vt;
+            cen += vt * (a + b + c + g) / 4.0;
+        }
+    }
+    if (vol <= 1e-12 * std::min(bA.vol, bB.vol)) return false;
+    if (aTot > 0.0 && closure.norm() > 1e-6 * aTot) return false;
+    R.vol = vol;
+    R.cen = cen / vol;
+    // Application FACE PAR FACE (et non au seul centroide, l approximation
+    // x_c ~ x_m de Liu et al. eq. 7-8, mesuree a 0,2 % d energie perdue sur
+    // la collision oblique du selftest) : chaque face de S recoit
+    // -(kn V/V') a_i n_i en son centre d aire, sur le tet qui la porte. La
+    // resultante sur A est F_A (eq. 1-2), le moment est EXACTEMENT celui du
+    // potentiel (eq. 5-6), et la somme des moments sur la surface close est
+    // nulle : quantite de mouvement et moment cinetique conserves.
+    const double s = kn * vol / Vref;
+    for (int k = 0; k < 4; ++k) { R.fA[k].setZero(); R.fB[k].setZero(); }
+    R.F.setZero();
+    for (int f = 0; f < P.nF; ++f) {
+        const int m = P.nV[f];
+        V3 av = V3::Zero(), cf = V3::Zero();
+        double at = 0.0;
+        for (int i = 1; i + 1 < m; ++i) {
+            const V3& a = P.v[f][0];
+            const V3& b = P.v[f][i];
+            const V3& c = P.v[f][i + 1];
+            V3 tr = 0.5 * (b - a).cross(c - a);
+            const double ta = tr.norm();
+            av += tr;
+            cf += ta * (a + b + c) / 3.0;
+            at += ta;
+        }
+        if (at < 1e-300) continue;
+        cf /= at;
+        const V3 Ff = -s * av;             // sur le tet qui porte la face
+        double l[4];
+        if (tsrc[f] == 0) {
+            bA.lam(cf, l);
+            for (int k = 0; k < 4; ++k) R.fA[k] += l[k] * Ff;
+            R.F += Ff;
+        } else {
+            bB.lam(cf, l);
+            for (int k = 0; k < 4; ++k) R.fB[k] += l[k] * Ff;
+        }
+    }
+    (void)gradA;
+    return true;
+}
+
 } // namespace pot3
 
 // selftest-potential2d — LE test decisif du chantier A3 : collision
@@ -631,6 +760,6 @@ int potentialSelftest(const std::string& csvPath);
 // selftest-potential3d — le meme test en 3D : deux TETS rigides (6 ddl,
 // quaternion implicite via Rodrigues), collision frontale puis oblique.
 // Implante dans Fdem3dSolver.cpp.
-int potentialSelftest3d(const std::string& csvPath);
+int potentialSelftest3d(const std::string& csvPath, bool volumeForce = false);
 
 } // namespace rockim

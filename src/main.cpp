@@ -54,6 +54,7 @@ static void usage(std::ostream& os) {
           "       rockim selftest-pdc3d       [out.csv]\n"
           "       rockim selftest-potential2d [out.csv]\n"
           "       rockim selftest-potential3d [out.csv]\n"
+          "       rockim selftest-potvolume3d [out.csv]\n"
           "\n"
           "  pilotes :\n"
           "       rockim matpoint <cfg> [out.csv]\n"
@@ -207,6 +208,13 @@ int main(int argc, char** argv) {
         if (std::string(argv[1]) == "selftest-potential3d") {
             std::string csv = argc > 2 ? argv[2] : "rockim_potential3d.csv";
             int rc = potentialSelftest3d(csv);
+            std::cout << "[rockim] potential3d selftest traces written to "
+                      << csv << "\n";
+            return rc;
+        }
+        if (std::string(argv[1]) == "selftest-potvolume3d") {
+            std::string csv = argc > 2 ? argv[2] : "rockim_potential3d.csv";
+            int rc = potentialSelftest3d(csv, true);
             std::cout << "[rockim] potential3d selftest traces written to "
                       << csv << "\n";
             return rc;

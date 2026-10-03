@@ -885,6 +885,8 @@ private:
     // chaque insertion, la raideur du joint insere est ajoutee a ses 6 noeuds
     // et le pas DIMINUE si l un d eux le commande (jamais il ne remonte).
     bool dtIns_ = false;
+    bool potVol_ = false;                  // potForce = volume (Liu et al. 2022)
+    double potVolF_ = 5.0;                 // potVolumeFactor
     std::vector<double> Kdt_;              // raideur par noeud (sans joints lies)
     double kExtraDt_ = 0.0;                // nExtra * kContact
     double dtFacDt_ = 0.15;                // dtFactor
