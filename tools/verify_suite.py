@@ -1100,6 +1100,28 @@ TESTS = [
          checks=[("ld_utop_z", 4.17871e-06, 2e-8, True),
                  ("ld_rfbot_z", -1999.96, 1.0, True),
                  ("budget", 0.0, 1e-9, True)]),
+    # --- les memes bancs en fem3d (portage du 2026-10-03, §5.21) -------------
+    # Meme barre, memes cles, deck configs/verify_fem3d_loads.cfg (law =
+    # elastic, noeuds partages). Solution EXACTE : U_top_z = 4,000e-6 m,
+    # reaction -2 000 N. Le bilan par postes de fem3d (scenario = loads) est
+    # exact au saute-mouton pres : residu = zero d'arrondi.
+    dict(name="loads_traction_fem3d", tier="fast", cfg="verify_fem3d_loads.cfg",
+         over=["meshFile = " + os.path.join(ROOT, "meshes", "loads_bar_h4.msh")],
+         checks=[("ld_utop_z", 4.00108e-06, 2e-8, True),
+                 ("ld_rfbot_z", -2000.5, 1.0, True),
+                 ("budget", 0.0, 1e-9, True)]),
+    dict(name="loads_pression_fem3d", tier="full", cfg="verify_fem3d_loads.cfg",
+         over=["traction.top = 0 0 0", "pressure.top = -5e6",
+               "meshFile = " + os.path.join(ROOT, "meshes", "loads_bar_h4.msh")],
+         checks=[("ld_utop_z", 4.00087e-06, 2e-8, True),
+                 ("ld_rfbot_z", -2000.39, 1.0, True),
+                 ("budget", 0.0, 1e-9, True)]),
+    dict(name="loads_force_fem3d", tier="full", cfg="verify_fem3d_loads.cfg",
+         over=["traction.top = 0 0 0", "force.top = 0 0 2000",
+               "meshFile = " + os.path.join(ROOT, "meshes", "loads_bar_h4.msh")],
+         checks=[("ld_utop_z", 4.00108e-06, 2e-8, True),
+                 ("ld_rfbot_z", -2000.5, 1.0, True),
+                 ("budget", 0.0, 1e-9, True)]),
 ]
 
 TIERS = {"fast": ["fast"], "full": ["fast", "full"], "all": ["fast", "full", "all"]}

@@ -38,7 +38,7 @@ import io, json, os, re, sys, time
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.normpath(os.path.join(HERE, ".."))
 OWNER = {"FemSolver": "fem", "Fem3dSolver": "fem3d", "DemSolver": "dem", "Dem3dSolver": "dem3d",
-         "Fdem3dLoads": "fdem3d",
+         "Fdem3dLoads": "fdem3d", "Fem3dLoads": "fem3d",
          "FdemSolver": "fdem", "Fdem3dSolver": "fdem3d"}
 # Cles a garder communes quoi qu'en dise le comptage (doute = commune, jamais refusee a tort).
 ALWAYS_COMMON = {"mode", "mesh", "meshFile", "outputDir", "frames", "historyFlush", "nanCheckEvery",

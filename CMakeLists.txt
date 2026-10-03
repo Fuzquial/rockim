@@ -86,6 +86,7 @@ add_executable(rockim
   src/Fdem3dLoads.cpp
   src/Fdem3dSolver.cpp
   src/FdemSolver.cpp
+  src/Fem3dLoads.cpp
   src/Fem3dSolver.cpp
   src/FemSolver.cpp
   src/main.cpp
