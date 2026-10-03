@@ -22,6 +22,7 @@ grilles de contact`, `VtkWriter : formatage ASCII parallele`). Rang 2 de la feui
 - Fusions des tampons par fil parallélisées PAR NŒUD, dans l'ordre t = 0..nT-1 (joints 2D,
   `Fem3dSolver::elementForces()`).
 - `VtkWriter` : formatage ASCII par tranches parallèles (`copyfmt`), écriture dans l'ordre.
+- `jointForces()` (fdem3d) : la liste des joints vivants est tenue à jour à l'insertion (`jLiveAdd_`) au lieu d'être rebalayée sur tous les joints à chaque pas d'insertion. Vérifié après fusion : 7 decks bitid identiques octet pour octet à 4 fils.
 
 ### Mesuré (Linux g++, 4 cœurs partagés, une paire avant/après par cas)
 
