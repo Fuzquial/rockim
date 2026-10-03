@@ -5,6 +5,44 @@ plan de robustesse du 2026-09-05). L'arbre `g0` est sous git depuis le tag `g0-0
 reçoit les lignes exigées par les règles déjà en vigueur — dont **toute ancre de bit-identité changée**
 (`tools/bitid_refs.json`, règle de `tools/BITID.md`).
 
+## [Non publié] — arbre g1, 2026-10-03 : performances (contact, joints, VTK), sans changer un résultat
+
+Trois commits (`fdem3d : contact par potentiel et joints plus rapides`, `fdem 2D et fem3d : fusions et
+grilles de contact`, `VtkWriter : formatage ASCII parallele`). Rang 2 de la feuille de route
+`phd_geothermie/reports/Accélération du solveur FDEM explicite.md`.
+
+### Modifié (bit-identique)
+
+- `potentialContact()` : la grille dense ne vide plus que les seaux remplis au pas précédent (le
+  balayage série de 1,6 M seaux coûtait 4,3 ms/pas sur Kuru9) ; tri des paires par fil puis fusion
+  (même suite que `std::sort`) ; phase A parallèle (recherches en table, insertions série dans l'ordre
+  canonique). Même vidage ciblé dans `generalContact()` (fdem3d) et dans les deux grilles du 2D.
+- `jointForces()` (fdem3d) : liste compacte des joints vivants, chaque fil garde sa tranche historique
+  de l'`omp for schedule(static)` : mêmes sommes partielles, même fusion par nœud.
+- Fusions des tampons par fil parallélisées PAR NŒUD, dans l'ordre t = 0..nT-1 (joints 2D,
+  `Fem3dSolver::elementForces()`).
+- `VtkWriter` : formatage ASCII par tranches parallèles (`copyfmt`), écriture dans l'ordre.
+
+### Mesuré (Linux g++, 4 cœurs partagés, une paire avant/après par cas)
+
+| banc | 1 fil | 2 fils | 4 fils |
+|---|---|---|---|
+| `fdem3d_kuru9_court` (impact, contact dominant) | −21 % | −28 % | **−39 %** (18,3 → 11,2 s) |
+| `fdem3d_cut3d_heilman_court` | −1 à −3 % | −5 % | −13 % |
+| `fdem_ucs_yan_adaptive_court` (2D) | −4,5 % | −7 % | −5,5 % |
+| `fem3d_dpr_T1_court` | −5 % | ~0 | −4 % |
+
+Profil Kuru9 à 4 fils : contact 8,3 → 2,7 ms/pas (−67 %), joints 0,54 → 0,04 ms/pas ; éléments et
+insertion inchangés. Écarts < 5 % : dans le bruit.
+
+### Bit-identité
+
+Sur la branche fusionnée (avec le portage fem3d des charges par groupes) : les 7 decks de
+`tests_f2/bitid/` jouables depuis le clone, à 4 fils, `history.csv`, `frames.csv` et fichiers finaux
+identiques octet pour octet aux sorties d'avant ces commits ; l'agent a aussi vérifié Kuru9, dpr et
+UCS à 1 et 2 fils (VTU compris). Suite `fast` 48/49 (seul `t1_toolcontact_penalty` échoue, aux mêmes
+chiffres qu'avant : écart Linux préexistant) ; `--only loads_` 7/7.
+
 ## [Non publié] — arbre g1, 2026-10-03 : charges et conditions aux limites par groupes (fdem3d)
 
 Demande de Fernando : « une forme géométrique quelconque, une force ponctuelle ou surfacique », en
