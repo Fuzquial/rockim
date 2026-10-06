@@ -1,0 +1,44 @@
+\section{Performances}
+\label{sec-performances}
+
+\subsection{Coût d'un calcul}
+
+Le parallélisme est en mémoire partagée (OpenMP) : 21 régions parallèles dans le solveur FDEM 3D, 17 dans le solveur 2D, aucune dans les solveurs éléments finis 2D et éléments discrets. Les mesures de coût du dépôt sont prises sur des machines différentes, souvent partagées, et ne se comparent qu'en ordre de grandeur (\cref{tab-couts}). Le calcul St Anne de $300~\mu$s a demandé 29~h sur 14 fils. Le calcul Kuru le plus fin a demandé 15~h, quand Yang et al. annoncent 5~h pour un maillage deux fois plus fin, l'écart venant surtout du pas de temps ($1{,}0$ contre $2{,}5$~ns, \cref{sec-dt}).
+
+\begin{table}[htbp]
+\centering
+\caption{Repères de coût relevés dans le dépôt.}
+\label{tab-couts}
+\begin{tabularx}{\linewidth}{@{}X r l@{}}
+\toprule
+cas & coût & statut \\
+\midrule
+FDEM 3D, 36\,000 tétraèdres et 70\,000 joints, 1 fil & 35~ms par pas & déclaré \\
+FDEM 3D potentiel et adaptatif, 18 fils & $1{,}2~\mu$s par tétraèdre et par pas & mesuré \\
+banc Kuru $s = 2{,}5$, 14 fils & $16{,}5$~ms par pas, dont $12{,}3$ de contact & mesuré \\
+banc Kuru $s = 2{,}5$, $100~\mu$s, 4 fils & 398~s & mesuré \\
+réplique Kuru $s = 1$, 120\,185 tétraèdres & 15~h & mesuré \\
+réplique St Anne, 108\,667 tétraèdres, $300~\mu$s, 14 fils & 29~h~21 & mesuré \\
+onde dans une barre, 20\,435 tétraèdres : éléments finis, FDEM adaptative, intrinsèque & 13, 539 et 1\,345~s & indicatif \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{Gains mesurés}
+
+L'activation adaptative du contact (13 août 2026) divise le temps d'une percussion 3D par $2{,}32$ avec des sorties identiques au bit, et celui d'une compression simple par $1{,}15$ (\cref{fig-gcact}). Le chantier de performance du contact par potentiel (14 août) l'a ramené de 682 à 448~s sur une percussion courte, toujours au bit près, mais il reste sept fois plus coûteux que la pénalité en régime de débris, au-delà de l'objectif de $1{,}3$ fixé. La parallélisation du potentiel (11 septembre) et la fusion parallèle des forces de joint (13 septembre), qui prenait $95~\%$ de son poste en série, ont rendu les calculs St Anne et Kuru abordables.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.8\linewidth]{gcactivation}
+\caption{Temps de calcul avec et sans activation adaptative du contact sur cinq cas, à un fil, avec la part de faces activées.}
+\label{fig-gcact}
+\end{figure}
+
+La campagne d'optimisation du 3 octobre 2026, à sorties identiques au bit, réduit le temps du banc Kuru court de $21~\%$ à un fil, $28~\%$ à 2 fils et $39~\%$ à 4 fils, et le poste du contact de $8{,}3$ à $2{,}7$~ms par pas ; les autres cas gagnent moins de $13~\%$. Deux options du même jour accélèrent au prix d'un changement de résultat : le pas variable réduit de $37~\%$ le temps d'une rupture adaptative et de $21~\%$ celui du banc Kuru, avec les mêmes joints rompus ; la force de contact par volume réduit de $36~\%$ le temps du banc Kuru, mais c'est une autre loi (\cref{tab-potvolume}).
+
+Sur un Mac mini M4, le banc Kuru court passe de $49{,}8$ à $45{,}2$~s à un fil après optimisation, et de $24{,}6$ à $18{,}4$~s à 4 fils ; avec les deux options, $13{,}9$~s à 4 fils, soit un facteur $1{,}76$. Le passage de 4 à 10 fils ne rapporte que $14~\%$, à cause des six cœurs à basse consommation de cette machine et d'une répartition statique du travail. Ces chiffres sont écrits dans le journal des modifications ; le fichier de mesures que produit le script n'est pas versionné, et aucun profil par phase et par nombre de fils n'existe encore.
+
+\subsection{Limites matérielles}
+
+La spécification de performance (\cle{specs/001-pilier-performance-architecture/}) désigne le parallélisme CPU en mémoire partagée comme seule voie praticable sur le matériel disponible : la carte graphique du poste a une double précision bridée au 1/64, et le Mac a 16~Go de mémoire. Un cas de 842\,572 tétraèdres a été arrêté par la mémoire (7~Go, environ 700 octets d'état par élément). Aucune tâche de cette spécification n'est faite : il n'y a ni reprise sur point de sauvegarde, ni écriture VTU binaire.

@@ -1,0 +1,81 @@
+\section{Modélisation de la roche}
+\label{sec-materiau}
+
+La loi de la roche n'est pas un modèle nommé : c'est une combinaison de clés indépendantes, l'une pour l'élasticité du volume, d'autres pour chaque branche de la loi de joint, d'autres pour la pulvérisation et l'effet de vitesse. Un registre de lois nommées (\cle{jointLaw}) est spécifié dans \cle{specs/002-registre-lois-joint/} mais n'est pas implémenté, et la spécification relève elle-même que le choix de loi « s'est fait par combinaison de booléens, sans être ni nommé ni déclaré nulle part ». Cette section décrit chaque brique, sa source et son réglage dans la configuration de référence actuelle de l'impact, dite v3-P (\cle{configs/yang2026_bench_s25_v3P.cfg}). L'\cref{sec-annexe-equations} rassemble les équations.
+
+\subsection{Élasticité et lois de volume}
+
+Par défaut, le volume est élastique linéaire en repère co-rotationnel. L'option \cle{bulkModel = neohookean} donne la loi de Guo~\cite{guo2014thesis}, celle du code Solidity. Les deux diffèrent de $+59{,}8~\%$ en contrainte à $40~\%$ de compression uniaxiale et de $-0{,}82~\%$ à $1~\%$ d'extension, et le déterminant du gradient descend à $0{,}5$-$0{,}7$ sous l'insert (\cle{DOCUMENTATION_rockim.md}, l.~683-691). La configuration de référence de l'impact reste co-rotationnelle, alors que Yang et al. sont néo-hookéens. Cet écart n'a pas été mesuré sur l'impact.
+
+Huit lois de volume plus riches sont disponibles par la clé \cle{law} : Drucker-Prager calé sur Mohr-Coulomb avec fissuration diffuse de Rankine, Mohr-Coulomb de Ye et al., deux variantes de Saksala, le DP-DFH de la thèse, sa reformulation par énergie libre, et un modèle d'endommagement plastique. Le portage de la VUMAT de Saksala 2011~\cite{saksala2011ijnamg} et celui du DP-DFH sont annoncés justes à $8\times10^{-14}$ et $4{,}7\times10^{-12}$ contre leur référence Fortran, mais cette comparaison n'est pas rejouable depuis le dépôt (\cref{sec-selftests}). En FDEM, toute loi de volume désarme les plafonds de contrainte et la pulvérisation ; ces lois servent surtout le mode \cle{fem3d}.
+
+\subsection{Joints cohésifs : élasticité et pénalité}
+\label{sec-penalite}
+
+Avant rupture, un joint intrinsèque se comporte comme un ressort de raideur $p_j = p_f E/h$, où $p_f$ est le facteur de pénalité (\cle{jointPenaltyFactor}, 20 par défaut) et $h$ une longueur d'élément. Trois définitions de $h$ existent. Le défaut \cle{min} prend le plus petit diamètre inscrit de tout le maillage pour tous les joints : sur le maillage Kuru le plus fin, un tétraèdre aplati de $0{,}226$~mm fixe ainsi une raideur égale à 240 fois $E$ par mètre pour un facteur 20, soit $4{,}5$ fois la pénalité de Yang et al. L'option \cle{local} prend la moyenne des diamètres inscrits des deux éléments. L'option \cle{edge} prend la moyenne des arêtes, comme Solidity ; elle sert les comparaisons St Anne avec un facteur $26{,}316 = p_0/(2E)$ pour $p_0 = 3\,000$~GPa, valeur relevée dans une communication ARMA des mêmes auteurs~\cite{yang2024energy}.
+
+Cette pénalité ajoute une souplesse au volume. La formule nominale $E_\text{eff} = E/(1 + 1/p_f)$ donne $-4{,}8~\%$ pour $p_f = 20$. Le banc de l'onde dans une barre a mesuré l'effet dynamique : l'onde est ralentie de $2{,}9$ à $3{,}2~\%$ pour $p_f = 20$, et le retard suit $c_\text{eff}/c = (1 + \alpha/p_f)^{-1/2}$ avec $\alpha = 1{,}239$ de $p_f = 10$ à 200 (\cref{sec-V1}). La valeur 20 est une valeur maison : Yang et al. ne publient pas leur pénalité dans les articles de 2025 et 2026, Munjiza recommande 10 fois $E$, Naderi et al. tabulent 24 fois $E$, et la thèse de Guo borne $p_0$ entre $E$ et $10E$, ce que la pénalité maison dépasse.
+
+La branche élastique d'ouverture est linéaire par défaut. L'option \cle{jointElastic = parabolic} donne la branche de Guo, $\sigma = f_t(2r - r^2)$ en ouverture avec une pente $2p_j$ à l'origine, et $\sigma = 2p_j\delta_n$ en compression. L'audit du 13 septembre a établi que, sous cette branche, le critère de cisaillement, la plage de Coulomb et l'amorçage de l'effet de vitesse lisaient $p_j\delta_n$ au lieu de $2p_j\delta_n$, soit une contrainte normale divisée par deux. Le correctif est l'option \cle{jointNormalProxy = law}, posée dans v3-P.
+
+Les corps métalliques du train de frappe ne doivent pas porter de joints. L'option \cle{groupContinuum} lie définitivement leurs faces intérieures : sans elle, les joints du carbure fixaient le pas à $0{,}94$~ns quand la condition de Courant des éléments autorise $4{,}7$~ns.
+
+\subsection{Rupture en traction, en cisaillement et en mode mixte}
+
+En traction, le joint atteint sa résistance $f_t$ au bout de sa branche élastique puis s'adoucit. En cisaillement, l'enveloppe par défaut annule le frottement dès que la contrainte normale est une traction. L'option \cle{jointShearEnvelope = yang} prend l'équation~1 de Yang et al., $f_s = c - \tan\varphi \min(\sigma_n, f_t)$ ; les deux formes coïncident en compression et la seconde réduit la résistance au cisaillement de $34~\%$ au seuil de traction sur le banc de percussion.
+
+La plage de glissement de l'adoucissement vaut $3G_{II}/c$ par défaut. L'option \cle{jointShearRange = coulomb} la calcule à la pression courante, comme la thèse de Guo et Solidity ; l'écart est d'un facteur 54 sous l'insert, et sans cette option aucun noyau broyé ne se forme sous l'insert et le rebond atteint $0{,}99$. Le mode mixte combine les deux rapports d'ouverture et de glissement en $D = \sqrt{r_n^2 + r_s^2}$, l'ellipse de Yan et al.
+
+\subsection{Adoucissement}
+
+L'adoucissement par défaut est linéaire. L'option \cle{jointSoftening = munjiza} prend la courbe en z de Munjiza~\cite{munjiza1999smeared}, reprise par Yan et al., d'intégrale $0{,}386$, qui dissipe exactement $G_I$ et $G_{II}$. L'option \cle{jointDeltaC} fixe l'ouverture critique : \cle{exact} restitue $G_f$, la convention de Guo ($3G_f/f_t$ depuis zéro) dissipe $1{,}159\,G_f$, et la convention de Solidity dépend de la longueur d'arête. Une loi initialement rigide de Camacho et Ortiz~\cite{camacho1996impact} existe pour l'insertion adaptative ; sa première version créait 402~J sur un mini-banc, deux correctifs ont ramené ce chiffre à $0{,}21$~J.
+
+\subsection{Décharge, frottement et mort du joint}
+\label{sec-decharge}
+
+Le comportement d'un joint en décharge est le point de la loi qui a le plus pesé sur la campagne d'impact (\cref{tab-decharge}). Trois branches sont codées. La branche \cle{plastic}, défaut, est une plasticité à retour radial qui conserve le glissement acquis. La branche \cle{origin}, équation~18 de Yan et al., décharge sur la sécante à l'origine ; comme la sécante suit la compression courante, la loi n'a pas de potentiel et un cycle à glissement fixé crée l'énergie $\frac12(k_2 - k_1)s^2$. La branche \cle{solidity} est la transcription mot à mot de la loi de Solidity : sans mémoire d'endommagement, le joint guérit en se refermant, et il ne frotte pas.
+
+\begin{table}[htbp]
+\centering
+\caption{Énergie créée ou dissipée par cycle fermé à pression variable selon la branche de décharge, banc d'un joint isolé.}
+\label{tab-decharge}
+\begin{tabularx}{\linewidth}{@{}l X l@{}}
+\toprule
+branche & bilan mesuré par cycle & statut \\
+\midrule
+\cle{plastic} & résidu proportionnel à $\Delta t$, nul à la limite & loi de travail \\
+\cle{origin} + \cle{jointSecantRatchet} & résidu proportionnel à $\Delta t$, nul à la limite & comparaison \\
+\cle{origin} seule & 16~J créés en $81~\mu$s sur l'impact Kuru & écartée \\
+\cle{solidity} & $+1{,}899\times10^{-8}$~J intact, $+5{,}27\times10^{-4}$~J endommagé & écartée des calculs longs \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+Les chiffres de la branche \cle{solidity} viennent du banc corrigé le 14 septembre, convergé en pas de temps par extrapolation de Richardson : la création vaut $4{,}4~\%$ du travail échangé pour un joint intact et $31~\%$ pour un joint endommagé (\cle{docs/ECARTS_guo2014_rockim_2026-09-13.md}, l.~240-307). La documentation principale et le journal des modifications citent encore les chiffres de la première version du banc ($+8{,}92\times10^{-9}$ et $+1{,}37\times10^{-5}$~J), où le glissement partait à $45^\circ$ et ouvrait le joint ; ils sont périmés. La décision du 14 septembre fait de \cle{plastic} avec cliquet sur les sécantes la loi de travail. Elle ne démontre pas que \cle{plastic} soit sain hors des trajets testés : effet de vitesse variable, rotation, trajet mixte et transition vers le contact ne sont pas couverts.
+
+Le frottement résiduel d'un joint rompu se règle par \cle{jointResidualMu}, qui interpole entre le frottement de pic et une valeur résiduelle selon la même courbe que la cohésion ; la configuration de référence le met à zéro, comme Solidity, et le frottement de la roche passe alors entièrement par le contact ($\mu = 0{,}18$, \cref{sec-frottement}). La règle de rupture \cle{majority} déclare un joint rompu quand deux points d'intégration sur trois le sont au même pas, convention attestée à la fois par le code de Solidity et par un manuscrit des mêmes auteurs. La quadrature aux milieux d'arêtes de Guo est disponible.
+
+La mort du joint décide du moment où il passe la main au contact. Par défaut, un joint ne meurt qu'une fois franchement ouvert ; un joint broyé qui glisse en compression reste vivant et sert de contact frottant à ses propres lèvres. L'option \cle{jointDeath = damage}, règle de Guo, le fait mourir dès que $D \geq 1$, quel que soit le signe de l'ouverture : l'interaction entre les lèvres passe alors au contact général. Sur la compression simple 2D, ce relais multiplie le travail de contact par 32 sans changer la résistance ($51{,}04$~MPa). Le relais lâche de la charge normale pendant la naissance du contact (\cref{sec-naissance}).
+
+\subsection{Pulvérisation et plafonds de contrainte}
+
+La pulvérisation de Yang et al. 2026~\cite{yang2026pulverisation} réduit la contrainte du volume en $\boldsymbol\sigma = C_d(1 - D)\bar{\boldsymbol\sigma}$, avec $D$ croissant linéairement d'un seuil $\delta_0$ à une valeur $\delta_F$ d'une mesure de déformation $\delta_m$, irréversible et plafonné à $D_\text{max} = 0{,}9$. L'article ne définit ni la longueur qui transforme la déformation en déplacement, ni la mesure de déformation, ni $C_d$. rockim prend par défaut le diamètre inscrit et la partie déviatorique : le seuil s'arme alors à $2{,}7~\%$ de déformation, et la mesure est nulle en compression isotrope, de sorte qu'un élément sous $2{,}5$~GPa isotropes ne se pulvérise pas. La documentation précise que ce choix n'est pas la définition des auteurs. Le code public de Solidity a cette pulvérisation désactivée. Sans l'option \cle{bulkDamagePhase = rock}, posée dans v3-P, la pulvérisation s'appliquait aussi à l'acier et au carbure.
+
+Deux plafonds protègent le volume. Le plafond du déviateur (\cle{crushCap}) est neutralisé dans les configurations d'impact. Le plafond de la contrainte moyenne de traction (\cle{meanTensionCapFactor}) vaut 3 fois $f_t$ par défaut dans le code, alors que la documentation le dit désactivé par défaut ; il est donc actif dans tous les calculs qui ne posent pas la clé, sans équivalent chez Yang et al., et son effet n'est pas instrumenté.
+
+\subsection{Effet de la vitesse de déformation}
+
+Les facteurs d'amplification dynamique de Yang et al. multiplient $f_t$ et $G_I$ par $DIF_t = \min(1{,}85;\ 0{,}95 + 0{,}41\dot\varepsilon^{a_t})$ et $c$ et $G_{II}$ par $DIF_c = \min(1{,}84;\ 0{,}77 + 0{,}56\dot\varepsilon^{0{,}07})$, ce qui laisse invariante la longueur caractéristique de l'adoucissement. L'exposant en traction vaut $0{,}07$ dans l'article de 2025 et $0{,}17$ dans celui de 2026 ; la configuration retient $0{,}17$, la documentation présente encore $0{,}07$ comme la valeur littérale. Le facteur est réévalué à chaque pas sur le taux brut de l'élément, sans filtrage, comme dans Solidity, au lieu d'être figé à l'insertion. Le code public de Solidity a ces facteurs désactivés.
+
+\subsection{Insertion intrinsèque contre adaptative}
+\label{sec-insertion}
+
+Le choix d'insertion est un sujet de la thèse et il n'est pas tranché. Sur le banc d'impact Kuru à $100~\mu$s, l'insertion intrinsèque rompt 6\,090 joints et forme un cône broyé de 24~mm sous l'insert ; l'insertion adaptative en rompt 27 et ne forme qu'une peau de 2~mm, avec des tétraèdres restés élastiques jusqu'à 1\,359~MPa (\cle{docs/ADAPTATIF_impact_2026-09-11.md}, l.~90-117). Évaluer le critère d'insertion sur le maximum des points de la face plutôt que sur leur moyenne (\cle{facetAverage = max}) multiplie les ruptures par 15 et porte le cône à 8~mm ; un facteur 6 subsiste avec l'intrinsèque, attribué au cliquet diffus des joints de pénalité, propriété de la discrétisation sur laquelle Yang et al. ont calé leurs paramètres. L'adaptatif double environ le pas de temps ($6{,}32$ contre $2{,}83$~ns). Sur un tunnel 2D, il fragmente à l'échelle de l'élément ($75{,}7~\%$ de blocs mono-éléments) et propage moins ; un facteur de pointe le corrige en partie en 2D, sans avoir été essayé en 3D sur un impact. La configuration de référence de l'impact est intrinsèque.
+
+\subsection{Modèle à grains et statistique}
+
+Le maillage de Voronoï (\cle{mesh = voronoi}) découpe la roche en grains de phases minérales ; chaque propriété se surcharge par phase, et les joints de grain prennent la moyenne des deux phases multipliée par des facteurs propres aux frontières, ou des valeurs fixées par paire de phases. Les résistances peuvent être tirées par joint selon une loi de Weibull, avec l'effet d'échelle $(Z_\text{eff}/V_J)^{1/m}$ des VUMAT DP-DFH ($m \approx 24$ pour le Red Bohus). Ce modèle a servi la calibration 2D du Red Bohus ; il n'est pas utilisé dans les impacts 3D.
+
+\subsection{Calibration sur le granite de Red Bohus}
+
+La calibration n'est pas conclue et n'alimente pas la FDEM 3D. Un premier jeu, obtenu en juillet 2026 par calibration bayésienne d'un modèle à grains 2D, reproduisait la traction à $-6{,}7~\%$ et la compression simple à $+9{,}9~\%$ sur trois tirages ; il a été déclaré invalidé par la correction des amortissements. Un second jeu, obtenu en août par émulateur gaussien et échantillonnage de Metropolis-Hastings en insertion adaptative, se trompe sur le triaxial hors calage : $-13~\%$ à 20~MPa de confinement, puis $+36~\%$, $+42~\%$ et $+53~\%$ à 50, 75 et 100~MPa, parce que l'enveloppe de Mohr-Coulomb linéaire des joints surestime les forts confinements. Une troisième tentative sur le triaxial à 50~MPa a été arrêtée sans jeu final, la dilatance restant collée au pic. Les configurations d'impact utilisent le granite de Kuru avec les paramètres de Yang et al. 2026, pas le Red Bohus.

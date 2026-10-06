@@ -1,0 +1,73 @@
+\section{Contact}
+\label{sec-contact}
+
+\subsection{Trois canaux d'interaction}
+
+Deux morceaux de matière interagissent dans rockim par l'un de trois canaux. Un joint cohésif vivant relie deux tétraèdres voisins de la roche, ou l'insert au bit par brasure ; tant qu'il vit, la paire est exclue du contact. Le contact général gère tout le reste : faces extérieures des corps, lèvres des joints morts, fragments (\cle{generalContact}, \cle{src/Fdem3dSolver.cpp}, l.~6337). Le contact d'outil gère un outil analytique rigide, sphère, poinçon plat ou couteau PDC (\cle{toolContact}, l.~6646) ; il ne sert plus aux impacts, où l'insert est un corps maillé. En percussion maillée, chaque échange d'effort entre le piston, le bit, l'insert et la roche passe donc par le contact général.
+
+\subsection{Détection}
+
+Le contact général ne considère qu'un jeu de faces actives : les faces extérieures, plus les faces des joints morts. L'activation adaptative de Fukuda et al.~\cite{fukuda2020rmre} (\cle{gcActivation = adaptive}) réduit encore ce jeu aux faces qui peuvent toucher, selon trois règles monotones : la peau endommagée autour d'un joint cassé, les faces à moins de deux cellules d'un autre corps, et le voisinage d'une face qui a déjà porté une force. Elle repose sur l'hypothèse qu'un continuum intact ne se replie pas sur lui-même. Sur une percussion 3D, elle divise le temps de calcul par $2{,}32$ avec des sorties identiques au bit près, en n'activant que $4~\%$ des faces.
+
+Pour le contact par potentiel, les tétraèdres actifs sont rangés dans une grille de cellules par leur boîte englobante, et seules les paires de cellules voisines sont examinées. Un test d'axes séparateurs complet (8 plans de faces et 36 axes d'arêtes croisées) élimine les paires disjointes, avec un cache du dernier axe séparateur par paire ; $61~\%$ des paires sont réglées par ce cache sur une percussion 3D. Les paires sont mises en ordre canonique avant l'assemblage, ce qui rend le résultat indépendant de l'ordre de découverte. Le calcul se fait en trois phases : exclusion des paires liées en série, géométrie en parallèle, assemblage en série dans l'ordre canonique ; le contact parallélisé a donné des sorties identiques au contact série sur 59 instants à 14 fils.
+
+\subsection{Contact par pénalité nœud-face}
+
+La loi par défaut (\cle{contact = penalty}) pousse chaque nœud qui pénètre une face par un ressort de raideur $k = 0{,}01\,E_\text{max} h_\text{min}$, volontairement mou, amorti à $0{,}8$ fois l'amortissement critique, avec une restitution de $0{,}2$ en détente ; le frottement est un Coulomb régularisé par une tangente hyperbolique, sans ressort tangentiel. Cette loi ne convient pas à l'impact. Au choc piston-bit, environ 100~kN sur une cinquantaine de nœuds donneraient une pénétration de $1{,}2$~mm, dix fois le plafond de $0{,}6\,h_\text{min}$ : le piston traverserait le bit (\cle{docs/ETAT_yang2026_2026-09-11.md}, §3). Le banc du bloc glissant l'a aussi mise en échec : le bloc bascule sur les arêtes du maillage non coïncident (\cref{sec-P21}).
+
+\subsection{Contact par potentiel de Munjiza}
+
+La loi utilisée pour l'impact est le potentiel de Munjiza~\cite{munjiza2000penalty} (\cle{contact = potential}), sous la forme des équations 2 à 5 de Yan et al.~\cite{yan2023adaptive}. Les tétraèdres sont autorisés à se chevaucher légèrement, et c'est ce chevauchement qui produit la force qui les sépare. Chaque tétraèdre porte un champ $\varphi = 4 \min_k \lambda_k$, construit sur ses coordonnées barycentriques : nul sur ses faces, égal à 1 en son centre. Quand deux tétraèdres A et B se chevauchent, le code découpe A par les quatre demi-espaces de B pour obtenir le polyèdre de recouvrement, et chaque tétraèdre repousse l'autre d'une force
+\[
+\mathbf F_A = p \oint_{\partial(A\cap B)} (\varphi_A - \varphi_B)\, \mathbf n \, d\Gamma, \qquad \mathbf F_B = -\mathbf F_A,
+\]
+qui croît avec la profondeur et l'étendue du recouvrement. L'intégrale est calculée exactement en subdivisant chaque face du polyèdre par les 12 plans où les minima changent d'indice, et la force est répartie sur les quatre nœuds de chaque tétraèdre de façon consistante. La force dérive d'un potentiel : une collision élastique sans frottement conserve l'énergie cinétique à $2{,}0\times10^{-8}$ près en 3D et $3{,}7\times10^{-12}$ en 2D, et la quantité de mouvement à la précision machine (\cref{sec-selftests}). Deux gardes géométriques écartent les recouvrements dégénérés ; sans le contrôle de fermeture du polyèdre, des tétraèdres exactement tangents rompaient cinq joints à charge nulle.
+
+La raideur $p$ vaut \cle{potPenaltyFactor} fois $E$. Par défaut, $E$ est le plus grand module des matériaux en présence, soit 600~GPa du carbure, ce qui rend le contact roche-roche dix fois trop raide ; l'option \cle{potStiffnessByPhase = min}, posée dans v3-P, prend le plus petit des deux modules de la paire. Cette branche n'a pas d'amortissement : les clés \cle{gcXi} et \cle{gcRestitution} n'y agissent pas. La percussion 2D sous potentiel est plus élastique qu'en pénalité (restitution $0{,}55$ portée à $0{,}71$), écart de loi physique assumé.
+
+Le coût du potentiel est élevé en régime de débris. Sur une percussion 3D longue, il vaut environ sept fois celui de la pénalité (3\,474 contre 488~s), et l'intégration exacte des recouvrements avec force y prend les deux tiers du temps de calcul. Une variante ajoutée le 3 octobre 2026, \cle{potForce = volume}, suit Liu et al.~\cite{liu2022overlap} : la force dérive du potentiel $\frac12 k_n V^2/V'$ du volume de recouvrement $V$, ce qui supprime l'intégration aux 12 plans ; elle conserve l'énergie à $7\times10^{-15}$ près en choc frontal. Ce n'est pas la même loi : à enfoncement égal, la force croît comme le carré de l'aire de contact au lieu de l'aire, et aucun facteur ne reproduit Munjiza partout. Sur le banc Kuru, elle réduit le temps de $36~\%$ mais déplace le pic de force insert-roche et l'impulsion (\cref{tab-potvolume}). Un calcul de thèse doit choisir l'une des deux lois et s'y tenir.
+
+\begin{table}[htbp]
+\centering
+\caption{Potentiel de Munjiza contre force par volume de recouvrement sur le banc Kuru v3-P, $100~\mu$s, 4 fils.}
+\label{tab-potvolume}
+\begin{tabular}{@{}lrrrr@{}}
+\toprule
+loi & temps (s) & pic $F_z$ (N) & impulsion (N\,s) & joints rompus \\
+\midrule
+Munjiza & 398 & 11\,400 & $0{,}264$ & 57 \\
+volume, facteur $8/3$ & 256 & 6\,850 & $0{,}167$ & 56 \\
+volume, facteur 4 & 254 & 10\,770 & $0{,}230$ & 36 \\
+volume, facteur 5 (défaut) & 255 & 10\,650 & $0{,}223$ & 53 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+La dispersion du nombre de joints rompus, de 36 à 57, n'a pas été séparée du bruit propre à la fragmentation.
+
+\subsection{Frottement}
+\label{sec-frottement}
+
+Sous potentiel, le frottement est un ressort tangentiel incrémental à mémoire par paire, plafonné par la loi de Coulomb : $\mathbf F_t \leftarrow \Pi_\perp \mathbf F_t - k_t \Delta t\, \mathbf v_t$, puis $\|\mathbf F_t\| \leq \mu F_n$. Le ressort est remis à zéro si la paire n'a pas été vue au pas précédent. La structure est celle de Solidity ; seul le rapport $k_t/k_n$ diffère et relève de la configuration. Le coefficient se règle par phase (\cle{contactMu.<phase>}) et, pour une paire, le plus faible des deux gouverne, convention transcrite de Solidity. La configuration de référence pose $\mu = 0{,}18$ pour la roche et $0{,}6$ pour l'acier et le carbure ; tout contact qui touche la roche frotte donc à $0{,}18$. Cette valeur est celle du papier de Yang et al. sur le granite de Kuru, qui attribue l'éjection des fragments à ce frottement bas.
+
+\subsection{Naissance du contact sur un joint mort}
+\label{sec-naissance}
+
+Quand un joint meurt sous l'insert, ses deux tétraèdres sont comprimés et se chevauchent déjà : le contact naît avec un recouvrement non nul. Appliquer d'un coup la force correspondante créerait de l'énergie ; la mesure historique est de $+936$~J/m en 2D sans précaution. rockim propose deux philosophies opposées (\cle{gcBirth}). Par défaut (\cle{ramp}), le recouvrement de naissance est retranché puis relâché exponentiellement avec une constante \cle{gcBirthTau} de $1~\mu$s : la force part de zéro, ce qui garantit l'absence d'injection mais fait perdre de la portance à chaque rupture. L'option \cle{penalty}, transcrite de Solidity, cale la raideur de la paire pour que le contact naissant reprenne exactement la force que portait le joint en mourant, dans des bornes de $0{,}01$ à 3 fois la raideur nominale ; la force est continue, mais rien ne garantit plus le signe de l'énergie.
+
+Sur la percussion 2D, les deux modes restent dissipatifs ($-0{,}917$ contre $-0{,}995$~J/m). Sur l'impact 3D Kuru, le mode \cle{penalty} injecte 1~J dès le choc piston-bit et le garde-fou d'énergie arrête le calcul à $2{,}9~\mu$s. La configuration v3-P revient donc à la rampe. Le relais lâche de la charge normale pendant la rampe ; sur la compression simple 2D, 4\,169~kN/m ont été lâchés au relais, réserve ouverte dans la documentation.
+
+\subsection{Couplage entre endommagement et contact}
+
+L'option \cle{contactDamageCoupling = solidity} multiplie la raideur normale et le frottement du contact par $d = \min(1 - D_i, 1 - D_j)$, où $D$ est l'endommagement de pulvérisation des deux éléments, et divise encore ce facteur par 1\,000 sous $0{,}041$, conventions de Solidity. Une zone pulvérisée ne porte alors plus l'insert. L'option exige la pulvérisation. Elle n'a pas de ligne dans la documentation de référence : elle n'est décrite que dans le code, le journal des modifications et deux documents d'audit. La bissection du 11 septembre l'a disculpée de la création d'énergie du banc Kuru.
+
+\subsection{Contact d'outil}
+
+Pour un outil analytique rigide, deux lois existent (\cle{toolContact}). La pénalité nœud-outil a révélé en 2D une pompe d'énergie : sur la coupe PDC, l'énergie injectée valait 408 fois le travail de l'outil pendant que le bilan d'énergie restait à l'équilibre, et sur le banc de raclage le rapport d'injection vaut $4{,}43$ en pénalité contre $0{,}905$ avec la seconde loi. Cette seconde loi, \cle{signorini}, impose la condition de contact en vitesse (Moreau, schéma CD-Lagrange) : comme la masse est diagonale et l'outil rigide, l'opérateur de Delassus est diagonal par nœud et l'impulsion de contact se calcule en forme fermée, sans système à résoudre. Son algèbre est vérifiée à $2{,}2\times10^{-16}$ et une chaîne de masses frappée à 10~m/s repart à $19{,}94$~m/s pour $2v = 20$~m/s (\cref{sec-selftests}).
+
+\subsection{Contact et pas de temps}
+\label{sec-contact-dt}
+
+Le pas de temps provisionne deux contacts par nœud à la raideur de l'outil analytique $E_\text{max} h_\text{min}$, même quand il n'y a pas d'outil analytique. La pénalité normale du potentiel et celle du contact nœud-face n'entrent pas dans ce budget en 3D. La raideur tangentielle du potentiel n'y entre qu'avec \cle{dtBudgetTangential = on}, désactivée par défaut ; sur la configuration de référence, où le rapport tangentiel est porté à $1{,}4286$ pour approcher $k_t/k_n = 2/7$ de Solidity, le code avertit que cette raideur dépasse la provision. Aucune instabilité de contact n'a été attribuée à ce poste à ce jour, mais aucun banc ne l'a cherchée.
+
+\figaproduire{5cm}{schéma de deux tétraèdres en recouvrement, avec le champ $\varphi$ de chacun, le polyèdre d'intersection et la force répartie aux nœuds ; second panneau avec la naissance d'un contact sur un joint mort comprimé, rampe contre raideur calée.}{aucun calcul, figure de principe dessinée à partir de \cle{include/rockim/PotentialContact.hpp}.}

@@ -1,0 +1,42 @@
+\section{Limites connues et travaux en cours}
+\label{sec-limites}
+
+\subsection{Écarts non expliqués}
+
+Sur St Anne, la masse de fragments est trop grande de $87~\%$ et l'enfoncement de $17~\%$, et le rebond n'est pas mesuré. Plus largement, aucun des 44 calculs d'impact archivés n'enregistre le retournement du bit de façon exploitable. Sur Kuru, la pulvérisation reste quasi inactive et le déficit de freinage n'est pas établi, faute d'une base de comparaison commune. Sur AbuAisha, la pression de rupture est trop forte de 13 à $25~\%$, avec des vitesses de particules 14 fois plus élevées que sur les figures de l'article. Sur Yan, la régression de la compression simple dérive sans cause attribuée.
+
+\subsection{Options qui changent le résultat sans décision arrêtée}
+
+Plusieurs options déplacent le résultat d'un impact et n'ont pas de valeur arrêtée par une étude ; un calcul de thèse doit fixer chacune et la citer (\cref{tab-options}).
+
+\begin{table}[htbp]
+\centering
+\caption{Options qui changent le résultat d'un impact, effet mesuré et statut au 6 octobre 2026.}
+\label{tab-options}
+\begin{tabularx}{\linewidth}{@{}l X X@{}}
+\toprule
+option & effet mesuré & statut \\
+\midrule
+\cle{jointShearUnload} & \cle{solidity} crée de l'énergie ; \cle{origin} sans cliquet aussi & \cle{plastic} retenue le 14 septembre \\
+\cle{jointPenaltyFactor} & onde ralentie de $(1 + 1{,}24/p_f)^{-1/2}$ & 20, puis 25, puis $26{,}3$ selon les comparaisons ; règle $p_f \geq 0{,}62/\varepsilon$ établie le 3 octobre \\
+\cle{insertion} & cône broyé de 24~mm en intrinsèque, peau de 2~mm en adaptatif & sujet de thèse, non tranché \\
+\cle{potForce} & pic $-7~\%$, impulsion $-16~\%$ en volume & une loi par étude \\
+\cle{potStiffnessByPhase} & lit roche-roche dix fois plus souple avec \cle{min} & \cle{min} dans v3-P \\
+raideur de contact de $E$ à $0{,}25\,E$ & force maximale $-5~\%$, ruptures $+13~\%$ & bancs seulement \\
+\cle{meanTensionCapFactor} & plafond implicite à 3 fois $f_t$ & à poser à 0 dans les configurations de conformité \\
+\cle{bulkModel} & non mesuré sur l'impact & co-rotationnel par défaut \\
+\cle{dampingLocal} & tunnel 2D : $0{,}15$ à $0{,}7$ divise l'endommagement par 4 & ouvert \\
+exposant de l'effet de vitesse & $1{,}516$ contre $1{,}847$ à 100~s$^{-1}$ & $0{,}17$ retenu \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{Chantiers ouverts}
+
+La campagne de vérification et validation doit jouer les sept bancs préparés, environ 7~h à 2 fils pour les cas par défaut, et ouvrir les parties III et IV. La réplique St Anne doit être prolongée à $500~\mu$s pour mesurer le rebond et rejouée sur le maillage fin pour sa convergence. Le programme d'accélération a ses étapes suivantes écrites : profil par phase, combinaisons d'options, stabilité de la pénalité de contact des joints selon Ghesquière-Diérickx et al.~\cite{ghesquiere2025}, dont le défaut serait instable d'après cet article sans que le micro-banc de rockim ne le montre. La branche de développement n'est pas fusionnée, n'a pas de demande de fusion et n'a pas été compilée sous Windows.
+
+\subsection{Ce qui manque pour la thèse}
+
+La thèse a besoin d'une comparaison complète à au moins un article, rebond compris, avec une étude de convergence en maillage. Elle a besoin de données d'essai indépendantes du calage ; les essais d'Aising et Gerbaud, internes à Mines Paris-PSL, sont la candidate naturelle, et la feuille de route les classait comme bloquants pour toute validation. Elle a besoin de relier les deux chemins de calage, le triaxial du Red Bohus et l'impact du Kuru, qui aujourd'hui ne se croisent pas. Elle a besoin que la campagne de vérification et validation soit jouée jusqu'à ses verdicts.
+
+Deux questions de pérennité restent ouvertes. Le dépôt public n'a pas de licence alors qu'il contient des parties transcrites d'un code sous LGPL. Une seule personne connaît le code, et sa documentation de référence, longue de 3\,200 lignes, contient des passages périmés relevés dans ce rapport : nombre de tests, comportement des clés inconnues, valeur par défaut du plafond de traction, chiffres de création d'énergie de la loi de Solidity, statut de la spécification de l'impact.

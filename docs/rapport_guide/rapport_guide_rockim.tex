@@ -1,0 +1,76 @@
+\documentclass[11pt,a4paper]{article}
+\PassOptionsToPackage{obeyspaces,spaces}{url}
+
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage[french]{babel}
+\usepackage[a4paper,margin=2.5cm]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{xcolor}
+\usepackage{microtype}
+\usepackage{csquotes}
+\usepackage[backend=biber,style=numeric-comp,sorting=nyt,maxbibnames=4,giveninits=true]{biblatex}
+\usepackage[hidelinks]{hyperref}
+\usepackage{cleveref}
+
+\addbibresource{rockim.bib}
+% Le champ note de rockim.bib porte la provenance interne de chaque entree :
+% utile au depot, pas au lecteur de la bibliographie.
+\DeclareSourcemap{\maps[datatype=bibtex]{\map{\step[fieldset=note,null]}}}
+
+\graphicspath{{figures/}}
+
+% Cle de configuration ou chemin du depot, en machine a ecrire.
+\urlstyle{tt}
+\def\UrlBreaks{\do\/\do\_\do\-\do\.}
+\DeclareRobustCommand{\cle}[1]{\path{#1}}
+% Figure a produire (encadre rouge) : hauteur, contenu attendu, calcul necessaire.
+\newcommand{\figaproduire}[3]{%
+  \begin{center}\fcolorbox{red}{white}{\begin{minipage}[c][#1][c]{0.9\linewidth}
+  \centering\small Figure à produire.\\[0.5ex] Contenu attendu : #2\\[0.5ex]
+  Calcul ou essai nécessaire : #3\end{minipage}}\end{center}}
+
+\crefname{section}{section}{sections}
+\crefname{figure}{figure}{figures}
+\crefname{table}{tableau}{tableaux}
+\crefname{appendix}{annexe}{annexes}
+
+\setlength{\parskip}{0.4ex}
+\setlength{\emergencystretch}{2em}
+\renewcommand{\arraystretch}{1.15}
+
+\title{rockim : ce que fait le code, comment il a été vérifié et ce qu'il reste à valider\\[1ex]
+\large Rapport-guide à l'intention des encadrants}
+\author{Thèse forage percussif, granite de Red Bohus}
+\date{6 octobre 2026\\[0.5ex]\small État du dépôt \cle{Fuzquial/rockim}, commit \cle{f0209ef} du 4 octobre 2026}
+
+\begin{document}
+\maketitle
+
+\input{sections/s00_synthese}
+\tableofcontents
+\clearpage
+\input{sections/s01_objet}
+\input{sections/s02_formulation}
+\input{sections/s03_materiau}
+\input{sections/s04_contact}
+\input{sections/s05_impact}
+\input{sections/s06_verification}
+\input{sections/s07_validation}
+\input{sections/s08_performances}
+\input{sections/s09_limites}
+
+\appendix
+\input{sections/a1_equations}
+\input{sections/a2_cles}
+\input{sections/a3_reproduire}
+
+\printbibliography[heading=bibintoc,title={Références}]
+
+\end{document}

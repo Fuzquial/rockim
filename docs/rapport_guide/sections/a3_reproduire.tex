@@ -1,0 +1,36 @@
+\section{Reproduire les résultats de ce rapport}
+\label{sec-annexe-reproduire}
+
+\subsection{Compiler et lancer}
+
+rockim se compile avec CMake sous Linux, macOS ou Windows ; Eigen est téléchargé s'il n'est pas installé et OpenMP est détecté s'il existe (\cle{GUIDE_rockim.md}, §2). Un calcul se lance par \cle{rockim <configuration> <dossier de sortie>}, le nombre de fils se fixant par la variable \cle{OMP_NUM_THREADS}. Un seul fil donne des sorties identiques au bit au calcul série. La variable \cle{ROCKIM_PROF=1} imprime le coût de chaque phase du pas.
+
+\subsection{Vérification}
+
+La suite se lance depuis la racine du dépôt par \cle{python tools/verify_suite.py --tier fast}, ou \cle{full} et \cle{all} pour les niveaux supérieurs, à un fil par défaut. Les auto-tests se lancent par \cle{rockim selftest-<nom>}. L'identité au bit se contrôle par \cle{python tools/bitid.py}, à 4 fils.
+
+\subsection{Bancs de validation}
+
+Chaque banc de \cle{vv/} se lance par \cle{python vv/<banc>/<script>.py all}, qui prépare les maillages et les configurations, lance les calculs et écrit \cle{resultats.json} et les figures \cle{fig_*.pdf}. Les actions \cle{prepare}, \cle{run} et \cle{analyse} se lancent aussi séparément. Le lanceur \cle{vv/run_daemon.py} prend en charge les bancs marqués prêts et respecte un plafond global de processus.
+
+\subsection{Provenance des figures}
+
+\begin{longtable}{@{}p{0.3\linewidth} p{0.64\linewidth}@{}}
+\toprule
+figure & source \\
+\midrule
+\endhead
+\cref{fig-montage} & \cle{results/fig/config_stanne/montage.png} \\
+\cref{fig-hertz} & \cle{figures_impact/hertz_compare.png}, script \cle{plot_hertz.py} \\
+\cref{fig-V1conv,fig-V1pen} & \cle{vv/V1_onde/}, script \cle{viz_v1.py} \\
+\cref{fig-P21} & \cle{vv/P2_bloc/p2_bloc.py} \\
+\cref{fig-stanne-joints,fig-stanne-fp} & \cle{results/fig/stanne300/}, scripts \cle{tools/fig_joints_only.py} et \cle{tools/fig_fp.py} \\
+\cref{fig-gcact} & \cle{A1_gcactivation.png} à la racine du dépôt \\
+\bottomrule
+\end{longtable}
+
+Les figures géométriques du calcul St Anne demandent les trames VTU, environ 2~Go, qui ne sont pas dans le dépôt. Les fichiers \cle{.odb} et les grands résultats bruts vivent sur le poste du doctorant.
+
+\subsection{Les documents de référence}
+
+Pour approfondir un point, l'ordre de lecture recommandé est le suivant : \cle{GUIDE_rockim.md} pour l'usage, \cle{DOCUMENTATION_rockim.md} pour la référence des clés et des lois, \cle{docs/VV_campagne.md} pour la campagne de vérification et validation, \cle{docs/COMPARAISON_yang2025_stanne_2026-09-14.md} pour la réplique St Anne, \cle{docs/ECARTS_guo2014_rockim_2026-09-13.md} pour la transcription de Solidity, \cle{HANDOFF_2026-10-03.md} pour l'état le plus récent.

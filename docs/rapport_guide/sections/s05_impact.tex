@@ -1,0 +1,54 @@
+\section{Mise en données d'un impact 3D}
+\label{sec-impact}
+
+\subsection{Le modèle est le maillage}
+
+Un impact se décrit d'abord par son maillage Gmsh. Chaque volume physique nommé devient un corps : roche, insert, circlip, bit, piston, plaque de guidage (\cref{fig-montage}). Entre deux corps, aucun joint n'est créé par défaut et l'interaction passe par le contact général ; l'option \cle{groupBond.<A>.<B> = joints} pose au contraire des joints cohésifs sur l'interface conforme de deux corps, ce qui modélise la brasure de l'insert dans le bit. L'option \cle{groupContinuum.<corps>} rend un corps continu, sans joints internes, pour l'acier et le carbure. Le matériau de chaque corps est une phase désignée par \cle{groupPhase.<corps>}, la vitesse initiale se pose par \cle{groupVel.<corps>}, et l'outil analytique par défaut est retiré par \cle{toolShape = none} : sans cette clé, une sphère de $0{,}5$~kg à 8~m/s s'ajouterait au calcul et apporterait 16~J fantômes.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=\linewidth]{stanne_montage}
+\caption{Montage de la réplique St Anne : chaîne de six corps, insert en carbure de rayon $8{,}51$~mm posé à $0{,}02$~mm de la roche, et coût en temps de calcul des événements de la chronologie (\cle{results/fig/config_stanne/}).}
+\label{fig-montage}
+\end{figure}
+
+\subsection{Procédure}
+
+Le guide d'utilisation fixe une procédure en cinq étapes, chacune issue d'un calcul perdu (\cle{GUIDE_rockim.md}, §4). La fenêtre de temps se dimensionne avant d'écrire la configuration : temps de vol $t_0 = \text{jeu}/v$, durée de contact de Hertz $t_c \approx 2{,}87\,(m^2/(R E^{*2} v))^{1/5}$, puis une marge ; un calcul mal dimensionné a tourné 4~h sans que rien n'atteigne la roche. La faisabilité de la rupture se vérifie ensuite par $2\,\Delta x < \ell_{cz} = E G_f/f_t^2 < a = \sqrt{R\delta}$ : avec $\ell_{cz} = 35$~mm pour un rayon de contact de $1{,}45$~mm, un calcul n'a rompu que 4 joints sur 158\,423. Un essai de fumée précède tout calcul de plus de 30~min, avec quatre contrôles : instant du premier contact, au moins une rupture, résidu du bilan sous $1~\%$, coût extrapolé. Le calcul se lance enfin avec un nombre de fils choisi, un seul fil donnant des sorties identiques au bit au calcul série (\cref{sec-fils}).
+
+\subsection{Le banc Kuru, configuration v3-P}
+
+La configuration de référence de l'impact sur granite de Kuru est \cle{configs/yang2026_bench_s25_v3P.cfg}. Elle dérive de \cle{yang2026_bench_s25.cfg}, que l'auteur du code a cessé de tenir pour référence : cette dernière combine la branche de décharge \cle{origin} et la naissance de contact calée, et le garde-fou d'énergie l'arrête à $2{,}9~\mu$s ; avec une rampe de naissance, elle crée $4{,}3$~J et s'arrête à $81~\mu$s (\cle{docs/RAPPORT_nuit_2026-09-13.md}, l.~60-85). La variante v3-P diffère par cinq options : branche \cle{plastic} avec cliquet sur les sécantes, contrainte normale lue sur la branche parabolique, pulvérisation limitée à la roche, raideur de contact prise sur le plus petit module, naissance de contact en rampe ; sa durée est de $200~\mu$s. Le \cref{tab-kuru} la détaille bloc par bloc.
+
+\begin{table}[htbp]
+\centering
+\caption{Configuration v3-P du banc Kuru, bloc par bloc.}
+\label{tab-kuru}
+\begin{tabularx}{\linewidth}{@{}l X@{}}
+\toprule
+bloc & contenu \\
+\midrule
+géométrie & six corps ; roche cylindrique de rayon 125~mm et hauteur 150~mm ; insert hémisphérique de rayon $8{,}51$~mm ; bit de 30~mm de diamètre et 265~mm de long ; piston de $26{,}5$~mm et 260~mm ; jeux de $0{,}02$~mm ; maillage de résolution $s = 2{,}5$, soit 10\,563 tétraèdres \\
+roche & granite de Kuru (table~1 de Yang et al. 2026) : $\rho = 2\,626$~kg/m$^3$, $E = 60$~GPa, $\nu = 0{,}24$, $f_t = 10{,}98$~MPa, $c = 29{,}84$~MPa, $\tan\varphi = 1{,}85$, $G_I = 50$~J/m$^2$, $G_{II} = 20\,G_I$ \\
+métaux & acier $7\,850$~kg/m$^3$, 200~GPa ; carbure $15\,250$~kg/m$^3$, 600~GPa ; résistances portées à $10^{12}$~Pa, corps continus ; insert et circlip brasés au bit \\
+joints & intrinsèques, pénalité 20, branche parabolique, adoucissement de Munjiza, enveloppe de Yang, plage de Coulomb, décharge \cle{plastic} avec cliquet, mort sur endommagement, sans amortisseur, quadrature aux milieux d'arêtes, règle des deux points sur trois \\
+volume & co-rotationnel ; pulvérisation de Yang limitée à la roche ($\delta_0 = 0{,}014$~mm, $\delta_F = 0{,}4$~mm, $D_\text{max} = 0{,}9$) ; effet de vitesse continu, exposant $0{,}17$ en traction \\
+contact & potentiel de Munjiza, raideur sur le plus petit module, activation adaptative, naissance en rampe, $\mu = 0{,}18$ pour la roche, couplage endommagement-contact \\
+numérique & sans amortissement de Cundall ; \cle{dtFactor} $0{,}15$ ; pesanteur comptée dans le bilan ; arrêt si le résidu du bilan dépasse $2~\%$ \\
+chargement & piston lancé à 9~m/s vers le bas \\
+mesures & cinématique du bit, du piston et de l'insert ; jauge de contrainte à mi-bit \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+Le maillage de cette configuration est grossier : la référence de Yang et al. compte 230\,788 tétraèdres, le jumeau le plus fin de rockim ($s = 1$) 120\,185, et le cœur sous l'insert de ce jumeau est maillé à $1{,}37$~mm au lieu du millimètre annoncé. Le jumeau $s = 2{,}5$ n'est pas une étude de résolution du jumeau fin : son piston pèse $0{,}777$~kg contre $1{,}057$~kg, soit $31{,}5$~J d'énergie incidente contre $42{,}8$~J.
+
+\subsection{Résultats connus du banc Kuru}
+
+Le pas de temps vaut $2{,}83$~ns, soit 70\,733 pas pour $200~\mu$s. Le piston touche le bit à $2~\mu$s, l'onde passe à mi-bit vers $15~\mu$s et la jauge y lit une compression maximale de $173{,}0$~MPa, pour $178{,}3$~MPa par la théorie de l'impact unidimensionnel et environ 160~MPa chez Yang et al. L'enfoncement de l'insert progresse à $6{,}01$~m/s (pente entre 10 et $90~\%$) pour $5{,}62$~m/s chez Yang et al. L'enfoncement atteint $0{,}83$~mm, 294 joints rompent, dont $45~\%$ en traction, et 124 fragments se forment. Sur $100~\mu$s, le pic de la force de contact insert-roche vaut 11\,400~N et l'impulsion $0{,}264$~N\,s.
+
+Deux grandeurs restent inexploitables sur ce banc. Le rebond n'est pas mesurable : aucun des 44 calculs d'impact archivés n'enregistre le retournement du bit, et la variante plastique prolongée à $300~\mu$s donne environ 1~m/s contre $4{,}65$~m/s chez Yang et al. La force de freinage n'est pas réconciliée : la force mesurée directement dans le contact insert-roche plafonne à $11{,}4$~kN sur $100~\mu$s, alors que l'estimateur cinématique du train rigide en déduit un pic de 55 à 65~kN, et ce même estimateur surestime le pic de $90~\%$ sur St Anne tout en reproduisant l'impulsion à $3{,}4~\%$ près (\cref{fig-stanne-fp}). Les comparaisons de force antérieures sont à refaire sur la force de contact mesurée.
+
+\subsection{Sorties à exploiter}
+
+Les colonnes \cle{grpZ}, \cle{grpVz} et \cle{grpFz} de \cle{history.csv} donnent la position, la vitesse et la force de contact nette de chaque corps suivi. La clé \cle{contactForcePairs} ajoute la force de contact exercée par un corps sur un autre, paire par paire, sommée en série et donc indépendante du nombre de fils ; la somme sur tous les partenaires du bit retrouve sa force nette à 0~N près. Cette mesure a révélé un piège : la plaque de guidage porte jusqu'à 3\,214~N sur le bit pendant les $30$ premières microsecondes, force que l'estimateur cinématique attribue à la roche. Les scripts de dépouillement sont listés en \cref{sec-annexe-reproduire}.

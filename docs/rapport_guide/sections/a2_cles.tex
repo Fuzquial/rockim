@@ -1,0 +1,59 @@
+\section{Clés de configuration utilisées dans la thèse}
+\label{sec-annexe-cles}
+
+Le tableau rassemble les clés qui fixent la physique d'un impact FDEM 3D, avec leur défaut et leur réglage dans la configuration v3-P du banc Kuru. La référence complète des clés est \cle{DOCUMENTATION_rockim.md} ; chaque calcul écrit dans \cle{config_effective.cfg} toutes les valeurs qu'il a utilisées.
+
+\begin{longtable}{@{}p{0.34\linewidth} p{0.22\linewidth} p{0.36\linewidth}@{}}
+\caption{Clés de l'impact FDEM 3D, défaut et réglage v3-P.}\label{tab-cles}\\
+\toprule
+clé & défaut & v3-P \\
+\midrule
+\endfirsthead
+\toprule
+clé & défaut & v3-P \\
+\midrule
+\endhead
+\bottomrule
+\endfoot
+\cle{mode} & sans objet & \cle{fdem3d} \\
+\cle{mesh} & grille & \cle{file}, six corps nommés \\
+\cle{toolShape} & sphère & \cle{none} \\
+\cle{groupBond.bit.insert} & aucun & \cle{joints} \\
+\cle{groupContinuum.<corps>} & aucun & métaux \\
+\cle{insertion} & \cle{intrinsic} & \cle{intrinsic} \\
+\cle{jointPenaltyFactor} & 20 & 20 \\
+\cle{jointPenaltyLength} & \cle{min} & \cle{min} \\
+\cle{jointElastic} & linéaire & \cle{parabolic} \\
+\cle{jointNormalProxy} & historique & \cle{law} \\
+\cle{jointSoftening} & \cle{linear} & \cle{munjiza} \\
+\cle{jointShearEnvelope} & \cle{yan} & \cle{yang} \\
+\cle{jointShearRange} & \cle{cohesion} & \cle{coulomb} \\
+\cle{jointShearUnload} & \cle{plastic} & \cle{plastic} \\
+\cle{jointSecantRatchet} & désactivé & \cle{on} \\
+\cle{jointResidualMu} & non posée & 0 \\
+\cle{jointDeath} & \cle{separation} & \cle{damage} \\
+\cle{jointFailRule} & \cle{any} & \cle{majority} \\
+\cle{jointQuadrature} & \cle{vertex} & \cle{midedge} \\
+\cle{jointDeltaC} & \cle{exact} & \cle{solidity} \\
+\cle{jointXi} & $0{,}05$ & 0 \\
+\cle{bulkModel} & co-rotationnel & co-rotationnel \\
+\cle{bulkDamage} & désactivé & \cle{yang} \\
+\cle{bulkDamagePhase} & toutes & \cle{rock} \\
+\cle{meanTensionCapFactor} & 3 & non posée, donc 3 \\
+\cle{strainRateDIF} & désactivé & \cle{yang}, exposant $0{,}17$ en traction \\
+\cle{strainRateDIFArm} & selon l'insertion & \cle{continuous} \\
+\cle{strainRateFilter} & passe-bas & \cle{none} \\
+\cle{contact} & \cle{penalty} & \cle{potential} \\
+\cle{potForce} & \cle{munjiza} & \cle{munjiza} \\
+\cle{potStiffnessByPhase} & \cle{max} & \cle{min} \\
+\cle{potTangentFactor} & 1 & $1{,}4286$ \\
+\cle{gcActivation} & \cle{full} & \cle{adaptive} \\
+\cle{gcBirth} & \cle{ramp} & \cle{ramp} \\
+\cle{contactMu.rock} & $0{,}5$ & $0{,}18$ \\
+\cle{contactDamageCoupling} & \cle{off} & \cle{solidity} \\
+\cle{dampingLocal} & $0{,}05$ & 0 \\
+\cle{dtFactor} & $0{,}15$ & $0{,}15$ \\
+\cle{energyBodyForces} & désactivé & \cle{on} \\
+\cle{budgetAbortPct} & désactivé & 2 \\
+\cle{groupVel.piston} & aucune & 9~m/s vers le bas \\
+\end{longtable}
