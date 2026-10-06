@@ -1,7 +1,7 @@
 \section{Insertion adaptative : reproduction de Yan et al. 2023}
 \label{sec-yan}
 
-rockim reproduit la hiérarchie établie par Yan et al. entre insertion adaptative et insertion intrinsèque : l'insertion adaptative ne dégrade pas la raideur, et l'insertion intrinsèque s'en approche quand la pénalité croît. Deux écarts subsistent : le plateau intrinsèque reste 13 à $16~\%$ sous l'adaptatif au lieu de le rejoindre, et le brésilien adaptatif ne converge pas en maillage. La portée de cet accord est bornée par la lecture des figures de Yan, par la variabilité propre de rockim (environ $2~\%$ selon le nombre de fils), et par une maille de compression deux fois plus grossière que celle de l'article. Rejouée le 6 octobre 2026 avec le binaire courant, la campagne d'août tient : résistance uniaxiale à $+0{,}09~\%$, brésilien à $+0{,}06~\%$, angle de frottement de $22{,}92^\circ$ contre $22{,}8^\circ$ (\cref{sec-yan-rejeu}).
+rockim reproduit la hiérarchie établie par Yan et al. entre insertion adaptative et insertion intrinsèque : l'insertion adaptative ne dégrade pas la raideur, et l'insertion intrinsèque s'en approche quand la pénalité croît. Deux écarts subsistent : le plateau intrinsèque reste 13 à $16~\%$ sous l'adaptatif au lieu de le rejoindre, et le brésilien adaptatif ne converge pas en maillage. La portée de cet accord est bornée par la lecture des figures de Yan, par la variabilité propre de rockim (environ $2~\%$ selon le nombre de fils), et par une maille de compression deux fois plus grossière que celle de l'article. Rejoués le 6 octobre 2026 avec le binaire courant, les neuf calculs principaux de la campagne d'août la retrouvent : résistance uniaxiale à $+0{,}03~\%$, brésilien à $+0{,}06~\%$, angle de frottement de $22{,}92^\circ$ contre $22{,}8^\circ$ (\cref{sec-yan-rejeu}).
 
 Yan, Zheng et Wang~\cite{yan2023adaptive} ont introduit dans MultiFracS l'insertion adaptative des joints et l'ont comparée à l'insertion intrinsèque sur cinq essais 2D : bande élastique pesante, essai brésilien, compression uniaxiale et triaxiale, brésilien dynamique aux barres de Hopkinson. rockim a reproduit les cinq en août 2026 ; quatre sont comparés sur leurs grandeurs principales, le Hopkinson sur la seule onde élastique dans les barres. La bande pesante et cette onde se jugent par rapport à une solution exacte et relèvent de la vérification ; le reste est une reproduction de code à code, pas une validation.
 
@@ -11,7 +11,7 @@ Yan, Zheng et Wang~\cite{yan2023adaptive} ont introduit dans MultiFracS l'insert
 
 Les résultats relèvent de trois campagnes, qu'il faut dater. Une première campagne du 6 août 2026, avec une loi d'adoucissement linéaire, est périmée pour la comparaison à Yan et ne sert que de témoin. La campagne de référence, des 10 et 11 août, emploie la courbe d'adoucissement de Yan ; elle compte 54 calculs, lancés sous Windows, et elle est antérieure aux correctifs des 19 et 20 août et aux nouvelles lois de décharge et de contact.
 
-La compression uniaxiale a été rejouée une première fois le 4 octobre 2026 sous macOS : $51{,}43$~MPa contre $51{,}1$~MPa en août ($51{,}07$~MPa pour le repère de la suite de non-régression sous Linux), et $34~\%$ de joints rompus en plus. Toute la campagne a ensuite été rejouée le 6 octobre 2026 sous Linux avec le binaire courant (\cref{sec-yan-rejeu}) : elle retrouve les valeurs d'août, ce qui écarte l'évolution du code et désigne le tirage du maillage de Voronoï, qui dépend de la bibliothèque standard, comme cause de l'écart macOS. Les données brutes de la campagne d'août ne sont pas dans les dépôts ; les chiffres viennent des notes d'étude du dépôt, et les valeurs lues sur une figure sont signalées.
+La compression uniaxiale a été rejouée une première fois le 4 octobre 2026 sous macOS : $51{,}43$~MPa contre $51{,}1$~MPa en août ($51{,}07$~MPa pour le repère de la suite de non-régression sous Linux), et $34~\%$ de joints rompus en plus. Les neuf calculs principaux de la campagne (sur 54) ont ensuite été rejoués le 6 octobre 2026 sous Linux avec le binaire courant (\cref{sec-yan-rejeu}) : ils retrouvent les valeurs d'août, ce qui écarte l'évolution du code ; l'hypothèse restante pour l'écart macOS est le tirage du maillage de Voronoï, qui dépend de la bibliothèque standard. Les données brutes de la campagne d'août ne sont pas dans les dépôts ; les chiffres viennent des notes d'étude du dépôt, et les valeurs lues sur une figure sont signalées.
 
 \subsubsection{Matériau et modèle}
 
@@ -207,7 +207,7 @@ L'impulsion est reconstruite pour retrouver le pic de la figure de Yan, pas repr
 \subsection{Rejeu du 6 octobre 2026 avec le binaire courant}
 \label{sec-yan-rejeu}
 
-Les neuf calculs de la campagne ont été rejoués le 6 octobre 2026 dans une session de calcul séparée, sous Linux, avec le binaire courant (code identique à \cle{f0209ef}) et 4 fils ; les sorties ne sont donc pas identiques au bit près au calcul série. Le tableau~\ref{tab-yan-rejeu} les compare à la campagne d'août et aux références.
+Les neuf calculs principaux de la campagne ont été rejoués le 6 octobre 2026 dans une session de calcul séparée, sous Linux, avec le binaire courant (code identique à \cle{f0209ef}) et 4 fils ; les sorties ne sont donc pas garanties identiques au bit près au calcul série. Le tableau~\ref{tab-yan-rejeu} les compare à la campagne d'août et aux références.
 
 \begin{table}[htbp]
 \centering
@@ -222,7 +222,7 @@ bande pesante, adaptatif, tassement & $-6{,}00866\times10^{-4}$~m & $-6{,}0087\t
 bande pesante, intrinsèque $100\,E$ & $-6{,}18412\times10^{-4}$~m & idem & $+2{,}92~\%$ \\
 bande pesante, intrinsèque $1\,E$ & $-2{,}28024\times10^{-3}$~m & idem & $+279{,}5~\%$ (Yan : $208~\%$) \\
 brésilien adaptatif, $2P/(\pi D t)$ & $5{,}3031$~MPa & $5{,}30$~MPa (août) & $+0{,}06~\%$ \\
-compression adaptative, résistance & $51{,}114$~MPa & $51{,}1$~MPa (août) & $+0{,}09~\%$ \\
+compression adaptative, résistance & $51{,}114$~MPa & $51{,}1$~MPa (août) & $+0{,}03~\%$ \\
 compression, module apparent & $15{,}54$~GPa & $15{,}5$~GPa (août) & $+0{,}3~\%$ \\
 compression, joints rompus et insérés & 333 et $1\,351$ & 327 et $1\,288$ (août) & $+1{,}8$ et $+4{,}9~\%$ \\
 triaxial, angle de frottement & $22{,}92^\circ$ & $22{,}8^\circ$ (août), $22{,}87^\circ$ (Yan) & $+0{,}05^\circ$ sur Yan \\
@@ -242,4 +242,4 @@ Le pic triaxial est lu sur la courbe, avant la première chute qui suit une rupt
 \label{fig-yan-synthese}
 \end{figure}
 
-Sur les huit grandeurs comparées (\cref{fig-yan-synthese}), cinq tombent à moins de $1~\%$ de la référence ; les trois autres sont le rapport brésilien entre l'adaptatif et la pénalité convergée ($-1{,}3~\%$), l'angle de frottement de l'insertion intrinsèque ($-3{,}8~\%$) et l'angle de rupture ($+6{,}7~\%$). Pour les grandeurs lues sur les figures de Yan, la précision de lecture et la variabilité de rockim entre nombres de fils (environ $2~\%$) bornent la portée de cet accord. Le plateau intrinsèque reste 13 à $16~\%$ sous l'adaptatif au lieu de le rejoindre, et le brésilien adaptatif ne converge pas en maillage, pour une raison non identifiée. Le rejeu du 6 octobre avec le binaire courant confirme la campagne d'août à mieux que $0{,}3~\%$ sur les grandeurs principales. La compression est à refaire à la maille de $0{,}75$~mm de l'article, et le profil diamétral du brésilien à retracer avec la bonne référence.
+Sur les huit grandeurs comparées (\cref{fig-yan-synthese}), cinq tombent à moins de $1~\%$ de la référence ; les trois autres sont le rapport brésilien entre l'adaptatif et la pénalité convergée ($-1{,}3~\%$), l'angle de frottement de l'insertion intrinsèque ($-3{,}8~\%$) et l'angle de rupture ($+6{,}7~\%$). Pour les grandeurs lues sur les figures de Yan, la précision de lecture et la variabilité de rockim entre nombres de fils (environ $2~\%$) bornent la portée de cet accord. Le plateau intrinsèque reste 13 à $16~\%$ sous l'adaptatif au lieu de le rejoindre, et le brésilien adaptatif ne converge pas en maillage, pour une raison non identifiée. Le rejeu du 6 octobre avec le binaire courant confirme la campagne d'août : $0{,}1~\%$ près sur les résistances, $0{,}12^\circ$ sur l'angle de frottement, 2 et $5~\%$ sur les joints rompus et insérés. La compression est à refaire à la maille de $0{,}75$~mm de l'article, et le profil diamétral du brésilien à retracer avec la bonne référence.
