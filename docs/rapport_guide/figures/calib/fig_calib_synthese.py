@@ -38,13 +38,40 @@ PHI = os.path.join(PHD, "phijoint_sweep_2026-08-05.json")
 out = sys.argv[1] if len(sys.argv) > 1 else os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "fig_calib_synthese.pdf")
 
-plt.rcParams.update({"font.family": "STIXGeneral", "mathtext.fontset": "stix",
-                     "font.size": 9, "axes.linewidth": 0.6,
-                     "axes.unicode_minus": False})
+plt.rcParams.update({"font.size": 9, "axes.linewidth": 0.6})
+# --- Style commun du rapport : Computer Modern (CMU Serif, a defaut Latin Modern
+# Roman 10), virgule decimale sur toutes les graduations, signe moins ASCII.
+import glob as _glob
+import matplotlib.ticker as _mticker
+from matplotlib import font_manager as _fm
+for _f in (_glob.glob("/usr/share/fonts/**/cmun*.[ot]tf", recursive=True)
+           + _glob.glob("/usr/share/texmf/fonts/opentype/public/lm/lmroman10-*.otf")
+           + _glob.glob("/usr/share/texlive/texmf-dist/fonts/opentype/public/lm/lmroman10-*.otf")):
+    _fm.fontManager.addfont(_f)
+_fm.fontManager.ttflist = [_e for _e in _fm.fontManager.ttflist
+                           if _e.name != "Latin Modern Roman" or "lmroman10" in _e.fname]
+plt.rcParams.update({
+    "font.family": "serif",
+    "font.serif": ["CMU Serif", "Latin Modern Roman", "Computer Modern Roman", "DejaVu Serif"],
+    "mathtext.fontset": "cm",
+    "axes.unicode_minus": False,
+    "axes.formatter.use_locale": False,
+    "pdf.fonttype": 3,
+})
+_sf_call = _mticker.ScalarFormatter.__call__
+
+
+def _sf_virgule(self, x, pos=None):
+    s = _sf_call(self, x, pos)
+    return s.replace(".", "{,}") if "$" in s else s.replace(".", ",")
+
+
+_mticker.ScalarFormatter.__call__ = _sf_virgule
+# --- fin du style commun
 
 
 def virgule(x, _pos):
-    s = ("%g" % x).replace(".", ",").replace("-", "−")
+    s = ("%g" % x).replace(".", ",")
     return s
 
 
@@ -148,9 +175,9 @@ ax.errorbar(s3_exp, s1_exp, yerr=sd_exp, fmt="s", color=C_EXP, ms=4.5,
 ax.plot(jul_s3, jul_s1, "o-", color=C_JUL, ms=3.8, lw=1.0,
         label="GBM juillet (calé à $\\sigma_3$ = 0)")
 ax.plot(S3A, calt, "D-", color=C_CALT, ms=4, lw=1.0,
-        label="août CALT (fenêtre longue)")
+        label="août, fenêtre longue")
 ax.plot(cal1_s3, cal1_s1, "^--", color=C_CAL1, ms=4.5, lw=0.9,
-        label="août CAL1 (fenêtre tronquée)")
+        label="août, fenêtre tronquée")
 ax.set_xlim(-5, 105)
 ax.set_ylim(0, 1300)
 ax.set_xlabel(r"confinement $\sigma_3$ [MPa]")
@@ -170,9 +197,9 @@ jul_err = [100 * (v - EXP[t]) / EXP[t] for t, v in zip(jul_tgt, jul_s1) if t in 
 jul_e3 = [s for t, s in zip(jul_tgt, jul_s3) if t in EXP]
 ax.plot(jul_e3, jul_err, "o-", color=C_JUL, ms=3.8, lw=1.0, label="GBM juillet")
 ax.plot(S3A, [100 * (v - EXP[s]) / EXP[s] for s, v in zip(S3A, calt)], "D-",
-        color=C_CALT, ms=4, lw=1.0, label="août CALT")
+        color=C_CALT, ms=4, lw=1.0, label="août, fenêtre longue")
 ax.plot(cal1_s3, [100 * (v - EXP[s]) / EXP[s] for s, v in zip(cal1_s3, cal1_s1)],
-        "^--", color=C_CAL1, ms=4.5, lw=0.9, label="août CAL1")
+        "^--", color=C_CAL1, ms=4.5, lw=0.9, label="août, fenêtre tronquée")
 ax.set_xlim(-5, 105)
 ax.set_ylim(-80, 55)
 ax.set_xlabel(r"confinement $\sigma_3$ [MPa]")

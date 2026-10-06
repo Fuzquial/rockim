@@ -1,7 +1,7 @@
 \section{Coût de calcul}
 \label{sec-cout}
 
-Deux postes dominent le coût de rockim : le pas de temps, que la raideur des joints rend $2{,}5$ fois plus petit que chez Yang et al., et le contact par potentiel, qui coûte environ sept fois plus que la pénalité nœud-face en régime de débris. La réplique St Anne a demandé 29~h~21 sur 14 fils pour $300~\mu$s.
+Deux postes dominent le coût de rockim : le pas de temps, que la raideur des joints rend $2{,}5$ fois plus petit que chez Yang et al., et le contact par potentiel, qui coûte environ sept fois plus que la pénalité nœud-face en régime de débris. La réplique St Anne a demandé 29~h~21 sur 14 fils pour 300~µs.
 
 Guo publie le coût de Solidity en série : de $5\times10^{-4}$ à $2{,}62$~s par pas pour 432 à 1\,769\,472 tétraèdres, linéaire en nombre d'éléments. rockim se parallélise en mémoire partagée (OpenMP), comme Solidity ; HOSS est massivement parallèle et MultiFracS tourne sur GPU. Les mesures du dépôt ont été prises sur des machines différentes, souvent partagées, et ne se comparent qu'en ordre de grandeur (\cref{tab-cout}).
 
@@ -14,11 +14,11 @@ Guo publie le coût de Solidity en série : de $5\times10^{-4}$ à $2{,}62$~s pa
 \toprule
 cas & tétraèdres & fils & coût \\
 \midrule
-FDEM 3D, potentiel et insertion adaptative & quelconque & 18 & $1{,}2~\mu$s par tétraèdre et par pas \\
-jumeau grossier Kuru, $100~\mu$s & 10\,563 & 4 & 398~s \\
+FDEM 3D, potentiel et insertion adaptative & quelconque & 18 & $1{,}2$~µs par tétraèdre et par pas \\
+jumeau grossier Kuru, 100~µs & 10\,563 & 4 & 398~s \\
 jumeau grossier Kuru, par pas & 10\,563 & 14 & $16{,}5$~ms dont $12{,}3$ de contact \\
 réplique Kuru, maillage fin & 120\,185 & 14 & 15~h \\
-réplique St Anne, $300~\mu$s & 108\,667 & 14 & 29~h~21 \\
+réplique St Anne, 300~µs & 108\,667 & 14 & 29~h~21 \\
 Yang et al.~2026, maillage retenu & 230\,788 & non publié & 5~h \\
 \bottomrule
 \end{tabularx}
@@ -26,7 +26,7 @@ Yang et al.~2026, maillage retenu & 230\,788 & non publié & 5~h \\
 
 Le pas de temps explique l'essentiel de l'écart avec Yang et al. : $1{,}0$~ns sur la réplique Kuru à maillage fin contre $2{,}5$~ns chez Yang et al.~2026, parce que rockim compte la raideur des joints et prend par défaut le plus petit diamètre inscrit du maillage pour la pénalité. Le contact par potentiel est l'autre poste dominant : en régime de débris, il coûte environ sept fois plus que la pénalité nœud-face, l'intégration exacte des recouvrements prenant les deux tiers du temps.
 
-Plusieurs optimisations ont été mesurées, toutes à sorties identiques au bit près sauf mention contraire. L'activation adaptative du contact divise le temps d'une percussion 3D par $2{,}32$ (\cref{fig-gcact}). La campagne d'optimisation du 3 octobre 2026 réduit le temps du jumeau grossier Kuru sur $100~\mu$s de $21~\%$ à un fil et de $39~\%$ à 4 fils. Deux options changent le résultat : le pas variable en insertion adaptative ($-37~\%$ sur une rupture, mêmes joints rompus) et la force de contact par volume ($-36~\%$, autre loi). Sur un Mac mini M4, passer de 4 à 10 fils ne rapporte que $14~\%$, à cause des cœurs à basse consommation et d'une répartition statique du travail ; aucun profil par phase et par nombre de fils n'existe encore. La reprise sur point de sauvegarde et l'écriture binaire des résultats ne sont pas implémentées, et un cas de 842\,572 tétraèdres a été arrêté faute de mémoire.
+Plusieurs optimisations ont été mesurées, toutes à sorties identiques au bit près sauf mention contraire. L'activation adaptative du contact divise le temps d'une percussion 3D par $2{,}32$ (\cref{fig-gcact}). La campagne d'optimisation du 3 octobre 2026 réduit le temps du jumeau grossier Kuru sur 100~µs de $21~\%$ à un fil et de $39~\%$ à 4 fils. Deux options changent le résultat : le pas variable en insertion adaptative ($-37~\%$ sur une rupture, mêmes joints rompus) et la force de contact par volume ($-36~\%$, autre loi). Sur un Mac mini M4, passer de 4 à 10 fils ne rapporte que $14~\%$, à cause des cœurs à basse consommation et d'une répartition statique du travail ; aucun profil par phase et par nombre de fils n'existe encore. La reprise sur point de sauvegarde et l'écriture binaire des résultats ne sont pas implémentées, et un cas de 842\,572 tétraèdres a été arrêté faute de mémoire.
 
 \begin{figure}[htbp]
 \centering
