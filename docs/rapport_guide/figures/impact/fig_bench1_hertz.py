@@ -100,7 +100,8 @@ for name, h in runs.items():
     Fest = sm(sm(m * np.gradient(h["grpVz"], t), n), n)
     ax[0].plot((t - t0) * 1e6, F / 1e3, color=col[name], label=lab[name])
     if name == "out_frac":
-        ax[0].plot((t - t0) * 1e6, Fest / 1e3, color=C[4], ls="--", lw=0.9, label=r"$m\,\dot v$, roche fissurable")
+        kk = t < t[-1] - 2e-6                 # bord du filtre glissant
+        ax[0].plot((t[kk] - t0) * 1e6, Fest[kk] / 1e3, color=C[4], ls="--", lw=0.9, label=r"$m\,\dot v$, roche fissurable")
     ax[1].plot(d * 1e3, F / 1e3, color=col[name], label=lab[name])
     ax[2].plot((t - t0) * 1e6, h["nBroken"], color=col[name], label=lab[name])
     k = d > 0.2 * dmax
