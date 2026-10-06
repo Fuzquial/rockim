@@ -19,20 +19,29 @@ a = ax[0]
 y = np.arange(len(r))[::-1]
 pct = np.array([float(x["residu_pct_echelle"]) for x in r])
 col = ["#c00000" if x["verdict"].startswith("CHECK") else "#1f4e79" for x in r]
+VERDICT = {"OK": "conforme", "CHECK": "à vérifier", "OK (zero machine)": "zéro machine"}
+
+
+def cas_lisible(c):
+    """Libelle du lecteur : mode de calcul en clair, sans code de banc."""
+    c = c.replace("raclage T1", "raclage").replace("(fdem3d, 2 µs)", "(FDEM 3D, 2 µs)")
+    c = c.replace(" (fdem3d)", " (FDEM 3D)").replace(" (fdem)", " (FDEM 2D)")
+    return c.replace(".", ",")
+
 a.barh(y, pct, color=col, height=0.6)
 a.set_xscale("log")
 a.set_xlim(1e-14, 1e4)
 a.set_yticks(y)
-a.set_yticklabels([x["cas"] for x in r], fontsize=7)
+a.set_yticklabels([cas_lisible(x["cas"]) for x in r], fontsize=7)
 a.axvline(1.0, color="k", lw=0.6, ls=":")
-a.text(1.3, y[-1] - 0.3, "seuil 1 %", fontsize=7)
+a.text(1.3, y[0] + 0.45, "seuil 1 %", fontsize=7)
 for yi, x, v in zip(y, r, pct):
-    a.text(v * 2, yi, x["verdict"].replace("zero machine", "zéro machine"), va="center", fontsize=6.5)
+    a.text(v * 2, yi, VERDICT.get(x["verdict"], x["verdict"]), va="center", fontsize=6.5)
 a.set_xlabel(r"$|r|$ / échelle (%)")
 a.set_title("(a) résidu du bilan", fontsize=9)
 
 b = ax[1]
-keys = [("perc3d_20us", "percussion 3D"), ("t1_sig", "T1 Signorini"), ("t1_pen", "T1 pénalité"),
+keys = [("perc3d_20us", "percussion 3D"), ("t1_sig", "raclage, Signorini"), ("t1_pen", "raclage, pénalité"),
         ("perc2d", "percussion 2D")]
 ratio = [float(p[k]["integration"]) / float(p[k]["outil->solide"]) for k, _ in keys]
 yy = np.arange(len(keys))[::-1]
@@ -44,7 +53,7 @@ b.set_yticklabels([l for _, l in keys], fontsize=7.5)
 for yi, v in zip(yy, ratio):
     b.text(v * 1.4, yi, fmt(float(f"{v:.3g}")), va="center", fontsize=7)
 b.axvline(1.0, color="k", lw=0.6, ls=":")
-b.set_xlabel(r"$W_\mathrm{intégr} / W_\mathrm{outil \to solide}$")
+b.set_xlabel(r"$W_\mathrm{int\acute{e}gr} / W_\mathrm{outil \to solide}$")
 b.set_title("(b) poste d'intégration", fontsize=9)
 fig.tight_layout()
 fig.savefig(os.path.join(HERE, "fig_b4.pdf"))

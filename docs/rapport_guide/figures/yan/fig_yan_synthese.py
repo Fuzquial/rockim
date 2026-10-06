@@ -24,8 +24,36 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib.ticker import FuncFormatter
 
-plt.rcParams.update({"font.family": "STIXGeneral", "mathtext.fontset": "stix",
-                     "font.size": 9, "axes.linewidth": 0.6})
+plt.rcParams.update({"font.size": 9, "axes.linewidth": 0.6})
+# --- Style commun du rapport : Computer Modern (CMU Serif, a defaut Latin Modern
+# Roman 10), virgule decimale sur toutes les graduations, signe moins ASCII.
+import glob as _glob
+import matplotlib.ticker as _mticker
+from matplotlib import font_manager as _fm
+for _f in (_glob.glob("/usr/share/fonts/**/cmun*.[ot]tf", recursive=True)
+           + _glob.glob("/usr/share/texmf/fonts/opentype/public/lm/lmroman10-*.otf")
+           + _glob.glob("/usr/share/texlive/texmf-dist/fonts/opentype/public/lm/lmroman10-*.otf")):
+    _fm.fontManager.addfont(_f)
+_fm.fontManager.ttflist = [_e for _e in _fm.fontManager.ttflist
+                           if _e.name != "Latin Modern Roman" or "lmroman10" in _e.fname]
+plt.rcParams.update({
+    "font.family": "serif",
+    "font.serif": ["CMU Serif", "Latin Modern Roman", "Computer Modern Roman", "DejaVu Serif"],
+    "mathtext.fontset": "cm",
+    "axes.unicode_minus": False,
+    "axes.formatter.use_locale": False,
+    "pdf.fonttype": 3,
+})
+_sf_call = _mticker.ScalarFormatter.__call__
+
+
+def _sf_virgule(self, x, pos=None):
+    s = _sf_call(self, x, pos)
+    return s.replace(".", "{,}") if "$" in s else s.replace(".", ",")
+
+
+_mticker.ScalarFormatter.__call__ = _sf_virgule
+# --- fin du style commun
 virg = FuncFormatter(lambda v, p: ("%g" % v).replace(".", ","))
 
 # ------------------------------------------------------------------ (a) Coulomb
@@ -44,12 +72,12 @@ phi3d, c3d = 24.9, 17.9                          # FICHE:1069-1070
 fig, (ax, bx) = plt.subplots(1, 2, figsize=(7.0, 3.1),
                              gridspec_kw={"width_ratios": [1, 1.25]})
 ax.plot(s3, coulomb(s3, c_in, phi_in), ":", color="0.35", lw=1.1,
-        label=r"critère d'entrée ($c=16{,}4$ MPa, $\varphi=23°$)")
+        label="critère d'entrée\n" r"($c=16{,}4$ MPa, $\varphi=23^\circ$)")
 ax.plot(s3, ucs2d + k2d * s3, "-", color="#1f77b4", lw=1.1,
-        label=r"rockim 2D adaptatif ($\varphi=22{,}8°$)")
+        label=r"rockim 2D adaptatif ($\varphi=22{,}8^\circ$)")
 ax.plot(s3, coulomb(s3, c3d, phi3d), "-", color="#b03030", lw=0.9, alpha=.7)
 ax.plot(s3_3d, s1_3d, "o", color="#b03030", ms=4,
-        label=r"rockim 3D adaptatif ($\varphi=24{,}9°$, $c=17{,}9$ MPa)")
+        label="rockim 3D adaptatif\n" r"($\varphi=24{,}9^\circ$, $c=17{,}9$ MPa)")
 ax.set_xlabel(r"$\sigma_3$ [MPa]")
 ax.set_ylabel(r"$\sigma_1$ au pic [MPa]")
 ax.xaxis.set_major_formatter(virg); ax.yaxis.set_major_formatter(virg)
@@ -63,12 +91,12 @@ ax.set_title("(a) enveloppe de Coulomb", fontsize=9)
 rows = [
     (u"bande pesante : $U$ tête / éq. (20)", 0.600866, 0.60087, "CHG:33 ; YAN:864"),
     (u"brésilien : pic adaptatif / 500E", 5.30 / 4.44, 1.21, "FICHE:999-1003"),
-    (u"UCS adaptatif (campagne 08/2026)", 51.1, 51.0, "FICHE:1004 ; YAN fig. 19b"),
-    (u"UCS adaptatif (B6 rejoué 04/10/2026)", 51.43, 51.0, "B6:193"),
+    (u"compression simple adaptative (08/2026)", 51.1, 51.0, "FICHE:1004 ; YAN fig. 19b"),
+    (u"compression simple adaptative (rejeu)", 51.43, 51.0, "B6:193"),
     (u"$\\varphi$ adaptatif", 22.8, 22.87, "FICHE:1006 ; YAN:1010"),
     (u"$\\varphi$ conventionnel 100E", 21.5, 22.36, "FICHE:1007 ; YAN:1011"),
     (u"angle de rupture $\\beta$ adaptatif", 66.0, 61.87, "FICHE:1044 ; YAN:961"),
-    (u"SHPB : pic incident / $-V_0/c$", 0.931, 0.931415, "FICHE:1038 ; CHG:37"),
+    (u"Hopkinson : pic incident / $-V_0/c$", 0.931, 0.931415, "FICHE:1038 ; CHG:37"),
 ]
 lab = [r[0] for r in rows]
 ec = np.array([100 * (r[1] / r[2] - 1) for r in rows])

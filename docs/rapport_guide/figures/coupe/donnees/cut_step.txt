@@ -1,0 +1,2 @@
+[cut] eprouvette 40 x 20 mm, entaille 1.5 x 2.216 mm (profondeur de passe), fond a y = 17.784 mm
+[mesh] 12167 triangles, h inscrit min/med = 0.0904/0.1448 mm

@@ -37,11 +37,38 @@ RUNS = sys.argv[2] if len(sys.argv) > 2 else \
     "/tmp/claude-0/-home-user/95ba17a5-6321-5243-8157-c0b3e0616268/scratchpad/runs/abuaisha"
 
 plt.rcParams.update({
-    "font.family": "STIXGeneral", "mathtext.fontset": "stix",
     "font.size": 10, "axes.titlesize": 10, "axes.labelsize": 10,
-    "legend.fontsize": 8.5, "axes.formatter.use_locale": False,
-    "pdf.fonttype": 42,
+    "legend.fontsize": 8.5,
 })
+# --- Style commun du rapport : Computer Modern (CMU Serif, a defaut Latin Modern
+# Roman 10), virgule decimale sur toutes les graduations, signe moins ASCII.
+import glob as _glob
+import matplotlib.ticker as _mticker
+from matplotlib import font_manager as _fm
+for _f in (_glob.glob("/usr/share/fonts/**/cmun*.[ot]tf", recursive=True)
+           + _glob.glob("/usr/share/texmf/fonts/opentype/public/lm/lmroman10-*.otf")
+           + _glob.glob("/usr/share/texlive/texmf-dist/fonts/opentype/public/lm/lmroman10-*.otf")):
+    _fm.fontManager.addfont(_f)
+_fm.fontManager.ttflist = [_e for _e in _fm.fontManager.ttflist
+                           if _e.name != "Latin Modern Roman" or "lmroman10" in _e.fname]
+plt.rcParams.update({
+    "font.family": "serif",
+    "font.serif": ["CMU Serif", "Latin Modern Roman", "Computer Modern Roman", "DejaVu Serif"],
+    "mathtext.fontset": "cm",
+    "axes.unicode_minus": False,
+    "axes.formatter.use_locale": False,
+    "pdf.fonttype": 3,
+})
+_sf_call = _mticker.ScalarFormatter.__call__
+
+
+def _sf_virgule(self, x, pos=None):
+    s = _sf_call(self, x, pos)
+    return s.replace(".", "{,}") if "$" in s else s.replace(".", ",")
+
+
+_mticker.ScalarFormatter.__call__ = _sf_virgule
+# --- fin du style commun
 
 
 def virg(x, nd=1):
@@ -119,7 +146,7 @@ def fig_pression():
         if os.path.exists(p):
             rej[n] = read_hist(p)
 
-    fig, (a, b) = plt.subplots(1, 2, figsize=(7.4, 3.4),
+    fig, (a, b) = plt.subplots(1, 2, figsize=(7.4, 3.9),
                                gridspec_kw=dict(width_ratios=[1.15, 1]))
     # (a) p(t), runs de reference + rejeux grossiers eventuels
     sty = {"hf_aniso": ("C0", "-", r"aniso. 6,8/4,6, maille 3 mm (20/08)"),
@@ -149,13 +176,14 @@ def fig_pression():
            fontsize=8)
     # leur valeur numerique : ~12,5 MPa (texte, apres eq. 10), 11,69 lu fig. 11b
     a.axhspan(11.69, 12.5, color="0.85", zorder=0)
-    a.text(0.05, 10.5, "bande grise : Y-Geo, 11,69 (fig. 11b) à 12,5 (texte)",
+    a.text(0.05, 10.6, "gris : Y-Geo, 11,69 à 12,5",
            fontsize=7.5, color="0.35")
     a.set_xlabel("temps depuis le début du calcul [ms]")
     a.set_ylabel("pression de puits $p$ [MPa]")
     a.set_xlim(0, 4.0)
     a.set_ylim(0, 19.5)
-    a.legend(loc="lower right", frameon=False, fontsize=7.2)
+    a.legend(loc="upper center", bbox_to_anchor=(0.5, -0.17), ncol=2,
+             frameon=False, fontsize=7.0)
     a.set_title("(a) Pression de puits contre les seuils fermés", loc="left")
     fmt_axes(a)
 
@@ -179,16 +207,17 @@ def fig_pression():
     b.axvline(4.2, color="0.4", ls=":", lw=0.8)  # 12,5 / 12 - 1 = +4,2 %
     b.text(4.6, y[0] + 0.45, "Y-Geo, +4 %", fontsize=7.5, color="0.35")
     from matplotlib.patches import Patch
-    b.legend(handles=[Patch(color="#e39a63", label="statique (cible → insertion)"),
+    b.legend(bbox_to_anchor=(1.0, -0.17), handles=[Patch(color="#e39a63", label="statique (cible → insertion)"),
                       Patch(color="#7fb3d5", label="incubation (insertion → pic)"),
                       Patch(color="0.7", label="non instrumenté")],
-             loc="lower right", frameon=False, fontsize=7.2)
+             loc="upper right", frameon=False, fontsize=7.0)
     b.set_xlabel("dépassement du seuil de l'éq. 10 [%]")
     b.set_title("(b) Dépassement décomposé, 7 calculs", loc="left")
     fmt_axes(b)
     b.set_yticklabels([r[1] for r in RUNS_ARCH], fontsize=8)
     fig.tight_layout()
-    fig.savefig(os.path.join(HERE, "fig_abuaisha_pression.pdf"))
+    fig.savefig(os.path.join(HERE, "fig_abuaisha_pression.pdf"),
+                bbox_inches="tight")
     plt.close(fig)
 
 
@@ -275,19 +304,19 @@ def fig_rejeu():
                label="rockim, ouverture signée")
         i0 = int(np.argmin(np.abs(xa)))
         w0an = 2 * 2 * sp * (1 - nup ** 2) / Ep * l
-        b.text(0.03, 0.04, "centre : %s mm, soit %s %% de $2w(0)$\n"
+        b.text(0.5, 0.03, "centre : %s mm, soit %s %% de $2w(0)$\n"
                "$t$ = %s ms (trame %d)"
                % (virg(wa[i0] * 1e3, 4), virg((wa[i0] / w0an - 1) * 100, 1),
                   virg(tf * 1e3, 1), nf - 1),
-               transform=b.transAxes, fontsize=8)
+               transform=b.transAxes, fontsize=8, ha="center")
         b.legend(loc="upper right", frameon=False, fontsize=7.0)
     b.set_xlabel("abscisse depuis le centre de la fissure [m]")
     b.set_ylabel("ouverture [mm]")
     b.set_ylim(0, 0.17)
     b.set_title("(b) Fissure de Parker sous 2 MPa nets", loc="left")
     fmt_axes(b)
-    fig.text(0.5, -0.01, "rejoué le 2026-10-06, binaire f0209ef, "
-             "maillages grossiers (hFine = 12 mm)", ha="center",
+    fig.text(0.5, -0.01, "calculs rejoués sur maillages grossiers "
+             "(maille fine de 12 mm)", ha="center",
              fontsize=7.5, color="0.35")
     fig.tight_layout()
     fig.savefig(os.path.join(HERE, "fig_abuaisha_rejeu.pdf"),

@@ -1,0 +1,158 @@
+\section{Coupe 2D par un outil PDC : reproduction de Heilman et al. 2024}
+\label{sec-coupe}
+
+OUVERTURE
+
+Heilman et al.~\cite{heilman2024pdc} simulent avec le code HOSS~\cite{knight2020hoss} la coupe d'un granite de Utah FORGE par un cutter PDC (diamant polycristallin compact) rigide à vitesse imposée. Leur modèle 3D associe un volume élastique et des joints cohésifs insérés entre toutes les faces, en mode~I au-delà de la résistance en traction et en mode~II selon Mohr-Coulomb. Les paramètres sont calés sur un essai de compression et un essai brésilien 2D, pas sur la coupe. Le banc est donc une comparaison de code à code. La seule mesure de coupe sur la même roche est celle de LeBaron et al.~\cite{lebaron2023forge}, un raclage mono-cutter au tour à 25~mm/s ; elle tient lieu de référence expérimentale, au rang d'ordre de grandeur. Les chiffres archivés datent d'août et de septembre 2026 ; deux calculs ont été rejoués le 6 octobre 2026 avec le binaire courant (\cref{sec-coupe-rejeu}).
+
+\subsection{Mise en données}
+
+\subsubsection{Géométrie, maillage et outil}
+
+L'éprouvette est un rectangle de $40 \times 20$~mm en déformation plane, grandeurs par mètre d'épaisseur ; la troisième dimension de Heilman, 30~mm, n'a pas d'équivalent. Une entaille de départ de $1{,}5$~mm de long et $2{,}216$~mm de profondeur est creusée au coin supérieur gauche ; l'arête du cutter passe $1{,}2$~mm au-dessus de son fond, à la profondeur de passe de $1{,}016$~mm. Le maillage est un Delaunay non structuré (Gmsh, algorithme 5) de $12\,167$ triangles, raffiné à $0{,}25$~mm sur une bande de 4~mm sous la surface de coupe, comme chez Heilman, et relâché à 1~mm au loin ; le diamètre inscrit vaut $0{,}090$~mm au minimum et $0{,}145$~mm en médiane. Le cutter est un coin rigide : face de coupe de 13~mm à une garde de $20^\circ$, face de dégagement à $2{,}5$~mm derrière (\cle{cutterThick}), sans chanfrein. Il part à $0{,}5$~mm avant l'éprouvette et avance à 10~m/s pendant $4\times10^{-4}$~s, soit 4~mm de course, dont la première moitié est une approche : le premier contact a lieu à $2{,}05$~mm de course. Aucun bord de l'éprouvette n'est tenu : le scénario de coupe n'avait pas d'encastrement avant septembre 2026, et seule l'inertie du bloc, $2{,}1$~kg/m, s'oppose à l'outil.
+
+\subsubsection{Paramètres}
+
+Les paramètres du matériau sont ceux du tableau~1 de Heilman, sans ajustement (\cref{tab-coupe-param}). Avec ces valeurs, la longueur cohésive en mode~I vaut $\ell_{cz} = E\,G_I/f_t^2 = 65$~mm, soixante fois la passe et trois fois la hauteur de l'éprouvette. La règle d'objectivité $2h < \ell_{cz}$ est satisfaite, mais la zone cohésive ne tient pas dans le copeau : la rupture d'un copeau de 1~mm demande une ouverture critique hors de portée. Ce point suffirait à rendre la comparaison délicate ; il a été masqué par un défaut plus grave, décrit ci-dessous.
+
+\begin{table}[htbp]
+\centering
+\caption{Paramètres du banc de coupe : tableau~1 et section~3 de Heilman et al., et réglage de rockim (deck \path{cut2d_heilman_v3.cfg}).}
+\label{tab-coupe-param}
+\small
+\begin{tabular}{@{}p{0.27\linewidth}p{0.30\linewidth}p{0.37\linewidth}@{}}
+\toprule
+paramètre & Heilman et al. & rockim \\
+\midrule
+$\rho$, $E$, $\nu$ & 2\,610~kg/m$^3$, $48{,}26$~GPa, $0{,}23$ & identiques \\
+$f_t$, $c$ (joints) & $10{,}62$~MPa, $44{,}815$~MPa & identiques \\
+frottement interne & coefficient $0{,}8$ & $\varphi = \arctan 0{,}8 = 38{,}66^\circ$ \\
+$G_I$, $G_{II}$ & $152{,}9$ et $645{,}3$~J/m$^2$ & $152{,}9$~J/m$^2$, \cle{gfShearFactor = 4.220} \\
+volume & élastique & élastique (\cle{crushCap = 1e12}) \\
+joints & intrinsèques, toutes les faces & insertion adaptative, adoucissement \cle{yan}, décharge \cle{origin} \\
+cutter & disque de 13~mm, épaisseur $2{,}5$~mm, chanfrein non coté & coin 2D, face de 13~mm, épaisseur $2{,}5$~mm, sans chanfrein \\
+garde, passe, vitesse & $20^\circ$, $1{,}016$~mm, 10~m/s & identiques \\
+frottement outil-roche & $0{,}8$ & \cle{contactMu = 0.8} \\
+contact outil & non décrit & pénalité $k_p = E\,t = 4{,}83\times10^{10}$~N/m, puis Signorini \\
+contact entre fragments & non décrit & potentiel de Munjiza, activation adaptative \\
+pas de temps, amortissement & non publiés & $\Delta t = 1{,}27$~ns ; Cundall $0{,}05$, \cle{jointXi = 0.05} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsubsection{Grandeur comparée}
+
+Heilman et al. publient la force de coupe horizontale en fonction de la course. Pour la garde de $20^\circ$, la passe de $1{,}016$~mm et 10~m/s, le pic vaut $21{,}5$~kN (figure~3B, lue à $\pm 0{,}5$~kN). Un disque de diamètre $D = 13$~mm engagé sur une passe $d$ présente une corde de contact $2\sqrt{d(D-d)} = 6{,}98$~mm ; la cible 2D est donc
+\begin{equation}
+F_x^\text{cible} = \frac{21{,}5~\text{kN}}{6{,}98~\text{mm}} = 3{,}08~\text{MN/m} .
+\label{eq-coupe-cible}
+\end{equation}
+LeBaron et al. mesurent $1\,668 \pm 483$~N de force moyenne à la même passe et à la même garde (figure~3). Rapportés à la même corde, en supposant un cutter de 13~mm que l'article ne précise pas, cela fait $0{,}24$~MN/m, treize fois sous le pic de Heilman : le pic d'un calcul à 10~m/s et la moyenne d'un essai à 25~mm/s ne mesurent pas la même chose.
+
+\subsection{Équations du contact d'outil}
+
+\subsubsection{Pénalité écrêtée}
+
+Le contact d'outil historique est une pénalité nœud-outil. Pour un nœud de position $\mathbf p$, d'arête $\mathbf x_o$, de normale de face $\mathbf n = (\cos\beta, \sin\beta)$ et de direction de face $\mathbf t = (-\sin\beta, \cos\beta)$, avec $\beta$ la garde :
+\begin{gather}
+d_n = (\mathbf p - \mathbf x_o)\cdot\mathbf n, \qquad d_t = (\mathbf p - \mathbf x_o)\cdot\mathbf t, \qquad \text{contact si } -e < d_n < 0 \text{ et } 0 \leq d_t \leq L, \notag\\
+g = \min(-d_n,\ 0{,}6\,h_e), \qquad f_n = \max\left(0,\ k_p\,g - 2\xi\sqrt{k_p m}\,\mathbf v_\text{rel}\cdot\mathbf n\right), \qquad f_t = -\mu f_n \tanh\frac{\mathbf v_\text{rel}\cdot\mathbf t}{v_\text{reg}} ,
+\label{eq-coupe-penalite}
+\end{gather}
+où $e$ est l'épaisseur du cutter, $L$ la longueur de la face, $h_e$ la taille de l'élément du nœud, $m$ sa masse et $\mathbf v_\text{rel}$ sa vitesse relative à l'outil. L'écrêtage à $0{,}6\,h_e$ borne la pénétration, pas l'impulsion. En un pas, un nœud libre au contact d'un outil à vitesse imposée reçoit
+\begin{equation}
+\Delta v = \frac{F\,\Delta t}{m} = \frac{k_p\,(0{,}6\,h)\,\Delta t}{m} = \frac{7{,}24\times10^{6} \times 1{,}28\times10^{-9}}{2{,}46\times10^{-5}} = 377~\text{m/s},
+\label{eq-coupe-dv}
+\end{equation}
+et 992~m/s sur le nœud le plus léger du maillage ($9{,}34\times10^{-6}$~kg/m). Or un mur rigide de masse infinie animé de $v$ ne communique pas plus de $2v$ à une masse libre en choc élastique : ici $2v = 20$~m/s. Dans un continuum, la réflexion d'une onde sur une surface libre double la vitesse particulaire ; un nœud de peau peut donc approcher $2 \times 2v$, seuil retenu pour l'alarme.
+
+\subsubsection{Contact de Signorini}
+
+Le contact de Signorini (\cle{toolContact = signorini}) impose une condition sur la vitesse et non sur la position (\cref{eq-signorini}, \cref{sec-verification}). La vitesse libre $\mathbf v^* = \mathbf v + (\Delta t/m)\,\mathbf f$ intègre toutes les autres forces ; si le jeu prédit $-g + \Delta t\,v_n^*$ est positif, l'impulsion est nulle, sinon $r_n = -m\,v_n^*$ ramène la vitesse normale à celle de l'outil (sans rattrapage, $\beta = 0$), et $r_t$ est l'impulsion de collage plafonnée par Coulomb. Le saut de vitesse ne dépend ni d'une raideur ni du pas : il est borné par la vitesse d'approche. La raideur $k_p$ sort aussi du budget du pas de temps.
+
+\subsubsection{Critère de pompe}
+
+Le bilan d'énergie (\cref{eq-B4}) compte le travail de l'outil sur le solide comme un poste. Une injection logée dans ce poste y est donc comptée, et le résidu reste nul (\cref{sec-B4}). Deux grandeurs l'exposent, imprimées depuis septembre à chaque calcul 2D avec outil :
+\begin{equation}
+R_\text{inj} = \frac{W_{\text{outil}\to\text{solide}}}{W_\text{corps rigide}} = \frac{\sum_\text{pas}\sum_i \mathbf F_{c,i}\cdot\mathbf v_i\,\Delta t}{\sum_\text{pas} -\mathbf F_\text{outil}\cdot\mathbf v_\text{outil}\,\Delta t}, \qquad \frac{v_\text{max}}{2\,v_\text{outil}} ,
+\label{eq-coupe-pompe}
+\end{equation}
+où $\mathbf F_{c,i}$ est la force de contact d'outil sur le nœud $i$ et $\mathbf F_\text{outil}$ la résultante sur l'outil. Les deux travaux doivent être du même ordre : le drapeau de pompe tombe au-delà de 2, celui de la borne au-delà de $2 \times 2v$. Sous Signorini, $R_\text{inj} \leq 1$ par construction, parce que le compteur lit la vitesse d'avant l'impulsion ; un second compteur, au trapèze, lit la moyenne des vitesses avant et après et ne sous-compte pas. Ces deux indicateurs ne voient que le canal de l'outil ; les canaux des joints et du contact entre fragments se lisent sur leurs travaux nets.
+
+\subsection{Chronologie du diagnostic}
+
+\subsubsection{Trois montages divergents}
+
+Le premier essai, monté avec la loi de Ye à 50~m/s pour une passe de 2~mm, injecte $8{,}90$~MJ/m dans le solide pour $37{,}9$~kJ/m de travail de l'outil, un rapport de 235, et produit $4\,053$ fragments. Avec les paramètres de Heilman, le run v1, entaille à la profondeur de passe, diverge : énergie cinétique finale de $9{,}75\times10^{15}$~J/m, résidu du bilan à $10^{-11}~\%$ et verdict conforme. Le run v2, sur l'entaille approfondie, injecte $142\,903$~J/m pour 253~J/m et lance un nœud à $24\,132$~m/s. Le run v3 ajoute la face de dégagement (\cle{cutterThick}) ; il reste la référence du diagnostic (\cref{tab-coupe-chrono}).
+
+\begin{table}[htbp]
+\centering
+\caption{Runs de coupe d'août 2026 (binaires \path{rockim_tun}, \path{rockim_a1}, \path{rockim_a2}) : injection relue dans les journaux, vitesse nodale maximale et pic de $F_x$ repris du rapport d'étude.}
+\label{tab-coupe-chrono}
+\footnotesize
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{@{}p{0.27\linewidth}rrrrrr@{}}
+\toprule
+run & $W_{\text{outil}\to\text{solide}}$ (J/m) & $R_\text{inj}$ & $v_\text{max}/2v$ & rompus & fragments & pic $F_x$ (MN/m) \\
+\midrule
+v2, coin sans face arrière & $142\,903$ & 564 & $1\,207$ & 638 & 398 & n.m. \\
+v3, face de dégagement & $77\,286$ & 408 & 127 & 593 & 368 & $9{,}01$ \\
+nogc, contact général coupé & $11\,944$ & 219 & $15{,}7$ & 91 & 45 & $4{,}41$ \\
+a1, surfaces rafraîchies tôt & $84\,745$ & 416 & 358 & 752 & 442 & $6{,}44$ \\
+epfl, $k^- = k^+(D)$ & $5\,618$ & 110 & $11{,}5$ & 198 & 106 & $4{,}33$ \\
+a2, epfl et écrêtage en impulsion & $4\,455$ & $57{,}2$ & $15{,}6$ & 185 & 104 & $0{,}798$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsubsection{Run v3 : une suite de coups de marteau}
+
+Le run v3 rompt 593 joints sur $18\,108$, détache 368 fragments et lance un nœud à $2\,544$~m/s, 127 fois la borne $2v$. L'outil n'est en contact que pendant $10~\%$ du temps ; 24 relevés sur $2\,010$ dépassent 1~MN/m, en pics isolés de $4{,}4$, $5{,}5$ et $9{,}0$~MN/m séparés de plages à zéro (\cref{fig-coupe-archives}a). Ce n'est pas une force de coupe. Le bilan d'énergie ferme pourtant à $1{,}9\times10^{-10}~\%$. Il se lit ainsi : l'outil injecte $77\,286$~J/m quand son travail de corps rigide n'est que de 189~J/m, la correction d'intégration ajoute $29\,607$~J/m, l'amortissement de Cundall retire $54\,716$~J/m, le contact entre fragments $30\,739$~J/m, et il reste $365{,}8$~J/m d'énergie cinétique. La somme boucle : la pompe siège dans un poste compté.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=\linewidth]{coupe/fig_coupe_archives}
+\caption{Forces de coupe tangentielle (rouge) et normale (bleu) en fonction de la course, runs d'août 2026 : (a) v3 ; (b) contact général coupé ; (c) pénalité de compression EPFL ; (d) EPFL et écrêtage en impulsion. Panneaux recadrés des planches d'archive.}
+\label{fig-coupe-archives}
+\end{figure}
+
+\subsubsection{Hypothèses écartées et bissection}
+
+Trois hypothèses ont été instruites. La première, un coin infini derrière la face de coupe, est écartée : v2 et v3 sont identiques jusqu'à la trame~10 incluse ; la face de dégagement supprime une escalade à la trame~11 ($24\,132$ contre 244~m/s) sans changer les forces ni le nombre de fragments. Elle est conservée parce qu'elle est géométriquement juste.
+
+La deuxième, proposée par le doctorant, met en cause les surfaces créées par la coupe. Le cache des faces libérées n'est rafraîchi que lorsqu'un joint casse, et seulement à un pas multiple de 8, alors qu'un joint peut se séparer sans casser : sa latence d'entrée dans le contact n'est pas bornée. La bissection, contact entre fragments coupé par la variable d'environnement \cle{RKM_NOGC}, tranche. Les deux runs restent voisins, entre 33 et 37~m/s, jusqu'à la trame~9 ; à la trame~10, où le premier copeau se détache, v3 monte à $2\,544$~m/s et le run sans contact général à 314~m/s. Le canal des surfaces neuves porte un facteur 6 à 8 sur toutes les grandeurs (\cref{tab-coupe-chrono}). Mais contact général coupé, la pompe d'outil survit : $R_\text{inj} = 219$ et $v_\text{max} = 15{,}7 \times 2v$. Il y a donc deux mécanismes indépendants, qui se composent en boucle : les surfaces déclarées tard créent des interpénétrations, l'écrêtage géométrique les convertit en impulsions de 377~m/s par pas (\cref{eq-coupe-dv}), et les nœuds lancés creusent de nouvelles interpénétrations.
+
+La troisième, une traversée de fragments, est écartée par un audit de la trame finale : 409 nœuds de v3 sont à l'intérieur d'un triangle d'un autre fragment, à $0{,}010$~mm de profondeur en médiane et $0{,}141$~mm au plus, soit l'écrêtage de $0{,}6\,h$. Rien ne traverse ; ce que montrent les animations est de l'éjection.
+
+\subsubsection{Correctifs essayés}
+
+Trois correctifs, tous optionnels et sans effet sur la suite de non-régression quand ils sont éteints, ont été essayés sur le deck v3 à une clé près (\cref{tab-coupe-chrono,fig-coupe-archives}).
+\begin{enumerate}
+\item Rafraîchir les surfaces à la séparation et non à la casse (\cle{gcSurfaceRefresh = eager}) aggrave : $4\,777$~m/s à la trame~10 au lieu de $2\,544$, 442 fragments. L'injection suit le nombre de basculements entre comportement cohésif et contact, pas leur retard.
+\item La pénalité de compression des joints proportionnelle à la sécante d'endommagement, $k^- = k^+(D)$, d'après Ghesquière-Diérickx et al.~\cite{ghesquiere2025} (\cle{jointContactPenalty = adaptive}), divise l'injection par 14 et la vitesse maximale par 11. Les auteurs la présentent comme un diagnostic, pas un remède, parce que l'interpénétration croît avec $D$ ; elle a ensuite été écartée pour la coupe, parce qu'elle annule le contact entre fragments.
+\item L'écrêtage en impulsion $|\mathbf F_c| \leq 2\,|v_\text{outil}|\,m/\Delta t$ (\cle{toolImpulseCap}) borne l'incrément par pas et non l'impulsion de la collision : un nœud en contact soutenu reprend $2v$ à chaque pas, et seize pas donnent 311~m/s. Combiné au précédent, il ramène $R_\text{inj}$ à 57 mais le pic de force tombe à $0{,}798$~MN/m, quatre fois sous la cible : la stabilité est achetée en réduisant la sollicitation.
+\end{enumerate}
+Aucun ne ramène $R_\text{inj}$ près de 1. Tant que ce n'est pas le cas, la comparaison à Heilman n'a pas de sens. Les essais de pénalité de contact réduite, de contact amorti, de pas de temps divisé par 3 et de vitesse de 1~m/s n'ont laissé aucun journal et ne sont pas exploités.
+
+\subsection{Passage au contact de Signorini}
+
+Le remède du canal de l'outil existait dans le code sans avoir été testé. Il a été vérifié en septembre sur des bancs de quelques secondes à quelques minutes (\cref{sec-verification}) : noyau en forme fermée à $2{,}2\times10^{-16}$ près ; barre de Saint-Venant qui repart à $19{,}94$~m/s pour $2v = 20$~m/s, la seule perte étant $1/N$ (\cref{tab-t0b}) ; banc de raclage d'un bloc libre où la pénalité pompe ($R_\text{inj} = 4{,}43$, $v_\text{max} = 8{,}25 \times 2v$) et où Signorini ne pompe pas ($0{,}905$ et $1{,}08$), le résidu du bilan restant conforme dans les deux cas.
+
+Le banc de raclage ne casse rien : le bloc est libre et $\ell_{cz} = 65$~mm dépasse sa taille. Un second banc, T1b, tient le fond du bloc (\cle{shearSupport = fixedBottom}), annule l'amortissement de Cundall, qui freine l'impulsion de contact, et abaisse $G_f$ à 5~J/m$^2$ pour que $\ell_{cz} = 2{,}14$~mm tienne dans le bloc ; c'est un paramètre de banc, pas une ténacité. Il rompt 338 joints et détache 102 fragments. Aucun canal n'y pompe : les travaux nets des joints, du contact entre fragments et du frottement sont négatifs, $R_\text{inj} = 0{,}769$ ($0{,}875$ au trapèze), et $v_\text{max}$ vaut $2{,}41 \times 2v$ : le drapeau de borne tombe, d'un ordre de grandeur sous v3. Une collision en chaîne entre fragments en vol est l'explication avancée, non démontrée. L'écriture d'une contrainte de vitesse sur la compression des joints, prévue en contingence, n'a donc pas été entreprise.
+
+La même revue a trouvé un défaut de géométrie. Le coin PDC excluait les nœuds selon la direction de la face inclinée et non selon l'horizontale : un nœud situé sous l'arête mais devant la face arrière était déclaré en contact. La bande labourée vaut $e\sin\beta = 0{,}855$~mm sur v3, $84~\%$ de la passe. La clé \cle{cutterFloor} rend ce plancher à la roche. Elle se pose à \cle{true} : la valeur \cle{flat} écrite dans le plan d'étape est lue comme fausse, sans message.
+
+Restait la porte d'entrée sur le cas réel, dite étape~6 : le deck v3 avec Signorini et le plancher plat. Elle n'avait pas été lancée.
+
+\subsection{Rejeu du 6 octobre 2026}
+\label{sec-coupe-rejeu}
+
+REJEU
+
+\subsection{Lien avec les autres bancs}
+
+LIENS
+
+\subsection{Synthèse}
+
+SYNTHESE

@@ -24,8 +24,36 @@ import matplotlib.pyplot as plt
 from matplotlib.collections import LineCollection
 from matplotlib.tri import Triangulation
 
-plt.rcParams.update({"font.family": "STIXGeneral", "mathtext.fontset": "stix",
-                     "font.size": 9, "pdf.fonttype": 42})
+plt.rcParams.update({"font.size": 9})
+# --- Style commun du rapport : Computer Modern (CMU Serif, a defaut Latin Modern
+# Roman 10), virgule decimale sur toutes les graduations, signe moins ASCII.
+import glob as _glob
+import matplotlib.ticker as _mticker
+from matplotlib import font_manager as _fm
+for _f in (_glob.glob("/usr/share/fonts/**/cmun*.[ot]tf", recursive=True)
+           + _glob.glob("/usr/share/texmf/fonts/opentype/public/lm/lmroman10-*.otf")
+           + _glob.glob("/usr/share/texlive/texmf-dist/fonts/opentype/public/lm/lmroman10-*.otf")):
+    _fm.fontManager.addfont(_f)
+_fm.fontManager.ttflist = [_e for _e in _fm.fontManager.ttflist
+                           if _e.name != "Latin Modern Roman" or "lmroman10" in _e.fname]
+plt.rcParams.update({
+    "font.family": "serif",
+    "font.serif": ["CMU Serif", "Latin Modern Roman", "Computer Modern Roman", "DejaVu Serif"],
+    "mathtext.fontset": "cm",
+    "axes.unicode_minus": False,
+    "axes.formatter.use_locale": False,
+    "pdf.fonttype": 3,
+})
+_sf_call = _mticker.ScalarFormatter.__call__
+
+
+def _sf_virgule(self, x, pos=None):
+    s = _sf_call(self, x, pos)
+    return s.replace(".", "{,}") if "$" in s else s.replace(".", ",")
+
+
+_mticker.ScalarFormatter.__call__ = _sf_virgule
+# --- fin du style commun
 HERE = os.path.dirname(os.path.abspath(__file__))
 CX, CY = 50.0, 50.0
 
@@ -126,7 +154,7 @@ def main():
                          rasterized=True)
         s_ = g["seg"] - np.array([CX, CY])
         col = np.where(g["mode"] == 2, "#ef3b2c", "#ffffff")
-        a.add_collection(LineCollection(s_, colors=col, linewidths=0.35))
+        a.add_collection(LineCollection(s_, colors=col, linewidths=0.35, rasterized=True))
         a.set_xlim(-22, 22)
         a.set_ylim(-22, 22)
         a.set_aspect("equal")
@@ -158,7 +186,8 @@ def main():
     cb.set_label(r"$|\mathbf{u}|$ [m]")
     cb.ax.yaxis.set_major_formatter(matplotlib.ticker.FuncFormatter(
         lambda v, _: f"{v:g}".replace(".", ",")))
-    fig.savefig(os.path.join(HERE, "fig_tunnel_rejeu.pdf"), dpi=200, bbox_inches="tight")
+    # dpi 220 : la figure (620 pt) est imprimee a 455 pt, soit 300 ppp a l impression
+    fig.savefig(os.path.join(HERE, "fig_tunnel_rejeu.pdf"), dpi=220, bbox_inches="tight")
     fig.savefig(os.path.join(HERE, "fig_tunnel_rejeu.png"), dpi=150, bbox_inches="tight")
 
     # histoire : joints rompus contre temps depuis le debut du relachement
@@ -168,7 +197,7 @@ def main():
         ts = cfg_get(os.path.join(run, "config_effective.cfg"), "excavStart")
         a.plot(h["t"] - ts, h["nBroken"], label=lab)
     a.axvspan(0, 0.08, color="0.9")
-    a.text(0.04, a.get_ylim()[1] * 0.92, "rampe", ha="center", fontsize=8)
+    a.text(0.04, a.get_ylim()[1] * 0.5, "rampe", ha="center", fontsize=8)
     a.set_xlabel("temps depuis le début du relâchement [s]")
     a.set_ylabel("joints rompus")
     a.set_xlim(left=-0.02)
