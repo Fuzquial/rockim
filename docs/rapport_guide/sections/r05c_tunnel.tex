@@ -3,7 +3,7 @@
 
 Wang et al.~\cite{wang2024tunnel} simulent avec MultiFracS l'excavation du tunnel routier de Hutou Beishan, creusé dans une roche tendre sous forte contrainte in situ. Leur cas de base, sous $\sigma_0 = 5$~MPa hydrostatique, donne une zone endommagée (EDZ) quasi circulaire, des fissures conjuguées en X où domine le cisaillement, et trois modes de ruine : compression-cisaillement aux reins, extrusion en voûte et soulèvement du radier. Il n'existe pas de solution fermée pour ce faciès ; seuls l'état élastique initial (Kirsch) et un rayon plastique de Mohr-Coulomb en ont une. Le banc est donc une reproduction de code à code, comme celui de Yan (\cref{sec-yan}).
 
-Le banc éprouve trois choses dans rockim. Il éprouve d'abord deux capacités ajoutées pour l'occasion : la pré-contrainte in situ (\cle{insituSh}, \cle{insituSv}) et l'excavation par relâchement de la traction de paroi (\cle{excavRelease}). Il éprouve ensuite la chaîne cohésive complète, loi de Yan et insertion adaptative, sur un problème quasi statique de grande taille. Il mesure enfin la sensibilité du faciès au schéma d'insertion, au désordre des résistances, au facteur de pointe et à l'amortissement. Les chiffres archivés datent d'août 2026 ; une partie a été rejouée le 6 octobre 2026 avec le binaire courant, sur un maillage réduit (\cref{sec-tunnel-rejeu}).
+Le banc éprouve trois choses dans rockim. Il éprouve d'abord deux capacités ajoutées pour l'occasion : la précontrainte in situ (\cle{insituSh}, \cle{insituSv}) et l'excavation par relâchement de la traction de paroi (\cle{excavRelease}). Il éprouve ensuite la chaîne cohésive complète, loi de Yan et insertion adaptative, sur un problème quasi statique de grande taille. Il mesure enfin la sensibilité du faciès au schéma d'insertion, au désordre des résistances, au facteur de pointe et à l'amortissement. Les chiffres archivés datent d'août 2026 ; une partie a été rejouée le 6 octobre 2026 avec le binaire courant, sur un maillage réduit (\cref{sec-tunnel-rejeu}).
 
 \subsection{Mise en données}
 
@@ -23,7 +23,7 @@ r(t) = \begin{cases} 1 & t \leq t_s, \\ \tfrac12\left[1 + \cos\dfrac{\pi(t - t_s
 \end{gather}
 avec $t_s = 0{,}02$~s (\cle{excavStart}) et $t_r = 0{,}08$~s (\cle{excavRamp}). Les deux procédures ont le même état initial et le même état final ; celle de rockim ne fait varier aucun module, et la traction face par face reste exacte quand $\lambda \neq 1$.
 
-L'insertion adaptative est ici nécessaire. Tant que le critère n'est pas atteint, les arêtes sont des nœuds partagés et la pré-contrainte des éléments décrit exactement l'état initial. En insertion intrinsèque, chaque joint devrait d'abord se fermer de $\sigma_0/p_j$ sous la pré-contrainte ; le calcul intrinsèque de contrôle décale donc le relâchement à $t_s = 0{,}15$~s pour laisser cette fermeture s'amortir.
+L'insertion adaptative est ici nécessaire. Tant que le critère n'est pas atteint, les arêtes sont des nœuds partagés et la précontrainte des éléments décrit exactement l'état initial. En insertion intrinsèque, chaque joint devrait d'abord se fermer de $\sigma_0/p_j$ sous la précontrainte ; le calcul intrinsèque de contrôle décale donc le relâchement à $t_s = 0{,}15$~s pour laisser cette fermeture s'amortir.
 
 \subsubsection{Paramètres}
 
@@ -44,7 +44,7 @@ $G_I$, $G_{II}$ & 20 et 100~J/m$^2$ & identiques (\cle{gfShearFactor = 5}) \\
 pénalité des joints & 1\,000~GPa, soit $100\,E$ & $4\,E/h$ à l'insertion \\
 adoucissement & courbe de Munjiza & \cle{jointSoftening = yan} \\
 décharge en cisaillement & non précisée & \cle{jointShearUnload = origin} \\
-éléments & élastiques & élastiques (cap déviatorique neutralisé) \\
+éléments & élastiques & élastiques (plafond déviatorique neutralisé) \\
 contact & potentiel & potentiel de Munjiza \\
 pas de temps & $\approx 8\times10^{-7}$~s, $300\,000$ pas & $\approx 3{,}05\times10^{-6}$~s (\cle{dtFactor = 0.2}) \\
 amortissement & visqueux, non chiffré & local de Cundall $0{,}15$, $\xi_j = 0{,}01$ \\
@@ -105,14 +105,14 @@ Avant tout calcul de rupture, les deux capacités ajoutées ont été vérifiée
 
 \begin{table}[htbp]
 \centering
-\caption{Contrôles fermés de la pré-contrainte et de l'excavation (août 2026).}
+\caption{Contrôles fermés de la précontrainte et de l'excavation (août 2026).}
 \label{tab-tun-controles}
 \small
 \begin{tabular}{@{}p{0.30\linewidth}p{0.27\linewidth}p{0.36\linewidth}@{}}
 \toprule
 contrôle & attendu & mesuré \\
 \midrule
-suite rapide après ajout des deux options & résultats identiques au bit & 15 cas sur 15 identiques \\
+suite rapide après ajout des deux options & résultats identiques au bit près & 15 cas sur 15 identiques \\
 charge nulle, excavation non déclenchée & aucun joint inséré, jauge à 5~MPa & aucune insertion, jauge $5{,}000$~MPa, $E_c = 2\times10^{-17}$~J/m \\
 Kirsch, $\lambda = 1$, $a = 5$~m, joints incassables & $\sigma_{\theta\theta} = 10$~MPa en paroi & $9{,}84$~MPa extrapolé, écart $1{,}7~\%$ \\
 Kirsch, $\lambda = 0{,}5$ & 5~MPa en couronne, 25~MPa aux reins & $5{,}51$ et $24{,}05$~MPa pour $5{,}49$ et $24{,}57$~MPa au même rayon, écart $2{,}1~\%$ \\
@@ -226,7 +226,7 @@ Les grandeurs globales sont reproduites ; la texture ne l'est pas. rockim produi
 
 Sur le même maillage, avec les mêmes lois et au même temps depuis le relâchement, l'insertion intrinsèque rompt $72~\%$ de joints en plus et découpe deux fois plus de blocs (\cref{tab-tun-intr,fig-tun-intr}). La différence porte surtout sur les gros blocs libres : 37~m$^2$ au plus en adaptatif, $318$, $120$, $114$, $104$ et 68~m$^2$ en intrinsèque. La part de propagation, c'est-à-dire la part des ruptures qui prolongent un joint déjà rompu, passe de $43{,}7~\%$ à $58{,}9~\%$. Le schéma d'insertion ne fixe donc pas la finesse de la granulation, que l'intrinsèque produit aussi près de la paroi : il fixe la capacité à isoler de gros blocs. Les $159\,269$ interfaces préexistantes de l'intrinsèque offrent des chemins continus qui ferment des contours. La pénalité finie de l'intrinsèque coûte aussi : pas de temps divisé par $1{,}9$ et module effectif réduit à $0{,}95\,E$.
 
-L'écart ne vient pas du critère, puisque $76~\%$ des joints insérés vont à rupture complète. Il ne vient pas non plus de l'orientation des joints insérés, dont la cohérence directionnelle reste au niveau du hasard dans les deux schémas. Il vient de l'absence de chemins préexistants. La complaisance artificielle des interfaces intrinsèques régularise en partie la localisation en blocs, effet connu des modèles cohésifs intrinsèques~\cite{falk2001cohesive}.
+L'écart ne vient pas du critère, puisque $76~\%$ des joints insérés vont à rupture complète. Il ne vient pas non plus de l'orientation des joints insérés, dont la cohérence directionnelle reste au niveau du hasard dans les deux schémas. Il vient de l'absence de chemins préexistants. La souplesse artificielle des interfaces intrinsèques régularise en partie la localisation en blocs, effet connu des modèles cohésifs intrinsèques~\cite{falk2001cohesive}.
 
 \begin{table}[htbp]
 \centering
@@ -394,6 +394,6 @@ Le seul calcul de production (maillage lité de $117\,132$ triangles, 4~h~11) do
 
 \subsection{Synthèse}
 
-Sans ajustement des paramètres publiés, rockim reproduit la physique globale du banc : un rayon d'EDZ à $-4$ à $-21~\%$ entre 4 et 7~MPa et à $+15~\%$ à 3~MPa, la dominance du cisaillement, des fissures conjuguées près de l'angle de Mohr-Coulomb, le basculement de l'ellipse avec $\lambda$ et le rapport $2{,}7$ sur le nombre de fissures. La pré-contrainte et l'excavation sont vérifiées en forme fermée à $2~\%$ près. Le désaccord porte sur la texture : l'insertion adaptative granule un anneau là où MultiFracS découpe des blocs. Le schéma d'insertion en est la cause principale, le désordre des résistances n'y change rien, et le facteur de pointe en corrige une partie.
+Sans ajustement des paramètres publiés, rockim reproduit la physique globale du banc : un rayon d'EDZ à $-4$ à $-21~\%$ entre 4 et 7~MPa et à $+15~\%$ à 3~MPa, la dominance du cisaillement, des fissures conjuguées près de l'angle de Mohr-Coulomb, le basculement de l'ellipse avec $\lambda$ et le rapport $2{,}7$ sur le nombre de fissures. La précontrainte et l'excavation sont vérifiées en forme fermée à $2~\%$ près. Le désaccord porte sur la texture : l'insertion adaptative granule un anneau là où MultiFracS découpe des blocs. Le schéma d'insertion en est la cause principale, le désordre des résistances n'y change rien, et le facteur de pointe en corrige une partie.
 
 Les grandeurs scalaires publiées dépendent de choix que l'article ne documente pas : amortissement (facteur 4), durée d'intégration (la paroi converge encore), schéma d'insertion (facteur $1{,}7$ sur les joints rompus). La comparaison est donc qualitative et semi-quantitative ; ce n'est pas une validation. Trois points restent ouverts : l'injection d'énergie par le contact dans les calculs très fragmentés, la saturation de l'EDZ au-delà de 5~MPa, et le rejeu en taille réelle avec le binaire courant et une décharge conservative.

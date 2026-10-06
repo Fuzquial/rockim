@@ -13,7 +13,7 @@ Le domaine est maillé en tétraèdres à quatre nœuds, à interpolation linéa
 \label{fig-fdem}
 \end{figure}
 
-Deux schémas d'insertion des joints existent. En insertion intrinsèque (\cle{insertion = intrinsic}, défaut), tous les joints existent dès l'origine et se comportent comme des ressorts raides tant qu'ils ne sont pas endommagés ; c'est le schéma de Solidity, de Y-Geo et de la thèse de Guo. En insertion adaptative (\cle{insertion = adaptive}), schéma de Yan et al.~\cite{yan2023adaptive}, aucun joint n'existe à l'origine : les copies d'un même sommet sont liées cinématiquement et se déplacent comme un seul nœud, et un joint n'est créé que lorsque la contrainte sur la face atteint le critère de rupture. L'insertion adaptative supprime la souplesse ajoutée par les joints intacts (\cref{sec-penalite}) mais change la réponse en rupture (\cref{sec-insertion}). La configuration de référence de l'impact est intrinsèque, comme Solidity.
+Deux schémas d'insertion des joints existent. En insertion intrinsèque (\cle{insertion = intrinsic}, défaut), tous les joints existent dès l'origine et se comportent comme des ressorts raides tant qu'ils ne sont pas endommagés ; c'est le schéma de Solidity, de Y-Geo et de la thèse de Guo. En insertion adaptative (\cle{insertion = adaptive}), schéma de Yan et al.~\cite{yan2023adaptive}, aucun joint n'existe à l'origine : les copies d'un même sommet sont liées cinématiquement et se déplacent comme un seul nœud, et un joint n'est créé que lorsque la contrainte sur la face atteint le critère de rupture. L'insertion adaptative supprime la souplesse ajoutée par les joints intacts (\cref{sec-penalite}) mais change la réponse en rupture (\cref{sec-insertion}). La configuration de référence de l'impact est intrinsèque, comme Solidity. Le rapport appelle configuration de référence de l'impact le réglage du jumeau grossier de la réplique du granite de Kuru (\cref{sec-impact}), nommé v3-P dans le dépôt, dont toutes les clés sont listées en \cref{sec-annexe-cles} ; la réplique St Anne s'en écarte sur la pénalité, la raideur et le frottement du contact (\cref{tab-stanne-setup}).
 
 Les corps qui ne doivent pas se fissurer, l'acier du piston et du taillant, le carbure de l'insert, sont déclarés continus (\cle{groupContinuum}) : leurs faces intérieures sont liées définitivement et n'entrent pas dans le calcul du pas de temps. L'interface entre l'insert et le taillant reçoit des joints cohésifs qui représentent la brasure (\cle{groupBond}).
 
@@ -28,12 +28,12 @@ Par défaut, la contrainte d'un tétraèdre est calculée en repère co-rotation
 \boldsymbol\sigma = \mathbf R \left(\lambda \operatorname{tr}\boldsymbol\varepsilon\, \mathbf I + 2\mu\boldsymbol\varepsilon\right) \mathbf R^{\mathsf T} .
 \label{eq-corot}
 \end{equation}
-Cette cinématique est exacte en grande rotation et limitée aux petites déformations. Guo et Solidity emploient une loi néo-hookéenne visqueuse, que rockim propose sous \cle{bulkModel = neohookean} :
+Cette cinématique est exacte en grandes rotations et limitée aux petites déformations. Guo et Solidity emploient une loi néo-hookéenne visqueuse, que rockim propose sous \cle{bulkModel = neohookean} :
 \begin{equation}
 \mathbf T = \frac{\mu}{J}(\mathbf B - \mathbf I) + \frac{\lambda}{J}\ln J\, \mathbf I + \eta\, \mathbf D, \qquad J = \det\mathbf F,\quad \mathbf B = \mathbf F\mathbf F^{\mathsf T},
 \label{eq-nh}
 \end{equation}
-où $\mathbf D$ est le taux de déformation et $\eta$ un coefficient visqueux que Guo ne chiffre pas (éq.~{2.6} de la thèse). Les deux lois diffèrent de $+59{,}8~\%$ en contrainte à $40~\%$ de compression uniaxiale et de $-0{,}82~\%$ à $1~\%$ d'extension ; sous l'insert, $J$ descend à $0{,}5$-$0{,}7$. La configuration de référence de l'impact reste co-rotationnelle ; l'effet de cet écart sur l'impact n'a pas été mesuré. Le terme visqueux est disponible séparément (\cle{bulkViscosity}).
+où $\mathbf T$ est la contrainte de Cauchy, $\mathbf D$ le taux de déformation et $\eta$ un coefficient visqueux que Guo ne chiffre pas (éq.~{2.6} de la thèse). Les deux lois diffèrent de $+59{,}8~\%$ en contrainte à $40~\%$ de déformation uniaxiale en compression et de $-0{,}82~\%$ à $1~\%$ d'extension ; sous l'insert, $J$ descend entre $0{,}5$ et $0{,}7$. La configuration de référence de l'impact reste co-rotationnelle ; l'effet de cet écart sur l'impact n'a pas été mesuré. Le terme visqueux est disponible séparément (\cle{bulkViscosity}).
 
 La pulvérisation de Yang et al.~2026~\cite{yang2026pulverisation} est le seul mécanisme de rupture du volume utilisé pour l'impact. Elle réduit la contrainte d'un tétraèdre selon un endommagement $D_v$ qui croît linéairement avec une mesure de déformation $\delta_m$ :
 \begin{equation}
@@ -41,9 +41,9 @@ La pulvérisation de Yang et al.~2026~\cite{yang2026pulverisation} est le seul m
 D_v = D_\text{max}\,\frac{\delta_m - \delta_0}{\delta_F - \delta_0} \in [0, D_\text{max}], \qquad \delta_m = h\,\varepsilon_{vm} .
 \label{eq-pulv}
 \end{equation}
-L'article ne définit ni la longueur $h$, ni la mesure $\varepsilon_{vm}$, ni $C_d$. rockim prend le diamètre inscrit de l'élément et la partie déviatorique de la déformation, si bien que le seuil $\delta_0 = 0{,}014$~mm s'arme à $2{,}7~\%$ de déformation et que la pulvérisation est nulle en compression isotrope. Ce choix est une interprétation et non la définition des auteurs. Le code public de Solidity a cette pulvérisation désactivée. Deux plafonds protègent en outre le volume : un plafond du déviateur, neutralisé dans les configurations d'impact, et un plafond de la contrainte moyenne de traction à 3 fois $f_t$, actif par défaut et sans équivalent chez Guo ni chez Yang et al.
+L'article ne définit ni la longueur $h$, ni la mesure $\varepsilon_{vm}$, ni $C_d$. rockim prend le diamètre inscrit de l'élément et la partie déviatorique de la déformation, si bien que le seuil $\delta_0 = 0{,}014$~mm est atteint à $2{,}7~\%$ de déformation et que la pulvérisation est nulle en compression isotrope. Ce choix est une interprétation et non la définition des auteurs. Dans le code public de Solidity, cette pulvérisation est désactivée. Deux plafonds protègent en outre le volume : un plafond du déviateur, neutralisé dans les configurations d'impact, et un plafond de la contrainte moyenne de traction à 3 fois $f_t$, actif par défaut et sans équivalent chez Guo ni chez Yang et al.
 
-Huit lois de volume plus riches (Drucker-Prager, Mohr-Coulomb, Saksala, DP-DFH de la thèse, endommagement plastique) existent par la clé \cle{law} et servent surtout le mode éléments finis 3D ; elles ne sont pas utilisées dans les impacts FDEM.
+Sept lois de volume plus riches (Drucker-Prager, Mohr-Coulomb, Saksala, DP-DFH de la thèse, endommagement plastique) sont accessibles par la clé \cle{law} et servent surtout le mode éléments finis 3D ; elles ne sont pas utilisées dans les impacts FDEM.
 
 Correspondance avec Solidity : la loi néo-hookéenne de Guo est une option, le défaut est différent ; la pulvérisation est un ajout de Yang et al.~2026 repris avec une interprétation propre ; le plafond de traction moyenne est un ajout de rockim.
 
@@ -59,7 +59,7 @@ L'ouverture $\delta_n$ et le glissement $\delta_s$ d'un joint sont évalués en 
 
 Avant le pic, un joint intrinsèque se comporte comme un ressort de raideur $p_j = p_f E/h$, où $p_f$ est le facteur de pénalité (\cle{jointPenaltyFactor}, 20 par défaut) et $h$ une longueur d'élément. Guo écrit la même raideur sous la forme $p_0/(2h)$ et recommande $E \leq p_0 \leq 10E$ (éq.~{2.28}), assez grand pour limiter la souplesse ajoutée, assez petit pour le pas de temps. Le facteur 20 de rockim correspond à $p_0 = 40E$, hors de cette plage ; Yang et al. ne publient pas leur pénalité dans les articles de 2025 et 2026, et une communication ARMA des mêmes auteurs donne $p_0 = 3\,000$~GPa pour St Anne~\cite{yang2024energy}, soit $52{,}6E$.
 
-La longueur $h$ admet trois définitions dans rockim. Le défaut prend le plus petit diamètre inscrit du maillage pour tous les joints ; sur le maillage Kuru le plus fin, un tétraèdre aplati de $0{,}226$~mm porte alors la raideur à $4{,}5$ fois celle de Yang et al. L'option \cle{local} prend la moyenne des diamètres inscrits des deux éléments, l'option \cle{edge} la moyenne des arêtes, comme Guo et Solidity.
+La longueur $h$ admet trois définitions dans rockim. Le défaut prend le plus petit diamètre inscrit du maillage pour tous les joints ; sur le maillage fin de la réplique Kuru (\cref{sec-impact}), un tétraèdre aplati de $0{,}226$~mm porte alors la raideur à $4{,}5$ fois celle de Yang et al. L'option \cle{local} prend la moyenne des diamètres inscrits des deux éléments, l'option \cle{edge} la moyenne des arêtes, comme Guo et Solidity.
 
 La branche élastique en ouverture est linéaire par défaut. L'option \cle{jointElastic = parabolic} donne la branche de Guo (éq.~{2.31} de la thèse), tracée sur la \cref{fig-loi} :
 \begin{equation}
@@ -71,7 +71,7 @@ z(D)\, f_t & \delta_{np} < \delta_n \leq \delta_{nc} .
 \end{cases}
 \label{eq-joint-normal}
 \end{equation}
-La pente à l'origine vaut $2p_j$. Un audit du 13 septembre 2026 a établi que, sous cette branche, le critère de cisaillement et l'effet de vitesse lisaient $p_j\delta_n$ au lieu de $2p_j\delta_n$ en compression ; l'option \cle{jointNormalProxy = law} corrige ce défaut et fait partie de la configuration de référence.
+où $\sigma$ est la contrainte normale du joint, $f_t$ sa résistance en traction, $\delta_{np}$ l'ouverture au pic, $\delta_{nc}$ l'ouverture à rupture complète et $z(D)$ la courbe d'adoucissement de l'\cref{eq-z}. La pente à l'origine vaut $2p_j$. Un audit du 13 septembre 2026 a établi que, sous cette branche, le critère de cisaillement et l'effet de vitesse lisaient $p_j\delta_n$ au lieu de $2p_j\delta_n$ en compression ; l'option \cle{jointNormalProxy = law} corrige ce défaut et fait partie de la configuration de référence.
 
 \begin{figure}[htbp]
 \centering
@@ -84,31 +84,35 @@ La souplesse ajoutée par les joints intacts a été mesurée sur la propagation
 
 \subsubsection{Critères de rupture}
 
-La rupture en traction est atteinte à la résistance $f_t$. La rupture en cisaillement suit un critère de Mohr-Coulomb avec coupure en traction. L'option \cle{jointShearEnvelope = yang} donne la forme de l'équation~1 de Yang et al., identique à l'éq.~{2.24} de Guo :
+La rupture en traction est atteinte à la résistance $f_t$. La rupture en cisaillement suit un critère de Mohr-Coulomb avec coupure en traction. L'option \cle{jointShearEnvelope = yang} donne la forme de l'éq.~1 de Yang et al., identique à l'éq.~{2.24} de Guo :
 \begin{equation}
-f_s = c - \tan\varphi \, \min(\sigma_n, f_t) .
+f_s = c - \tan\varphi \, \min(\sigma_n, f_t) ,
 \label{eq-mc}
 \end{equation}
-L'enveloppe par défaut de rockim annule le frottement dès que $\sigma_n$ est une traction ; les deux formes coïncident en compression et diffèrent de $34~\%$ au seuil de traction.
+où $f_s$ est la résistance au cisaillement, $c$ la cohésion, $\varphi$ l'angle de frottement et $\sigma_n$ la contrainte normale, positive en traction. L'enveloppe par défaut de rockim annule le frottement dès que $\sigma_n$ est une traction ; les deux formes coïncident en compression et diffèrent au seuil de traction de $\tan\varphi\,f_t$, soit $34~\%$ de la cohésion avec les paramètres du banc de percussion et $68~\%$ avec ceux du granite de Kuru.
 
 \subsubsection{Adoucissement et énergies de rupture}
 
-Après le pic, la contrainte décroît selon la courbe en z de Munjiza~\cite{munjiza1999smeared}, reprise par Guo (éq.~{2.32}) et activée dans rockim par \cle{jointSoftening = munjiza} :
+Après le pic, la contrainte décroît selon la courbe en z de Munjiza~\cite{munjiza1999smeared}, reprise par Guo (éq.~{2.32}) et activée dans rockim par \cle{jointSoftening = munjiza} (alias de \cle{yan}, Yan et al. ayant repris la même courbe) :
 \begin{equation}
 z(D) = \left[1 - \frac{a+b-1}{a+b} \exp\!\left(D\,\frac{a+cb}{(a+b)(1-a-b)}\right)\right]\left[a(1-D) + b(1-D)^c\right],
 \label{eq-z}
 \end{equation}
-avec $a = 0{,}63$, $b = 1{,}8$ et $c = 6$. L'endommagement $D$ combine les rapports d'ouverture et de glissement au-delà de la limite élastique, sur une ellipse en mode mixte, comme l'éq.~{2.33} de Guo :
+avec $a = 0{,}63$, $b = 1{,}8$ et $c = 6$ (constantes de la courbe, à ne pas confondre avec la cohésion $c$). Sous \cle{jointSoftening = munjiza}, l'endommagement $D$ combine les rapports d'ouverture et de glissement au-delà de la limite élastique, sur une ellipse en mode mixte, comme l'éq.~{2.33} de Guo :
 \begin{equation}
-D = \sqrt{r_n^2 + r_s^2}, \qquad r_n = \frac{\delta_n - \delta_{np}}{\delta_{nc} - \delta_{np}}, \qquad r_s = \frac{\delta_s - \delta_{sp}}{\delta_{sc} - \delta_{sp}} .
+D = \sqrt{r_n^2 + r_s^2}, \qquad r_n = \frac{\delta_n - \delta_{np}}{\delta_{nc} - \delta_{np}}, \qquad r_s = \frac{\delta_s - \delta_{sp}}{\delta_{sc} - \delta_{sp}} ,
 \label{eq-D}
 \end{equation}
-Guo relie l'ouverture critique à l'énergie de rupture par $\delta_c = 3 G_f/f$ (éq.~{2.30}), en approchant l'aire sous la courbe en z par $1/3$. Cette aire vaut $0{,}386$, et la convention de Guo dissipe donc $1{,}159\,G_f$. rockim propose trois définitions (\cle{jointDeltaC}) : \cle{exact}, défaut, qui restitue $G_f$ ; \cle{guo} ; et \cle{solidity}, la convention du code public, retenue dans la configuration de référence. Guo n'emploie qu'une énergie de rupture ; rockim distingue $G_I$ et $G_{II}$, comme Yang et al. ($G_{II} = 20\,G_I$ pour le granite de Kuru). L'option \cle{jointShearRange = coulomb} calcule la plage de glissement à la pression courante, comme Guo, alors que le défaut la fixe à $3G_{II}/c$ ; l'écart atteint un facteur 54 sous l'insert, et sans cette option aucun noyau broyé ne se forme.
+où $\delta_{np}$ et $\delta_{sp}$ sont l'ouverture et le glissement au pic, et $\delta_{nc}$ et $\delta_{sc}$ l'ouverture et le glissement à rupture complète. Sous l'adoucissement linéaire par défaut, l'endommagement est le plus grand des endommagements normal et tangentiel, sans ellipse.
+
+Guo relie l'ouverture critique à l'énergie de rupture par $\delta_c = 3 G_f/f$ (éq.~{2.30}), où $f$ est la résistance du mode considéré ($f_t$ ou $c$), en approchant l'aire sous la courbe en z par $1/3$. Cette aire vaut $0{,}386$, et la convention de Guo dissipe donc $1{,}159\,G_f$. rockim propose trois définitions (\cle{jointDeltaC}) : \cle{exact}, défaut, qui restitue $G_f$ ; \cle{guo} ; et \cle{solidity}, la convention du code public, retenue dans la configuration de référence. Avec ce dernier réglage, l'énergie dissipée en mode pur vaut $1{,}159$ fois la valeur nominale (\cref{sec-jointbench}) ; les $G_I$ et $G_{II}$ cités pour les répliques sont nominaux.
+
+Guo n'emploie qu'une énergie de rupture ; rockim distingue $G_I$ et $G_{II}$, comme Yang et al. ($G_{II} = 20\,G_I$ pour le granite de Kuru). L'option \cle{jointShearRange = coulomb} calcule la plage de glissement, c'est-à-dire l'écart $\delta_{sc} - \delta_{sp}$ entre le pic et la rupture en cisaillement, à la pression courante, comme Guo, alors que le défaut la fixe à $3G_{II}/c$ ; l'écart atteint un facteur 54 sous l'insert, et sans cette option aucun noyau broyé ne se forme.
 
 \subsubsection{Décharge et frottement du joint}
 \label{sec-decharge}
 
-La thèse de Guo ne traite pas la décharge d'un joint ; elle le reconnaît en conclusion (p.~307). Or sous un insert, les joints sont chargés, déchargés et rechargés en compression variable. rockim propose trois branches (\cle{jointShearUnload}), et le choix entre elles a pesé sur toute la campagne d'impact (\cref{tab-decharge}). La branche \cle{plastic}, défaut, est une plasticité à retour radial qui conserve le glissement acquis :
+La thèse de Guo ne traite pas la décharge d'un joint ; elle le reconnaît en conclusion (p.~307). Or, sous un insert, les joints sont chargés, déchargés et rechargés en compression variable. rockim propose trois branches (\cle{jointShearUnload}), et le choix entre elles a pesé sur toute la campagne d'impact (\cref{tab-decharge}). La branche \cle{plastic}, défaut, est une plasticité à retour radial qui conserve le glissement acquis :
 \begin{equation}
 \tau_\text{essai} = p_j(\delta_s - s_p), \qquad |\tau_\text{essai}| > \tau_\text{lim} \ \Rightarrow\ \tau = \tau_\text{lim}\,\frac{\tau_\text{essai}}{|\tau_\text{essai}|} .
 \label{eq-plastic}

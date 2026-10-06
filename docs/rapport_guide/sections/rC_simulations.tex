@@ -1,23 +1,33 @@
 \section{Simulations préparées pour compléter le rapport}
 \label{sec-annexe-simus}
 
-Les calculs qui n'ont pas pu tourner pendant la rédaction sont préparés dans le dossier \path{docs/rapport_guide/simulations_a_lancer/} du dépôt : fichiers de configuration par groupe, maillages, script de lancement \path{lancer.sh} et fiche \path{A_LANCER.md}, qui donne pour chaque calcul la grandeur à extraire, la référence et la durée estimée. Les calculs se lancent un à un, depuis la racine du dépôt, après compilation et passage de la suite rapide ; les sorties vont dans \path{sim_out/}, hors du suivi de version.
+Les calculs qui n'ont pas pu tourner pendant la rédaction sont préparés dans le dossier \path{docs/rapport_guide/simulations_a_lancer/} du dépôt : fichiers de configuration par groupe, maillages, script de lancement \path{lancer.sh}, fiche \path{A_LANCER.md}, qui donne pour chaque calcul la grandeur à extraire et la référence, et fiche \path{STRATEGIE.md}, qui fixe l'ordre de lancement. Les calculs se lancent un à un, depuis la racine du dépôt, après compilation et passage de la suite rapide ; les sorties vont dans \path{sim_out/}, hors du contrôle de version, et chaque groupe produit une fiche \path{RESULTATS.md}. La session de calcul en nuage ne lance que des calculs courts, de moins de 30~min chacun à 4 fils ; les autres sont lancés par le doctorant sur son poste local, à 14 fils (\cref{tab-simus}).
 
 \begin{table}[htbp]
 \centering
-\caption{Simulations préparées, par ordre de priorité.}
+\caption{Simulations préparées, par ordre de lancement : calculs courts en nuage, puis calculs longs sur le poste local.}
 \label{tab-simus}
 \small
 \begin{tabular}{@{}p{0.10\linewidth}p{0.26\linewidth}p{0.56\linewidth}@{}}
 \toprule
 rang & groupe & objet \\
 \midrule
-1 & Yan et al. 2023 & rejouer bande pesante, brésilien, compression simple et triaxiale avec le binaire courant (\cref{sec-yan}) \\
-2 & calibration Red Bohus & situer le jeu de juillet (compression, traction, triaxial à 20 et 50~MPa) avec le binaire courant \\
-3 & impact contre Hertz & prolonger l'impact court à $T = 1{,}2\times10^{-4}$~s pour la décharge, la durée de contact et la restitution \\
-4 & AbuAisha, tunnel & compléments à maillage fin, si un chiffre manque \\
-5 & campagne V\&V & sphère contre Hertz, fissure pressurisée de Guo, patch test et Kirsch, si l'interface Python de Gmsh est disponible \\
-hors rang & poste local (14 fils) & impact St Anne prolongé à 500~$\mu$s, maillage fin de St Anne, Kuru jusqu'au retournement \\
+\multicolumn{3}{@{}l}{calculs courts, en nuage} \\
+1 & Yan et al. 2023 & rejouer la bande pesante, le brésilien, la compression simple et la compression triaxiale avec le binaire courant (\cref{sec-yan}) \\
+2 & suite rapide & repasser la suite de non-régression rapide, repère 50 tests sur 51 (\cref{sec-verification}) \\
+3 & calibration Red Bohus & situer le jeu de juillet, invalidé le 31 août, avec le binaire courant (\cref{sec-calib}) \\
+4 & contact du tunnel & origine de l'injection d'énergie par le contact : tunnel avec facteur de pointe $1{,}6$, une clé changée par calcul (décharge \cle{plastic}, naissance du contact, frottement nul) (\cref{sec-tunnel-rejeu}) \\
+5 & AbuAisha et al. 2017 & rejeu grossier de la pression de rupture, si les calculs manquent (\cref{sec-abuaisha}) \\
+6 & impact contre Hertz & prolonger l'impact court à $T = 1{,}2\times10^{-4}$~s pour la décharge, la durée de contact et la restitution (\cref{sec-impact}) \\
+\midrule
+\multicolumn{3}{@{}l}{calculs longs, sur le poste local (14 fils)} \\
+7 & tunnel & maillage de production, binaire courant, bilan du contact refait \\
+8 & St Anne & impact prolongé à 500~µs, pour le rebond \\
+9 & St Anne & maillage fin de 251\,460 tétraèdres, pour la convergence en maillage \\
+10 & Kuru & maillage fin jusqu'au retournement, pour la phase de décharge \\
+11 & AbuAisha, Parker & calculs de production avec le binaire courant \\
+12 & Yan et al. 2023 & compression à la maille de l'article ($0{,}75$~mm) \\
+13 & campagne V\&V & bancs P2.2 (sphère contre Hertz), P3.1 (fissure pressurisée de Guo) et P4 (\cref{sec-validation}) \\
 \bottomrule
 \end{tabular}
 \end{table}
