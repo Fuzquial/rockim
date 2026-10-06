@@ -1,0 +1,154 @@
+\section{Calibration sur le granite de Red Bohus}
+\label{sec-calib}
+
+Le Red Bohus est le matériau de la thèse, et aucune simulation d'impact ne portera sur lui tant que ses paramètres de joint ne sont pas calés. Ce chapitre présente les cibles expérimentales, les méthodes employées, les quatre campagnes menées entre mai et septembre 2026 et le modèle à grains. Le constat d'ensemble est qu'aucun jeu FDEM ne restitue à la fois la résistance en compression simple et l'enveloppe confinée : les jeux calés sans confinement sous-estiment le confinement d'un facteur 2 à 3, et le seul jeu calé à 20~MPa surestime les forts confinements de 26 à $36~\%$.
+
+\subsection{Cibles expérimentales}
+
+Les essais de Dumoulin et al.~\cite{dumoulin2024data} portent sur un granite du sud-ouest de la Suède, à 60~\% de feldspath, 35~\% de quartz et 5~\% de biotite en masse (\cref{tab-cibles}).
+
+\begin{table}[htbp]
+\centering
+\caption{Essais de Dumoulin et al. (2024) sur le granite de Red Bohus.}
+\label{tab-cibles}
+\small
+\begin{tabular}{@{}lrll@{}}
+\toprule
+essai & essais & grandeur & valeur \\
+\midrule
+compression simple & 4 & résistance au pic & $126{,}6 \pm 21{,}4$~MPa \\
+brésilien & 4 & $2P/(\pi D t)$ & $10{,}27 \pm 0{,}98$~MPa \\
+triaxial, $\sigma_3 = 20$~MPa & 3 & $\sigma_1$ au pic & $424{,}8$~MPa \\
+triaxial, $\sigma_3 = 50$~MPa & 3 & $\sigma_1$ au pic & $649{,}0$~MPa \\
+triaxial, $\sigma_3 = 75$~MPa & 3 & $\sigma_1$ au pic & $779{,}0$~MPa \\
+triaxial, $\sigma_3 = 100$~MPa & 3 & $\sigma_1$ au pic & $899{,}3$~MPa \\
+élasticité & 12 & $E$, $\nu$ & $77{,}7$~GPa, $0{,}29$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+L'enveloppe est concave : sa pente $d\sigma_1/d\sigma_3$ passe de $14{,}9$ entre 0 et 20~MPa à $4{,}8$ entre 75 et 100~MPa. La dispersion de la compression simple atteint $17~\%$, contre $0{,}5~\%$ sur les triaxiaux, et deux courbes sur quatre sont tronquées avant le pic. Trois jeux d'élasticité ont circulé ($52$~GPa et $0{,}25$ ; $57{,}3$~GPa et $0{,}17$ ; $77{,}7$~GPa et $0{,}29$), ainsi que deux cibles de traction, le brésilien mesuré de $10{,}3$~MPa et une traction directe équivalente de $18{,}3$~MPa tirée de la littérature. Un ajustement de Hoek et Brown,
+\begin{equation}
+\sigma_1 = \sigma_3 + \sigma_{ci}\sqrt{m_i\,\frac{\sigma_3}{\sigma_{ci}} + 1},
+\end{equation}
+donne $\sigma_{ci} = 178{,}5$~MPa et $m_i = 34{,}6$ ; il suit les essais confinés mais surestime la résistance simple de $41~\%$.
+
+\subsection{Méthode bayésienne}
+
+Les paramètres de joint $\boldsymbol\theta$ sont tirés d'un a priori uniforme sur une boîte $\Theta$ et confrontés aux cibles $\bar y_k$ d'écart-type $s_k$. Un calcul FDEM étant coûteux, chaque observable est remplacée par un émulateur gaussien $\eta_k$, ajusté sur un plan d'expériences, et l'écart structurel entre le modèle et la roche par une discrépance $\delta_k$, dans le cadre de Kennedy et O'Hagan :
+\begin{gather}
+p(\boldsymbol\theta \mid \bar{\mathbf y}) \propto p(\bar{\mathbf y} \mid \boldsymbol\theta)\, \mathbb 1_\Theta(\boldsymbol\theta), \qquad
+\bar y_k = \eta_k(\boldsymbol\theta) + \delta_k + \varepsilon_k, \\
+\log p(\bar{\mathbf y} \mid \boldsymbol\theta) = -\frac12 \sum_k \frac{\left(\mu_k(\boldsymbol\theta) - \bar y_k\right)^2}{s_k^2 + \sigma_k^2(\boldsymbol\theta) + (d_k\,\bar y_k)^2},
+\end{gather}
+où $\mu_k$ et $\sigma_k^2$ sont la moyenne et la variance prédictives de l'émulateur et $d_k$ la discrépance relative (10 à $20~\%$). L'émulateur suit
+\begin{equation}
+\mu(\mathbf x_*) = m + \mathbf k_*^{\mathsf T}(\mathbf K + \sigma_n^2\mathbf I)^{-1}(\mathbf y - m), \qquad
+\sigma^2(\mathbf x_*) = k_{**} - \mathbf k_*^{\mathsf T}(\mathbf K + \sigma_n^2\mathbf I)^{-1}\mathbf k_*,
+\end{equation}
+avec un noyau exponentiel carré en juillet et un noyau de Matérn $5/2$ à longueurs par dimension en août. Le postérieur est échantillonné par Metropolis-Hastings à marche aléatoire, avec le diagnostic de Gelman et Rubin $\hat R$ quand plusieurs chaînes sont lancées.
+
+\subsection{Juillet : modèle à grains 2D}
+
+\subsubsection{Mise en données}
+
+Une éprouvette 2D de $30 \times 60$~mm est découpée en grains de Voronoï de 3~mm, de volume élastique ($E = 52$~GPa, $\nu = 0{,}25$), et les joints de grain portent la moitié des résistances des joints intragranulaires. La résistance en traction des joints est fixée à 34~MPa, $G_I$ à 70~J/m$^2$ ; la cohésion et l'angle de frottement des joints sont libres sur $[4 ; 20]$~MPa et $[10 ; 35]^\circ$. Les cibles sont une traction directe de $18{,}3$~MPa et la résistance en compression simple, avec une dispersion de $10~\%$. Le plan compte 14 points et 3 réplicats ; deux émulateurs et quatre chaînes de 6\,000 itérations donnent le postérieur.
+
+\subsubsection{Résultats}
+
+Le postérieur place l'angle de frottement à $13{,}4^\circ$ (intervalle à $95~\%$ de $10{,}2$ à $20{,}1^\circ$) et la cohésion à $13{,}6$~MPa ($6{,}9$ à $19{,}6$~MPa), avec $\hat R \leq 1{,}004$ (\cref{fig-posterior}). L'angle est collé à la borne basse de l'a priori : l'intervalle est en partie un effet de borne. Au jeu médian, sur trois tirages de grains, la traction vaut $17{,}07$~MPa ($-6{,}7~\%$) et la compression simple $139{,}1$~MPa ($+9{,}9~\%$).
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.75\linewidth]{calib/posterior_bohus}
+\caption{Postérieur de la calibration de juillet, modèle à grains 2D : angle de frottement des joints médian $13{,}4^\circ$, tronqué par la borne a priori ; cohésion peu contrainte.}
+\label{fig-posterior}
+\end{figure}
+
+Hors calage, l'enveloppe triaxiale de ce jeu est trop plate (\cref{fig-triax-juillet}) : $\sigma_1 = 143{,}9 + 2{,}39\,\sigma_3$, soit un angle de frottement macroscopique de $24{,}2^\circ$ contre 45 à $55^\circ$ pour un granite, et $-56~\%$ à 20~MPa, $-62~\%$ à 50~MPa. Un balayage de l'angle des joints de $13{,}4$ à $45^\circ$ montre que la résistance simple croît trois fois plus vite que la pente de l'enveloppe : aucun angle ne cale les deux à la fois. Le servo de confinement sous-tire en outre de 5 à $9~\%$. Le jeu a été invalidé le 31 août, ses cibles mêmes étant contestées (traction de $18{,}3$ contre $10{,}3$~MPa, module de 52 contre $77{,}7$~GPa).
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.8\linewidth]{calib/fig_triaxial}
+\caption{Enveloppe du jeu de juillet. (a) Ajustement de Mohr-Coulomb des pics, angle macroscopique $24{,}2^\circ$. (b) Confinement atteint contre visé, sous-tiré de 5 à $9~\%$.}
+\label{fig-triax-juillet}
+\end{figure}
+
+\subsection{Août : émulateur gaussien et prédiction triaxiale}
+
+\subsubsection{Mise en données}
+
+La deuxième campagne fige les choix numériques (insertion adaptative, adoucissement de Yan, contact par potentiel) et laisse libres six paramètres (\cref{tab-calib-aout}). L'éprouvette mesure $40 \times 80$~mm, avec le module mesuré de $77{,}7$~GPa ; la tessellation de Voronoï n'y sert que de maillage non structuré, toutes les phases étant identiques. Les cinq observables de la vraisemblance sont la résistance simple, le brésilien, $\sigma_1$ et la déformation au pic à 20~MPa, et la déformation au pic sans confinement ; l'essai à 50~MPa sert de contrôle, ceux à 75 et 100~MPa de prédiction. La base compte 60 calculs.
+
+\begin{table}[htbp]
+\centering
+\caption{Calibration d'août : a priori et postérieur des six paramètres des joints.}
+\label{tab-calib-aout}
+\small
+\begin{tabular}{@{}lll@{}}
+\toprule
+paramètre & a priori & médiane et intervalle à $95~\%$ \\
+\midrule
+résistance en traction $f_t$ & $[20 ; 60]$~MPa & $25{,}7$ ($20{,}2$ à $43{,}9$)~MPa \\
+cohésion $c$ & $[10 ; 90]$~MPa & $11{,}0$ ($10{,}0$ à $14{,}2$)~MPa, borne basse \\
+angle de frottement & $[15 ; 60]^\circ$ & $46{,}2$ ($40{,}1$ à $49{,}8$)$^\circ$ \\
+énergie $G_I$ & $[30 ; 300]$~J/m$^2$ & $50{,}1$ ($30{,}7$ à $115{,}7$)~J/m$^2$, borne basse \\
+rapport $G_{II}/G_I$ & $[1 ; 12]$ & $2{,}63$ ($1{,}08$ à $8{,}41$) \\
+plafond déviatorique & $[200 ; 1\,500]$~MPa & 462 (212 à 1\,242)~MPa \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsubsection{Résultats}
+
+Au jeu retenu, calculé sur une fenêtre de temps assez longue pour atteindre le pic, $\sigma_1$ vaut $350{,}9$~MPa à 20~MPa ($-17~\%$), $814{,}4$~MPa à 50~MPa ($+26~\%$), puis $1\,002$ et $1\,222$~MPa à 75 et 100~MPa ($+29$ et $+36~\%$) : la prédiction échoue au-delà du critère de $20~\%$ (\cref{fig-calib-synthese}). L'enveloppe simulée est trop raide, elle croise l'expérimentale vers 35~MPa, parce que l'enveloppe de Mohr-Coulomb linéaire des joints surestime les forts confinements. Un premier jeu voisin, calculé sur une fenêtre tronquée, semblait s'accorder à 50~MPa ($-3{,}6~\%$) : c'était un artefact de la troncature.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=\linewidth]{calib/fig_calib_synthese}
+\caption{Calibration Red Bohus. (a) Essais de Dumoulin et al. (b) Enveloppe : le jeu de juillet sous-estime le confinement, celui d'août le surestime au-delà de 50~MPa. (c) Écart au pic expérimental.}
+\label{fig-calib-synthese}
+\end{figure}
+
+L'émulateur a ensuite été infirmé par les calculs réels (coefficient de détermination croisé de $0{,}44$ sur la résistance simple) : son écart-type, 56~MPa, dépasse celui de l'essai, $21{,}4$~MPa, et c'est la taille du plan, 60 points en dimension 6, qui limite la calibration. L'échantillonnage n'a employé qu'une chaîne, sans $\hat R$, et deux paramètres sont collés à leur borne ; un échantillonneur à ensemble invariant affine triple la largeur de certains intervalles. Les essais confinés posaient le confinement avant la charge axiale avec les mors bloqués, ce qui peut biaiser le pic de $\nu/(1-\nu)\,\sigma_3$, soit 8 à 20~MPa ; ce biais, découvert en septembre, n'a pas été vérifié sur ces calculs.
+
+\subsection{Septembre et calibrations continues}
+
+Une troisième campagne, à 50~MPa de confinement, a testé une variable à la fois sur des calculs de moins de 5 minutes. Corrigé du biais des mors, le pic du cas homogène vaut 676~MPa ($+13~\%$) ; un jeu réduit à $0{,}7$ fois les résistances et à un module de 71~GPa donne $-5~\%$ à 50~MPa et $-9~\%$ à 20~MPa, mais $+10~\%$ à 100~MPa. Le seuil d'endommagement de dilatance reste collé au pic dans tous les cas ($0{,}95$ à $1{,}00$ du pic, contre $0{,}72$ mesuré). Les planchers numériques mesurés sont du même ordre que l'écart aux données : $1{,}1~\%$ pour le maillage, $3{,}7~\%$ pour la vitesse, 4 à $5~\%$ pour l'amortissement, $7~\%$ pour le schéma d'insertion. Une campagne de 150 calculs est préparée et n'a pas été lancée.
+
+Les calibrations par lois continues sous Abaqus éclairent le problème (\cref{fig-cdp}). Le modèle d'endommagement plastique calé à 50~MPa donne une enveloppe linéaire, $+25~\%$ à 20~MPa et $-7~\%$ à 100~MPa ; un Drucker-Prager hyperbolique donne une courbure de sens contraire à celle de l'essai. Trois représentations de l'hétérogénéité plafonnent à 310-357~MPa à 50~MPa de confinement, contre 650~MPa mesurés.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.75\linewidth]{calib/cdp_envelope}
+\caption{Abaqus, lois continues : le modèle d'endommagement plastique calé à 50~MPa donne une enveloppe linéaire, le Drucker-Prager hyperbolique une courbure de sens contraire.}
+\label{fig-cdp}
+\end{figure}
+
+\subsection{Modèle à grains}
+
+\subsubsection{Mise en données}
+
+Le maillage de Voronoï découpe l'éprouvette en grains de phases minérales ; chaque propriété se surcharge par phase, et les joints de grain prennent la moyenne des deux phases multipliée par un facteur propre à la frontière. Les résistances peuvent être tirées par joint selon une loi de Weibull de moyenne 1, avec un effet d'échelle identique à celui des VUMAT de la thèse :
+\begin{equation}
+P_f(\sigma) = 1 - \exp\left[-\left(\frac{\sigma}{\sigma_0}\right)^m\right], \qquad
+f_t^J = f_t\left(\frac{Z_\text{eff}}{V_J}\right)^{1/m}, \quad V_J = \tfrac12\left(V_e^+ + V_e^-\right),\ Z_\text{eff} = 1~\text{mm}^3 .
+\end{equation}
+Deux maillages dans le rapport de volume $3{,}16$ donnent des facteurs dans le rapport $3{,}16^{1/24}$ à $0{,}03~\%$ près.
+
+\subsubsection{Vérifications}
+
+Huit configurations d'éléments finis 3D vérifient le traitement des phases. Deux phases identiques donnent un résultat identique au bit à une seule phase. Une barre de deux couches en série, de 83,1 et 29,3~GPa, a un module apparent de $44{,}16$~GPa pour $43{,}68$~GPa par la borne de Reuss,
+\begin{equation}
+\frac{1}{E_\text{Reuss}} = \sum_p \frac{f_p}{E_p},
+\end{equation}
+soit $1{,}1~\%$ d'écart. En compression élastique d'un cube de 1\,001 grains (feldspath $62~\%$, quartz $31~\%$, biotite $7~\%$), le modèle à grains est $2{,}9~\%$ plus souple que le témoin homogène aux moyennes de Voigt, et le maximum de contrainte équivalente est $1{,}5$ fois plus fort ; la biotite porte en moyenne la moitié de la contrainte du témoin, le quartz $16~\%$ de plus.
+
+En traction, un champ de Weibull corrélé à l'échelle du grain ($m = 6$) concentre la rupture dans la bande la plus faible (\cref{fig-weibull}) : le maillon faible casse à $0{,}96\,f_t$, et trois maillages du même champ cassent dans la même bande à $4{,}6$-$5{,}1$~MPa, contre $7{,}4$~MPa pour un champ non corrélé. Un banc bayésien synthétique retrouve un facteur de traction caché ($0{,}45$, intervalle $0{,}40$ à $0{,}46$) et laisse non identifié le facteur de cohésion, comme attendu en mode~I. Le modèle à grains a été abandonné le 2 septembre pour la calibration, faute de gain.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.7\linewidth]{calib/fig_weibull}
+\caption{Champ de Weibull corrélé sur les joints ($m = 6$, longueur de corrélation égale à la taille de grain) et fissure de traction finale, qui suit la bande la plus faible.}
+\label{fig-weibull}
+\end{figure}

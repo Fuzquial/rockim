@@ -1,0 +1,7 @@
+test,phase,W_contact_sur_Ec0,dEc_sur_Ec0,dP_sur_P0
+potentiel_2D,frontale,0.000768772,3.71969e-12,4.88498e-15
+potentiel_2D,oblique,0.000675798,5.11562e-07,8.88178e-16
+potentiel_3D,frontale,0.000481583,2.04788e-08,2.33884e-16
+potentiel_3D,oblique,0.000340666,7.25379e-09,4.6636e-15
+volume_3D,frontale,0.000508758,7.10543e-15,4.56729e-16
+volume_3D,oblique,0.000487804,1.20719e-11,6.67271e-16
