@@ -113,16 +113,17 @@ def pic(h):
 def fig_pression():
     H = {n: read_hist(os.path.join(HIST, n + ".csv")) for n, _, _ in RUNS_ARCH}
     rej = {}
-    for n in ("hf_aniso_hydro_c", "hf_iso_hydro_c"):
+    for n in ("hf_aniso_hydro_c", "hf_iso_hydro_c",
+              "hf_aniso_hydro_m6", "hf_iso_hydro_m6"):
         p = os.path.join(RUNS, "out_" + n, "history.csv")
         if os.path.exists(p):
             rej[n] = read_hist(p)
 
-    fig, (a, b) = plt.subplots(1, 2, figsize=(7.2, 3.1),
+    fig, (a, b) = plt.subplots(1, 2, figsize=(7.4, 3.4),
                                gridspec_kw=dict(width_ratios=[1.15, 1]))
     # (a) p(t), runs de reference + rejeux grossiers eventuels
-    sty = {"hf_aniso": ("C0", "-", r"anisotrope 6,8/4,6 MPa (20/08)"),
-           "hf_iso": ("C3", "-", r"isotrope 4,6 MPa (20/08)")}
+    sty = {"hf_aniso": ("C0", "-", r"aniso. 6,8/4,6, maille 3 mm (20/08)"),
+           "hf_iso": ("C3", "-", r"iso. 4,6, maille 3 mm (20/08)")}
     for n, (c, ls, lab) in sty.items():
         h = H[n]
         a.plot(h["t"] * 1e3, h["hydroP"] / 1e6, color=c, ls=ls, lw=1.4,
@@ -131,12 +132,15 @@ def fig_pression():
         a.plot(k["t"], k["p"], "o", color=c, ms=4)
         a.annotate(virg(k["p"], 2), (k["t"], k["p"]), xytext=(-30, 4),
                    textcoords="offset points", color=c, fontsize=8.5)
-    lab_rej = {"hf_aniso_hydro_c": ("C0", "anisotrope, maillage grossier"),
-               "hf_iso_hydro_c": ("C3", "isotrope 4,6, maillage grossier")}
+    # rejeux du 2026-10-06 (binaire f0209ef) sur maillages plus grossiers
+    lab_rej = {"hf_aniso_hydro_c": ("C0", ":", "aniso., maille 12 mm"),
+               "hf_iso_hydro_c": ("C3", ":", "iso., maille 12 mm"),
+               "hf_aniso_hydro_m6": ("C0", "-.", "aniso., maille 6 mm"),
+               "hf_iso_hydro_m6": ("C3", "-.", "iso., maille 6 mm")}
     for n, h in rej.items():
-        c, lab = lab_rej[n]
-        a.plot(h["t"] * 1e3, h["hydroP"] / 1e6, color=c, ls=":", lw=1.2,
-               label=lab + " (rejoué 06/10, f0209ef)")
+        c, ls, lab = lab_rej[n]
+        a.plot(h["t"] * 1e3, h["hydroP"] / 1e6, color=c, ls=ls, lw=1.0,
+               label=lab + " (rejoué 06/10)")
     a.axhline(CIBLE["aniso"], color="C0", ls="--", lw=0.8)
     a.axhline(CIBLE["iso46"], color="C3", ls="--", lw=0.8)
     a.text(0.05, CIBLE["aniso"] + 0.2, "éq. 10 : 12,0 MPa", color="C0",
@@ -150,7 +154,7 @@ def fig_pression():
     a.set_xlabel("temps depuis le début du calcul [ms]")
     a.set_ylabel("pression de puits $p$ [MPa]")
     a.set_xlim(0, 4.0)
-    a.set_ylim(0, 17.5)
+    a.set_ylim(0, 19.5)
     a.legend(loc="lower right", frameon=False, fontsize=7.2)
     a.set_title("(a) Pression de puits contre les seuils fermés", loc="left")
     fmt_axes(a)
