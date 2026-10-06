@@ -58,5 +58,25 @@
   "u_wall_p95_m": 0.03453773165260299,
   "u_max_m": 0.04061735905100061,
   "label": "adaptatif, amort. 0,7"
+ },
+ {
+  "run": "out_red_intr",
+  "t_end": 0.380001,
+  "triangles": 22730,
+  "joints": 33984,
+  "broken": 13674,
+  "tensile": 879,
+  "shear": 12795,
+  "inserted": null,
+  "edz_radius_p95_m": 24.17447402942112,
+  "edz_radius_max_m": 54.15375144008283,
+  "edz_halfaxis_x_p95_m": 20.28238975553749,
+  "edz_halfaxis_y_p95_m": 18.75496699542,
+  "crack_length_m": 6979.286113670401,
+  "u_wall_mean_m": 0.18556146948090319,
+  "u_wall_median_m": 0.1784332616332438,
+  "u_wall_p95_m": 0.24801917685011485,
+  "u_max_m": 0.38096491757741824,
+  "label": "intrinsèque"
  }
 ]

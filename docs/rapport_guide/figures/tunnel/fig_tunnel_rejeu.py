@@ -86,7 +86,7 @@ def analyse(run):
     res = dict(run=os.path.basename(run), t_end=float(fr["t"][-1]),
                triangles=int(len(C)), joints=int(len(D)), broken=int(brk.sum()),
                tensile=int(((mode == 1) & brk).sum()), shear=int(((mode == 2) & brk).sum()),
-               inserted=int(hist["nInserted"][-1]),
+               inserted=int(hist["nInserted"][-1]) if "nInserted" in hist.dtype.names else None,
                edz_radius_p95_m=float(np.percentile(r, 95)) if brk.any() else 0.0,
                edz_radius_max_m=float(r.max()) if brk.any() else 0.0,
                edz_halfaxis_x_p95_m=float(np.percentile(np.abs(mid[:, 0] - CX), 95)) if brk.any() else 0.0,
