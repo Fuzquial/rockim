@@ -1,7 +1,7 @@
 \section{Calibration sur le granite de Red Bohus}
 \label{sec-calib}
 
-Aucun jeu FDEM ne restitue à la fois la résistance en compression simple et l'enveloppe confinée du Red Bohus : les jeux calés sans confinement sous-estiment l'effet du confinement d'un facteur 2 à 3, et le seul jeu calé à 20~MPa surestime la résistance sous fort confinement de 25 à $36~\%$. L'émulateur de la campagne d'août a été infirmé par les calculs réels, et aucune calibration n'est valide aujourd'hui.
+Aucun jeu FDEM ne restitue à la fois la résistance en compression simple et l'enveloppe confinée du Red Bohus : les jeux calés sans confinement sous-estiment l'effet du confinement d'un facteur 2 à 3, et le seul jeu calé à 20~MPa surestime la résistance sous fort confinement de 25 à $36~\%$. L'émulateur de la campagne d'août a été infirmé par les calculs réels, et aucune calibration n'est valide aujourd'hui. Le jeu de juillet n'est plus reproductible avec le binaire courant (\cref{sec-calib-rejeu}).
 
 Le Red Bohus est le matériau de la thèse, et aucune simulation d'impact ne portera sur lui tant que ses paramètres de joint ne seront pas calés. Trois campagnes FDEM ont été menées de juillet à septembre 2026, et des calibrations par lois continues sous Abaqus de mai à juillet.
 
@@ -68,7 +68,7 @@ La loi a posteriori place l'angle de frottement à $13{,}4^\circ$ (intervalle à
 \label{fig-posterior}
 \end{figure}
 
-Hors calage, l'enveloppe triaxiale de ce jeu est trop plate (\cref{fig-triax-juillet}) : $\sigma_1 = 143{,}9 + 2{,}39\,\sigma_3$, soit un angle de frottement macroscopique de $24{,}2^\circ$ contre 45 à $55^\circ$ pour un granite, et $-56~\%$ à 20~MPa, $-62~\%$ à 50~MPa. Un balayage de l'angle des joints de $13{,}4$ à $45^\circ$ montre que la résistance simple croît trois fois plus vite que la pente de l'enveloppe : aucun angle ne cale les deux à la fois. Le confinement asservi reste en outre de 5 à $9~\%$ sous la consigne. Le jeu a été invalidé le 31 août, ses cibles mêmes étant contestées (traction de $18{,}3$ contre $10{,}3$~MPa, module de 52 contre $77{,}7$~GPa).
+Hors calage, l'enveloppe triaxiale de ce jeu est trop plate (\cref{fig-triax-juillet}) : $\sigma_1 = 143{,}9 + 2{,}39\,\sigma_3$, soit un angle de frottement macroscopique de $24{,}2^\circ$ contre 45 à $55^\circ$ pour un granite, et $-56~\%$ à 20~MPa, $-62~\%$ à 50~MPa. Un balayage de l'angle des joints de $13{,}4$ à $45^\circ$ montre que la résistance simple croît trois fois plus vite que la pente de l'enveloppe : aucun angle ne cale les deux à la fois. Le confinement asservi reste en outre de 5 à $9~\%$ sous la consigne. Le jeu a été invalidé le 31 août, ses cibles mêmes étant contestées (traction de $18{,}3$ contre $10{,}3$~MPa, module de 52 contre $77{,}7$~GPa). Le 6 octobre, son rejeu avec le binaire courant a montré qu'il n'est plus reproductible (\cref{sec-calib-rejeu}).
 
 \begin{figure}[htbp]
 \centering
@@ -76,6 +76,34 @@ Hors calage, l'enveloppe triaxiale de ce jeu est trop plate (\cref{fig-triax-jui
 \caption{Enveloppe du jeu de juillet. (a) Ajustement de Mohr-Coulomb des pics, angle macroscopique $24{,}2^\circ$. (b) Confinement atteint en fonction du confinement visé, inférieur de 5 à $9~\%$.}
 \label{fig-triax-juillet}
 \end{figure}
+
+\subsubsection{Rejeu du 6 octobre 2026}
+\label{sec-calib-rejeu}
+
+Les quatre essais du jeu de juillet ont été rejoués le 6 octobre 2026 avec le binaire courant (\cle{f638b0f}, 4 fils). Les fichiers reprennent le jeu calé ; seuls la vitesse de chargement, sa rampe, la durée et le confinement changent d'un essai à l'autre (\cref{tab-calib-rejeu}). La traction tient : $16{,}67$~MPa contre $17{,}07$~MPa en juillet ($-2{,}3~\%$). La compression simple tombe à $33{,}03$~MPa contre $139{,}1$ et $141{,}5$~MPa archivés ($-76~\%$). Le jeu de juillet n'est donc plus reproductible.
+
+\begin{table}[htbp]
+\centering
+\caption{Jeu de juillet rejoué le 6 octobre 2026 avec le binaire courant. Triaxiaux : pic brut, corrigé du biais des mors entre parenthèses ; écart à juillet sur le pic brut.}
+\label{tab-calib-rejeu}
+\small
+\begin{tabular}{@{}lcccc@{}}
+\toprule
+essai & rejeu (MPa) & juillet (MPa) & écart à juillet & essai (MPa) \\
+\midrule
+traction directe & $16{,}67$ & $17{,}07$ & $-2{,}3~\%$ & $10{,}27$ (brésilien) \\
+compression simple & $33{,}03$ & $139{,}1$ et $141{,}5$ & $-76~\%$ & $126{,}6$ \\
+triaxial, $\sigma_3 = 20$~MPa & $69{,}22$ ($82{,}7$) & 186 & $-63~\%$ & $424{,}8$ \\
+triaxial, $\sigma_3 = 50$~MPa & $122{,}01$ ($155{,}6$) & 247 & $-51~\%$ & $649{,}0$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Le même fichier de compression simple, à 1 fil, donne $33{,}04$~MPa avec le binaire du 25 août (\cle{139df12}) et avec celui du 19 août (\cle{5f8f71b}), premier commit de l'historique git. Le décrochage est donc antérieur à cet historique et ne peut pas être bissecté depuis le dépôt ; il faudrait les binaires \cle{rockim_f1} et \cle{rockim_f2} du poste local (\cref{tab-simus}). La fiche d'étude de rockim du 5 août 2026 consigne une chute de même ampleur, de $141{,}5$ à $32{,}8$~MPa, après la correction du signe de l'amortisseur de joint, qui anti-amortissait depuis l'écriture du code, et déclare déjà le jeu invalidé ; ce correctif est un candidat que la bissection départagerait.
+
+La courbe de compression simple ne montre pas de rupture fragile. Le pic est atteint à $0{,}376$~ms sans aucun joint rompu ; un plateau à 32 à 33~MPa suit jusqu'à $0{,}54$~ms, puis une décroissance lente, avec 72 joints rompus sur $2\,054$ en fin de calcul. La résistance sature vers $0{,}97$ fois la résistance en traction des joints (34~MPa), avant toute rupture.
+
+Le biais des mors bloqués est confirmé : à la fin de la rampe de confinement, la contrainte axiale vaut $6{,}56$ et $16{,}44$~MPa, à $-1{,}6$ et $-1{,}4~\%$ de $\nu/(1-\nu)\,\sigma_3$ ($\nu = 0{,}25$). Corrigés, les pics valent $82{,}7$ et $155{,}6$~MPa, très loin de juillet et de l'essai. Le confinement atteint au cœur est à $0{,}03~\%$ de la consigne, alors qu'il restait 5 à $9~\%$ dessous en juillet.
 
 \subsection{Août : émulateur gaussien et prédiction triaxiale}
 
@@ -117,7 +145,7 @@ Les déviateurs aux pics à 75 et 100~MPa, 927 et 1\,122~MPa, dépassent la méd
 \label{fig-calib-synthese}
 \end{figure}
 
-L'émulateur a ensuite été infirmé par les calculs réels (coefficient de détermination croisé de $0{,}44$ sur la résistance simple) : son écart-type, 56~MPa, dépasse celui de l'essai, $21{,}4$~MPa, et c'est la taille du plan, 60 points en dimension 6, qui limite la calibration. L'échantillonnage n'a employé qu'une chaîne, sans $\hat R$, et deux paramètres sont collés à leur borne ; un échantillonneur à ensemble invariant affine triple la largeur de certains intervalles. Les essais confinés posaient le confinement avant la charge axiale avec les mors bloqués, ce qui peut biaiser le pic de $\nu/(1-\nu)\,\sigma_3$, soit 8 à 20~MPa ; ce biais, découvert en septembre, n'a pas été vérifié sur ces calculs. Avec l'écart au plafond déviatorique, il laisse l'amplitude de l'échec à 75 et 100~MPa non consolidée.
+L'émulateur a ensuite été infirmé par les calculs réels (coefficient de détermination croisé de $0{,}44$ sur la résistance simple) : son écart-type, 56~MPa, dépasse celui de l'essai, $21{,}4$~MPa, et c'est la taille du plan, 60 points en dimension 6, qui limite la calibration. L'échantillonnage n'a employé qu'une chaîne, sans $\hat R$, et deux paramètres sont collés à leur borne ; un échantillonneur à ensemble invariant affine triple la largeur de certains intervalles. Les essais confinés posaient le confinement avant la charge axiale avec les mors bloqués, ce qui peut biaiser le pic de $\nu/(1-\nu)\,\sigma_3$, soit 8 à 20~MPa ; ce biais, découvert en septembre, n'a pas été vérifié sur ces calculs ; il l'a été le 6 octobre sur le rejeu du jeu de juillet (\cref{sec-calib-rejeu}). Avec l'écart au plafond déviatorique, il laisse l'amplitude de l'échec à 75 et 100~MPa non consolidée.
 
 \subsection{Septembre et calibrations continues}
 

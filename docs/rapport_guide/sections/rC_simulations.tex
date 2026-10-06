@@ -14,9 +14,9 @@ rang & groupe & objet \\
 \midrule
 \multicolumn{3}{@{}l}{calculs courts, en nuage} \\
 1 & Yan et al. 2023 & rejouer la bande pesante, le brésilien, la compression simple et la compression triaxiale avec le binaire courant ; neuf calculs principaux rejoués le 6 octobre, la campagne d'août tient sur ces calculs (\cref{sec-yan-rejeu}) \\
-2 & suite rapide & repasser la suite de non-régression rapide, repère 50 tests sur 51 (\cref{sec-verification}) \\
-3 & calibration Red Bohus & situer le jeu de juillet, invalidé le 31 août, avec le binaire courant (\cref{sec-calib}) \\
-4 & contact du tunnel & origine de l'injection d'énergie par le contact : tunnel avec facteur de pointe $1{,}6$, une clé changée par calcul (décharge \cle{plastic}, naissance du contact, frottement nul) ; lancé dans la nuit du 6 au 7 octobre, résultats non intégrés ; variante \cle{tip16_ratchet} (\cle{origin} avec cliquet) ajoutée la même nuit, en file (\cref{sec-tunnel-rejeu}) \\
+2 & suite rapide & repasser la suite de non-régression rapide ; 50 tests sur 51 confirmés le 6 octobre sans limite de temps, seul échec \cle{t1_toolcontact_penalty} (\cref{sec-verification}) \\
+3 & calibration Red Bohus & situer le jeu de juillet, invalidé le 31 août, avec le binaire courant ; fait le 6 octobre, compression simple $33{,}03$~MPa contre $139{,}1$~MPa, jeu non reproductible (\cref{sec-calib-rejeu}) \\
+4 & contact du tunnel & origine de l'injection d'énergie par le contact : tunnel avec facteur de pointe $1{,}6$, une clé changée par calcul (décharge \cle{plastic}, naissance du contact, frottement nul) ; avec la variante \cle{tip16_ratchet} (\cle{origin} avec cliquet) et la base rejouée, fait dans la nuit du 6 au 7 octobre (\cref{sec-tunnel-diag}) ; calcul \cle{tip16_mu0_gcpen} (frottement nul et naissance en pénalité) lancé, non intégré \\
 5 & AbuAisha et al. 2017 & rejeu grossier de la pression de rupture (12 et 6~mm), fait le 6 octobre ; le maillage de production relève du rang 12 (\cref{sec-abuaisha}) \\
 6 & impact et solution de Hertz & prolonger l'impact court à $T = 1{,}2\times10^{-4}$~s pour la décharge, la durée de contact et la restitution (\cref{sec-impact}) \\
 7 & coupe 2D (Heilman et al.) & confirmer le cliquet par un second calcul à un autre nombre de fils, puis instruire la force trop faible : amortissement nul, fond tenu, insertion intrinsèque ; fichiers de configuration à préparer (\cref{sec-coupe}) \\
@@ -30,6 +30,7 @@ rang & groupe & objet \\
 13 & Yan et al. 2023 & compression à la maille de l'article ($0{,}75$~mm) \\
 14 & campagne V\&V & bancs P2.2 (sphère et solution de Hertz, \cref{sec-verification}), P3.1 (fissure pressurisée de Guo) et P4 (\cref{sec-validation}) \\
 15 & jumeau grossier de Kuru & insertion intrinsèque et adaptative refaites dans la configuration de référence, pour trancher l'effet du schéma d'insertion (\cref{tab-kuru-insertion}) \\
+16 & Red Bohus & bissection de la régression de la compression simple ($139{,}1$ puis $33{,}03$~MPa) entre le 31 juillet et le 19 août, avec les binaires \cle{rockim_f1} et \cle{rockim_f2} du poste ; candidat : correction de signe de l'amortisseur de joint du 5 août (\cref{sec-calib-rejeu}) \\
 \bottomrule
 \end{tabular}
 \end{table}
