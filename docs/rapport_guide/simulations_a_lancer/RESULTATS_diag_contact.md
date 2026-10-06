@@ -35,7 +35,7 @@ avec `ratchet` (« secantes de decharge NON CROISSANTES … Phi >= 0 »).
 | `tip16_ratchet` | `jointSecantRatchet = true` | 2,187e6 (**−16,2 %**) | 1,011e6 | 9,461e5 (−5,2 %) | 2,497e6 | 8,515e6 (−6,7 %) | 1,663e5 | −1,325e6 (7,02 %) | 11 784 / 13 406 | 11,18 m/s |
 
 Contact en potentiel de Munjiza (p = kt = 1e10 N/m), insertion adaptative (pénalité 4 E/h),
-amortissement local 0,7. Signe : le bilan imprime le contact en −travail injecté ; « travail net du
+amortissement local `dampingLocal = 0.15` (deck ligne 99). Signe : le bilan imprime le contact en −travail injecté ; « travail net du
 contact » est ici le travail INJECTÉ (positif = source).
 
 ## Lecture
