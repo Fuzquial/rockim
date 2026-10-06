@@ -60,7 +60,8 @@ for run, lab, c in RUNS:
     course = h["toolX"] * 1e3 - FACE
     axs[0].plot(course, np.abs(h["toolFx"]) / 1e6, color=c, lw=0.6, label=lab)
     axs[1].plot(course, h["nBroken"], color=c, lw=1.0, label=lab)
-    axs[1].plot(course[-1], h["nBroken"][-1], "x", color=c, ms=6)   # arret du garde-fou
+    if h["t"][-1] < 3.99e-4:                                          # arret du garde-fou
+        axs[1].plot(course[-1], h["nBroken"][-1], "x", color=c, ms=6)
 axs[0].axhline(3.08, color="k", ls="--", lw=0.8)
 axs[0].text(-0.08, 3.2, "pic de Heilman, 3,08 MN/m", fontsize=7)
 axs[0].set_xlabel("avance dans la marche (mm)")
@@ -71,7 +72,7 @@ axs[1].set_ylabel("joints rompus")
 axs[1].set_title("(b) joints rompus (× : arrêt du garde-fou)", fontsize=9)
 axs[1].legend(fontsize=7, frameon=False)
 for ax in axs:
-    ax.set_xlim(-0.1, 0.9)
+    ax.set_xlim(-0.1, 2.05)
 fig.tight_layout(pad=0.4)
 fig.savefig(os.path.join(HERE, "fig_coupe_rejeu.pdf"))
 print("ecrit fig_coupe_rejeu.pdf")

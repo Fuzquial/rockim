@@ -1,9 +1,9 @@
 \section{Coupe 2D par un outil PDC : reproduction de Heilman et al. 2024}
 \label{sec-coupe}
 
-OUVERTURE
+La réplique 2D de la coupe de Heilman et al. n'a pas produit de force de coupe exploitable. Avec le contact d'outil par pénalité, l'outil injectait dans la roche 408 fois son propre travail et lançait des nœuds à 127 fois la borne physique $2v$, pendant que le résidu du bilan d'énergie restait à $2\times10^{-10}~\%$. Le banc a ainsi servi à trouver et fermer cette pompe : le contact de Signorini ramène le rapport d'injection à $0{,}90$. Le rejeu du 6 octobre 2026 montre qu'une seconde source d'énergie, logée dans la décharge \cle{origin} des joints, prend alors le relais ; le cliquet des sécantes la supprime. Le calcul devenu propre ne casse presque rien : pic de $0{,}30$~MN/m, dix fois sous la cible de $3{,}08$~MN/m, parce que la longueur cohésive du jeu de Heilman, 65~mm, dépasse l'éprouvette.
 
-Heilman et al.~\cite{heilman2024pdc} simulent avec le code HOSS~\cite{knight2020hoss} la coupe d'un granite de Utah FORGE par un cutter PDC (diamant polycristallin compact) rigide à vitesse imposée. Leur modèle 3D associe un volume élastique et des joints cohésifs insérés entre toutes les faces, en mode~I au-delà de la résistance en traction et en mode~II selon Mohr-Coulomb. Les paramètres sont calés sur un essai de compression et un essai brésilien 2D, pas sur la coupe. Le banc est donc une comparaison de code à code. La seule mesure de coupe sur la même roche est celle de LeBaron et al.~\cite{lebaron2023forge}, un raclage mono-cutter au tour à 25~mm/s ; elle tient lieu de référence expérimentale, au rang d'ordre de grandeur. Les chiffres archivés datent d'août et de septembre 2026 ; deux calculs ont été rejoués le 6 octobre 2026 avec le binaire courant (\cref{sec-coupe-rejeu}).
+Heilman et al.~\cite{heilman2024pdc} simulent avec le code HOSS~\cite{knight2020hoss} la coupe d'un granite de Utah FORGE par un cutter PDC (diamant polycristallin compact) rigide à vitesse imposée. Leur modèle 3D associe un volume élastique et des joints cohésifs insérés entre toutes les faces, en mode~I au-delà de la résistance en traction et en mode~II selon Mohr-Coulomb. Les paramètres sont calés sur un essai de compression et un essai brésilien 2D, pas sur la coupe. Le banc est donc une comparaison de code à code. La seule mesure de coupe sur la même roche est celle de LeBaron et al.~\cite{lebaron2023forge}, un raclage mono-cutter au tour à 25~mm/s ; elle tient lieu de référence expérimentale, au rang d'ordre de grandeur. Les chiffres archivés datent d'août et de septembre 2026 ; quatre calculs courts ont été rejoués le 6 octobre 2026 avec le binaire courant (\cref{sec-coupe-rejeu}).
 
 \subsection{Mise en données}
 
@@ -17,7 +17,7 @@ Les paramètres du matériau sont ceux du tableau~1 de Heilman, sans ajustement 
 
 \begin{table}[htbp]
 \centering
-\caption{Paramètres du banc de coupe : tableau~1 et section~3 de Heilman et al., et réglage de rockim (deck \path{cut2d_heilman_v3.cfg}).}
+\caption{Paramètres du banc de coupe : tableau~1 et section~3 de Heilman et al., et réglage de rockim (deck \cle{cut2d_heilman_v3.cfg}).}
 \label{tab-coupe-param}
 \small
 \begin{tabular}{@{}p{0.27\linewidth}p{0.30\linewidth}p{0.37\linewidth}@{}}
@@ -64,7 +64,7 @@ où $e$ est l'épaisseur du cutter, $L$ la longueur de la face, $h_e$ la taille 
 \Delta v = \frac{F\,\Delta t}{m} = \frac{k_p\,(0{,}6\,h)\,\Delta t}{m} = \frac{7{,}24\times10^{6} \times 1{,}28\times10^{-9}}{2{,}46\times10^{-5}} = 377~\text{m/s},
 \label{eq-coupe-dv}
 \end{equation}
-et 992~m/s sur le nœud le plus léger du maillage ($9{,}34\times10^{-6}$~kg/m). Or un mur rigide de masse infinie animé de $v$ ne communique pas plus de $2v$ à une masse libre en choc élastique : ici $2v = 20$~m/s. Dans un continuum, la réflexion d'une onde sur une surface libre double la vitesse particulaire ; un nœud de peau peut donc approcher $2 \times 2v$, seuil retenu pour l'alarme.
+et 992~m/s sur le nœud de masse minimale ($9{,}34\times10^{-6}$~kg/m). Or un mur rigide de masse infinie animé de $v$ ne communique pas plus de $2v$ à une masse libre en choc élastique : ici $2v = 20$~m/s. Dans un continuum, la réflexion d'une onde sur une surface libre double la vitesse particulaire ; un nœud de peau peut donc approcher $2 \times 2v$, seuil retenu pour l'alarme.
 
 \subsubsection{Contact de Signorini}
 
@@ -87,7 +87,7 @@ Le premier essai, monté avec la loi de Ye à 50~m/s pour une passe de 2~mm, inj
 
 \begin{table}[htbp]
 \centering
-\caption{Runs de coupe d'août 2026 (binaires \path{rockim_tun}, \path{rockim_a1}, \path{rockim_a2}) : injection relue dans les journaux, vitesse nodale maximale et pic de $F_x$ repris du rapport d'étude.}
+\caption{Runs de coupe d'août 2026 (binaires \cle{rockim_tun}, \cle{rockim_a1}, \cle{rockim_a2}) : injection relue dans les journaux, vitesse nodale maximale et pic de $F_x$ repris du rapport d'étude.}
 \label{tab-coupe-chrono}
 \footnotesize
 \setlength{\tabcolsep}{3pt}
@@ -112,7 +112,7 @@ Le run v3 rompt 593 joints sur $18\,108$, détache 368 fragments et lance un nœ
 \begin{figure}[htbp]
 \centering
 \includegraphics[width=\linewidth]{coupe/fig_coupe_archives}
-\caption{Forces de coupe tangentielle (rouge) et normale (bleu) en fonction de la course, runs d'août 2026 : (a) v3 ; (b) contact général coupé ; (c) pénalité de compression EPFL ; (d) EPFL et écrêtage en impulsion. Panneaux recadrés des planches d'archive.}
+\caption{Forces de coupe tangentielle (rouge) et normale (bleu) selon la course, runs d'août 2026, panneaux recadrés des planches d'archive : (a) v3 ; (b) contact général coupé ; (c) pénalité de compression EPFL ; (d) EPFL et écrêtage en impulsion.}
 \label{fig-coupe-archives}
 \end{figure}
 
@@ -147,12 +147,67 @@ Restait la porte d'entrée sur le cas réel, dite étape~6 : le deck v3 avec Sig
 \subsection{Rejeu du 6 octobre 2026}
 \label{sec-coupe-rejeu}
 
-REJEU
+Quatre calculs courts ont été rejoués avec le binaire courant (f0209ef) : le deck v3 historique, le même avec le contact de Signorini et le plancher plat (\cle{cutterFloor = true}), ce dernier avec en plus le cliquet des sécantes de décharge (\cle{jointSecantRatchet = on}), et le banc T1b de référence. Le maillage \cle{cut_step.msh} a été régénéré par l'outil du dépôt avec une entaille de $1{,}5 \times 2{,}216$~mm ; il redonne exactement les $6\,227$ nœuds, $12\,167$ triangles et le pas de temps du journal d'août. Les calculs ont tourné sur deux fils, en 7 à 16~min chacun (\cref{tab-coupe-rejeu,fig-coupe-rejeu,fig-coupe-synthese}).
+
+\begin{table}[htbp]
+\centering
+\caption{Rejeu du 6 octobre 2026 (binaire f0209ef, deux fils). Travaux et énergies en J/m, travaux nets comptés vers l'énergie cinétique ; sept. : valeur de septembre ; n.m. : non mesuré.}
+\label{tab-coupe-rejeu}
+\footnotesize
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{@{}p{0.24\linewidth}cccc@{}}
+\toprule
+ & v3, pénalité & Signorini, plancher & idem, cliquet & T1b \\
+\midrule
+fin du calcul & garde-fou, 262~µs & garde-fou, 270~µs & complet, 400~µs & complet \\
+outil$\to$solide / corps rigide & $2\,737 / 51{,}6$ & $23{,}3 / 26{,}0$ & $21{,}6 / 24{,}0$ & $4{,}46 / 5{,}65$ \\
+$R_\text{inj}$ (au trapèze) & $53{,}1$ ($64{,}8$) & $0{,}899$ ($1{,}09$) & $0{,}899$ ($1{,}12$) & $0{,}789$ ($0{,}898$), sept. $0{,}769$ \\
+$v_\text{max}/2v$ & $25\,515$ & 140 & $9{,}37$ & $2{,}41$, sept. $2{,}41$ \\
+travail net des joints & $+9{,}78\times10^{6}$ & $+115$ & $-8{,}2$ & $-2{,}43$, sept. $-2{,}15$ \\
+travail net du contact entre fragments & $-2\,800$ & $-2{,}07$ & $+2{,}09$ & $-0{,}87$ \\
+énergie cinétique finale & $8{,}59\times10^{6}$ & $56{,}9$ & $2{,}04$ & $2{,}00$ \\
+résidu du bilan & $4\times10^{-13}~\%$ & $4\times10^{-13}~\%$ & $1\times10^{-11}~\%$ & $3\times10^{-3}~\%$ \\
+joints rompus / fragments & $164 / 88$ & $61 / 23$ & $37 / 10$ & $339 / 109$, sept. $338 / 102$ \\
+pic de $|F_x|$ (MN/m) & $7{,}34$ & $0{,}297$ & $0{,}297$ & n.m. \\
+moyenne de $|F_x|$ en contact (MN/m) & $0{,}095$ & $0{,}045$ & $0{,}024$ & n.m. \\
+temps de calcul & 8~min & 8~min & 16~min & 7~min \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=\linewidth]{coupe/fig_coupe_rejeu}
+\caption{Rejeu du deck v3 : (a) force de coupe $|F_x|$ et pic de Heilman ; (b) joints rompus, en fonction de l'avance de l'arête au-delà de la face d'entaille. Les croix marquent l'arrêt par le garde-fou d'énergie.}
+\label{fig-coupe-rejeu}
+\end{figure}
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=\linewidth]{coupe/fig_coupe_synthese}
+\caption{Synthèse des runs de coupe d'août et du rejeu (r) : (a) rapport d'injection ; (b) vitesse nodale maximale rapportée à $2v$, seuils 1 et 2 ; (c) pic de $|F_x|$ contre la cible de Heilman.}
+\label{fig-coupe-synthese}
+\end{figure}
+
+Le rejeu se lit en quatre points.
+\begin{enumerate}
+\item Le deck v3 en pénalité diverge encore, mais autrement qu'en août. Après deux coups d'outil de $4{,}5$ et $7{,}3$~MN/m, à $0{,}62$~mm d'avance dans la marche, le poste des joints crée $9{,}8$~MJ/m en deux relevés, et un nœud atteint $5\times10^{5}$~m/s. Le canal de l'outil pompe toujours ($R_\text{inj} = 53$), moins qu'en août (408). Le cas est chaotique en multifil et le binaire a changé depuis août ; la cause de l'écart n'est pas isolée.
+\item Avec Signorini et le plancher plat, le canal de l'outil est propre : $R_\text{inj} = 0{,}899$, $1{,}09$ au trapèze. Mais à $0{,}70$~mm d'avance, le poste des joints passe en un relevé de $-9{,}4$ à $+148$~J/m, 18 joints rompent et 10 fragments se détachent. Les joints ont créé 115~J/m, $4{,}4$ fois le travail de l'outil, et un nœud est à 140 fois $2v$. L'étape~6 ne passe donc pas.
+\item Le cliquet des sécantes, seul ajout, supprime cette création : le poste des joints devient dissipatif ($-8{,}2$~J/m), le calcul va au bout et $v_\text{max}$ retombe à $9{,}4 \times 2v$. La source est la décharge \cle{origin} sans cliquet, que le solveur signale lui-même comme non conservative (\cref{sec-decharge}) : un cycle à glissement fixé entre deux sécantes y crée $\frac12(k_2 - k_1)s^2$. Ce résultat repose sur un calcul et une graine ; il désigne l'organe, il ne le démontre pas.
+\item Une fois propre, la coupe ne casse presque rien : 37 joints rompus et 10 fragments sur 2~mm d'avance, pic de $|F_x|$ de $0{,}297$~MN/m, moyenne de $0{,}024$~MN/m pendant le contact, qui n'occupe que la moitié du temps. C'est un dixième du pic de Heilman et un dixième de la moyenne de LeBaron rapportée à la même corde. Avec $\ell_{cz} = 65$~mm, la zone cohésive déborde l'éprouvette, et l'ouverture à rupture, d'environ 30~µm, n'est pas atteinte sous un copeau de 1~mm.
+\end{enumerate}
+Le banc T1b rejoué redonne ses références de septembre à quelques pour cent près (\cref{tab-coupe-rejeu}) : le noyau de Signorini et les compteurs n'ont pas bougé entre les binaires. Deux défauts restent ouverts sur le calcul propre : la vitesse nodale maximale, à $9{,}4 \times 2v$ sans création nette, et un travail net légèrement positif du contact entre fragments, $+2{,}09$~J/m, soit $8{,}7~\%$ du travail de l'outil.
 
 \subsection{Lien avec les autres bancs}
 
-LIENS
+Le tunnel (\cref{sec-tunnel-rejeu}) et la coupe mettent en cause le même organe. Dans le tunnel, le travail net du contact croît avec la fragmentation et dépasse l'énergie cohésive dans les variantes très fragmentées, toutes calculées avec la décharge \cle{origin} sans cliquet ; un calcul de diagnostic y teste la décharge plastique. Dans la coupe, la décharge \cle{origin} sans cliquet crée de l'énergie dès qu'un copeau se forme, et le cliquet la supprime. Le cliquet est donc à poser sur tout calcul qui emploie \cle{origin}, tunnel compris, avant d'interpréter un faciès.
+
+La coupe illustre aussi la limite du bilan d'énergie (\cref{sec-B4}). Le bilan est une identité comptable : une création logée dans un poste compté y est comptée, et le résidu reste nul. Il a lu $2\times10^{-10}~\%$ sur v3 en août, et $4\times10^{-13}~\%$ sur le rejeu qui crée $9{,}8$~MJ/m. Trois grandeurs ont vu ce que le résidu ne voyait pas, chacune sur un canal : le rapport d'injection (\cref{eq-coupe-pompe}) pour l'outil, la vitesse nodale rapportée à $2v$ pour tous les canaux, et la borne physique du garde-fou, $E_c \leq E_c(0) + W_\text{sources}$, pour les joints. Cette borne, ajoutée en septembre, a arrêté les deux rejeux qui créaient de l'énergie. Elle ne voit pas une pompe d'outil, parce que le travail de l'outil y figure comme source : le v3 d'août l'aurait passée. Les trois grandeurs sont donc complémentaires, et aucune ne remplace les deux autres.
 
 \subsection{Synthèse}
 
-SYNTHESE
+Le banc de coupe 2D n'est pas une reproduction de Heilman et al. : aucune force de coupe exploitable n'a été obtenue, et la comparaison reste de code à code, sans validation contre l'essai de LeBaron. Le banc a servi à autre chose : il a révélé une pompe d'énergie dans le contact d'outil par pénalité, qui injectait 408 fois le travail de l'outil sous un bilan conforme, et il a conduit au contact de Signorini, qui la ferme ($R_\text{inj} = 0{,}90$ sur le deck réel). Le rejeu du 6 octobre a montré une seconde source, la décharge \cle{origin} sans cliquet, et le cliquet l'a supprimée sur le seul calcul tenté. Le calcul ainsi nettoyé est stable sur toute la course mais ne casse presque rien : pic de $0{,}30$~MN/m contre $3{,}08$ (\cref{eq-coupe-cible}), parce que la zone cohésive de 65~mm déborde l'éprouvette.
+
+Les réserves sont nombreuses. La cible est un pic 3D lu sur une figure et ramené en 2D par une corde de contact ; HOSS ne publie ni loi de contact, ni amortissement, ni bilan d'énergie. Le coin 2D n'a ni chanfrein ni épaisseur hors plan, et le bloc n'est pas tenu. Les rejeux tiennent en une graine et deux fils sur un cas chaotique, et gardent l'amortissement de Cundall de $0{,}05$ du deck, que la règle des bancs de force exclut. La vitesse nodale du calcul propre reste au-dessus du seuil.
+
+La suite est écrite dans le plan d'étapes : confirmer le cliquet sur deux graines, annuler l'amortissement, tenir le fond (\cle{shearSupport = fixedBottom}), puis requalifier le jeu de paramètres, ce que $\ell_{cz} = 65$~mm impose, avant toute comparaison de force. La coupe 3D (\cle{toolShape = pdc} en fdem3d) suit la même voie de Signorini et n'a pas encore été comparée à Heilman.

@@ -1,0 +1,2 @@
+debut 2026-10-06T22:39:17+00:00 : nice -n 10 timeout 1800 ../../build/rockim t1b_ref.cfg out_t1b_ref
+fin 2026-10-06T22:45:55+00:00 rc=0 duree=398 s
