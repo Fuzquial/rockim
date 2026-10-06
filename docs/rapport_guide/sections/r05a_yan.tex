@@ -41,7 +41,7 @@ Le modèle de Yan est celui de la FDEM classique, avec un critère d'insertion �
 \begin{equation}
 \sigma \geq f_t \quad \text{ou} \quad |\tau| \geq f_s, \qquad f_s = \begin{cases} c - \sigma\tan\varphi & \sigma < 0, \\ c & \sigma \geq 0, \end{cases}
 \end{equation}
-et une loi cohésive post-pic seulement, $\sigma = z(D)\,f_t$ avec $D = \sqrt{(o/o_t)^2 + (|s|/s_t)^2}$ (éq.~\ref{eq-z} et~\ref{eq-D}). rockim reprend ce critère et assure la continuité de la contrainte à l'insertion par un décalage initial de l'ouverture $\delta_{n0} = \min(\sigma, f_t)/p_j$ et du glissement $-\tau_0/p_j$. Yan ajoute un terme visqueux $2\eta\mathbf D$ à la contrainte des éléments ; la campagne d'août le remplaçait par un amortissement de Cundall, la viscosité de volume n'ayant été ajoutée qu'ensuite.
+et une loi cohésive post-pic seulement, $\sigma = z(D)\,f_t$ avec $D = \sqrt{(o/o_t)^2 + (|s|/s_t)^2}$ (éq.~\ref{eq-z} et~\ref{eq-D}). rockim reprend ce critère et assure la continuité de la contrainte à l'insertion par un décalage initial de l'ouverture $\delta_{n0} = \min(\sigma, f_t)/p_j$ et du glissement $-\tau_0/p_j$. Yan ajoute un terme visqueux $2\mu_v\mathbf D$ à la contrainte des éléments ; la campagne d'août le remplaçait par un amortissement de Cundall, la viscosité de volume n'ayant été ajoutée qu'ensuite.
 
 \subsection{Bande élastique pesante}
 \label{sec-yan-bande}

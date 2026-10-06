@@ -1,7 +1,7 @@
 \section{Vérification}
 \label{sec-verification}
 
-Ce chapitre rassemble les tests dont la référence est une solution exacte ou une propriété mathématique. Chaque test est présenté comme dans les documentations de référence : objet, mise en données, équations, résultats, réserves. Les tests signalés comme rejoués ont été relancés le 6 octobre 2026 sous Linux, à un fil, avec le binaire compilé depuis le commit \cle{f0209ef} ; les autres reprennent les résultats consignés dans le dépôt, avec leur date.
+Ce chapitre rassemble les tests dont la référence est une solution exacte ou une propriété mathématique. Chaque test est présenté comme dans les documentations de référence : objet, mise en données, équations, résultats, réserves. Les tests signalés comme rejoués ont été relancés le 6 octobre 2026 sous Linux, à un fil, avec le binaire compilé depuis le commit \cle{f0209ef} ; les autres sont exécutés en campagne ou archivés au sens du \cref{sec-introduction}, avec leur date.
 
 \subsection{Joint isolé}
 \label{sec-jointbench}
@@ -346,15 +346,16 @@ Un contrôle à charge nulle laisse un modèle au repos et exige zéro joint rom
 \toprule
 test & publié par & référence & rockim \\
 \midrule
-joint isolé, cycle fermé & aucun & potentiel & fait, rejoué \\
-conservation du contact & aucun chiffré & conservation & fait, rejoué \\
-contact d'outil, onde de Saint-Venant & aucun & $2v$, $2L/c$ & fait, rejoué \\
+joint isolé, cycle fermé & aucun & potentiel & rejoué \\
+conservation du contact & aucun chiffré & conservation & rejoué \\
+contact d'outil, onde de Saint-Venant & aucun & $2v$, $2L/c$ & rejoué \\
 barre ou bande sous charge statique & MultiFracS & $\sigma L/E$ & fait \\
-onde unidimensionnelle & aucun en 3D & d'Alembert & fait \\
-bloc glissant & Y2D (Xiang), Y-HFDEM (Fukuda, \cref{sec-P21}) & $v_0^2/(2\mu g)$ & fait \\
+onde unidimensionnelle & aucun en 3D & d'Alembert & exécuté en campagne \\
+bloc glissant & Y2D (Xiang), Y-HFDEM (Fukuda, \cref{sec-P21}) & $v_0^2/(2\mu g)$ & exécuté en campagne \\
 champ homogène, Kirsch & HOSS & exacte & Kirsch 2D fait (tunnel, \cref{sec-tunnel-controles}), banc 3D préparé \\
 Hertz & Y-HFDEM, sans chiffre & Hertz & impact court rejoué (\cref{sec-impact}), banc P2.2 préparé \\
 énergie de rupture comparée à $G_f$ & aucun & $G_f$ & joint isolé seulement \\
+reproductibilité entre nombres de fils & aucun & sortie à un fil & pics à environ $2~\%$ \\
 \bottomrule
 \end{tabularx}
 \end{table}

@@ -1,0 +1,2 @@
+debut 2026-10-06T22:30:17+00:00 : nice -n 10 timeout 1800 ../../build/rockim cut2d_v3_rejeu.cfg out_v3_rejeu
+fin 2026-10-06T22:38:16+00:00 rc=0 duree=479 s
