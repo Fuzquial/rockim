@@ -1,9 +1,9 @@
 \section{Zone endommagée autour d'un tunnel : reproduction de Wang et al. 2024}
 \label{sec-tunnel}
 
-rockim reproduit les grandeurs globales du tunnel de Wang et al. : rayon d'EDZ, prédominance du cisaillement, fissures conjuguées, effet du rapport $\lambda$. Le rayon dépend toutefois de l'estimateur, $-4$ à $-21~\%$ de l'article au maximum et $-19$ à $-31~\%$ au quantile $95~\%$ entre 4 et 7~MPa, et d'un amortissement choisi par rockim, qui change le nombre de joints rompus d'un facteur 4. La texture de la rupture n'est pas reproduite : rockim granule un anneau là où MultiFracS découpe des blocs. Les variantes qui découpent des blocs sont aussi celles où le contact injecte une énergie qui dépasse l'énergie cohésive, ce qui les rend suspectes.
+rockim reproduit les grandeurs globales du tunnel de Wang et al. : rayon de la zone endommagée (EDZ), prédominance du cisaillement, fissures conjuguées, effet du rapport $\lambda$. Le rayon dépend toutefois de l'estimateur : l'écart à l'article va de $-4$ à $-21~\%$ au maximum et de $-19$ à $-31~\%$ au quantile $95~\%$ entre 4 et 7~MPa. Il dépend aussi d'un amortissement choisi par rockim, qui change le nombre de joints rompus d'un facteur 4. La texture de la rupture n'est pas reproduite : rockim granule un anneau là où MultiFracS découpe des blocs. Tous les calculs, référence de production comprise, emploient la décharge \cle{origin} sans cliquet, non conservative ; en production, le travail du contact valait déjà 416~kJ/m pour 545~kJ/m de fissuration, et le résidu du bilan d'énergie dépasse le critère de $1~\%$. Le rayon d'EDZ comparé à Wang est donc lui aussi conditionnel. Les variantes qui découpent des blocs, où le contact injecte plus que l'énergie cohésive, sont les plus suspectes.
 
-Wang et al.~\cite{wang2024tunnel} simulent avec MultiFracS l'excavation du tunnel routier de Hutou Beishan, creusé dans une roche tendre sous forte contrainte in situ. Leur cas de base, sous $\sigma_0 = 5$~MPa hydrostatique, donne une zone endommagée (EDZ) quasi circulaire, des fissures conjuguées en X où domine le cisaillement, et trois modes de ruine : compression-cisaillement aux reins, extrusion en voûte et soulèvement du radier. Il n'existe pas de solution analytique pour ce faciès ; seuls l'état élastique initial (Kirsch) et un rayon plastique de Mohr-Coulomb en ont une. Le banc est donc une reproduction de code à code, comme celui de Yan (\cref{sec-yan}).
+Wang et al.~\cite{wang2024tunnel} simulent avec MultiFracS l'excavation du tunnel routier de Hutou Beishan, creusé dans une roche tendre sous forte contrainte in situ. Leur cas de base, sous $\sigma_0 = 5$~MPa hydrostatique, donne une EDZ quasi circulaire, des fissures conjuguées en X où domine le cisaillement, et trois modes de ruine : compression-cisaillement aux reins, extrusion en voûte et soulèvement du radier. Il n'existe pas de solution analytique pour ce faciès ; seuls l'état élastique initial (Kirsch) et un rayon plastique de Mohr-Coulomb en ont une. Le banc est donc une reproduction de code à code, comme celui de Yan (\cref{sec-yan}).
 
 Le banc vérifie deux capacités ajoutées pour l'occasion : la précontrainte in situ (\cle{insituSh}, \cle{insituSv}) et l'excavation par relâchement de la traction de paroi (\cle{excavRelease}). Il sollicite la chaîne cohésive complète, loi de Yan et insertion adaptative, sur un problème quasi statique de grande taille, et mesure la sensibilité du faciès au schéma d'insertion, au désordre des résistances, au facteur de pointe (abaissement du seuil d'insertion devant une fissure, \cref{eq-tun-insertion}) et à l'amortissement. Les chiffres archivés datent d'août 2026 ; une partie a été rejouée le 6 octobre 2026 avec le binaire courant, sur un maillage réduit (\cref{sec-tunnel-rejeu}).
 
@@ -25,11 +25,11 @@ r(t) = \begin{cases} 1 & t \leq t_s, \\ \tfrac12\left[1 + \cos\dfrac{\pi(t - t_s
 \end{gather}
 avec $t_s = 0{,}02$~s (\cle{excavStart}) et $t_r = 0{,}08$~s (\cle{excavRamp}). Les deux procédures ont le même état initial et le même état final ; celle de rockim ne fait varier aucun module, et la traction face par face reste exacte quand $\lambda \neq 1$.
 
-L'insertion adaptative est ici nécessaire. Tant que le critère n'est pas atteint, les arêtes sont des nœuds partagés et la précontrainte des éléments décrit exactement l'état initial. En insertion intrinsèque, chaque joint devrait d'abord se fermer de $\sigma_0/p_j$ sous la précontrainte ; le calcul intrinsèque de contrôle décale donc le relâchement à $t_s = 0{,}15$~s pour laisser cette fermeture s'amortir.
+L'insertion adaptative est ici nécessaire. Tant que le critère n'est pas atteint, les sommets des arêtes restent des nœuds partagés et la précontrainte des éléments décrit exactement l'état initial. En insertion intrinsèque, chaque joint devrait d'abord se fermer de $\sigma_0/p_j$ sous la précontrainte ; le calcul intrinsèque de contrôle décale donc le relâchement à $t_s = 0{,}15$~s pour laisser cette fermeture s'amortir.
 
 \subsubsection{Paramètres}
 
-Les paramètres du matériau et des joints sont ceux du tableau~1 de Wang et al., sans ajustement (\cref{tab-tun-param}). L'amortissement, que l'article ne chiffre pas, est un choix de rockim, et il pilote le nombre de joints rompus d'un facteur 4 (\cref{sec-tunnel-duree}). La longueur cohésive en mode~I vaut $\ell_{cz} = E\,G_I/f_t^2 = 0{,}556$~m et celle du mode~II $E\,G_{II}/c^2 = 1{,}56$~m. La règle d'objectivité $h < \ell_{cz}/2 = 0{,}278$~m est satisfaite par $h = 0{,}22$~m. L'enveloppe de Mohr-Coulomb des joints donne une résistance en compression $2c\cos\varphi/(1 - \sin\varphi) = 3{,}0$~MPa ; une éprouvette numérique à la taille de maille de la zone fine donne $3{,}94$~MPa. Le rapport $R_c/\sigma_0 = 5$ que cite l'article est un indice de classification de la roche intacte, pas la résistance de leur modèle.
+Les paramètres du matériau et des joints sont ceux du tableau~1 de Wang et al., sans ajustement (\cref{tab-tun-param}). L'amortissement, que l'article ne chiffre pas, est un choix de rockim, et il pilote le nombre de joints rompus d'un facteur 4 (\cref{sec-tunnel-duree}). La longueur cohésive en mode~I vaut $\ell_{cz} = E\,G_I/f_t^2 = 0{,}556$~m et celle du mode~II $E\,G_{II}/c^2 = 1{,}56$~m. La règle d'objectivité $h < \ell_{cz}/2 = 0{,}278$~m est satisfaite par $h = 0{,}22$~m. L'enveloppe de Mohr-Coulomb des joints donne une résistance en compression $2c\cos\varphi/(1 - \sin\varphi) = 3{,}0$~MPa ; une éprouvette numérique à la taille de maille de la zone fine donne $3{,}94$~MPa. Le rapport $R_c/\sigma_0 = 5$ que cite l'article est un indice de classification de la roche intacte, pas la résistance du modèle des auteurs.
 
 \begin{table}[htbp]
 \centering
@@ -45,7 +45,7 @@ $f_t$, $c$, $\varphi$ (joints) & $0{,}6$~MPa, $0{,}8$~MPa, $34^\circ$ & identiqu
 $G_I$, $G_{II}$ & 20 et 100~J/m$^2$ & identiques (\cle{gfShearFactor = 5}) \\
 pénalité des joints & 1\,000~GPa, soit $100\,E$ & $4\,E/h$ à l'insertion \\
 adoucissement & courbe de Munjiza & \cle{jointSoftening = yan} \\
-décharge en cisaillement & non précisée & \cle{jointShearUnload = origin} \\
+décharge en cisaillement & non précisée & \cle{jointShearUnload = origin}, sans cliquet (\cle{jointSecantRatchet} désactivé) \\
 éléments & élastiques & élastiques (plafond déviatorique neutralisé) \\
 contact & potentiel & potentiel de Munjiza \\
 pas de temps & $\approx 8\times10^{-7}$~s, $300\,000$ pas & $\approx 3{,}05\times10^{-6}$~s (\cle{dtFactor = 0.2}) \\
@@ -100,14 +100,14 @@ R_p = a\left[\frac{2}{K_p + 1}\,\frac{\sigma_0 + c\cot\varphi}{c\cot\varphi}\rig
 \end{equation}
 Avec $c = 0{,}8$~MPa, $\varphi = 34^\circ$ ($K_p = 3{,}54$) et le rayon équivalent $a = 33{,}21/(2\pi) = 5{,}29$~m, $R_p$ vaut $6{,}3$, $6{,}9$, $7{,}3$, $7{,}8$ et $8{,}2$~m pour $\sigma_0 = 3$ à 7~MPa. Les EDZ de rockim et de Wang sont deux à trois fois plus grandes : le massif FDEM est fragile, il perd toute cohésion après rupture, et l'EDZ compte tout joint rompu, pas la seule frontière plastique. $R_p$ n'est donc qu'une borne basse d'ordre de grandeur.
 
-\subsection{Contrôles fermés}
+\subsection{Contrôles analytiques}
 \label{sec-tunnel-controles}
 
 Avant tout calcul de rupture, les deux capacités ajoutées ont été vérifiées sur des cas à réponse connue (\cref{tab-tun-controles}). Le calcul à charge nulle, où l'excavation n'est jamais déclenchée, doit rester immobile : il a d'abord donné $5\,185$~J/m d'énergie cinétique parasite, venue des quatre nœuds de coin laissés libres en $x$ sous $\sigma_{xx}$, chacun portant environ $7{,}5$~MN. Les mors encastrés ont corrigé ce défaut ; l'énergie cinétique résiduelle est de $2\times10^{-17}$~J/m. Le contrôle de Kirsch montre que ce choix de bord ne modifie pas l'état en paroi. En régime quasi statique, le résidu du bilan d'énergie n'est pas lisible : la correction d'intégration aux nœuds à vitesse imposée vaut $13{,}6$~J/m par pas. Le jugement porte donc sur l'énergie cinétique et sur une jauge de contrainte.
 
 \begin{table}[htbp]
 \centering
-\caption{Contrôles fermés de la précontrainte et de l'excavation (août 2026).}
+\caption{Contrôles analytiques de la précontrainte et de l'excavation (août 2026).}
 \label{tab-tun-controles}
 \small
 \begin{tabular}{@{}p{0.30\linewidth}p{0.27\linewidth}p{0.36\linewidth}@{}}
@@ -126,11 +126,11 @@ orientation des fissures conjuguées & $\pm(45^\circ - \varphi/2) = \pm 28^\circ
 
 \subsection{Cas de référence}
 
-Le tableau~\ref{tab-tun-ref} compare le cas de référence à l'article. Le rayon d'EDZ maximal est de $17{,}19$~m contre 19~m lus chez Wang ($-9{,}5~\%$), et le rayon au quantile $95~\%$ de $14{,}49$~m ($-24~\%$) ; le maximum est l'estimateur le plus favorable à l'accord, et les valeurs de Wang, lues sur des figures, n'ont pas d'incertitude annoncée ; l'EDZ est quasi circulaire, de demi-axes $12{,}88$ et $12{,}52$~m au quantile $95~\%$ (\cref{fig-tun-wang11,fig-tun-fissures}). Le déplacement maximal, $0{,}389$~m, se trouve sur un bloc détaché ; la convergence moyenne de paroi n'est que de $0{,}069$~m. Les sources de Wang divergent : on lit $0{,}347$~m sur la figure~14a, le texte annonce $0{,}373$~m ; l'écart est de $+12~\%$ ou de $+4~\%$ selon la valeur retenue. Le cisaillement domine, comme chez Wang, mais la traction passe devant le mode mixte, inversant l'ordre publié ; ce classement dépend du seuil arbitraire $0{,}5$. Les fissures conjuguées se forment à $\pm 25^\circ$, près de l'angle de Mohr-Coulomb.
+Le tableau~\ref{tab-tun-ref} compare le cas de référence à l'article. Le rayon d'EDZ maximal est de $17{,}19$~m contre 19~m lus chez Wang ($-9{,}5~\%$), et le rayon au quantile $95~\%$ de $14{,}49$~m ($-24~\%$). Le maximum est l'estimateur le plus favorable à l'accord, et les valeurs de Wang, lues sur des figures, n'ont pas d'incertitude annoncée. L'EDZ est quasi circulaire, de demi-axes $12{,}88$ et $12{,}52$~m au quantile $95~\%$ (\cref{fig-tun-wang11,fig-tun-fissures}). Le déplacement maximal, $0{,}389$~m, se trouve sur un bloc détaché ; la convergence moyenne de paroi n'est que de $0{,}069$~m. Les sources de Wang divergent : on lit $0{,}347$~m sur la figure~14a, le texte annonce $0{,}373$~m ; l'écart est de $+12~\%$ ou de $+4~\%$ selon la valeur retenue. Le cisaillement domine, comme chez Wang, mais la traction passe devant le mode mixte, inversant l'ordre publié ; ce classement dépend du seuil arbitraire $0{,}5$. Les fissures conjuguées se forment à $\pm 25^\circ$, près de l'angle de Mohr-Coulomb.
 
 \begin{table}[htbp]
 \centering
-\caption{Cas de référence ($\sigma_0 = 5$~MPa, $\lambda = 1$, $t = 0{,}25$~s) : rockim contre Wang et al. 2024. Les valeurs de Wang sont lues sur les figures.}
+\caption{Cas de référence ($\sigma_0 = 5$~MPa, $\lambda = 1$, $t = 0{,}25$~s) : rockim comparé à Wang et al. 2024. Les valeurs de Wang sont lues sur les figures.}
 \label{tab-tun-ref}
 \small
 \begin{tabular}{@{}p{0.2\linewidth}p{0.32\linewidth}p{0.42\linewidth}@{}}
@@ -163,7 +163,7 @@ calcul & GPU, $300\,000$ pas & 44~min sur processeur multifil \\
 \label{fig-tun-fissures}
 \end{figure}
 
-\subsection{Balayages de la contrainte in situ et du rapport $\lambda$}
+\subsection{Balayages de la contrainte in situ et du rapport \texorpdfstring{$\lambda$}{lambda}}
 
 Le balayage de $\sigma_0$ suit Wang et al. de 3 à 5~MPa, puis sature (\cref{tab-tun-s0,fig-tun-sweep}). Les écarts sur le rayon maximal vont de $+15~\%$ à 3~MPa à $-21~\%$ à 6~MPa ; au quantile $95~\%$, de $-1~\%$ à $-31~\%$. Le nombre de joints rompus, la longueur fissurée et la convergence de paroi croissent de façon monotone. Le cisaillement prend le dessus et croît le plus vite (de $1\,358$ à $14\,250$ joints) tandis que la traction sature, comme sur la figure~13a de l'article. La saturation de l'EDZ au-delà de 5~MPa, absente chez Wang, n'est pas expliquée et reste un point ouvert.
 
@@ -225,15 +225,15 @@ $1{,}5$ & $9\,069$ & $7{,}63$ & $14{,}65$ & $17{,}19$ & $0{,}169$ \\
 
 Les grandeurs globales sont reproduites ; la texture ne l'est pas. rockim produit un anneau granulé : trois blocs sur quatre sont formés d'un seul triangle, de côté moyen $1{,}3\,h$. MultiFracS découpe des blocs.
 
-\subsubsection{Insertion intrinsèque contre adaptative}
+\subsubsection{Insertion intrinsèque et insertion adaptative}
 
 Sur le même maillage, avec les mêmes lois et au même temps depuis le relâchement, l'insertion intrinsèque rompt $72~\%$ de joints en plus et découpe deux fois plus de blocs (\cref{tab-tun-intr,fig-tun-intr}). La différence porte surtout sur les gros blocs libres : 37~m$^2$ au plus en adaptatif, $318$, $120$, $114$, $104$ et 68~m$^2$ en intrinsèque. La part de propagation, c'est-à-dire la part des ruptures qui prolongent un joint déjà rompu, passe de $43{,}7~\%$ à $58{,}9~\%$. Le schéma d'insertion ne fixe donc pas la finesse de la granulation, que l'intrinsèque produit aussi près de la paroi : il fixe la capacité à isoler de gros blocs. Les $159\,269$ interfaces préexistantes de l'intrinsèque offrent des chemins continus qui ferment des contours. La pénalité finie de l'intrinsèque coûte aussi : pas de temps divisé par $1{,}9$ et module effectif réduit à $0{,}95\,E$.
 
-L'écart ne vient pas de l'orientation des joints insérés, dont la cohérence directionnelle reste au niveau du hasard dans les deux schémas. Il vient de l'absence de chemins préexistants. La souplesse artificielle des interfaces intrinsèques régularise en partie la localisation en blocs, effet connu des modèles cohésifs intrinsèques~\cite{falk2001cohesive}.
+L'écart ne vient pas de l'orientation des joints insérés, dont la cohérence directionnelle reste au niveau du hasard dans les deux schémas. Il vient de l'absence de chemins préexistants. La souplesse artificielle des interfaces intrinsèques régularise en partie la localisation en blocs, effet connu des modèles cohésifs intrinsèques~\cite{falk2001cohesive}. Cette lecture est conditionnelle à l'injection d'énergie par le contact, maximale en intrinsèque (\cref{sec-tunnel-rejeu}).
 
 \begin{table}[htbp]
 \centering
-\caption{Insertion adaptative contre intrinsèque, même maillage et même temps depuis le relâchement.}
+\caption{Insertion adaptative et insertion intrinsèque, même maillage et même temps depuis le relâchement.}
 \label{tab-tun-intr}
 \small
 \begin{tabular}{@{}lll@{}}
@@ -264,7 +264,7 @@ Deux formes de désordre ont été essayées pour supprimer la granulation. La p
 
 \subsubsection{Facteur de pointe}
 
-Le facteur de pointe agit directement sur la propagation (\cref{tab-tun-tip,fig-tun-blocs,fig-tun-tip16}). Avec $k_\text{tip} = 1{,}6$, la part de propagation monte à $57{,}4~\%$, à $1{,}5$~point de l'intrinsèque, et des blocs polygonaux de 100 à 500~m$^2$ apparaissent. Le prix est un nombre de joints rompus multiplié par $1{,}85$ à temps égal et une EDZ plus étendue ($R^{95} = 24{,}4$~m à $0{,}7$~s). Au-delà, $k_\text{tip} = 2{,}0$ n'augmente plus la propagation mais accroît encore la fragmentation. Les gros blocs grossissent, mais la granulation de l'anneau augmente aussi : la part de blocs d'un seul élément passe de $75{,}7$ à $88{,}3~\%$. Avec $k_\text{tip} = 1{,}6$, les trois modes de ruine décrits par Wang et al. apparaissent en rendu éléments (\cref{fig-tun-tip16}). Le facteur de pointe rapproche la texture de celle de MultiFracS sans la reproduire ; il n'est pas activé dans les autres chapitres.
+Le facteur de pointe agit directement sur la propagation (\cref{tab-tun-tip,fig-tun-blocs,fig-tun-tip16}). Avec $k_\text{tip} = 1{,}6$, la part de propagation monte à $57{,}4~\%$, à $1{,}5$~point de l'intrinsèque, et des blocs polygonaux de 100 à 500~m$^2$ apparaissent. Le prix est un nombre de joints rompus multiplié par $1{,}85$ à temps égal et une EDZ plus étendue ($R^{95} = 24{,}4$~m à $0{,}7$~s). Au-delà, $k_\text{tip} = 2{,}0$ n'augmente plus la propagation mais accroît encore la fragmentation. Les gros blocs s'agrandissent, mais la granulation de l'anneau augmente aussi : la part de blocs d'un seul élément passe de $75{,}7$ à $88{,}3~\%$. Avec $k_\text{tip} = 1{,}6$, les trois modes de ruine décrits par Wang et al. apparaissent en rendu éléments (\cref{fig-tun-tip16}). Le facteur de pointe rapproche la texture de celle de MultiFracS sans la reproduire ; il n'est pas activé dans les autres chapitres.
 
 \begin{table}[htbp]
 \centering
@@ -303,7 +303,7 @@ paroi, moyenne à $0{,}7$~s (m) & $0{,}124$ & $0{,}171$ & $0{,}209$ & $0{,}265$ 
 \subsection{Amortissement et durée}
 \label{sec-tunnel-duree}
 
-Sur un maillage d'essai et à $t = 0{,}10$~s, passer l'amortissement local de $0{,}15$ à $0{,}7$ divise par 4 le nombre de joints rompus ($3\,816$ contre 952), la longueur fissurée ($942$ contre 233~m) et le déplacement maximal ($0{,}069$ contre $0{,}017$~m), et réduit $R^{95}$ de $21~\%$. Sur une compression uniaxiale, le même changement relève le pic de $48~\%$. L'article ne chiffre pas son amortissement visqueux, de sorte que ce choix n'est pas arbitré par la référence. Le rejeu d'octobre confirme le facteur sur un maillage couvrant toute l'EDZ (\cref{sec-tunnel-rejeu}).
+Sur un maillage de mise au point et à $t = 0{,}10$~s, passer l'amortissement local de $0{,}15$ à $0{,}7$ divise par 4 le nombre de joints rompus ($3\,816$ contre 952), la longueur fissurée ($942$ contre 233~m) et le déplacement maximal ($0{,}069$ contre $0{,}017$~m), et réduit $R^{95}$ de $21~\%$. Sur une compression uniaxiale, le même changement relève le pic de $48~\%$. L'article ne chiffre pas son amortissement visqueux, de sorte que ce choix n'est pas arbitré par la référence. Le rejeu d'octobre confirme le facteur sur un maillage couvrant toute l'EDZ (\cref{sec-tunnel-rejeu}).
 
 À $t = 0{,}25$~s, la paroi converge encore linéairement. Tous les calculs longs gagnent encore $15$ à $31~\%$ de convergence sur leur dernier cinquième, au-dessus du seuil de stabilisation de $5~\%$ (\cref{fig-tun-stab}). Le calcul de référence prolongé, arrêté à $0{,}687$~s, en gagne $17~\%$. Toute comparaison de motif se fait donc à temps égal depuis le relâchement, et les grandeurs publiées dépendent de la durée d'intégration, que l'article ne précise qu'en nombre de pas.
 
@@ -314,23 +314,21 @@ Sur un maillage d'essai et à $t = 0{,}10$~s, passer l'amortissement local de $0
 \label{fig-tun-stab}
 \end{figure}
 
-Les trois sensibilités, à $\sigma_0$, à $k_\text{tip}$ et à l'amortissement, sont rassemblées en quatre panneaux sur la figure~\ref{fig-tun-synthese}.
-
 \begin{figure}[htbp]
 \centering
 \includegraphics[width=\linewidth]{tunnel/fig_tunnel_synthese}
-\caption{Synthèse du banc du tunnel : (a) rayon d'EDZ en fonction de $\sigma_0$, rockim et Wang et al. ; (b) part de propagation en fonction de $k_\text{tip}$ ; (c) joints rompus et blocs à $0{,}41$~s en fonction de $k_\text{tip}$ ; (d) rapports entre amortissements $0{,}7$ et $0{,}15$, maillage d'essai.}
+\caption{Synthèse du banc du tunnel : (a) rayon d'EDZ en fonction de $\sigma_0$, rockim et Wang et al. ; (b) part de propagation en fonction de $k_\text{tip}$ ; (c) joints rompus et blocs à $0{,}41$~s en fonction de $k_\text{tip}$ ; (d) rapports entre amortissements $0{,}7$ et $0{,}15$, maillage de mise au point.}
 \label{fig-tun-synthese}
 \end{figure}
 
 \subsection{Rejeu du 6 octobre 2026 avec le binaire courant}
 \label{sec-tunnel-rejeu}
 
-Les chiffres précédents viennent de binaires d'août 2026, antérieurs aux correctifs des lois de décharge et de contact. Quatre variantes ont été rejouées avec le binaire courant (f0209ef). Le maillage de production ne tenait pas dans le temps disponible ; un maillage réduit a été généré par l'outil du dépôt : $22\,730$ triangles, $h = 0{,}40$~m dans la zone fine. Ce maillage viole la règle d'objectivité ($h > \ell_{cz}/2 = 0{,}278$~m), et le générateur le signale. Le rejeu n'est donc qu'un contrôle de tendance. Les fichiers de calcul sont ceux de l'étude, avec seulement le maillage changé et la durée fixée à $0{,}23$~s après le début du relâchement pour toutes les variantes. L'amortissement fort est la référence avec un amortissement local de $0{,}7$.
+Les chiffres précédents viennent de binaires d'août 2026, antérieurs aux correctifs des lois de décharge et de contact. Quatre variantes ont été rejouées avec le binaire courant (\cle{f0209ef}). Le maillage de production ne tenait pas dans le temps disponible ; un maillage réduit a été généré par l'outil du dépôt : $22\,730$ triangles, $h = 0{,}40$~m dans la zone fine. Ce maillage viole la règle d'objectivité ($h > \ell_{cz}/2 = 0{,}278$~m), et le générateur le signale. Le rejeu n'est donc qu'un contrôle de tendance. Les fichiers de calcul sont ceux de l'étude, avec seulement le maillage changé et la durée fixée à $0{,}23$~s après le début du relâchement pour toutes les variantes. L'amortissement fort est la référence avec un amortissement local de $0{,}7$.
 
 \begin{table}[htbp]
 \centering
-\caption{Rejeu du 6 octobre 2026 (binaire f0209ef, maillage réduit de $22\,730$ triangles), $0{,}23$~s après le début du relâchement. Blocs comptés dans un rayon de 25~m ; n.m. : non mesuré.}
+\caption{Rejeu du 6 octobre 2026 (binaire \cle{f0209ef}, maillage réduit de $22\,730$ triangles), $0{,}23$~s après le début du relâchement. Blocs comptés dans un rayon de 25~m ; n.m. : non mesuré.}
 \label{tab-tun-rejeu}
 \footnotesize
 \setlength{\tabcolsep}{4pt}
@@ -358,14 +356,14 @@ Le rejeu confirme les tendances de la production (\cref{tab-tun-rejeu,fig-tun-re
 \begin{enumerate}
 \item La référence réduite redonne l'ordre de grandeur archivé : $R^\text{max} = 17{,}41$~m contre $17{,}19$~m en production et 19~m chez Wang, $R^{95} = 15{,}02$~m contre $14{,}49$~m, EDZ quasi circulaire. Le nombre de joints rompus n'est pas comparable, le maillage étant $4{,}7$ fois plus grossier.
 \item Le facteur de pointe $1{,}6$ multiplie les joints rompus par $1{,}85$, étend l'EDZ ($R^{95}$ $+31~\%$) et fait passer la propagation de $29{,}2$ à $42{,}3~\%$ : même sens qu'en production, à des niveaux plus bas.
-\item L'amortissement $0{,}7$ divise par $3{,}8$ les joints rompus, la longueur fissurée et la convergence de paroi : le facteur 4 du maillage d'essai est confirmé.
+\item L'amortissement $0{,}7$ divise par $3{,}8$ les joints rompus, la longueur fissurée et la convergence de paroi : le facteur 4 du maillage de mise au point est confirmé.
 \item L'intrinsèque rompt $2{,}1$ fois plus de joints que l'adaptative, à $94~\%$ en cisaillement, découpe des blocs de 40 à 120~m$^2$, et des fissures atteignent le bord du domaine ($R^\text{max} = 54$~m pour un demi-côté de 50~m). Le contraste de motif de la production est retrouvé, avec $52{,}5~\%$ de propagation contre $58{,}9~\%$.
 \end{enumerate}
 
 \begin{figure}[htbp]
 \centering
 \includegraphics[width=\linewidth]{tunnel/fig_tunnel_rejeu}
-\caption{Rejeu sur maillage réduit (binaire f0209ef), quatre variantes à $0{,}23$~s après le début du relâchement. En haut, norme du déplacement sur la configuration déformée et joints rompus (rouge : cisaillement ; blanc : traction). En bas, rein droit en rendu éléments, déplacements amplifiés 5 fois.}
+\caption{Rejeu sur maillage réduit (binaire \cle{f0209ef}), quatre variantes à $0{,}23$~s après le début du relâchement. En haut, norme du déplacement sur la configuration déformée et joints rompus (rouge : cisaillement ; blanc : traction). En bas, rein droit en rendu éléments, déplacements amplifiés 5 fois.}
 \label{fig-tun-rejeu}
 \end{figure}
 
@@ -376,7 +374,7 @@ Le rejeu confirme les tendances de la production (\cref{tab-tun-rejeu,fig-tun-re
 \label{fig-tun-rejeu-histoire}
 \end{figure}
 
-Le rejeu montre aussi que le travail net injecté par le contact croît avec la fragmentation. Il reste petit devant l'énergie cohésive en adaptatif ($2{,}7\times10^4$ contre $4{,}3\times10^5$~J/m), mais il la dépasse avec le facteur de pointe ($1{,}94$ contre $0{,}96$~MJ/m) et surtout en intrinsèque ($18{,}9$ contre $2{,}66$~MJ/m, soit 7 fois). Ce point était ouvert depuis août, où la production donnait 416~kJ/m de contact contre 545~kJ/m de fissuration ; il est ici aggravé. Tant qu'il n'est pas instruit, les EDZ des variantes très fragmentées, facteur de pointe et intrinsèque, sont suspectes d'être gonflées par une injection numérique. Trois calculs de diagnostic sont lancés sur la variante $k_\text{tip} = 1{,}6$ du maillage réduit (décharge plastique au lieu de \cle{origin}, contact né en pénalité par \cle{gcBirth = penalty}, frottement de contact nul) ; leurs résultats ne sont pas disponibles à la date de ce rapport. Le binaire courant signale de plus que la décharge \cle{origin}, employée dans tous les calculs du banc, n'est pas conservative (\cref{sec-decharge}). Le résidu du bilan d'énergie, entre $1{,}1$ et $41~\%$ selon la variante, n'est pas interprétable en régime quasi statique (\cref{sec-tunnel-controles}).
+Le rejeu montre aussi que le travail net injecté par le contact croît avec la fragmentation. Sur le maillage réduit, il reste petit devant l'énergie cohésive en adaptatif ($2{,}7\times10^4$ contre $4{,}3\times10^5$~J/m). Il la dépasse avec le facteur de pointe ($1{,}94$ contre $0{,}96$~MJ/m) et surtout en intrinsèque ($18{,}9$ contre $2{,}66$~MJ/m, soit 7 fois). Ce point était ouvert depuis août : en production, le contact valait déjà les trois quarts de l'énergie de fissuration (416 contre 545~kJ/m). Tant qu'il n'est pas instruit, toutes les EDZ du banc sont conditionnelles, et celles des variantes très fragmentées, facteur de pointe et intrinsèque, sont suspectes d'être gonflées par une injection numérique. Trois calculs de diagnostic ont été lancés dans une session de calcul séparée, la nuit du 6 au 7 octobre 2026, sur la variante $k_\text{tip} = 1{,}6$ du maillage réduit (décharge plastique au lieu de \cle{origin}, contact né en pénalité par \cle{gcBirth = penalty}, frottement de contact nul) ; leurs résultats ne sont pas intégrés à ce rapport. Le binaire courant signale de plus que la décharge \cle{origin}, employée sans cliquet dans tous les calculs du banc, référence de production comprise, n'est pas conservative (\cref{sec-decharge}). Le résidu du bilan d'énergie, entre $1{,}1$ et $41~\%$ selon la variante, dépasse le seuil de conformité de $1~\%$ (\cref{sec-B4}). Il signale un poste non compté, probablement le travail des réactions aux nœuds à vitesse imposée (\cref{sec-tunnel-controles}). Tant qu'il n'est pas identifié, les travaux de contact du \cref{tab-tun-rejeu}, lus dans ce même bilan non fermé, ne sont pas vérifiés.
 
 \subsection{Volet exploratoire : tunnel dans un massif lité (méthode de Lisjak)}
 
@@ -390,6 +388,6 @@ Le seul calcul de production (maillage lité de $117\,132$ triangles, 4~h~11) do
 
 \subsection{Synthèse}
 
-Avec les paramètres cohésifs publiés et un amortissement local de $0{,}15$ choisi par rockim, qui pilote le nombre de joints rompus d'un facteur 4, rockim reproduit la physique globale du banc (\cref{fig-tun-synthese}) : un rayon d'EDZ maximal à $-4$ à $-21~\%$ de l'article entre 4 et 7~MPa et à $+15~\%$ à 3~MPa, soit $-19$ à $-31~\%$ et $-1~\%$ au quantile $95~\%$, la prédominance du cisaillement, des fissures conjuguées près de l'angle de Mohr-Coulomb, le basculement de l'ellipse avec $\lambda$ et le rapport $2{,}7$ sur le nombre de fissures. Le maximum est l'estimateur le plus favorable à l'accord. La précontrainte et l'excavation sont vérifiées par rapport aux solutions analytiques à $2{,}1~\%$ près. Le désaccord porte sur la texture : l'insertion adaptative granule un anneau là où MultiFracS découpe des blocs. Le schéma d'insertion en est la cause la plus probable, et le désordre des résistances n'y change rien. Cette conclusion reste conditionnelle : les variantes qui découpent des blocs, intrinsèque et facteur de pointe, sont aussi celles où le contact injecte le plus d'énergie, jusqu'à 7 fois l'énergie cohésive en intrinsèque ($18{,}9$ contre $2{,}66$~MJ/m), avec une décharge \cle{origin} non conservative.
+Avec les paramètres cohésifs publiés, rockim reproduit la physique globale du banc (\cref{fig-tun-synthese}), avec un amortissement local de $0{,}15$ choisi par rockim qui pilote le nombre de joints rompus d'un facteur 4. Il retrouve un rayon d'EDZ maximal à $-4$ à $-21~\%$ de l'article entre 4 et 7~MPa et à $+15~\%$ à 3~MPa ; au quantile $95~\%$, les écarts valent $-19$ à $-31~\%$ et $-1~\%$. Il retrouve aussi la prédominance du cisaillement, des fissures conjuguées près de l'angle de Mohr-Coulomb, le basculement de l'ellipse avec $\lambda$ et le rapport $2{,}7$ sur le nombre de fissures. Le maximum est l'estimateur le plus favorable à l'accord. La précontrainte et l'excavation sont vérifiées par rapport aux solutions analytiques à $2{,}1~\%$ près. Le désaccord porte sur la texture : l'insertion adaptative granule un anneau là où MultiFracS découpe des blocs. Le schéma d'insertion en est la cause la plus probable, et le désordre des résistances n'y change rien. Cette conclusion reste conditionnelle : les variantes qui découpent des blocs, intrinsèque et facteur de pointe, sont aussi celles où le contact injecte le plus d'énergie, jusqu'à 7 fois l'énergie cohésive en intrinsèque ($18{,}9$ contre $2{,}66$~MJ/m), avec une décharge \cle{origin} non conservative. Le rayon d'EDZ lui-même provient de calculs à décharge non conservative, à bilan d'énergie non fermé et à travail de contact comparable à l'énergie de fissuration : l'accord avec Wang est conditionnel au même diagnostic.
 
-Les grandeurs scalaires publiées dépendent de choix que l'article ne documente pas : amortissement (facteur 4), durée d'intégration (la paroi converge encore), schéma d'insertion (facteur $1{,}7$ sur les joints rompus). La comparaison est donc qualitative et semi-quantitative ; ce n'est pas une validation. Trois points restent ouverts : l'injection d'énergie par le contact dans les calculs très fragmentés, la saturation de l'EDZ au-delà de 5~MPa, et le rejeu en taille réelle avec le binaire courant et une décharge conservative.
+Les grandeurs scalaires publiées dépendent de choix que l'article ne documente pas : amortissement (facteur 4), durée d'intégration (la paroi converge encore), schéma d'insertion (facteur $1{,}7$ sur les joints rompus). La comparaison est donc qualitative et semi-quantitative ; ce n'est pas une validation. Restent ouverts l'injection d'énergie par le contact, aggravée dans les calculs très fragmentés, la saturation de l'EDZ au-delà de 5~MPa, et le rejeu en taille réelle avec le binaire courant et une décharge conservative.

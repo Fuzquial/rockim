@@ -1,19 +1,21 @@
 \section{Fracturation hydraulique en paroi de forage : reproduction d'AbuAisha et al. 2017}
 \label{sec-abuaisha}
 
-Le couplage hydraulique de rockim est vérifié sur des solutions élastiques (Lamé, Sneddon, Parker) et sur des contrôles internes (volume, front mouillé), à environ $6~\%$ près. La pression de rupture d'un forage sous injection est en revanche surestimée de $+6{,}7$ à $+25{,}0~\%$ par rapport à la formule de Hubbert et Willis, contre $+4~\%$ pour Y-Geo ; l'écart se partage entre l'échantillonnage de la contrainte de paroi, qui dépend de la maille, et le critère de mouillage. Le faciès est conforme à l'article. Les calculs de production datent d'août 2026 et n'ont pas été rejoués avec le binaire courant.
+Le couplage hydraulique de rockim est vérifié sur des solutions élastiques (Lamé, Sneddon, Parker) et sur des contrôles internes (volume, front mouillé), à environ $6~\%$ près. La pression de rupture d'un forage sous injection est en revanche surestimée de $+6{,}7$ à $+25{,}0~\%$ par rapport à la formule de Hubbert et Willis, contre $+4$ ou $-2{,}6~\%$ pour Y-Geo selon la lecture de l'article. L'écart se partage entre l'échantillonnage de la contrainte de paroi, qui dépend de la maille, et le critère de mouillage. Le faciès est conforme à l'article. Le résidu du bilan d'énergie de ces calculs dépasse le critère de $1~\%$ du rapport.
 
 AbuAisha, Eaton, Priest et Wong~\cite{abuaisha2017hm} couplent la FDEM de Y-Geo à un fluide dans les fissures et l'appliquent à la fracturation hydraulique d'un forage nu. Un forage de $0{,}1$~m de diamètre, dans un granite à 1\,800~m de profondeur, est pressurisé par une pompe à débit constant ; on lit la pression de puits $p(t)$, le faciès de fissuration et le champ de vitesse. Leur annexe vérifie le couplage sur une fissure sous pression uniforme, par rapport à la solution de Parker~\cite{parker1981}.
 
-Ce banc est le seul de rockim qui sollicite en un seul calcul l'état in situ, l'excavation, l'insertion cohésive, le contact et le couplage hydraulique. Le module hydraulique de rockim a été écrit d'après l'article ; il en reprend l'hypothèse d'un fluide non visqueux. Le chapitre compare quatre choses : l'ouverture d'une fissure de Parker, seule solution analytique de l'article ; la pression de rupture, contre la formule de Hubbert et Willis et contre Y-Geo ; le faciès ; et une série de contrôles internes du couplage (Lamé, Sneddon, volume, front mouillé). Les calculs de production datent du 20 au 22 août 2026 ; les contrôles élémentaires ont été rejoués le 6 octobre 2026 avec le binaire courant (f0209ef).
+Ce banc est le seul de rockim qui sollicite en un seul calcul l'état in situ, l'excavation, l'insertion cohésive, le contact et le couplage hydraulique. Le module hydraulique de rockim a été écrit d'après l'article ; il en reprend l'hypothèse d'un fluide non visqueux. Les comparaisons portent sur l'ouverture d'une fissure de Parker, seule solution analytique de l'article. Elles portent aussi sur la pression de rupture, comparée à la formule de Hubbert et Willis et à Y-Geo, sur le faciès, et sur une série de contrôles internes du couplage (Lamé, Sneddon, volume, front mouillé). Les calculs de production datent du 20 au 22 août 2026 et n'ont pas été rejoués. Le 6 octobre 2026, le binaire courant (\cle{f0209ef}) a rejoué le contrôle de signe, la fissure de Parker sur maillage grossier et les pressions de rupture sur des maillages de 12 et 6~mm.
 
 \subsection{Mise en données}
 
 \subsubsection{Géométrie, maillage et chargement}
 
-Le bloc fait $8 \times 8$~m en déformation plane, épaisseur unité, avec un forage de rayon $a = 50$~mm en son centre. L'article raffine le maillage à 3~mm dans une zone de $0{,}8 \times 0{,}8$~m, jusqu'à $0{,}3$~m au loin. Le maillage de rockim compte $189\,487$ triangles et $284\,124$ arêtes internes, $2{,}81$~mm en paroi, 105 éléments sur le pourtour comme dans l'article, et une zone fine de $0{,}46$~m de rayon. Les orientations d'arêtes y sont presque isotropes (indice $1{,}19$ pour $1{,}00$ parfait) ; l'algorithme frontal de Gmsh, à indice 55, déplaçait le seuil de rupture de $12~\%$ et a été écarté. La longueur cohésive $\ell_{cz} = E\,G_I/f_t^2 = 14$~mm dépasse le double de la taille de maille. Le pas de temps vaut $2{,}12\times10^{-8}$~s ; un calcul compte $151\,000$ à $189\,000$ pas et dure de $1{,}6$ à $3{,}3$~h.
+Le bloc fait $8 \times 8$~m en déformation plane, épaisseur unité, avec un forage de rayon $a = 50$~mm en son centre. L'article raffine le maillage à 3~mm dans une zone de $0{,}8 \times 0{,}8$~m, jusqu'à $0{,}3$~m au loin. Le maillage de rockim compte $189\,487$ triangles et $284\,124$ arêtes internes, $2{,}81$~mm en paroi, 105 éléments sur le pourtour comme dans l'article, et une zone fine de $0{,}46$~m de rayon. Les orientations d'arêtes y sont presque isotropes (indice $1{,}19$ pour $1{,}00$ parfait) ; l'algorithme frontal de Gmsh, d'indice 55, déplaçait le seuil de rupture de $12~\%$ et a été écarté. La longueur cohésive $\ell_{cz} = E\,G_I/f_t^2 = 14$~mm dépasse le double de la taille de maille.
 
-L'article travaille en contraintes effectives, la pression de formation de 28~MPa étant retranchée : $\sigma'_H = 6{,}8$~MPa et $\sigma'_h = 4{,}6$~MPa dans l'état anisotrope, $4{,}6$~MPa dans les deux directions dans l'état isotrope. rockim place $\sigma'_H$ sur l'axe $x$ (\cle{insituSh}) et $\sigma'_h$ sur l'axe $y$ (\cle{insituSv}). Le forage est excavé par relâchement de la traction de paroi en $0{,}2$~ms (\cref{sec-tunnel}) ; l'article réduit le module du noyau, avec les mêmes états initial et final. La pompe injecte $Q = 20$~L/s par mètre (\cle{hydroRate = 0.02}) sur les 105 faces du forage. Les bords sont bloqués, comme sur la figure~6 de l'article.
+Le pas de temps vaut $2{,}12\times10^{-8}$~s ; un calcul compte $151\,000$ à $189\,000$ pas et dure de $1{,}6$ à $3{,}3$~h.
+
+L'article travaille en contraintes effectives, la pression de formation de 28~MPa étant retranchée : $\sigma'_H = 6{,}8$~MPa et $\sigma'_h = 4{,}6$~MPa dans l'état anisotrope, $4{,}6$~MPa dans les deux directions dans l'état isotrope. Dans rockim, $\sigma'_H$ est placée sur l'axe $x$ (\cle{insituSh}) et $\sigma'_h$ sur l'axe $y$ (\cle{insituSv}). Le forage est excavé par relâchement de la traction de paroi en $0{,}2$~ms (\cref{sec-tunnel}) ; l'article réduit le module du noyau, avec les mêmes états initial et final. La pompe injecte $Q = 20$~L/s par mètre (\cle{hydroRate = 0.02}) sur les 105 faces du forage. Les bords sont bloqués, comme sur la figure~6 de l'article.
 
 Trois variantes changent chacune une clé. L'essai~1 abaisse l'état in situ à $3{,}5$~MPa isotrope, pour que la pression de rupture analytique soit de 12~MPa comme en anisotrope. L'essai~2 change le critère de mouillage (\cref{sec-ab-couplage}). L'essai~3 suit le protocole de l'article, pompe arrêtée pendant les $0{,}4$ premières millisecondes.
 
@@ -42,7 +44,7 @@ critère de mouillage & joint rompu & $D \geq D_\text{wet}$, $D_\text{wet} = 1$ 
 \end{tabular}
 \end{table}
 
-Le module du fluide n'est pas donné par l'article. La valeur de l'eau, $2{,}2$~GPa, fixe l'horloge de la montée en pression ; elle ne devrait pas changer le pic, mais l'essai qui le montrerait ($K_f = 4{,}8$~GPa) est prêt mais n'a pas été lancé.
+Le module du fluide n'est pas donné par l'article (\cref{tab-ab-param}). La valeur de l'eau, $2{,}2$~GPa, fixe l'horloge de la montée en pression ; elle ne devrait pas changer le pic. L'essai qui le vérifierait ($K_f = 4{,}8$~GPa) est prêt et n'a pas été lancé.
 
 \subsection{Équations du couplage}
 \label{sec-ab-couplage}
@@ -88,7 +90,7 @@ Elle est minimale sur l'axe de $\sigma'_H$, où elle vaut $3\sigma'_h - \sigma'_
 p_{HF} = 3\sigma'_h - \sigma'_H + f_t ,
 \label{eq-ab-hubbert}
 \end{equation}
-formule de Hubbert et Willis, éq.~10 de l'article : $12{,}0$~MPa en anisotrope, $14{,}2$~MPa en isotrope à $4{,}6$~MPa, $12{,}0$~MPa en isotrope à $3{,}5$~MPa. Y-Geo donne environ $12{,}5$~MPa selon le texte de l'article, $11{,}69$~MPa lus sur sa figure~11b.
+formule de Hubbert et Willis, éq.~10 de l'article : $12{,}0$~MPa en anisotrope, $14{,}2$~MPa en isotrope à $4{,}6$~MPa, $12{,}0$~MPa en isotrope à $3{,}5$~MPa. Y-Geo donne environ $12{,}5$~MPa selon le texte de l'article, $11{,}69$~MPa lus sur la figure~11b de l'article.
 
 Trois solutions élastiques servent de contrôles. Le déplacement de paroi d'un trou pressurisé dans un milieu infini, sans état in situ (Lamé), vaut
 \begin{equation}
@@ -101,11 +103,11 @@ w(x) = \frac{4\,\Delta p\,(1 - \nu^2)}{E}\sqrt{L^2 - x^2} .
 \end{equation}
 La solution de Parker, éq.~A.1 de l'article, s'écrit $w(x) = 2\sigma'(1 - \nu^2)\sqrt{\ell^2 - x^2}/E$ : c'est la moitié de~\eqref{eq-ab-sneddon}, donc le déplacement d'une seule lèvre. Pour la fissure de l'annexe ($\ell = 0{,}75$~m, $E = 45$~GPa, imprimé \enquote{45~MPa} dans l'article, $\nu = 0{,}2$, $\sigma' = 2$~MPa), elle donne $w(0) = 0{,}064$~mm, soit une ouverture totale de $0{,}128$~mm. L'article appelle $w$ \enquote{ouverture} et lit $0{,}065$~mm sur sa figure : l'ambiguïté de facteur 2 vient de l'article. rockim compare l'ouverture totale à $2w$.
 
-Enfin, l'excavation referme la cavité d'un déplacement moyen $\overline{\sigma'}\,a/(2G)$, où $\overline{\sigma'} = (\sigma'_H + \sigma'_h)/2$, et la pression la rouvre de $p\,a/(2G)$. La cavité doit donc repasser par son volume initial quand $p = \overline{\sigma'}$, soit $5{,}70$, $4{,}60$ et $3{,}50$~MPa selon l'état in situ. Ce croisement est un contrôle de signe : avec un signe inversé, le volume ne remonterait jamais.
+L'excavation referme la cavité d'un déplacement moyen $\overline{\sigma'}\,a/(2G)$, où $\overline{\sigma'} = (\sigma'_H + \sigma'_h)/2$, et la pression la rouvre de $p\,a/(2G)$. La cavité doit donc repasser par son volume initial quand $p = \overline{\sigma'}$, soit $5{,}70$, $4{,}60$ et $3{,}50$~MPa selon l'état in situ. Ce croisement est un contrôle de signe : avec un signe inversé, le volume ne remonterait jamais.
 
 \subsection{Contrôles du couplage}
 
-Le tableau~\ref{tab-ab-controles} rassemble les contrôles (\cref{fig-ab-rejeu,fig-ab-controles,fig-ab-ouverture}). Le déplacement de paroi sous 12~MPa est obtenu par deux chemins, confinement imposé et module hydraulique, qui donnent le même résultat au bit près, à $-2{,}0~\%$ de Lamé ; rejoué le 6 octobre, il est inchangé. La cavité recroise son volume initial à $0{,}2$ à $0{,}5~\%$ de la contrainte moyenne dans les sept calculs. Le front mouillé compte exactement deux lèvres par joint rompu. L'ouverture des fissures mûres est à $4~\%$ sous Sneddon.
+Le tableau~\ref{tab-ab-controles} rassemble les contrôles (\cref{fig-ab-rejeu,fig-ab-controles,fig-ab-ouverture}). Le déplacement de paroi sous 12~MPa est obtenu par deux chemins, confinement imposé et module hydraulique, qui donnent le même résultat au bit près, à $-2{,}0~\%$ de Lamé ; rejoué le 6 octobre, il est inchangé. Dans les sept calculs, la cavité recroise son volume initial à une pression qui s'écarte de $0{,}2$ à $0{,}5~\%$ de la contrainte moyenne. Le front mouillé compte exactement deux lèvres par joint rompu. L'ouverture des fissures mûres est inférieure de $4~\%$ à la solution de Sneddon.
 
 \begin{table}[htbp]
 \centering
@@ -121,8 +123,8 @@ croisement de volume, anisotrope & $5{,}70$~MPa & $5{,}712$ à $5{,}725$~MPa \\
 croisement de volume, isotrope $4{,}6$~MPa & $4{,}60$~MPa & $4{,}608$~MPa \\
 croisement de volume, isotrope $3{,}5$~MPa & $3{,}50$~MPa & $3{,}509$ à $3{,}516$~MPa \\
 front mouillé à $D_\text{wet} = 1$ & $105 + 2\,n_\text{rompus}$ & exact à chaque instant, 5 calculs \\
-ouverture d'une fissure mûre, $t = 4$~ms & Sneddon, $92{,}7$~µm & $89{,}0$~µm, $-4~\%$ \\
-volume des fissures, $\sum w L$ contre Green & $5{,}65\times10^{-5}$~m$^2$/m & $5{,}34\times10^{-5}$~m$^2$/m, $-6~\%$ \\
+ouverture d'une fissure mûre, $t = 4$~ms & Sneddon, $92{,}8$~µm & $89{,}0$~µm, $-4~\%$ \\
+volume des fissures, $\sum w L$ comparé à Green & $5{,}65\times10^{-5}$~m$^2$/m & $5{,}34\times10^{-5}$~m$^2$/m, $-5{,}5~\%$ \\
 fissure de Parker, maillage grossier (rejoué le 6 octobre) & $2w(0) = 0{,}128$~mm & $0{,}1208$~mm au centre, $-5{,}65~\%$ ; volume $-6{,}1~\%$ \\
 \bottomrule
 \end{tabular}
@@ -131,7 +133,7 @@ fissure de Parker, maillage grossier (rejoué le 6 octobre) & $2w(0) = 0{,}128$~
 \begin{figure}[htbp]
 \centering
 \includegraphics[width=\linewidth]{abuaisha/fig_abuaisha_rejeu}
-\caption{Vérifications rejouées le 6 octobre 2026 (binaire f0209ef). (a) Paroi d'un forage sous 12~MPa : les deux chemins de chargement se superposent, à $-2{,}0~\%$ de Lamé. (b) Fissure de Parker sous 2~MPa nets : ouverture à $-5{,}65~\%$ de $2w$ au centre.}
+\caption{Vérifications rejouées le 6 octobre 2026 (binaire \cle{f0209ef}). (a) Paroi d'un forage sous 12~MPa : les deux chemins de chargement se superposent, à $-2{,}0~\%$ de Lamé. (b) Fissure de Parker sous 2~MPa nets : ouverture à $-5{,}65~\%$ de $2w$ au centre.}
 \label{fig-ab-rejeu}
 \end{figure}
 
@@ -145,7 +147,7 @@ fissure de Parker, maillage grossier (rejoué le 6 octobre) & $2w(0) = 0{,}128$~
 \begin{figure}[htbp]
 \centering
 \includegraphics[width=\linewidth]{abuaisha/fig_ouverture_aniso}
-\caption{Ouverture des fissures à $t = 4$~ms, état anisotrope, reconstruite lèvre à lèvre, et ellipse de Sneddon ($\Delta p = 1{,}92$~MPa, $L = 456$~mm) : $89{,}0$~µm mesurés pour $92{,}7$~µm prédits. Les points à ouverture nulle sont des joints refermés.}
+\caption{Ouverture des fissures à $t = 4$~ms, état anisotrope, reconstruite lèvre à lèvre, et ellipse de Sneddon ($\Delta p = 1{,}92$~MPa, $L = 456$~mm) : $89{,}0$~µm mesurés pour $92{,}8$~µm prédits. Les points à ouverture nulle sont des joints refermés.}
 \label{fig-ab-ouverture}
 \end{figure}
 
@@ -157,7 +159,7 @@ Sept calculs couplés ont tourné après la correction du signe (\cref{tab-ab-pi
 
 \begin{table}[htbp]
 \centering
-\caption{Pression de rupture des sept calculs couplés (MPa), contre la formule de Hubbert et Willis. L'insertion est la première création de joint ; n.m. : non mesuré.}
+\caption{Pression de rupture des sept calculs couplés (MPa), comparée à la formule de Hubbert et Willis. L'insertion est la première création de joint ; n.m. : non mesuré.}
 \label{tab-ab-pic}
 \small
 \setlength{\tabcolsep}{4pt}
@@ -186,9 +188,11 @@ Y-Geo & $6{,}8 / 4{,}6$ & article & n.m. & $12{,}00$ & n.m. & $12{,}5$ ; $11{,}6
 
 Le dépassement se décompose en deux parts. La part statique, de la cible à la première insertion, vaut $0{,}60$ à $0{,}63$~MPa en isotrope à $3{,}5$~MPa et $1{,}31$ à $1{,}32$~MPa en anisotrope. Elle mesure l'écart entre la contrainte de paroi supposée par la formule et celle du champ éléments finis, échantillonnée à la profondeur des arêtes. La part d'incubation, de la première insertion au pic, vaut de $0{,}17$ à $1{,}68$~MPa : pendant que la pression de pompe monte, la zone cohésive cède sans être mouillée, puisque le fluide n'entre que dans les joints entièrement rompus.
 
-Les essais départagent ces deux parts. L'essai~2 mouille tout joint inséré ($D_\text{wet} = 0$) : l'insertion ne bouge pas ($12{,}613$ puis $12{,}635$~MPa), mais l'incubation isotrope tombe de $85~\%$ ($1{,}137$ puis $0{,}171$~MPa) et le pic n'est plus qu'à $+6{,}7~\%$ de la cible. Le critère de mouillage pèse donc $0{,}94$~MPa sur ce cas, la moitié du dépassement. En anisotrope, l'essai~2 laisse $0{,}677$~MPa de part statique ($51~\%$) et $0{,}662$~MPa d'incubation ($49~\%$) ; l'écart entre les deux états de contrainte ne diminue pas. Le pronostic écrit avant ce calcul, $13{,}34$~MPa, est manqué de $6{,}0~\%$, alors que ceux de l'essai~1 et de l'essai~2 isotrope tombaient à $0{,}3$ et $1{,}6~\%$. L'essai~3 reproduit le pic à $0{,}04~\%$ près dans les deux états ; seul le temps du pic se décale, de $+0{,}50$ et $+0{,}56$~ms. Le protocole de pompage ne pèse donc pas sur la pression de rupture. Les calculs à $D_\text{wet} = 1$ comptent tous 7 joints rompus au pic.
+Les essais départagent ces deux parts. L'essai~2 mouille tout joint inséré ($D_\text{wet} = 0$) : l'insertion ne bouge pas ($12{,}613$ puis $12{,}635$~MPa), mais l'incubation isotrope tombe de $85~\%$ ($1{,}137$ puis $0{,}171$~MPa) et le pic n'est plus qu'à $+6{,}7~\%$ de la cible. Le critère de mouillage pèse donc $0{,}94$~MPa dans ce cas, la moitié du dépassement. En anisotrope, l'essai~2 ne réduit pas l'écart entre les deux états de contrainte ($1{,}34$~MPa) : celui-ci se partage en $0{,}677$~MPa de part statique ($51~\%$) et $0{,}662$~MPa d'incubation ($49~\%$). Le pronostic écrit avant ce calcul, $13{,}34$~MPa, est manqué de $6{,}0~\%$, alors que ceux de l'essai~1 et de l'essai~2 isotrope tombaient à $0{,}3$ et $1{,}6~\%$.
 
-Les deux calculs de référence ont été rejoués le 6 octobre 2026 avec le binaire courant (f0209ef, 1 fil), sur des maillages plus grossiers que celui de production (\cref{fig-ab-pression}a). En anisotrope, le pic vaut $18{,}24$~MPa à 12~mm de maille et $15{,}24$~MPa à 6~mm, contre $14{,}99$~MPa à 3~mm en août ; en isotrope à $4{,}6$~MPa, $16{,}49$ et $16{,}66$~MPa, contre $16{,}08$~MPa. Le pic anisotrope décroît quand la maille s'affine : la part statique du dépassement dépend de la maille (première insertion à $16{,}5$~MPa à 12~mm, maille qui ne résout pas $\ell_{cz}$), ce qui appuie l'explication par la profondeur d'échantillonnage de la contrainte de paroi. Le front mouillé reste exact dans les rejeux à 6~mm. Le maillage de production n'a pas été rejoué.
+L'essai~3 reproduit le pic à $0{,}04~\%$ près dans les deux états ; seul le temps du pic se décale, de $+0{,}50$ et $+0{,}56$~ms. Le protocole de pompage ne pèse donc pas sur la pression de rupture. Les calculs à $D_\text{wet} = 1$ comptent tous 7 joints rompus au pic.
+
+Les deux calculs de référence ont été rejoués le 6 octobre 2026 avec le binaire courant (\cle{f0209ef}, 1 fil), sur des maillages plus grossiers que celui de production (\cref{fig-ab-pression}a). En anisotrope, le pic vaut $18{,}24$~MPa à 12~mm de maille et $15{,}24$~MPa à 6~mm, contre $14{,}99$~MPa à 3~mm en août ; en isotrope à $4{,}6$~MPa, $16{,}49$ et $16{,}66$~MPa, contre $16{,}08$~MPa. Le pic anisotrope décroît quand la maille s'affine. La part statique du dépassement dépend donc de la maille (première insertion à $16{,}5$~MPa à 12~mm, maille qui ne résout pas $\ell_{cz}$), ce qui est compatible avec l'explication par la profondeur d'échantillonnage de la contrainte de paroi, sans la démontrer : le point à 3~mm vient d'un autre binaire, et la série isotrope n'est pas monotone. Les dépassements du \cref{tab-ab-pic} valent pour la maille de 3~mm. Le front mouillé reste exact dans les rejeux à 6~mm. Le maillage de production n'a pas été rejoué.
 
 \subsection{Faciès et phase post-pic}
 
@@ -208,7 +212,7 @@ En anisotrope, la fissuration forme deux ailes alignées sur $\sigma'_H$ : $59~\
 \label{fig-ab-compare}
 \end{figure}
 
-Après le pic, la pression chute de 49 à $63~\%$ en un peu plus d'une milliseconde, puis s'infléchit entre $5{,}16$ et $7{,}68$~MPa selon le calcul, au-dessus du plateau de $5{,}5$~MPa de l'article (\cref{fig-ab-postpic}). Le plateau n'est pas mesurable : les ailes s'arrêtent à 456~mm, au bord de la zone raffinée de 460~mm. Trois écarts à l'article restent sans explication instrumentée. Les vitesses atteignent $1{,}72$~m/s, quatorze fois l'échelle de $0{,}12$~m/s de ses figures 12 et 13. Le pic survient entre $2{,}53$ et $3{,}49$~ms, contre $1{,}08$~ms chez AbuAisha ; il faudrait $K_f \approx 5$~GPa pour retrouver leur horloge avec leur débit et leur volume. Le décalage de seuil par un joint préexistant ($+5{,}2~\%$ dans l'article), la microsismicité et le cas de Montney ne sont pas reproduits.
+Après le pic, la pression chute de 49 à $63~\%$ en un peu plus d'une milliseconde, puis s'infléchit entre $5{,}16$ et $7{,}68$~MPa selon le calcul, au-dessus du plateau de $5{,}5$~MPa de l'article (\cref{fig-ab-postpic}). Le plateau n'est pas mesurable : les ailes s'arrêtent à 456~mm, au bord de la zone raffinée de 460~mm. Deux écarts à l'article restent sans explication instrumentée. Les vitesses atteignent $1{,}72$~m/s, quatorze fois l'échelle de $0{,}12$~m/s des figures 12 et 13 de l'article. Le pic survient entre $2{,}53$ et $3{,}49$~ms, contre $1{,}08$~ms chez AbuAisha et al. ; il faudrait $K_f \approx 5$~GPa pour retrouver leur horloge avec leur débit et leur volume. Le décalage de seuil par un joint préexistant ($+5{,}2~\%$ dans l'article), la microsismicité et le cas de Montney ne sont pas reproduits.
 
 \begin{figure}[htbp]
 \centering
@@ -231,8 +235,8 @@ La première version du module hydraulique appliquait la force~\eqref{eq-ab-forc
 
 \subsection{Synthèse et réserves}
 
-Le couplage hydraulique est vérifié indépendamment de tout réglage : Lamé à $-2{,}0~\%$ par deux chemins identiques, croisement de volume à moins de $0{,}5~\%$ sur sept calculs et trois états in situ, front mouillé exact, Sneddon à $4~\%$, Parker à $-5{,}65~\%$ sur maillage grossier. La pression de rupture est surestimée de $+6{,}7$ à $+25{,}0~\%$, contre $+4~\%$ pour Y-Geo. Le dépassement se partage entre une part statique, liée à l'échantillonnage de la contrainte de paroi, et une part d'incubation, que le critère de mouillage commande. Le faciès en deux ailes sur $\sigma'_H$ et en étoile en isotrope est conforme à l'article.
+Le couplage hydraulique est vérifié indépendamment de tout réglage : Lamé à $-2{,}0~\%$ par deux chemins identiques, croisement de volume à moins de $0{,}5~\%$ sur sept calculs et trois états in situ, front mouillé exact, Sneddon à $4~\%$, Parker à $-5{,}65~\%$ sur maillage grossier. La pression de rupture est surestimée de $+6{,}7$ à $+25{,}0~\%$, contre $+4$ ou $-2{,}6~\%$ pour Y-Geo. Le dépassement se partage entre une part statique, liée à l'échantillonnage de la contrainte de paroi, et une part d'incubation, que le critère de mouillage commande. Le faciès en deux ailes sur $\sigma'_H$ et en étoile en isotrope est conforme à l'article.
 
-Plusieurs écarts de modèle avec Y-Geo ne sont pas instrumentés : le schéma d'insertion, adaptatif contre intrinsèque, seul écart structurel ; le critère de mouillage, sans fondement physique, dont $D_\text{wet} = 0$ et 1 sont deux bornes ; l'amortissement ; le frottement résiduel, que \cle{jointFrictionScaled = 1} annule à $D = 1$. La courbe d'adoucissement n'en fait pas partie : c'est la même. Un facteur joue en sens inverse : la résistance effective à travers les joints vaut environ $0{,}92\,f_t$, ce qui devrait avancer la rupture.
+Plusieurs écarts de modèle avec Y-Geo ne sont pas instrumentés. Le premier est le schéma d'insertion, adaptatif dans rockim et intrinsèque dans Y-Geo, seul écart structurel. Les autres sont le critère de mouillage, sans fondement physique, dont $D_\text{wet} = 0$ et 1 sont deux bornes, l'amortissement et le frottement résiduel, que \cle{jointFrictionScaled = 1} annule à $D = 1$. La courbe d'adoucissement n'en fait pas partie : c'est la même. Un facteur joue en sens inverse : la résistance effective à travers les joints vaut environ $0{,}92\,f_t$, ce qui devrait avancer la rupture.
 
-Les réserves sont les suivantes. Le module hydraulique n'est pas dans la suite de non-régression. Le résidu du bilan d'énergie des sept calculs va de $2{,}5$ à $10{,}5~\%$, et de 7 à $27~\%$ dans les rejeux du 6 octobre sur maillages grossiers : le bilan ne permet pas de juger la phase post-pic. Le module du fluide est supposé. La valeur de référence de Y-Geo est incertaine ($12{,}5$ ou $11{,}69$~MPa). Il n'existe qu'une réalisation de maillage, et le maillage régénéré avec la version courante de Gmsh compte $283\,998$ joints au lieu de $284\,124$. Les calculs de production n'ont pas été rejoués avec le binaire courant.
+Le module hydraulique n'est pas dans la suite de non-régression. Le résidu du bilan d'énergie des sept calculs va de $2{,}5$ à $10{,}5~\%$, et de 7 à $27~\%$ dans les rejeux du 6 octobre sur maillages grossiers. Il dépasse le seuil de conformité de $1~\%$ (\cref{sec-B4}) : une force n'est pas comptée, et le bilan ne permet pas de juger la phase post-pic. Le résidu à l'instant du pic n'est pas connu : il n'est imprimé qu'en fin de calcul, et les historiques archivés ne contiennent pas les postes d'énergie ; les pressions de rupture sont donc données sans contrôle énergétique au pic. Le module du fluide est supposé. La valeur de référence de Y-Geo est incertaine ($12{,}5$ ou $11{,}69$~MPa). Il n'existe qu'une réalisation de maillage, et le maillage régénéré avec la version courante de Gmsh compte $283\,998$ joints au lieu de $284\,124$. Les calculs de production n'ont pas été rejoués avec le binaire courant.

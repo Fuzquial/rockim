@@ -296,7 +296,7 @@ Sur le jumeau grossier de Kuru, le schéma d'insertion a changé la réponse à 
 
 \begin{table}[htbp]
 \centering
-\caption{Jumeau grossier Kuru à 100~µs : insertion intrinsèque et adaptative selon le critère d'insertion.}
+\caption{Jumeau grossier de Kuru à 100~µs : insertion intrinsèque et adaptative selon le critère d'insertion ; décharge \cle{origin} sans cliquet, avant la correction de \cle{jointNormalProxy}.}
 \label{tab-kuru-insertion}
 \small
 \setlength{\tabcolsep}{4pt}
