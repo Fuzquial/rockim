@@ -79,7 +79,8 @@ RUNS = [
     ("epfl", f"{ARCH}/run_cut_epfl.log", 229.0, 4.33),
     ("a2", f"{ARCH}/run_cut_a2.log", 311.0, 0.798),
 ]
-for lab, run in (("v3\nrejeu", "out_v3_rejeu"), ("Signorini\nrejeu", "out_v3sig_rejeu")):
+for lab, run in (("v3\nrejeu", "out_v3_rejeu"), ("Sig.\nrejeu", "out_v3sig_rejeu"),
+                 ("Sig.\ncliquet", "out_v3sig_ratchet")):
     log = os.path.join(DON, run + ".log")
     RUNS.append((lab, log, lit(log, r"v nodale max"), pic_fx(run)))
 
@@ -88,8 +89,8 @@ inj = np.array([injection(r[1]) for r in RUNS])
 vb = np.array([r[2] for r in RUNS]) / 20.0
 fx = np.array([r[3] for r in RUNS])
 x = np.arange(len(RUNS))
-col = ["#b2182b"] * 5 + ["#b2182b", "#2166ac"]
-hat = [""] * 5 + ["//", "//"]
+col = ["#b2182b"] * 5 + ["#b2182b", "#2166ac", "#4dac26"]
+hat = [""] * 5 + ["//", "//", "//"]
 
 fig, axs = plt.subplots(1, 3, figsize=(7.2, 2.9))
 for ax, y, tit, ref, reflab in (

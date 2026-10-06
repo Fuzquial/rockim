@@ -23,3 +23,5 @@ Chaque initiative est inscrite ici AVANT d'être lancée, puis mise à jour avec
 | 00 h 20 | Chapitre « coupe 2D au cutter PDC » + 3-4 rejeux courts | demande du doctorant ; même famille de défaut que l'injection du tunnel | en cours |
 | 00 h 25 | Recherche et préparation de nouveaux bancs (biblio + web), decks prêts sans calcul complet | demande du doctorant | en cours |
 | 00 h 30 | Diagnostic de l'injection d'énergie par le contact (3 calculs, une clé chacun) confié à la session de calcul | réserve n° 1 du rapport | envoyé |
+| 01 h 30 | Intégration du rejeu de Yan (session de calcul, RESULTATS_yan.md) : nouvelle section sec-yan-rejeu, résumé, introduction, discussion, annexe C | **change une conclusion** : la campagne d'août tient avec le binaire courant (UCS +0,09 %) ; l'écart macOS du 4/10 vient du tirage de Voronoï | fait |
+| 01 h 30 | Relecture : tours 1 et 2 appliqués (delta 30,7 % puis 8,0 %) | méthode validée par le doctorant | fait |
