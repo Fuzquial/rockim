@@ -296,7 +296,7 @@ Sur le jumeau grossier de Kuru, le schéma d'insertion a changé la réponse à 
 
 \begin{table}[htbp]
 \centering
-\caption{Jumeau grossier Kuru à 100~µs : insertion intrinsèque et adaptative selon le critère d'insertion.}
+\caption{Jumeau grossier de Kuru à 100~µs : insertion intrinsèque et adaptative selon le critère d'insertion ; décharge \cle{origin} sans cliquet, avant la correction de \cle{jointNormalProxy}.}
 \label{tab-kuru-insertion}
 \small
 \setlength{\tabcolsep}{4pt}
@@ -318,23 +318,23 @@ pénétration (mm) & $0{,}299$ & $0{,}284$ & $0{,}291$ & non mesurée \\
 \centering
 \includegraphics[width=\linewidth]{impact/kuru_coupes_intr}
 \includegraphics[width=\linewidth]{impact/kuru_coupes_adapt}
-\caption{Jumeau Kuru grossier : traces des joints rompus, insertion intrinsèque à 80~µs (haut) et adaptative avec critère du maximum à 110~µs (bas).}
+\caption{Jumeau grossier de Kuru : traces des joints rompus, insertion intrinsèque à 80~µs (haut) et adaptative avec critère du maximum à 110~µs (bas).}
 \label{fig-kuru-coupes}
 \end{figure}
 
-La transcription mot à mot de la loi de joint de Solidity, essayée sur ce banc, crée de l'énergie (\cref{sec-jointbench}) : sans garde-fou, le travail cumulé des joints atteint 2\,745~J pour $31{,}5$~J apportés. Cela n'établit pas que la version interne du code de Yang diverge de la même façon ; le code public ne contient ni l'effet de vitesse interne, ni la pulvérisation, ni la configuration du granite. Une relecture indépendante des données, menée le 12 septembre 2026, conclut que les données ne démontrent pas une incapacité de la FDEM 3D à localiser la rupture ; elles traduisent une reproduction encore non validée. Une demande de données aux auteurs a été rédigée mais n'a pas été envoyée.
+La transcription mot à mot de la loi de joint de Solidity, essayée sur le jumeau grossier de Kuru, crée de l'énergie (\cref{sec-jointbench}) : sans garde-fou, le travail cumulé des joints atteint 2\,745~J pour $31{,}5$~J apportés. Cela n'établit pas que la version interne du code de Yang diverge de la même façon ; le code public ne contient ni l'effet de vitesse interne, ni la pulvérisation, ni la configuration du granite. Une relecture indépendante des données, menée le 12 septembre 2026, conclut que les données ne démontrent pas une incapacité de la FDEM 3D à localiser la rupture ; elles traduisent une reproduction encore non validée. Une demande de données aux auteurs a été rédigée mais n'a pas été envoyée.
 
 \subsection{Impact court et solution de Hertz}
 
-Un impact court a été rejoué pour ce rapport, le 6 octobre 2026 avec le binaire du commit \cle{f0209ef} : un insert sphérique en carbure maillé ($R = 11$~mm, 79~g, 600~GPa) frappe à 8~m/s un bloc de roche de $80 \times 80 \times 50$~mm ($E = 50$~GPa, $\nu = 0{,}25$), maillé à $2{,}8$ à $4{,}5$~mm, sur 50~µs, une fois en roche élastique et une fois en roche fissurable ($f_t = 10$~MPa, $c = 25$~MPa, $\varphi = 40^\circ$, $G_I = 70$~J/m$^2$). La solution de Hertz pour une sphère de masse $m$ sur un demi-espace donne
+Un impact court a été rejoué pour ce rapport, le 6 octobre 2026, avec le binaire du commit \cle{f0209ef}. Un insert sphérique en carbure maillé ($R = 11$~mm, 79~g, 600~GPa) frappe à 8~m/s un bloc de roche de $80 \times 80 \times 50$~mm ($E = 50$~GPa, $\nu = 0{,}25$). Le bloc est maillé à $2{,}8$ à $4{,}5$~mm et le calcul couvre 50~µs, une fois en roche élastique et une fois en roche fissurable ($f_t = 10$~MPa, $c = 25$~MPa, $\varphi = 40^\circ$, $G_I = 70$~J/m$^2$). La solution de Hertz pour une sphère de masse $m$ sur un demi-espace donne
 \begin{equation}
 \delta_\text{max} = \left(\frac{15\,m\,v_0^2}{16\,E^*\sqrt R}\right)^{2/5} = 243~\text{µm}, \qquad F_\text{max} = 26{,}05~\text{kN}, \qquad t_c = 2{,}9432\,\frac{\delta_\text{max}}{v_0} = 89{,}4~\text{µs},
 \end{equation}
 avec un rayon de contact maximal de $1{,}64$~mm, plus petit que la maille : le contact n'est pas résolu au sens de Hertz.
 
-En roche élastique, le contact maillé est 1,7 à 1,9 fois plus raide que Hertz sur la charge, et le pic arrive plus tôt et plus haut, $32{,}2$~kN à $34{,}3$~µs (\cref{fig-bench1}). C'est l'effet attendu d'une maille plus grande que le rayon de contact. Les répliques St Anne et Kuru ont une maille de cœur de $1{,}37$ à $1{,}42$~mm, du même ordre que leur rayon de contact : la force insert-roche et la vitesse d'indentation y portent un biais de raideur du même type, non chiffré tant que le banc de la sphère de Hertz, qui résout le contact, n'a pas tourné (\cref{sec-verification}).
+En roche élastique, le contact maillé est 1,7 à 1,9 fois plus raide que la solution de Hertz pendant la charge, et le pic arrive plus tôt et plus haut, $32{,}2$~kN à $34{,}3$~µs (\cref{fig-bench1}). C'est l'effet attendu d'une maille plus grande que le rayon de contact. Les répliques St Anne et Kuru ont une maille de cœur de $1{,}37$ à $1{,}42$~mm, du même ordre que leur rayon de contact : la force insert-roche et la vitesse d'indentation y portent un biais de raideur du même type, non chiffré tant que le banc de la sphère de Hertz, qui résout le contact, n'a pas tourné (\cref{sec-verification}).
 
-En roche fissurable, avec seulement 8 joints rompus, la force tombe à $0{,}53$ à $0{,}66$ fois Hertz et la pénétration dépasse celle de Hertz. Les joints ont absorbé $0{,}64$~J contre $0{,}09$~J en élastique, ce qui suggère un assouplissement de la roche par leur adoucissement avant toute rupture. Les deux variantes ne diffèrent toutefois pas que par la rupture : la variante fissurable garde l'amortissement local du banc (\cle{dampingLocal} = $0{,}05$), qui prélève $0{,}12$~J et agit aussi sur l'insert, alors que la variante élastique n'est pas amortie. La baisse de force mêle donc adoucissement et amortissement ; un rejeu à amortissement nul est nécessaire pour les séparer. L'impulsion du contact égale $m\,\Delta v$ de l'insert à $10^{-4}$ près en élastique ; en fissurable, l'écart monte à $5~\%$, à cause du même amortissement. Le bilan se referme à $0{,}04$ et $0{,}004~\%$ respectivement. Le calcul ne couvre ni la décharge ni la restitution, et le jeu initial a été ramené de $0{,}5$ à $0{,}02$~mm pour tenir dans le temps imparti.
+En roche fissurable, avec seulement 8 joints rompus, la force tombe à $0{,}53$ à $0{,}66$ fois la force de Hertz et la pénétration dépasse celle de Hertz. Les joints ont absorbé $0{,}64$~J contre $0{,}09$~J en élastique, ce qui suggère un assouplissement de la roche par leur adoucissement avant toute rupture. Les deux variantes ne diffèrent toutefois pas que par la rupture : la variante fissurable garde l'amortissement local du banc (\cle{dampingLocal} = $0{,}05$), qui prélève $0{,}12$~J et agit aussi sur l'insert, alors que la variante élastique n'est pas amortie. La baisse de force mêle donc adoucissement et amortissement ; un rejeu à amortissement nul est nécessaire pour les séparer. L'impulsion du contact égale $m\,\Delta v$ de l'insert à $10^{-4}$ près en élastique ; en fissurable, l'écart monte à $5~\%$, à cause du même amortissement. Le bilan ferme à $0{,}04$ et $0{,}004~\%$ respectivement. Le calcul ne couvre ni la décharge ni la restitution, et le jeu initial a été ramené de $0{,}5$ à $0{,}02$~mm pour tenir dans le temps imparti.
 
 \begin{figure}[htbp]
 \centering
@@ -347,7 +347,7 @@ En roche fissurable, avec seulement 8 joints rompus, la force tombe à $0{,}53$ 
 
 \subsubsection{Indentation}
 
-Une indentation 2D d'un bouton sphérique, avec le modèle de Yan et une maille de $0{,}15$~mm, montre le développement des fissures médianes puis latérales, et un broyage sous le bouton à la décharge (\cref{fig-indent}) : 34, 456, 682 et 1\,096 joints rompus à 24, 44, 87 et 145~µs. Avec l'architecture de Ye (volume de Mohr-Coulomb et joints cohésifs, bouton de 4~mm), plus de $90~\%$ des fissures naissent à la décharge ; avec un volume élastique, aucun joint ne rompt malgré 2,5~MN/m, parce que la demi-largeur de contact de Hertz à l'amorçage (0,02~mm) est vingt fois plus petite que la maille de ce modèle ($0{,}4$~mm).
+Une indentation 2D d'un bouton sphérique, avec le modèle de Yan et une maille de $0{,}15$~mm, montre le développement des fissures médianes puis latérales, et un broyage sous le bouton à la décharge (\cref{fig-indent}). Les joints rompus sont 34, 456, 682 et 1\,096 à 24, 44, 87 et 145~µs. Avec l'architecture de Ye (volume de Mohr-Coulomb et joints cohésifs, bouton de 4~mm de rayon), plus de $90~\%$ des fissures naissent à la décharge. Avec un volume élastique, aucun joint ne rompt malgré 2,5~MN/m, parce que la demi-largeur de contact de Hertz à l'amorçage (0,02~mm) est vingt fois plus petite que la maille de ce modèle ($0{,}4$~mm).
 
 \begin{figure}[htbp]
 \centering
@@ -358,7 +358,7 @@ Une indentation 2D d'un bouton sphérique, avec le modèle de Yan et une maille 
 
 \subsubsection{Comparaison de code à code avec Abaqus}
 
-Une percussion par une sphère de 15~mm de rayon, $0{,}5$~kg à 8~m/s, sur un bloc de $100 \times 100 \times 80$~mm a été calculée par rockim en mode éléments finis 3D, sans joints (\cle{law} = \cle{saksala2011}), et par Abaqus/Explicit avec la VUMAT de Saksala 2011, sur le même maillage de 62\,208 tétraèdres exporté de rockim, avec un amortissement de contact de $5~\%$ du critique dans Abaqus, homologue de celui de rockim, et des critères fixés avant calcul sur les signaux filtrés à 10~µs (\cref{tab-xval,fig-xval}). Le pic de force, l'énergie absorbée et la pénétration satisfont leur critère ; la restitution, faible dans les deux codes, diffère d'un facteur 2 et sort de sa bande. Sans amortissement de contact, la pénalité d'Abaqus oscille à $2{,}7$ fois le pic moyen autour de la même réponse. Cette comparaison porte sur la loi de volume et le contact, pas sur la FDEM.
+Une percussion par une sphère de 15~mm de rayon, $0{,}5$~kg à 8~m/s, sur un bloc de $100 \times 100 \times 80$~mm a été calculée par rockim en mode éléments finis 3D, sans joints (\cle{law} = \cle{saksala2011}), et par Abaqus/Explicit avec la VUMAT de Saksala 2011, sur le même maillage de 62\,208 tétraèdres exporté de rockim. Abaqus porte un amortissement de contact de $5~\%$ du critique, homologue de celui de rockim, et les critères ont été fixés avant calcul sur les signaux filtrés à 10~µs (\cref{tab-xval,fig-xval}). Le pic de force, l'énergie absorbée et la pénétration satisfont leur critère ; la restitution, faible dans les deux codes, diffère d'un facteur 2 et sort de sa bande. Sans amortissement de contact, la pénalité d'Abaqus oscille à $2{,}7$ fois le pic moyen autour de la même réponse. Cette comparaison porte sur la loi de volume et le contact, pas sur la FDEM.
 
 \begin{table}[htbp]
 \centering
@@ -386,4 +386,4 @@ restitution & $0{,}111$ & $0{,}059$ & $0{,}052$ & $0{,}05$ \\
 
 \subsubsection{Coupe par un outil PDC}
 
-La réplique 2D de la coupe de Heilman et al. sur le granite FORGE, par un outil PDC (diamant polycristallin compact), est un résultat négatif, cité comme tel. La zone cohésive ($\ell_{cz} = 65$~mm) y vaut soixante fois la passe, et le contact d'outil par pénalité injectait 77\,286~J/m pour 189~J/m de travail de l'outil, avec des vitesses nodales de 2\,544~m/s, pendant que le résidu du bilan d'énergie restait à $2\times10^{-10}~\%$. C'est ce cas qui a conduit au contact d'outil de Signorini (\cref{sec-verification}).
+La réplique 2D de la coupe de Heilman et al.~\cite{heilman2024pdc} sur le granite du site FORGE (Utah), par un outil PDC (diamant polycristallin compact), a donné un résultat négatif avec le contact d'outil par pénalité, qui injectait 77\,286~J/m pour 189~J/m de travail de l'outil, pendant que le résidu du bilan d'énergie restait à $2\times10^{-10}~\%$. Ce cas, qui a conduit au contact d'outil de Signorini, est traité en \cref{sec-coupe}.

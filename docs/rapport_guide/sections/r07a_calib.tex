@@ -3,7 +3,7 @@
 
 Aucun jeu FDEM ne restitue à la fois la résistance en compression simple et l'enveloppe confinée du Red Bohus : les jeux calés sans confinement sous-estiment l'effet du confinement d'un facteur 2 à 3, et le seul jeu calé à 20~MPa surestime la résistance sous fort confinement de 25 à $36~\%$. L'émulateur de la campagne d'août a été infirmé par les calculs réels, et aucune calibration n'est valide aujourd'hui.
 
-Le Red Bohus est le matériau de la thèse, et aucune simulation d'impact ne portera sur lui tant que ses paramètres de joint ne seront pas calés. Ce chapitre présente les cibles expérimentales, les méthodes employées, les trois campagnes FDEM menées de juillet à septembre 2026, les calibrations par lois continues sous Abaqus menées de mai à juillet, et le modèle à grains.
+Le Red Bohus est le matériau de la thèse, et aucune simulation d'impact ne portera sur lui tant que ses paramètres de joint ne seront pas calés. Trois campagnes FDEM ont été menées de juillet à septembre 2026, et des calibrations par lois continues sous Abaqus de mai à juillet.
 
 \subsection{Cibles expérimentales}
 
@@ -81,7 +81,9 @@ Hors calage, l'enveloppe triaxiale de ce jeu est trop plate (\cref{fig-triax-jui
 
 \subsubsection{Mise en données}
 
-La deuxième campagne fige les choix numériques (insertion adaptative, adoucissement de Yan, contact par potentiel) et laisse libres six paramètres (\cref{tab-calib-aout}). L'éprouvette mesure $40 \times 80$~mm, avec le module mesuré de $77{,}7$~GPa ; la tessellation de Voronoï n'y sert que de maillage non structuré, toutes les phases étant identiques. Les cinq observables de la vraisemblance sont la résistance simple, le brésilien, $\sigma_1$ et la déformation au pic à 20~MPa, et la déformation au pic sans confinement ; l'essai à 50~MPa sert de contrôle, ceux à 75 et 100~MPa de prédiction. La base compte 60 calculs. Le plafond déviatorique est un garde-fou du volume élastique : dans chaque élément, si la contrainte équivalente de von Mises dépasse le plafond, le déviateur est réduit à pression moyenne constante pour la ramener au plafond (\cref{sec-continu}).
+La deuxième campagne fige les choix numériques (insertion adaptative, adoucissement de Yan, contact par potentiel) et laisse libres six paramètres (\cref{tab-calib-aout}). L'éprouvette mesure $40 \times 80$~mm, avec le module mesuré de $77{,}7$~GPa ; la tessellation de Voronoï n'y sert que de maillage non structuré, toutes les phases étant identiques. Les cinq observables de la vraisemblance sont la résistance simple, le brésilien, $\sigma_1$ et la déformation au pic à 20~MPa, et la déformation au pic sans confinement. Les essais à 50, 75 et 100~MPa, hors calage, servent de prédiction. La base compte 60 calculs.
+
+Le plafond déviatorique est un garde-fou du volume élastique : dans chaque élément, si la contrainte équivalente de von Mises dépasse le plafond, le déviateur est réduit à pression moyenne constante pour la ramener au plafond (\cref{sec-continu}).
 
 \begin{table}[htbp]
 \centering
@@ -111,15 +113,15 @@ Les déviateurs aux pics à 75 et 100~MPa, 927 et 1\,122~MPa, dépassent la méd
 \begin{figure}[htbp]
 \centering
 \includegraphics[width=\linewidth]{calib/fig_calib_synthese}
-\caption{Calibration Red Bohus. (a) Essais de Dumoulin et al. (b) Enveloppe : le jeu de juillet sous-estime le confinement, celui d'août le surestime au-delà de 50~MPa. (c) Écart au pic expérimental.}
+\caption{Calibration Red Bohus. (a) Essais de Dumoulin et al. (b) Enveloppe : le jeu de juillet sous-estime le confinement, celui d'août le surestime au-delà d'environ 35~MPa. (c) Écart au pic expérimental.}
 \label{fig-calib-synthese}
 \end{figure}
 
-L'émulateur a ensuite été infirmé par les calculs réels (coefficient de détermination croisé de $0{,}44$ sur la résistance simple) : son écart-type, 56~MPa, dépasse celui de l'essai, $21{,}4$~MPa, et c'est la taille du plan, 60 points en dimension 6, qui limite la calibration. L'échantillonnage n'a employé qu'une chaîne, sans $\hat R$, et deux paramètres sont collés à leur borne ; un échantillonneur à ensemble invariant affine triple la largeur de certains intervalles. Les essais confinés posaient le confinement avant la charge axiale avec les mors bloqués, ce qui peut biaiser le pic de $\nu/(1-\nu)\,\sigma_3$, soit 8 à 20~MPa ; ce biais, découvert en septembre, n'a pas été vérifié sur ces calculs.
+L'émulateur a ensuite été infirmé par les calculs réels (coefficient de détermination croisé de $0{,}44$ sur la résistance simple) : son écart-type, 56~MPa, dépasse celui de l'essai, $21{,}4$~MPa, et c'est la taille du plan, 60 points en dimension 6, qui limite la calibration. L'échantillonnage n'a employé qu'une chaîne, sans $\hat R$, et deux paramètres sont collés à leur borne ; un échantillonneur à ensemble invariant affine triple la largeur de certains intervalles. Les essais confinés posaient le confinement avant la charge axiale avec les mors bloqués, ce qui peut biaiser le pic de $\nu/(1-\nu)\,\sigma_3$, soit 8 à 20~MPa ; ce biais, découvert en septembre, n'a pas été vérifié sur ces calculs. Avec l'écart au plafond déviatorique, il laisse l'amplitude de l'échec à 75 et 100~MPa non consolidée.
 
 \subsection{Septembre et calibrations continues}
 
-Une troisième campagne, à 50~MPa de confinement, a testé une variable à la fois sur des calculs de moins de 5 minutes. Les écarts y portent sur le déviateur au pic. Corrigé du biais des mors, le déviateur au pic du cas homogène vaut 676~MPa, $13~\%$ au-dessus du déviateur mesuré de 599~MPa ; un jeu réduit à $0{,}7$ fois les résistances et à un module de 71~GPa donne $-5~\%$ à 50~MPa et $-9~\%$ à 20~MPa, et le même jeu au module de $77{,}7$~GPa $+10~\%$ à 100~MPa. Le seuil d'endommagement de dilatance reste collé au pic dans tous les cas ($0{,}95$ à $1{,}00$ du pic, contre $0{,}72$ mesuré). Les planchers numériques mesurés sont du même ordre que l'écart aux données : $1{,}1~\%$ pour le maillage, $3{,}7~\%$ pour la vitesse, 4 à $5~\%$ pour l'amortissement, $7~\%$ pour le schéma d'insertion. Une campagne de 150 calculs est préparée et n'a pas été lancée. La procédure publiée de Tatone et Grasselli~\cite{tatone2015}, qui cale successivement quatre familles de paramètres (volume, amortissement visqueux, rupture, interaction élastique) sur la compression simple, le brésilien et un essai biaxial, en est l'alternative.
+Une troisième campagne, à 50~MPa de confinement, a testé une variable à la fois sur des calculs de moins de 5 minutes. Les écarts y portent sur le déviateur au pic. Corrigé du biais des mors, le déviateur au pic du cas homogène vaut 676~MPa, $13~\%$ au-dessus du déviateur mesuré de 599~MPa. Un jeu réduit à $0{,}7$ fois les résistances et à un module de 71~GPa donne $-5~\%$ à 50~MPa et $-9~\%$ à 20~MPa, et le même jeu au module de $77{,}7$~GPa $+10~\%$ à 100~MPa. Le seuil d'endommagement de dilatance reste collé au pic dans tous les cas ($0{,}95$ à $1{,}00$ du pic, contre $0{,}72$ mesuré). Les planchers numériques mesurés sont du même ordre que l'écart aux données : $1{,}1~\%$ pour le maillage, $3{,}7~\%$ pour la vitesse, 4 à $5~\%$ pour l'amortissement, $7~\%$ pour le schéma d'insertion. Une campagne de 150 calculs est préparée et n'a pas été lancée. La procédure publiée de Tatone et Grasselli~\cite{tatone2015}, qui cale successivement quatre familles de paramètres (volume, amortissement visqueux, rupture, interaction élastique) sur la compression simple, le brésilien et un essai biaxial, en est l'alternative.
 
 Les calibrations par lois continues sous Abaqus éclairent le problème (\cref{fig-cdp}). Le modèle d'endommagement plastique calé à 50~MPa donne une enveloppe linéaire, $+25~\%$ à 20~MPa et $-7~\%$ à 100~MPa ; un Drucker-Prager hyperbolique donne une courbure de sens contraire à celle de l'essai. Trois représentations de l'hétérogénéité plafonnent à 310 à 357~MPa à 50~MPa de confinement, contre 650~MPa mesurés.
 
@@ -147,7 +149,7 @@ Huit configurations d'éléments finis 3D vérifient le traitement des phases. D
 \begin{equation}
 \frac{1}{E_\text{Reuss}} = \sum_p \frac{f_p}{E_p},
 \end{equation}
-soit $1{,}1~\%$ d'écart. En compression élastique d'un cube de 1\,001 grains (fractions du tirage de grains : feldspath $62~\%$, quartz $31~\%$, biotite $7~\%$), le modèle à grains est $2{,}9~\%$ plus souple que le témoin homogène aux moyennes de Voigt, et le maximum de contrainte équivalente est $1{,}5$ fois plus fort ; la biotite porte en moyenne la moitié de la contrainte du témoin, le quartz $16~\%$ de plus.
+soit $1{,}1~\%$ d'écart. En compression élastique d'un cube de 1\,001 grains (fractions du tirage de grains : feldspath $62~\%$, quartz $31~\%$, biotite $7~\%$), le modèle à grains est $2{,}9~\%$ plus souple que le témoin homogène aux moyennes de Voigt. Le maximum de contrainte équivalente est $1{,}5$ fois plus fort ; la biotite porte en moyenne la moitié de la contrainte du témoin, le quartz $16~\%$ de plus.
 
 En traction, un champ de Weibull corrélé à l'échelle du grain ($m = 6$) concentre la rupture dans la bande la plus faible (\cref{fig-weibull}) : le maillon faible rompt à $0{,}96\,f_t$, et trois maillages du même champ rompent dans la même bande à $4{,}6$ à $5{,}1$~MPa, contre $7{,}4$~MPa pour un champ non corrélé. Un banc bayésien synthétique retrouve un facteur de traction caché ($0{,}45$, intervalle $0{,}40$ à $0{,}46$) et laisse non identifié le facteur de cohésion, comme attendu en mode~I. Le modèle à grains a été abandonné le 2 septembre pour la calibration, faute de gain.
 
