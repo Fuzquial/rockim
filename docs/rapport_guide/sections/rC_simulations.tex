@@ -1,0 +1,23 @@
+\section{Simulations préparées pour compléter le rapport}
+\label{sec-annexe-simus}
+
+Les calculs qui n'ont pas pu tourner pendant la rédaction sont préparés dans le dossier \path{docs/rapport_guide/simulations_a_lancer/} du dépôt : fichiers de configuration par groupe, maillages, script de lancement \path{lancer.sh} et fiche \path{A_LANCER.md}, qui donne pour chaque calcul la grandeur à extraire, la référence et la durée estimée. Les calculs se lancent un à un, depuis la racine du dépôt, après compilation et passage de la suite rapide ; les sorties vont dans \path{sim_out/}, hors du suivi de version.
+
+\begin{table}[htbp]
+\centering
+\caption{Simulations préparées, par ordre de priorité.}
+\label{tab-simus}
+\small
+\begin{tabular}{@{}p{0.06\linewidth}p{0.30\linewidth}p{0.56\linewidth}@{}}
+\toprule
+rang & groupe & objet \\
+\midrule
+1 & Yan et al. 2023 & rejouer bande pesante, brésilien, compression simple et triaxiale avec le binaire courant (\cref{sec-yan}) \\
+2 & calibration Red Bohus & situer le jeu de juillet (compression, traction, triaxial à 20 et 50~MPa) avec le binaire courant \\
+3 & impact contre Hertz & prolonger l'impact court à $T = 1{,}2\times10^{-4}$~s pour la décharge, la durée de contact et la restitution \\
+4 & AbuAisha, tunnel & compléments à maillage fin, si un chiffre manque \\
+5 & campagne V\&V & sphère contre Hertz, fissure pressurisée de Guo, patch test et Kirsch, si l'interface Python de Gmsh est disponible \\
+--- & poste local (14 fils) & impact St Anne prolongé à 500~$\mu$s, maillage fin de St Anne, Kuru jusqu'au retournement \\
+\bottomrule
+\end{tabular}
+\end{table}

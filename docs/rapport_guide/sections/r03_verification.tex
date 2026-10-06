@@ -47,6 +47,7 @@ En traction, l'aire sous la courbe restitue l'énergie que la loi codée doit di
 \caption{Travail net par cycle fermé à trois résolutions en temps et limite de Richardson, rejoué.}
 \label{tab-jb-cycles}
 \small
+\setlength{\tabcolsep}{3.5pt}
 \begin{tabular}{@{}llrrrrr@{}}
 \toprule
 cycle & branche & $W(\Delta t)$ (J) & $W(\Delta t/2)$ & $W(\Delta t/4)$ & $p_\text{obs}$ & $W_0$ (J) \\
@@ -224,7 +225,7 @@ Ce banc vérifie la célérité des ondes, l'impédance et les réflexions, et m
 \subsubsection{Solution exacte et critères}
 
 \begin{gather}
-c = \sqrt{M/\rho}, \qquad M = \frac{E(1-\nu)}{(1+\nu)(1-2\nu)} = 72~\text{GPa}, \qquad c = 5\,212{,}47~\text{m/s}, \qquad F_\text{plateau} = \rho c v_0 A = 88{,}40~\text{N}, \\
+c = \sqrt{M/\rho}, \qquad M = \frac{E(1-\nu)}{(1+\nu)(1-2\nu)} = 72~\text{GPa}, \qquad c = 5\,212{,}47~\text{m/s}, \\ F_\text{plateau} = \rho c v_0 A = 88{,}40~\text{N}, \\
 u(z,t) = \sum_{n\geq0}(-1)^n\left[D\!\left(t - \frac{2nL + z}{c}\right) + D\!\left(t - \frac{2(n+1)L - z}{c}\right)\right], \qquad D(t) = \int_0^t V(s)\,ds, \\
 e_u = \frac{\|u_h - u\|_{L^2(0,T)}}{\|u\|_{L^2(0,T)}}, \qquad \text{ordre observé} = \frac{d\ln e_u}{d\ln h} .
 \end{gather}

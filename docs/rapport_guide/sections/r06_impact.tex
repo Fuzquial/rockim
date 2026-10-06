@@ -49,7 +49,7 @@ rayon du cratère & rayon du cercle passant par le point le plus éloigné du bo
 \end{tabularx}
 \end{table}
 
-La force entre l'insert et la roche est mesurée directement dans le contact (\cle{contactForcePairs}). Les comparaisons antérieures l'estimaient par la quantité de mouvement du train supposé rigide,
+La force entre l'insert et la roche est mesurée directement dans le contact, par la clé \cle{contactForcePairs}. Les comparaisons antérieures l'estimaient par la quantité de mouvement du train supposé rigide,
 \begin{equation}
 F_\text{est} = -\frac{d}{dt}\left[m_p v_p + (m_b + m_i + m_c)\,v_b\right], \qquad
 F_\text{corr} = -\frac{d}{dt}\left[m_p v_p + (m_b + m_c)\,v_b + m_i v_i\right],
@@ -290,9 +290,11 @@ Sur le jumeau grossier, le schéma d'insertion change la physique à paramètres
 \caption{Jumeau grossier Kuru à $100~\mu$s : insertion intrinsèque et adaptative selon le critère d'insertion.}
 \label{tab-kuru-insertion}
 \small
+\setlength{\tabcolsep}{4pt}
 \begin{tabular}{@{}lrrrr@{}}
 \toprule
- & intrinsèque & adaptatif, moyenne & adaptatif, maximum & adaptatif, nodal \\
+ & intrinsèque & \multicolumn{3}{c}{adaptatif} \\
+ & & moyenne & maximum & nodal \\
 \midrule
 pas de temps (ns) & $2{,}83$ & $6{,}32$ & $6{,}32$ & $6{,}32$ \\
 premier joint rompu (µs) & 64 & 90 & 79 & aucun \\
