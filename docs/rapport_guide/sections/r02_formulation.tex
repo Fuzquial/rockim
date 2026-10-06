@@ -1,0 +1,261 @@
+\section{Formulation}
+\label{sec-formulation}
+
+Ce chapitre décrit la formulation de rockim en mode FDEM 3D dans l'ordre du chapitre~2 de la thèse de Guo~\cite{guo2014thesis} : discrétisation spatiale, contrainte dans le domaine continu, modèle de fracture, transition du continu au discontinu, contact, équations discrétisées. Chaque section se termine par la correspondance avec Solidity, dans les termes suivants : identique (même formule), option (rockim propose la forme de Guo sous une clé qui n'est pas le défaut), ajout (ingrédient absent de la thèse de Guo). Le \cref{tab-guo-rockim} récapitule ces correspondances. La convention de signe est celle de la mécanique de l'ingénieur : traction positive.
+
+\subsection{Discrétisation spatiale et élément joint}
+
+Le domaine est maillé en tétraèdres à quatre nœuds, à interpolation linéaire, donc à déformation et contrainte constantes. Chaque tétraèdre possède ses quatre nœuds en propre : deux tétraèdres voisins ne partagent aucun nœud, et les trois paires de nœuds de leur face commune sont reliées par un élément joint à six nœuds (\cref{fig-fdem}). Le maillage est importé de Gmsh ; chaque volume physique nommé devient un corps, avec son matériau et sa vitesse initiale. La masse est diagonale : chaque nœud d'un tétraèdre de volume initial $V_0$ reçoit $\rho V_0/4$.
+
+\begin{figure}[htbp]
+\figaproduire{5.5cm}{à gauche, deux tétraèdres voisins avec leurs nœuds dupliqués et l'élément joint à six nœuds entre eux, ses trois points d'intégration aux milieux d'arêtes ; à droite, les mêmes tétraèdres après rupture du joint, en recouvrement, avec le polyèdre d'intersection qui porte la force de contact.}{aucun calcul ; figure de principe à dessiner sur le modèle des figures {2.2}, {2.8} et {2.16} de Guo.}
+\caption{Principe de la FDEM : élément joint entre deux tétraèdres intacts, puis contact par potentiel après rupture.}
+\label{fig-fdem}
+\end{figure}
+
+Deux schémas d'insertion des joints existent. En insertion intrinsèque (\cle{insertion = intrinsic}, défaut), tous les joints existent dès l'origine et se comportent comme des ressorts raides tant qu'ils ne sont pas endommagés ; c'est le schéma de Solidity, de Y-Geo et de la thèse de Guo. En insertion adaptative (\cle{insertion = adaptive}), schéma de Yan et al.~\cite{yan2023adaptive}, aucun joint n'existe à l'origine : les copies d'un même sommet sont liées cinématiquement et se déplacent comme un seul nœud, et un joint n'est créé que lorsque la contrainte sur la face atteint le critère de rupture. L'insertion adaptative supprime la souplesse ajoutée par les joints intacts (\cref{sec-penalite}) mais change la réponse en rupture (\cref{sec-insertion}). La configuration de référence de l'impact est intrinsèque, comme Solidity.
+
+Les corps qui ne doivent pas se fissurer, l'acier du piston et du taillant, le carbure de l'insert, sont déclarés continus (\cle{groupContinuum}) : leurs faces intérieures sont liées définitivement et n'entrent pas dans le calcul du pas de temps. L'interface entre l'insert et le taillant reçoit des joints cohésifs qui représentent la brasure (\cle{groupBond}).
+
+Correspondance avec Solidity : identique pour l'élément de volume, l'élément joint et l'insertion intrinsèque ; l'insertion adaptative est un ajout, sans équivalent chez Guo, dont le remaillage du chapitre~4 découpe des tétraèdres au lieu d'insérer des joints.
+
+\subsection{Contrainte dans le domaine continu}
+\label{sec-continu}
+
+Par défaut, la contrainte d'un tétraèdre est calculée en repère co-rotationnel. La rotation $\mathbf R$ est extraite du gradient de transformation $\mathbf F$ par trois itérations de Higham, et la loi de Hooke s'applique à la déformation de Biot :
+\begin{equation}
+\boldsymbol\varepsilon = \operatorname{sym}(\mathbf R^{\mathsf T}\mathbf F) - \mathbf I, \qquad
+\boldsymbol\sigma = \mathbf R \left(\lambda \operatorname{tr}\boldsymbol\varepsilon\, \mathbf I + 2\mu\boldsymbol\varepsilon\right) \mathbf R^{\mathsf T} .
+\label{eq-corot}
+\end{equation}
+Cette cinématique est exacte en grande rotation et limitée aux petites déformations. Guo et Solidity emploient une loi néo-hookéenne visqueuse, que rockim propose sous \cle{bulkModel = neohookean} :
+\begin{equation}
+\mathbf T = \frac{\mu}{J}(\mathbf B - \mathbf I) + \frac{\lambda}{J}\ln J\, \mathbf I + \eta\, \mathbf D, \qquad J = \det\mathbf F,\quad \mathbf B = \mathbf F\mathbf F^{\mathsf T},
+\label{eq-nh}
+\end{equation}
+où $\mathbf D$ est le taux de déformation et $\eta$ un coefficient visqueux que Guo ne chiffre pas (éq.~{2.6} de la thèse). Les deux lois diffèrent de $+59{,}8~\%$ en contrainte à $40~\%$ de compression uniaxiale et de $-0{,}82~\%$ à $1~\%$ d'extension ; sous l'insert, $J$ descend à $0{,}5$-$0{,}7$. La configuration de référence de l'impact reste co-rotationnelle ; l'effet de cet écart sur l'impact n'a pas été mesuré. Le terme visqueux est disponible séparément (\cle{bulkViscosity}).
+
+La pulvérisation de Yang et al.~2026~\cite{yang2026pulverisation} est le seul mécanisme de rupture du volume utilisé pour l'impact. Elle réduit la contrainte d'un tétraèdre selon un endommagement $D_v$ qui croît linéairement avec une mesure de déformation $\delta_m$ :
+\begin{equation}
+\boldsymbol\sigma = C_d(1 - D_v)\bar{\boldsymbol\sigma}, \qquad
+D_v = D_\text{max}\,\frac{\delta_m - \delta_0}{\delta_F - \delta_0} \in [0, D_\text{max}], \qquad \delta_m = h\,\varepsilon_{vm} .
+\label{eq-pulv}
+\end{equation}
+L'article ne définit ni la longueur $h$, ni la mesure $\varepsilon_{vm}$, ni $C_d$. rockim prend le diamètre inscrit de l'élément et la partie déviatorique de la déformation, si bien que le seuil $\delta_0 = 0{,}014$~mm s'arme à $2{,}7~\%$ de déformation et que la pulvérisation est nulle en compression isotrope. Ce choix est une interprétation et non la définition des auteurs. Le code public de Solidity a cette pulvérisation désactivée. Deux plafonds protègent en outre le volume : un plafond du déviateur, neutralisé dans les configurations d'impact, et un plafond de la contrainte moyenne de traction à 3 fois $f_t$, actif par défaut et sans équivalent chez Guo ni chez Yang et al.
+
+Huit lois de volume plus riches (Drucker-Prager, Mohr-Coulomb, Saksala, DP-DFH de la thèse, endommagement plastique) existent par la clé \cle{law} et servent surtout le mode éléments finis 3D ; elles ne sont pas utilisées dans les impacts FDEM.
+
+Correspondance avec Solidity : la loi néo-hookéenne de Guo est une option, le défaut est différent ; la pulvérisation est un ajout de Yang et al.~2026 repris avec une interprétation propre ; le plafond de traction moyenne est un ajout de rockim.
+
+\subsection{Modèle de fracture}
+\label{sec-fracture}
+
+\subsubsection{Cinématique du joint}
+
+L'ouverture $\delta_n$ et le glissement $\delta_s$ d'un joint sont évalués en trois points d'intégration, en projetant le saut de déplacement entre les deux faces sur le repère local de la face moyenne. Guo place ces points aux milieux des arêtes, avec un poids de $1/3$ chacun (tableau~{2.2} de la thèse) ; rockim les place aux sommets par défaut et propose la quadrature de Guo sous \cle{jointQuadrature = midedge}, utilisée dans la configuration de référence. Dans rockim, le glissement est un vecteur du plan du joint ; chez Guo, c'est un scalaire, sa norme.
+
+\subsubsection{Pénalité et branche élastique}
+\label{sec-penalite}
+
+Avant le pic, un joint intrinsèque se comporte comme un ressort de raideur $p_j = p_f E/h$, où $p_f$ est le facteur de pénalité (\cle{jointPenaltyFactor}, 20 par défaut) et $h$ une longueur d'élément. Guo écrit la même raideur sous la forme $p_0/(2h)$ et recommande $E \leq p_0 \leq 10E$ (éq.~{2.28}), assez grand pour limiter la souplesse ajoutée, assez petit pour le pas de temps. Le facteur 20 de rockim correspond à $p_0 = 40E$, hors de cette plage ; Yang et al. ne publient pas leur pénalité dans les articles de 2025 et 2026, et une communication ARMA des mêmes auteurs donne $p_0 = 3\,000$~GPa pour St Anne~\cite{yang2024energy}, soit $52{,}6E$.
+
+La longueur $h$ admet trois définitions dans rockim. Le défaut prend le plus petit diamètre inscrit du maillage pour tous les joints ; sur le maillage Kuru le plus fin, un tétraèdre aplati de $0{,}226$~mm porte alors la raideur à $4{,}5$ fois celle de Yang et al. L'option \cle{local} prend la moyenne des diamètres inscrits des deux éléments, l'option \cle{edge} la moyenne des arêtes, comme Guo et Solidity.
+
+La branche élastique en ouverture est linéaire par défaut. L'option \cle{jointElastic = parabolic} donne la branche de Guo (éq.~{2.31} de la thèse), tracée sur la \cref{fig-loi} :
+\begin{equation}
+\sigma =
+\begin{cases}
+2 p_j\, \delta_n & \delta_n < 0, \\
+f_t\,(2r - r^2) & 0 \leq \delta_n \leq \delta_{np}, \quad r = \delta_n/\delta_{np},\ \delta_{np} = f_t/p_j, \\
+z(D)\, f_t & \delta_{np} < \delta_n \leq \delta_{nc} .
+\end{cases}
+\label{eq-joint-normal}
+\end{equation}
+La pente à l'origine vaut $2p_j$. Un audit du 13 septembre 2026 a établi que, sous cette branche, le critère de cisaillement et l'effet de vitesse lisaient $p_j\delta_n$ au lieu de $2p_j\delta_n$ en compression ; l'option \cle{jointNormalProxy = law} corrige ce défaut et fait partie de la configuration de référence.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=\linewidth]{fig_loi_joint}
+\caption{Loi du joint en ouverture : branche parabolique de Guo puis adoucissement (a) ; courbe en z de Munjiza (b) ; facteurs dynamiques de Yang et al. en traction et en compression (c).}
+\label{fig-loi}
+\end{figure}
+
+La souplesse ajoutée par les joints intacts a été mesurée sur la propagation d'une onde (\cref{sec-V1}) : l'onde est ralentie de $2{,}9$ à $3{,}2~\%$ pour $p_f = 20$, selon $c_\text{eff}/c = (1 + \alpha/p_f)^{-1/2}$ avec $\alpha = 1{,}239$. Guo constate le même phénomène sur la flexion trois points, où les joints \enquote{introduce extra elasticity into the domain} (p.~119 de la thèse).
+
+\subsubsection{Critères de rupture}
+
+La rupture en traction est atteinte à la résistance $f_t$. La rupture en cisaillement suit un critère de Mohr-Coulomb avec coupure en traction. L'option \cle{jointShearEnvelope = yang} donne la forme de l'équation~1 de Yang et al., identique à l'éq.~{2.24} de Guo :
+\begin{equation}
+f_s = c - \tan\varphi \, \min(\sigma_n, f_t) .
+\label{eq-mc}
+\end{equation}
+L'enveloppe par défaut de rockim annule le frottement dès que $\sigma_n$ est une traction ; les deux formes coïncident en compression et diffèrent de $34~\%$ au seuil de traction.
+
+\subsubsection{Adoucissement et énergies de rupture}
+
+Après le pic, la contrainte décroît selon la courbe en z de Munjiza~\cite{munjiza1999smeared}, reprise par Guo (éq.~{2.32}) et activée dans rockim par \cle{jointSoftening = munjiza} :
+\begin{equation}
+z(D) = \left[1 - \frac{a+b-1}{a+b} \exp\!\left(D\,\frac{a+cb}{(a+b)(1-a-b)}\right)\right]\left[a(1-D) + b(1-D)^c\right],
+\label{eq-z}
+\end{equation}
+avec $a = 0{,}63$, $b = 1{,}8$ et $c = 6$. L'endommagement $D$ combine les rapports d'ouverture et de glissement au-delà de la limite élastique, sur une ellipse en mode mixte, comme l'éq.~{2.33} de Guo :
+\begin{equation}
+D = \sqrt{r_n^2 + r_s^2}, \qquad r_n = \frac{\delta_n - \delta_{np}}{\delta_{nc} - \delta_{np}}, \qquad r_s = \frac{\delta_s - \delta_{sp}}{\delta_{sc} - \delta_{sp}} .
+\label{eq-D}
+\end{equation}
+Guo relie l'ouverture critique à l'énergie de rupture par $\delta_c = 3 G_f/f$ (éq.~{2.30}), en approchant l'aire sous la courbe en z par $1/3$. Cette aire vaut $0{,}386$, et la convention de Guo dissipe donc $1{,}159\,G_f$. rockim propose trois définitions (\cle{jointDeltaC}) : \cle{exact}, défaut, qui restitue $G_f$ ; \cle{guo} ; et \cle{solidity}, la convention du code public, retenue dans la configuration de référence. Guo n'emploie qu'une énergie de rupture ; rockim distingue $G_I$ et $G_{II}$, comme Yang et al. ($G_{II} = 20\,G_I$ pour le granite de Kuru). L'option \cle{jointShearRange = coulomb} calcule la plage de glissement à la pression courante, comme Guo, alors que le défaut la fixe à $3G_{II}/c$ ; l'écart atteint un facteur 54 sous l'insert, et sans cette option aucun noyau broyé ne se forme.
+
+\subsubsection{Décharge et frottement du joint}
+\label{sec-decharge}
+
+La thèse de Guo ne traite pas la décharge d'un joint ; elle le reconnaît en conclusion (p.~307). Or sous un insert, les joints sont chargés, déchargés et rechargés en compression variable. rockim propose trois branches (\cle{jointShearUnload}), et le choix entre elles a pesé sur toute la campagne d'impact (\cref{tab-decharge}). La branche \cle{plastic}, défaut, est une plasticité à retour radial qui conserve le glissement acquis :
+\begin{equation}
+\tau_\text{essai} = p_j(\delta_s - s_p), \qquad |\tau_\text{essai}| > \tau_\text{lim} \ \Rightarrow\ \tau = \tau_\text{lim}\,\frac{\tau_\text{essai}}{|\tau_\text{essai}|} .
+\label{eq-plastic}
+\end{equation}
+La branche \cle{origin}, équation~18 de Yan et al., décharge sur la sécante à l'origine ; comme la sécante suit la compression courante, la loi n'a pas de potentiel, et un cycle à glissement fixé entre deux raideurs sécantes $k_1$ et $k_2$ crée l'énergie $\frac12(k_2 - k_1)s^2$. Un cliquet qui interdit aux sécantes de croître (\cle{jointSecantRatchet}) la rend dissipative. La branche \cle{solidity} transcrit la loi du code public de Solidity : sans mémoire d'endommagement, le joint guérit en se refermant et ne frotte pas.
+
+\begin{table}[htbp]
+\centering
+\caption{Énergie créée ou dissipée par cycle fermé à pression variable, banc d'un joint isolé, selon la branche de décharge.}
+\label{tab-decharge}
+\begin{tabularx}{\linewidth}{@{}l X l@{}}
+\toprule
+branche & bilan mesuré & statut \\
+\midrule
+\cle{plastic} & résidu proportionnel à $\Delta t$, nul à la limite & loi de travail \\
+\cle{origin} avec cliquet & résidu proportionnel à $\Delta t$, nul à la limite & comparaison \\
+\cle{origin} sans cliquet & 16~J créés en $81~\mu$s sur l'impact Kuru & écartée \\
+\cle{solidity} & $+1{,}9\times10^{-8}$~J par cycle intact ($4{,}4~\%$), $+5{,}3\times10^{-4}$~J endommagé ($31~\%$) & écartée des calculs longs \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+Les chiffres de la branche \cle{solidity} sont convergés en pas de temps par extrapolation de Richardson : la création d'énergie est une propriété de la loi, pas un artefact du schéma. La décision du 14 septembre 2026 fait de \cle{plastic} avec cliquet la loi de travail. Elle ne démontre pas que cette loi soit saine hors des trajets testés (effet de vitesse variable, rotation, trajet mixte, transition vers le contact).
+
+Le frottement d'un joint vivant n'existe pas chez Guo. rockim le règle par \cle{jointResidualMu}, qui interpole entre le frottement de pic et une valeur résiduelle ; la configuration de référence le met à zéro, comme Solidity, et le frottement de la roche passe alors entièrement par le contact.
+
+\subsubsection{Effet de la vitesse de déformation}
+
+Guo n'introduit pas d'effet de vitesse explicite. Yang et al. multiplient $f_t$ et $G_I$ par un facteur dynamique en traction, $c$ et $G_{II}$ par un facteur en compression (\cref{fig-loi}), ce qui laisse invariante la longueur de la zone d'adoucissement :
+\begin{equation}
+DIF_t = \min\left(1{,}85;\ 0{,}95 + 0{,}41\,\dot\varepsilon^{\,a_t}\right), \qquad
+DIF_c = \min\left(1{,}84;\ 0{,}77 + 0{,}56\,\dot\varepsilon^{\,0{,}07}\right) .
+\label{eq-dif}
+\end{equation}
+L'exposant $a_t$ vaut $0{,}07$ dans l'article de 2025 et $0{,}17$ dans celui de 2026 ; la configuration de référence retient $0{,}17$. rockim réévalue le facteur à chaque pas sur le taux brut de l'élément, comme Solidity (\cle{strainRateDIFArm = continuous}, \cle{strainRateFilter = none}). Le code public de Solidity a ces facteurs désactivés.
+
+Correspondance avec Solidity pour le modèle de fracture : les formes de Guo (branche parabolique, critère de Mohr-Coulomb avec coupure, courbe en z, mode mixte elliptique, plage de Coulomb, quadrature aux milieux d'arêtes) sont toutes disponibles en option dans rockim, aucune n'est le défaut ; la décharge, le frottement du joint et l'effet de vitesse sont des ajouts.
+
+\subsection{Transition du continu au discontinu}
+\label{sec-transition}
+
+Un joint rompu cesse d'appliquer sa loi, et l'interaction entre ses deux faces passe au contact. Guo place cette transition à $D = 1$ (p.~69 de la thèse), et rockim la reprend sous \cle{jointDeath = damage}, utilisée dans la configuration de référence ; par défaut, rockim attend que le joint soit franchement ouvert, si bien qu'un joint broyé qui glisse en compression reste vivant. La thèse ne dit pas combien des trois points d'intégration doivent avoir rompu ; rockim propose la règle de deux sur trois (\cle{jointFailRule = majority}), attestée à la fois par le code de Solidity et par l'article de Guo et al.~\cite{guo2020generic}.
+
+Sous un insert, les deux tétraèdres d'un joint qui meurt sont comprimés et se chevauchent déjà : le contact naît avec un recouvrement non nul. Appliquer d'un coup la force correspondante créerait de l'énergie (la mesure historique en 2D est de $+936$~J/m). Guo et al. publient une rampe linéaire sur une dizaine de pas (éq.~18 de~\cite{guo2020generic}). rockim propose deux philosophies (\cle{gcBirth}). Par défaut (\cle{ramp}), le recouvrement de naissance est retranché puis relâché exponentiellement, avec une constante de $1~\mu$s, soit 52 à 77 pas aux pas de temps de l'impact : la force part de zéro et l'injection d'énergie est exclue, au prix d'une perte de portance à chaque rupture. L'option \cle{penalty}, transcrite du code de Solidity, cale la raideur de la paire pour que le contact naissant reprenne exactement la force que portait le joint en mourant ; la force est continue mais le signe de l'énergie n'est plus garanti. Sur l'impact Kuru, ce second mode injecte 1~J dès le choc piston-taillant ; la configuration de référence revient donc à la rampe.
+
+Correspondance avec Solidity : la mort à $D = 1$ est une option identique ; la règle des deux points sur trois et la naissance calée viennent du code et de l'article de 2020, pas de la thèse ; la naissance par rampe exponentielle est propre à rockim.
+
+\subsection{Contact}
+\label{sec-contact}
+
+\subsubsection{Détection}
+
+Le contact ne considère que les faces actives : faces extérieures des corps et lèvres des joints morts. Les paires encore liées par un joint vivant sont exclues, comme chez Guo (p.~74). L'activation adaptative de Fukuda et al.~\cite{fukuda2020rmre} (\cle{gcActivation = adaptive}) restreint encore ce jeu aux faces qui peuvent toucher : peau endommagée autour d'un joint cassé, faces à moins de deux cellules d'un autre corps, voisinage d'une face qui a déjà porté une force. Elle suppose qu'un continuum intact ne se replie pas sur lui-même et divise par $2{,}32$ le temps d'une percussion 3D, avec des sorties identiques au bit. Les tétraèdres actifs sont rangés dans une grille de cellules, les paires disjointes sont éliminées par un test d'axes séparateurs (8 plans de faces, 36 axes d'arêtes croisées), et les paires restantes sont triées dans un ordre canonique avant l'assemblage, ce qui rend le résultat indépendant de l'ordre de découverte. Guo emploie l'algorithme NBS de Munjiza, de coût linéaire en nombre d'éléments.
+
+\subsubsection{Interaction par potentiel}
+
+La loi de contact de l'impact est le potentiel de Munjiza~\cite{munjiza2000penalty} (\cle{contact = potential}). Chaque tétraèdre porte un champ $\varphi = 4\min_k \lambda_k$, construit sur ses coordonnées barycentriques, nul sur ses faces et égal à 1 en son centre. Deux tétraèdres A et B qui se chevauchent se repoussent par
+\begin{equation}
+\mathbf F_A = p \int_{A\cap B} \left(\nabla\varphi_A - \nabla\varphi_B\right) dV
+= p \oint_{\partial(A\cap B)} \left(\varphi_A - \varphi_B\right)\mathbf n\, d\Gamma, \qquad \mathbf F_B = -\mathbf F_A,
+\label{eq-pot}
+\end{equation}
+forme de l'éq.~{2.49} de Guo. rockim calcule le polyèdre d'intersection en découpant A par les quatre demi-espaces de B, puis intègre exactement en subdivisant chaque face par les 12 plans où les minima changent d'indice, et répartit la force sur les quatre nœuds de chaque tétraèdre de façon consistante. La force dérive d'un potentiel : une collision élastique conserve l'énergie à $2\times10^{-8}$ près (\cref{sec-selftests}). Le contact n'a pas d'amortissement propre.
+
+La raideur $p$ vaut \cle{potPenaltyFactor} fois $E$. Par défaut, $E$ est le plus grand module des matériaux en présence, 600~GPa pour le carbure, ce qui rend le contact roche-roche dix fois trop raide ; l'option \cle{potStiffnessByPhase = min} prend le plus petit module de la paire et fait partie de la configuration de référence. Guo ne donne pas de valeur de pénalité de contact.
+
+Deux autres lois existent. La pénalité nœud-face, défaut de rockim, pousse chaque nœud qui pénètre une face par un ressort mou ; elle ne convient ni à l'impact, où le piston traverserait le taillant, ni au glissement, où elle fait basculer un bloc (\cref{sec-P21}). La force par volume de recouvrement de Liu et al.~\cite{liu2022overlap} (\cle{potForce = volume}) dérive du potentiel $\frac12 k_n V^2/V'$ et réduit le temps de calcul de $36~\%$ ; à enfoncement égal, la force croît comme le carré de l'aire de contact au lieu de l'aire, si bien que c'est une autre loi (\cref{sec-sens-contact}).
+
+\subsubsection{Frottement}
+
+Le frottement est un ressort tangentiel incrémental à mémoire par paire, plafonné par la loi de Coulomb :
+\begin{equation}
+\mathbf F_t \leftarrow \Pi_\perp \mathbf F_t - k_t\,\Delta t\,\mathbf v_t, \qquad \|\mathbf F_t\| \leq \mu F_n, \qquad \mu = \min(\mu_A, \mu_B) .
+\label{eq-frott}
+\end{equation}
+Guo décrit seulement le plafond de Coulomb (p.~77) ; le ressort, le rapport $k_t/k_n = 2/7$ et la règle du coefficient le plus faible viennent du code de Solidity. Le coefficient se règle par phase ; la configuration de référence pose $\mu = 0{,}18$ pour la roche et $0{,}6$ pour les métaux, valeurs de Yang et al.~2026, qui attribuent l'éjection des fragments à ce frottement bas.
+
+L'option \cle{contactDamageCoupling = solidity} multiplie la raideur normale et le frottement du contact par $\min(1 - D_{v,i}, 1 - D_{v,j})$, où $D_v$ est l'endommagement de pulvérisation, pour qu'une zone pulvérisée cesse de porter l'insert.
+
+Correspondance avec Solidity : potentiel et Coulomb identiques en principe ; détection par un algorithme différent ; ressort tangentiel, règle du minimum et couplage à l'endommagement repris du code ; pénalité nœud-face et force par volume propres à rockim.
+
+\subsection{Équations discrétisées}
+\label{sec-discret}
+
+\subsubsection{Intégration en temps}
+
+L'équation du mouvement nodale est celle de Guo (éq.~{2.50}-{2.51}) :
+\begin{equation}
+m_i \dot{\mathbf v}_i = \mathbf f_{\text{ext},i} + \mathbf f_{\text{joint},i} + \mathbf f_{\text{contact},i} - \mathbf f_{\text{int},i} - \mathbf f_{\text{amort},i} .
+\label{eq-mvt}
+\end{equation}
+Elle est intégrée par le même schéma explicite semi-implicite que Solidity : $\mathbf v^{n+1} = \mathbf v^n + \Delta t\,\dot{\mathbf v}^n$, puis $\mathbf x^{n+1} = \mathbf x^n + \Delta t\,\mathbf v^{n+1}$. Le pas est fixe par défaut ; l'option \cle{dtUpdate = inserted}, d'après Wu et al.~\cite{wu2024dt}, le rend variable en insertion adaptative.
+
+\subsubsection{Pas de temps}
+
+Guo prend le minimum d'une condition de Courant et d'une condition sur les contacts, $\Delta t \sim 0{,}1\,h\sqrt{\rho/E}$ (éq.~{2.56}-{2.60}), sans compter la raideur des joints. rockim la compte :
+\begin{equation}
+\Delta t = f_{\Delta t} \, \min\left( \min_i 2\sqrt{\frac{m_i}{K_i}},\ \frac{h_\text{insc}}{c_p},\ \frac{\rho h^2}{4\mu} \right),
+\label{eq-dt}
+\end{equation}
+où $K_i$ cumule au nœud $i$ la raideur des éléments, celle des joints attachés et une provision pour deux contacts, $h_\text{insc}$ est le plus petit diamètre inscrit réel du maillage, le troisième terme n'est actif qu'avec la viscosité de volume, et $f_{\Delta t} = 0{,}15$. Les joints commandent le pas : sur le maillage Kuru le plus fin, il vaut $1{,}0$~ns quand la condition de Courant des éléments seuls autorise $4{,}7$~ns, et $98~\%$ de la raideur qui le fixe vient des joints. Aucune mise à l'échelle des masses n'est employée. La pénalité normale du contact par potentiel n'entre pas dans ce calcul ; aucune instabilité de contact ne lui a été attribuée, mais aucun banc ne l'a cherchée.
+
+\subsubsection{Amortissement et frontières}
+
+Guo n'amortit que par le terme visqueux $\eta\mathbf D$. rockim dispose de cinq mécanismes : amortissement local de Cundall, amortisseur de joint intact, viscosité de volume, amortissement visqueux nodal, amortisseur du contact par pénalité. Les deux premiers valent $0{,}05$ par défaut ; la configuration de référence les annule, ce qui la rapproche de Solidity. Les faces du bloc de roche peuvent porter les amortisseurs de Lysmer et Kuhlemeyer~\cite{lysmer1969}, appliqués implicitement dans la mise à jour des vitesses ; la configuration de référence ne les emploie pas et encastre la base, comme Yang et al.
+
+\subsubsection{Bilan d'énergie}
+\label{sec-B4}
+
+rockim tient un bilan d'énergie que les documentations de référence ne publient pas. Le théorème de l'énergie cinétique est appliqué aux nœuds :
+\begin{gather}
+E_c(t) - E_c(0) = W_\text{él} + W_\text{joints} + W_\text{contact} + W_\text{amort} + W_\text{front} + W_\text{vol} + W_\text{intégr} + r, \label{eq-B4}\\
+W_\text{intégr} = \sum_{\text{pas}}\sum_i \frac{f_i^2\,\Delta t^2}{2m_i}, \notag
+\end{gather}
+où le poste d'intégration corrige exactement l'écart entre les compteurs de travail, qui lisent la vitesse d'avant le pas, et le théorème discret du saute-mouton. Le résidu $r$ est imprimé en fin de calcul ; un garde-fou arrête le calcul s'il dépasse un seuil. Le bilan est une identité comptable : il voit une force non comptée, pas une création d'énergie logée dans un poste compté. Pour cette raison, la loi de joint se juge sur cycle fermé (\cref{tab-decharge}).
+
+\subsection{Récapitulatif}
+
+\begin{table}[htbp]
+\centering
+\caption{Correspondance entre la formulation de Guo (Solidity) et rockim, avec le réglage de la configuration de référence de l'impact.}
+\label{tab-guo-rockim}
+\small
+\begin{tabularx}{\linewidth}{@{}X X l X@{}}
+\toprule
+ingrédient & Guo 2014 & statut dans rockim & configuration de référence \\
+\midrule
+élément de volume & tétraèdre néo-hookéen visqueux ({2.6}) & option & co-rotationnel \\
+insertion & intrinsèque & identique (défaut) & intrinsèque \\
+quadrature du joint & milieux d'arêtes & option & milieux d'arêtes \\
+pénalité & $E \leq p_0 \leq 10E$ & différent & $p_0 = 40E$ \\
+branche élastique & parabolique ({2.31}) & option & parabolique \\
+critère & Mohr-Coulomb avec coupure ({2.24}) & option & identique \\
+adoucissement & courbe en z ({2.32}) & option & courbe en z \\
+mode mixte & ellipse ({2.33}) & identique & ellipse \\
+ouverture critique & $3G_f/f$ ({2.30}) & option & convention du code \\
+énergies & $G_f$ unique & différent & $G_I$ et $G_{II} = 20G_I$ \\
+décharge & non traitée & ajout & \cle{plastic} avec cliquet \\
+effet de vitesse & aucun & ajout & facteurs de Yang, $a_t = 0{,}17$ \\
+pulvérisation & aucune & ajout & Yang 2026, roche seule \\
+mort du joint & $D = 1$ & option & $D = 1$, deux points sur trois \\
+naissance du contact & immédiate & différent & rampe exponentielle \\
+contact & potentiel de Munjiza ({2.49}) & option & potentiel \\
+frottement & Coulomb & identique, avec ressort & $\mu = 0{,}18$ pour la roche \\
+pas de temps & Courant, joints ignorés & différent & joints comptés \\
+amortissement & $\eta\mathbf D$ & différent & aucun \\
+bilan d'énergie & aucun & ajout & résidu imprimé, garde-fou à $2~\%$ \\
+\bottomrule
+\end{tabularx}
+\end{table}

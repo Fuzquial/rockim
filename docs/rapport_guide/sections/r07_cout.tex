@@ -1,0 +1,34 @@
+\section{Coût de calcul}
+\label{sec-cout}
+
+Guo publie le coût de Solidity en série : de $5\times10^{-4}$ à $2{,}62$~s par pas pour 432 à 1\,769\,472 tétraèdres, linéaire en nombre d'éléments. rockim se parallélise en mémoire partagée (OpenMP), comme Solidity ; HOSS est massivement parallèle et MultiFracS tourne sur GPU. Les mesures du dépôt sont prises sur des machines différentes, souvent partagées, et ne se comparent qu'en ordre de grandeur (\cref{tab-cout}).
+
+\begin{table}[htbp]
+\centering
+\caption{Coût de calcul des cas représentatifs.}
+\label{tab-cout}
+\small
+\begin{tabularx}{\linewidth}{@{}X r r l@{}}
+\toprule
+cas & tétraèdres & fils & coût \\
+\midrule
+FDEM 3D, potentiel et insertion adaptative & quelconque & 18 & $1{,}2~\mu$s par tétraèdre et par pas \\
+banc Kuru à maillage grossier, $100~\mu$s & 10\,563 & 4 & 398~s \\
+banc Kuru à maillage grossier, par pas & 10\,563 & 14 & $16{,}5$~ms dont $12{,}3$ de contact \\
+réplique Kuru la plus fine & 120\,185 & 14 & 15~h \\
+réplique St Anne, $300~\mu$s & 108\,667 & 14 & 29~h~21 \\
+Yang et al.~2025, maillage retenu & 230\,788 & non publié & 5~h \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+Le pas de temps explique l'essentiel de l'écart avec Yang et al. : $1{,}0$~ns sur la réplique Kuru la plus fine contre $2{,}5$~ns, parce que rockim compte la raideur des joints et prend par défaut le plus petit diamètre inscrit du maillage pour la pénalité. Le contact par potentiel est l'autre poste dominant : en régime de débris, il coûte environ sept fois la pénalité nœud-face, l'intégration exacte des recouvrements prenant les deux tiers du temps.
+
+Plusieurs optimisations ont été mesurées, toutes à sorties identiques au bit sauf mention. L'activation adaptative du contact divise le temps d'une percussion 3D par $2{,}32$ (\cref{fig-gcact}). La campagne d'optimisation du 3 octobre 2026 réduit le temps du banc Kuru court de $21~\%$ à un fil et de $39~\%$ à 4 fils. Deux options changent le résultat : le pas variable en insertion adaptative ($-37~\%$ sur une rupture, mêmes joints rompus) et la force de contact par volume ($-36~\%$, autre loi). Sur un Mac mini M4, passer de 4 à 10 fils ne rapporte que $14~\%$, à cause des cœurs à basse consommation et d'une répartition statique du travail ; aucun profil par phase et par nombre de fils n'existe encore. La reprise sur point de sauvegarde et l'écriture binaire des résultats ne sont pas implémentées, et un cas de 842\,572 tétraèdres a été arrêté par la mémoire.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.8\linewidth]{gcactivation}
+\caption{Temps de calcul avec et sans activation adaptative du contact sur cinq cas, à un fil, avec la part de faces activées.}
+\label{fig-gcact}
+\end{figure}

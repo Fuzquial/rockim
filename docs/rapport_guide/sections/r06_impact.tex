@@ -1,0 +1,144 @@
+\section{Application à l'impact d'un insert}
+\label{sec-impact}
+
+Ce chapitre suit l'ordre des articles de Yang et al.~\cite{yang2025validation,yang2026pulverisation}, modèle de la validation d'un impact par la FDEM : configuration, matériaux, critères de validation, comparaison, discussion. Deux répliques ont été menées : l'impact sur le calcaire de St Anne à $10{,}66$~m/s (Yang et al.~2025) et l'impact sur le granite de Kuru à 9~m/s (Yang et al.~2026).
+
+\subsection{Configuration}
+
+Le montage reproduit le banc d'essai de Mines Paris-PSL à six corps : piston en acier de $26{,}5$~mm de diamètre et 260~mm de long, taillant de 30~mm et 265~mm, insert hémisphérique en carbure de rayon $8{,}51$~mm brasé dans le taillant et tenu par un circlip, plaque de chargement, et roche cylindrique de 250~mm de diamètre et 150~mm de haut, base encastrée (\cref{fig-montage}). Le piston est lancé vers le bas ; les jeux initiaux valent $0{,}02$~mm. Chaque corps est un volume du maillage Gmsh ; le matériau, la vitesse initiale et le caractère continu ou fissurable se déclarent par corps.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=\linewidth]{stanne_montage}
+\caption{Montage de la réplique St Anne : chaîne de six corps, insert en carbure posé à $0{,}02$~mm de la roche, et coût en temps de calcul des événements de la chronologie.}
+\label{fig-montage}
+\end{figure}
+
+Le maillage de Yang et al. compte 230\,788 éléments, à 1~mm dans une demi-sphère de 25~mm de diamètre sous l'insert, 2~mm jusqu'à 50~mm, puis jusqu'à 10~mm au bord. La réplique St Anne de rockim compte 108\,667 tétraèdres, dont un cœur de 14\,030 à $1{,}42$~mm d'arête médiane. La réplique Kuru la plus fine en compte 120\,185, avec un cœur à $1{,}37$~mm. Le pas de temps vaut $1{,}71$~ns pour St Anne et $1{,}0$~ns pour Kuru, contre $2{,}5$~ns chez Yang et al.~2026 ; l'écart vient de la raideur des joints, comptée par rockim (\cref{sec-discret}).
+
+Avant tout calcul long, le guide d'utilisation impose trois vérifications : dimensionner la fenêtre de temps (temps de vol, durée de contact de Hertz, marge), vérifier que la zone cohésive est résolue par le maillage et plus petite que le rayon de contact (\cref{sec-sensibilites}), et lancer un essai de fumée qui contrôle l'instant du premier contact, la présence de ruptures, le résidu du bilan et le coût extrapolé.
+
+\subsection{Matériaux et paramètres}
+
+\begin{table}[htbp]
+\centering
+\caption{Paramètres de la roche dans les deux répliques, repris des tableaux des articles de Yang et al.}
+\label{tab-materiaux}
+\small
+\begin{tabular}{@{}lrr@{}}
+\toprule
+paramètre & St Anne (2025) & Kuru (2026) \\
+\midrule
+masse volumique $\rho$ (kg/m$^3$) & 2\,731 & 2\,626 \\
+module $E$ (GPa) & 57 & 60 \\
+coefficient de Poisson $\nu$ & $0{,}31$ & $0{,}24$ \\
+résistance en traction $f_t$ (MPa) & $7{,}0$ & $10{,}98$ \\
+cohésion $c$ (MPa) & $18{,}8$ & $29{,}84$ \\
+$\tan\varphi$ & $1{,}0$ & $1{,}85$ \\
+énergie de rupture $G_I$ (J/m$^2$) & 12 & 50 \\
+énergie de rupture $G_{II}$ (J/m$^2$) & 800 & $1\,000$ \\
+frottement de contact de la roche & $0{,}6$ & $0{,}18$ \\
+pénalité de joint & $p_0 = 3\,000$~GPa (ARMA) & $p_f = 20$ (maison) \\
+pulvérisation & désactivée & $\delta_0 = 0{,}014$~mm, $\delta_F = 0{,}4$~mm \\
+ pulvérisation, $D_\text{max}$ & sans objet & $0{,}9$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Les paramètres de la roche sont ceux des articles (\cref{tab-materiaux}) ; l'acier vaut $7\,850$~kg/m$^3$ et 200~GPa, le carbure $15\,250$~kg/m$^3$ et 600~GPa. Plusieurs réglages ne sont pas publiés par Yang et al. et ont dû être choisis : pénalité de joint et de contact, raideur tangentielle du contact, amortissement, constantes de la pulvérisation, branche de décharge des joints, règle de naissance du contact. Le choix de rockim pour chacun est donné au \cref{tab-guo-rockim}. La configuration complète du banc Kuru est en \cref{sec-annexe-cles}.
+
+\subsection{Critères de validation}
+
+Yang et al. définissent sept critères, tracés contre la vitesse du piston (\cref{tab-criteres}). Ils montrent aussi qu'une validation sur la seule masse de fragments serait trompeuse : deux jeux de paramètres donnent la même masse avec des fissurations et des courbes force-enfoncement entièrement différentes~\cite{yang2025validation}. Leurs verdicts restent qualitatifs. Les valeurs publiées ne sont disponibles que sous forme de graphiques et ont été lues à $10~\%$ près au mieux.
+
+\begin{table}[htbp]
+\centering
+\caption{Les sept critères de validation de Yang et al.}
+\label{tab-criteres}
+\small
+\begin{tabularx}{\linewidth}{@{}l X@{}}
+\toprule
+critère & définition \\
+\midrule
+contrainte au taillant & pic de la première onde à la jauge à mi-taillant \\
+vitesse d'indentation & pente du segment linéaire de descente du taillant \\
+vitesse de rebond & pente du segment linéaire de remontée \\
+enfoncement maximal & profondeur maximale atteinte par le taillant \\
+masse de fragments & masse des fragments retirés par l'algorithme de brossage \\
+longueur radiale & plus grande distance du centre à une pointe de fissure radiale \\
+rayon du cratère & rayon du cercle passant par le point le plus éloigné du bord du cratère \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{Calcaire de St Anne}
+\label{sec-stanne}
+
+La réplique St Anne a tourné 29~h~21 sur 14 fils jusqu'à $300~\mu$s, avec la loi de joint \cle{plastic} avec cliquet et plage de Coulomb, la pénalité prise sur les arêtes, sans pulvérisation ni viscosité. La contrainte au taillant, la vitesse d'indentation, le rayon du cratère et la fin de la phase de charge tombent à 6 à $12~\%$ de la simulation de Yang et al. (\cref{tab-stanne}), de l'ordre de la dispersion expérimentale et du coefficient de variation de $10~\%$ que les auteurs annoncent. L'enfoncement est trop grand de $17~\%$ et la masse de fragments de $88~\%$ ; ces deux écarts vont dans le sens d'un cratère trop ouvert, et trois causes ne sont pas départagées : le réglage du brossage des fragments, un cratère réellement plus ouvert, ou des éléments comptés qu'un brossage physique ne détacherait pas. La longueur radiale dépend d'une convention de mesure, avec un facteur $1{,}7$ entre les deux définitions possibles. Le rebond n'est pas mesuré : il faudrait au moins $450~\mu$s de calcul, et la configuration à $500~\mu$s est prête mais n'a pas été lancée.
+
+\begin{table}[htbp]
+\centering
+\caption{Réplique St Anne à $300~\mu$s : critères de Yang et al.~2025 lus sur les figures 9 et 10, et valeurs de rockim.}
+\label{tab-stanne}
+\small
+\begin{tabular}{@{}lrrrr@{}}
+\toprule
+critère & Yang FDEM & Yang essai & rockim & écart \\
+\midrule
+contrainte au taillant & 200~MPa & 200~MPa & $212{,}3$~MPa & $+6~\%$ \\
+vitesse d'indentation & $8{,}0$~m/s & $7{,}9$~m/s & $7{,}34$~m/s & $-8~\%$ \\
+enfoncement maximal & $1{,}10$~mm & $1{,}05$~mm & $1{,}292$~mm & $+17~\%$ \\
+vitesse de rebond & $5{,}6$~m/s & $4{,}2$~m/s & non mesurée & sans objet \\
+longueur radiale & 32~mm & 31~mm & $29{,}6$ ou $17{,}7$~mm & $-8$ ou $-45~\%$ \\
+rayon du cratère & $13{,}5$~mm & 13~mm & $12{,}00$~mm & $-11~\%$ \\
+masse de fragments & $2{,}5$~g & $1{,}2$~g & $4{,}70$~g & $+88~\%$ \\
+fin de la phase de charge & $254~\mu$s & non publiée & $284{,}3~\mu$s & $+12~\%$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Le bilan d'énergie ferme à $1{,}5\times10^{-7}~\%$ de l'échelle : l'énergie cinétique passe de $60{,}12$ à $3{,}28$~J, la rupture dissipe $34{,}5$~J, le frottement $27{,}8$~J, les joints $14{,}5$~J, et $18{,}1$~J restent stockés en énergie élastique. Yang et al. publient la même décomposition dans une communication ARMA~\cite{yang2024energy}, mais rangent l'amortissement et l'erreur numérique dans un reste non chiffré. Le réseau de 12\,090 facettes rompues forme un noyau broyé sous l'insert et des branches radiales (\cref{fig-stanne-joints}).
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=\linewidth]{stanne_joints}
+\caption{Réplique St Anne à $300~\mu$s : facettes rompues en vue 3D, de dessus et en coupe, colorées par mode de rupture (haut) et par type, fissure ou broyage (bas).}
+\label{fig-stanne-joints}
+\end{figure}
+
+La force de contact mesurée directement entre l'insert et la roche croît régulièrement jusqu'à environ 90~kN à la fin de la charge (\cref{fig-stanne-fp}). L'estimateur cinématique du train rigide, utilisé dans les comparaisons antérieures, oscille autour de cette courbe et surestime son maximum de $90~\%$, alors que les deux impulsions cumulées coïncident à $3{,}4~\%$. Les comparaisons de force doivent donc porter sur la force de contact mesurée.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=\linewidth]{stanne_fp}
+\caption{Réplique St Anne : force de contact insert-roche mesurée contre l'estimateur du train rigide, en fonction de la pénétration et du temps, impulsions cumulées et autres paires de contact.}
+\label{fig-stanne-fp}
+\end{figure}
+
+Cette comparaison n'est pas indépendante du choix des paramètres : la loi de joint et la pénalité ont été retenues pendant la même campagne, en regardant les critères de Yang et al. Une seule résolution de maillage a tourné, alors que Yang et al. estiment leur dispersion sur trois tirages de maillage ; le maillage plus fin, de 251\,460 tétraèdres, reste à jouer.
+
+\subsection{Granite de Kuru}
+
+La réplique Kuru n'est pas reproduite (\cref{tab-kuru}). La vitesse d'indentation est trop grande de $22~\%$, la pulvérisation reste quasi inactive (2 éléments contre environ 360), le freinage moyen estimé est trop faible, et le calcul s'arrête à $182{,}9~\mu$s, avant le retournement du taillant.
+
+\begin{table}[htbp]
+\centering
+\caption{Réplique Kuru, maillage le plus fin : grandeurs de rockim et de Yang et al.~2026.}
+\label{tab-kuru}
+\small
+\begin{tabular}{@{}lrr@{}}
+\toprule
+grandeur & rockim & Yang et al.~2026 \\
+\midrule
+vitesse d'indentation & $6{,}86$~m/s & $5{,}62$~m/s \\
+compression maximale à la jauge & $176$~MPa & environ 160~MPa \\
+éléments pulvérisés & 2 & environ 360 \\
+masse du piston & $1{,}057$~kg & $1{,}173$~kg \\
+freinage moyen & 20 à 25~kN (estimateur) & environ 57~kN (déduit) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Les explications documentées sont partielles. La branche tangentielle de la loi de joint active lors de ce calcul n'était pas celle de Guo. La pulvérisation dépend d'une mesure de déformation que l'article ne définit pas. Les masses du train sont $10~\%$ plus faibles que chez Yang et al. Le freinage est comparé entre un maximum d'estimateur biaisé et une moyenne déduite. La transcription mot à mot de la loi de joint de Solidity a établi que cette loi crée de l'énergie (\cref{tab-decharge}) : sur l'impact sans garde-fou, le travail cumulé des joints atteint 2\,745~J pour $31{,}5$~J apportés. Cela n'établit pas que la version interne du code de Yang et al. diverge de la même façon ; le code public de Solidity ne contient ni l'effet de vitesse interne, ni la pulvérisation, ni la configuration du granite, ni l'amortissement. Un diagnostic indépendant du 12 septembre 2026 conclut que les données ne démontrent pas une incapacité de la FDEM 3D à localiser la rupture, mais une reproduction encore non validée. Une demande de données aux auteurs est rédigée et n'a pas été envoyée.
+
+Sur le jumeau à maillage grossier, avec la configuration de référence actuelle (\cref{sec-annexe-cles}), la jauge lit $173{,}0$~MPa pour $178{,}3$~MPa par la théorie de l'impact unidimensionnel, l'enfoncement progresse à $6{,}01$~m/s, 294 joints rompent et le pic de la force de contact insert-roche vaut 11\,400~N sur $100~\mu$s. Ce jumeau sert de banc rapide et non de comparaison à Yang et al.

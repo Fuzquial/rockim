@@ -1,0 +1,22 @@
+\section{Discussion et conclusions}
+\label{sec-discussion}
+
+\subsection{Ce que rockim apporte par rapport aux codes de référence}
+
+rockim reprend la formulation de Solidity telle que la thèse de Guo et l'article de Guo et al. la décrivent, et la complète par ce que ces textes ne publient pas : la loi de décharge des joints, l'effet de vitesse, la pulvérisation, la naissance du contact sur un joint rompu. Chaque ingrédient est une option, ce qui permet de passer d'une forme à l'autre et d'en mesurer l'effet. Deux pratiques le distinguent des documentations de référence : un bilan d'énergie fermé et publié avec son résidu, et des critères de vérification chiffrés écrits avant le calcul. Ces pratiques ont produit des résultats que les codes de référence n'ont pas publiés : la loi de joint du code public de Solidity crée de l'énergie sur cycle fermé ; une pénalité intrinsèque de 20 fois $E/h$ ralentit les ondes de $3~\%$ quel que soit le maillage ; le contact par pénalité nœud-face fait basculer un bloc qui devrait glisser.
+
+\subsection{Limites}
+
+La validation au sens strict manque : aucune comparaison n'a été faite à un essai qui n'a pas servi au calage. Les données d'essai d'Aising et Gerbaud, base expérimentale des articles de Yang et al. et disponibles à Mines Paris-PSL, ne sont pas exploitées. La calibration sur le Red Bohus n'est pas conclue et le calage quasi statique 2D ne rejoint pas l'impact 3D.
+
+La reproduction de Yang et al. est partielle. Sur St Anne, l'enfoncement et la masse de fragments s'écartent nettement, le rebond n'est pas mesuré et une seule résolution de maillage a tourné. Sur Kuru, la pulvérisation reste inactive.
+
+Plusieurs choix numériques changent le résultat et n'ont pas de valeur arrêtée par une étude : schéma d'insertion intrinsèque ou adaptatif, facteur de pénalité, loi de force de contact, raideur de contact, plafond implicite de la contrainte moyenne de traction, loi de volume co-rotationnelle ou néo-hookéenne, amortissement. Un calcul de thèse doit fixer chacun et le citer ; le \cref{tab-guo-rockim} donne les valeurs de la configuration de référence.
+
+La vérification ne couvre pas encore l'énergie dissipée par la fissuration contre $G_f$ multiplié par l'aire rompue, la convergence en maillage de la rupture, la sensibilité au pas de temps du frottement, ni les sensibilités à la vitesse de chargement et à l'amortissement. Les résultats dépendent du nombre de fils, d'environ $2~\%$ sur les pics.
+
+Deux questions de pérennité restent ouvertes : le dépôt public n'a pas de licence alors qu'il contient des parties transcrites d'un code sous LGPL, et une seule personne connaît le code.
+
+\subsection{Travaux à mener}
+
+Les travaux se classent par ce qu'ils débloquent. La campagne de vérification et validation doit jouer les sept bancs préparés, environ 7~h à 2 fils pour les cas par défaut, en priorité la fissure pressurisée de Guo, qui quantifie l'objectivité de la rupture vis-à-vis du maillage. La réplique St Anne doit être prolongée à $500~\mu$s pour le rebond et rejouée sur le maillage fin. La validation sur essai indépendant doit s'appuyer sur les essais d'Aising et Gerbaud. Le calage du Red Bohus doit être repris selon la procédure en quatre familles de Tatone et Grasselli, puis confronté au triaxial hors calage comme le prévoit la campagne.

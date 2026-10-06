@@ -36,40 +36,46 @@
   \centering\small Figure à produire.\\[0.5ex] Contenu attendu : #2\\[0.5ex]
   Calcul ou essai nécessaire : #3\end{minipage}}\end{center}}
 
-\crefname{section}{section}{sections}
+\crefname{section}{chapitre}{chapitres}
+\Crefname{section}{Chapitre}{Chapitres}
+\crefname{subsection}{section}{sections}
+\crefname{subsubsection}{section}{sections}
 \crefname{figure}{figure}{figures}
+\Crefname{figure}{Figure}{Figures}
 \crefname{table}{tableau}{tableaux}
+\Crefname{table}{Tableau}{Tableaux}
+\crefname{equation}{équation}{équations}
+\crefformat{equation}{(#2#1#3)}
 \crefname{appendix}{annexe}{annexes}
+\numberwithin{equation}{section}
 
 \setlength{\parskip}{0.4ex}
 \setlength{\emergencystretch}{2em}
 \renewcommand{\arraystretch}{1.15}
 
-\title{rockim : ce que fait le code, comment il a été vérifié et ce qu'il reste à valider\\[1ex]
+\title{rockim : formulation, vérification et validation\\ d'un code FDEM pour l'impact d'un insert\\[1ex]
 \large Rapport-guide à l'intention des encadrants}
 \author{Thèse forage percussif, granite de Red Bohus}
-\date{6 octobre 2026\\[0.5ex]\small État du dépôt \cle{Fuzquial/rockim}, commit \cle{f0209ef} du 4 octobre 2026}
+\date{6 octobre 2026\\[0.5ex]\small Dépôt \cle{Fuzquial/rockim}, commit \cle{f0209ef} du 4 octobre 2026}
 
 \begin{document}
 \maketitle
 
-\input{sections/s00_synthese}
+\input{sections/r00_resume}
 \tableofcontents
 \clearpage
-\input{sections/s01_objet}
-\input{sections/s02_formulation}
-\input{sections/s03_materiau}
-\input{sections/s04_contact}
-\input{sections/s05_impact}
-\input{sections/s06_verification}
-\input{sections/s07_validation}
-\input{sections/s08_performances}
-\input{sections/s09_limites}
+\input{sections/r01_introduction}
+\input{sections/r02_formulation}
+\input{sections/r03_verification}
+\input{sections/r04_sensibilites}
+\input{sections/r05_validation}
+\input{sections/r06_impact}
+\input{sections/r07_cout}
+\input{sections/r08_discussion}
 
 \appendix
-\input{sections/a1_equations}
-\input{sections/a2_cles}
-\input{sections/a3_reproduire}
+\input{sections/rA_cles}
+\input{sections/rB_reproduire}
 
 \printbibliography[heading=bibintoc,title={Références}]
 

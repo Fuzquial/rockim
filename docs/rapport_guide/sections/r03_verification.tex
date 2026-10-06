@@ -1,0 +1,170 @@
+\section{Vérification}
+\label{sec-verification}
+
+Ce chapitre rassemble les tests dont la référence est une solution exacte ou une propriété mathématique. Chacun est présenté comme dans les documentations de référence : objet, mise en données, référence, critère d'acceptation, résultat. Les critères des bancs P1.1 et P2.1 ont été écrits avant le premier calcul. Les auto-tests et la suite ont été rejoués pour ce rapport le 6 octobre 2026 sous Linux, à un fil, à partir du commit \cle{f0209ef}.
+
+\subsection{Auto-tests sans maillage}
+\label{sec-selftests}
+
+Douze sous-commandes vérifient une brique isolée, sans maillage ou sur un maillage minimal (\cref{tab-selftests}). Les trois tests de conservation du contact sont l'équivalent, plus strict, de ce que les documentations de Solidity et de HOSS montrent qualitativement : deux corps entrent en collision sans frottement ni amortissement, et l'énergie cinétique et la quantité de mouvement doivent être conservées.
+
+\begin{table}[htbp]
+\centering
+\caption{Auto-tests rejoués le 6 octobre 2026 sous Linux, à un fil.}
+\label{tab-selftests}
+\small
+\begin{tabularx}{\linewidth}{@{}l X X@{}}
+\toprule
+test & objet & résultat \\
+\midrule
+potentiel 2D & collision élastique frontale et oblique, potentiel de Munjiza & $\Delta E_c/E_{c0} = 3{,}7\times10^{-12}$ et $5{,}1\times10^{-7}$ ; quantité de mouvement à $4{,}9\times10^{-15}$ \\
+potentiel 3D & même essai entre tétraèdres & $2{,}05\times10^{-8}$ et $7{,}3\times10^{-9}$ ; quantité de mouvement à $4{,}7\times10^{-15}$ \\
+volume 3D & même essai, force par volume de recouvrement & $7{,}1\times10^{-15}$ et $1{,}21\times10^{-11}$ \\
+contact d'outil & algèbre du contact en vitesse ; chaîne de $N$ masses frappée à 10~m/s & écart maximal $0{,}00996$ ; $N = 400$ : sortie à $19{,}936$~m/s pour 20, perte $0{,}2475~\% \approx 1/N$ \\
+Mohr-Coulomb & plateaux plastiques au point matériel & compression $3\times10^{-9}~\%$, triaxial $2{,}1\times10^{-9}~\%$, traction $0{,}126~\%$ \\
+couteau PDC & géométrie du couteau chanfreiné & 14 contrôles passés \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+Les portages des VUMAT de Saksala et du DP-DFH sont annoncés justes à $8\times10^{-14}$ et $4{,}7\times10^{-12}$ contre leur référence Fortran ; la référence Fortran n'étant pas dans le dépôt, cette comparaison n'a pas été rejouée.
+
+\subsection{Barre en traction}
+
+Une barre est chargée en traction par une force imposée, dans le scénario de charges par groupes. La référence est l'allongement $\sigma L/E = 4{,}000~\mu$m et la réaction $-2\,000$~N. La FDEM 3D donne $4{,}00122~\mu$m et $-2\,000{,}49$~N, soit $0{,}03~\%$ d'écart, avec un résidu du bilan d'énergie de $-5{,}6\times10^{-17}$~J ; les éléments finis 3D ferment le bilan à $3{,}4\times10^{-17}$~J. En insertion intrinsèque, la même barre s'allonge de $4{,}5~\%$ de plus, effet statique de la souplesse des joints. MultiFracS publie le test analogue d'une bande sous son poids propre, où l'insertion intrinsèque n'atteint $2~\%$ d'écart qu'au-delà d'une pénalité de 100 fois $E$~\cite{yan2023adaptive}.
+
+\subsection{Onde de compression dans une barre}
+\label{sec-V1}
+
+\subsubsection{Objet et mise en données}
+
+Ce banc (P1.1) vérifie la célérité des ondes, l'impédance et les réflexions, et mesure un ordre de convergence. Aucune des documentations de référence ne publie ce test en 3D ; MultiFracS observe qualitativement le retard d'onde dû à la pénalité dans une barre de Hopkinson~\cite{yan2023adaptive}. La barre mesure $8 \times 8 \times 400$~mm, avec $\rho = 2\,650$~kg/m$^3$, $E = 60$~GPa et $\nu = 0{,}25$. Ses quatre faces latérales sont sur rouleaux, ce qui rend le problème exactement unidimensionnel, sans la dispersion de Pochhammer, avec la célérité $c = \sqrt{M/\rho} = 5\,212{,}47$~m/s, où $M$ est le module de compression uniaxiale. Une vitesse de $0{,}1$~m/s en trapèze (montée de $4~\mu$s, palier de $12~\mu$s, descente de $4~\mu$s) est imposée à une extrémité ; l'autre est libre ; le calcul dure $250~\mu$s, soit $1{,}6$ aller-retour. Les maillages sont non structurés, de $h = 4$ à 1~mm.
+
+La référence est la série de d'Alembert avec réflexions ; le plateau de la réaction vaut $\rho c v_0 A = 88{,}40$~N. Les critères, fixés avant calcul sur le maillage le plus fin, sont une erreur $L^2$ du déplacement à mi-longueur d'au plus $2~\%$, une erreur de célérité d'au plus $1~\%$, une erreur sur le plateau de force d'au plus $2~\%$, un résidu du bilan d'au plus $10^{-6}~\%$ et un ordre de convergence d'au moins 1.
+
+\subsubsection{Résultats}
+
+\begin{table}[htbp]
+\centering
+\caption{Onde dans une barre : erreurs mesurées selon la variante et la taille d'élément.}
+\label{tab-V1}
+\small
+\begin{tabular}{@{}lrrrrrr@{}}
+\toprule
+variante & $h$ (mm) & tétraèdres & $e_u$ & célérité & force & résidu \\
+\midrule
+éléments finis & 4 & 3\,688 & $0{,}46~\%$ & $-0{,}05~\%$ & $-0{,}04~\%$ & $2{,}6\times10^{-12}~\%$ \\
+éléments finis & 1 & 125\,486 & $0{,}05~\%$ & $<0{,}01~\%$ & $<0{,}01~\%$ & $1{,}2\times10^{-10}~\%$ \\
+FDEM adaptative & 2 & 20\,435 & $0{,}17~\%$ & $+0{,}04~\%$ & $<0{,}01~\%$ & $5{,}5\times10^{-4}~\%$ \\
+FDEM intrinsèque, $p_f = 20$ & 4 & 3\,688 & $7{,}7~\%$ & $-2{,}9~\%$ & $-2{,}9~\%$ & $1{,}5\times10^{-3}~\%$ \\
+FDEM intrinsèque, $p_f = 20$ & 2 & 20\,435 & $8{,}6~\%$ & $-3{,}2~\%$ & $-3{,}3~\%$ & $3{,}5\times10^{-4}~\%$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Les éléments finis 3D passent les cinq critères (\cref{tab-V1}), avec un ordre observé de $1{,}58$ sur le déplacement (\cref{fig-V1conv}). L'ordre inférieur à 2 vient des quatre angles du trapèze, qui limitent la régularité de la solution exacte.
+
+La FDEM en insertion adaptative reproduit les éléments finis à $10^{-4}$ près sur chaque maillage, avec un ordre de $1{,}46$, et échoue au seul critère du bilan : son résidu, de $2{,}2\times10^{-3}$ à $5{,}5\times10^{-4}~\%$, décroît avec le pas et provient du décalage d'un demi-pas entre les compteurs de travail et le schéma, pas d'une création d'énergie. Le critère, calibré sur les éléments finis, a été maintenu et l'échec consigné.
+
+La FDEM en insertion intrinsèque avec $p_f = 20$, réglage de l'impact, échoue : l'onde est $2{,}9$ à $3{,}2~\%$ trop lente et le plateau de force trop faible d'autant, sans aucune rupture, et l'erreur ne décroît pas quand $h$ diminue, parce que le nombre de joints par unité de longueur croît comme $1/h$. C'est la contrepartie dynamique du constat de Guo sur la flexion trois points, où un maillage plus fin donne une poutre plus souple. Avec ce réglage, les ondes d'un impact arrivent environ $3~\%$ en retard et la force de contact initiale est sous-estimée d'autant, quel que soit le maillage. La loi qui relie ce retard à la pénalité est établie au \cref{sec-sensibilites}.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.6\linewidth]{fig_convergence}
+\caption{Onde dans une barre : erreur $L^2$ du déplacement à mi-longueur contre la taille d'élément, éléments finis et FDEM adaptative et intrinsèque.}
+\label{fig-V1conv}
+\end{figure}
+
+\subsection{Bloc glissant jusqu'à l'arrêt}
+\label{sec-P21}
+
+\subsubsection{Objet et mise en données}
+
+Ce banc (P2.1) vérifie le frottement de Coulomb du contact général. C'est le banc de vérification de Xiang et al.~\cite{xiang2009validation}, seul test à solution analytique de la documentation du contact de Solidity, repris en annexe~A de la thèse de Guo ; rockim le joue en 3D, comme Fukuda et al. Un cube de 50~mm ($\rho = 2\,650$~kg/m$^3$, $E = 1$~GPa, $\nu = 0{,}25$, valeurs de Xiang) glisse sous la pesanteur sur une dalle fixe de $600 \times 100 \times 20$~mm avec $\mu = 0{,}5$. Les deux corps sont continus, leurs maillages ne coïncident pas, et seul le contact les relie. Sans basculement, le bloc s'arrête à la distance $L = v_0^2/(2\mu g)$, et sa position suit $x(t) = v_0 t - \mu g t^2/2$. Les critères sont un écart d'au plus $2~\%$ sur la distance d'arrêt et sur la trajectoire.
+
+\subsubsection{Résultats}
+
+\begin{table}[htbp]
+\centering
+\caption{Bloc glissant : distance d'arrêt selon la loi de contact et la vitesse initiale.}
+\label{tab-P21}
+\small
+\begin{tabular}{@{}lrrrrl@{}}
+\toprule
+contact & $v_0$ (m/s) & $L$ simulé (mm) & $L$ exact (mm) & écart & verdict \\
+\midrule
+potentiel & $0{,}5$ & $25{,}93$ & $25{,}48$ & $+1{,}74~\%$ & passe \\
+potentiel & 1 & $102{,}92$ & $101{,}94$ & $+0{,}96~\%$ & passe \\
+potentiel & 2 & $410{,}27$ & $407{,}75$ & $+0{,}62~\%$ & passe \\
+pénalité nœud-face & $0{,}5$ & $-0{,}46$ & $25{,}48$ & $-102~\%$ & échoue \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Le contact par potentiel reproduit la cinématique aux trois vitesses, avec une erreur sur la trajectoire d'au plus $0{,}97~\%$ et un bilan d'énergie fermé à $6\times10^{-12}~\%$ (\cref{tab-P21,fig-P21}). Le bloc glisse un peu trop loin, d'autant moins que la vitesse est grande, ce qui est attribué à la régularisation du frottement aux très faibles vitesses de fin d'essai. Sur le premier millimètre, le travail du frottement égale $\mu m g$ fois la distance à $10^{-5}$ près.
+
+La pénalité nœud-face, défaut de rockim, échoue : le bloc accroche par son arête les triangles de la dalle, bascule, son centre monte de $4{,}7$~mm, et il finit $0{,}46$~mm derrière son point de départ, alors que le bilan d'énergie reste fermé. Le contact par potentiel est donc requis dès qu'un corps glisse sur un autre à travers des maillages non coïncidents, et les configurations d'impact l'emploient.
+
+Xiang et al. montraient que le pas de temps de stabilité ne suffit pas pour le frottement : avec $\Delta t = 10^{-7}$~s, leur distance d'arrêt s'écartait de 6 à $11~\%$, avec $10^{-8}$~s elle rejoignait la théorie. Ce banc n'a pas encore été rejoué en faisant varier le pas.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.62\linewidth]{fig_bloc}
+\caption{Bloc glissant : déplacement contre temps pour trois vitesses initiales, contact par potentiel et par pénalité, comparé à la solution exacte en trait large.}
+\label{fig-P21}
+\end{figure}
+
+\subsection{Impact élastique contre Hertz}
+
+Aucun des codes de référence ne publie de comparaison à Hertz. Un impact élastique d'une sphère sur un bloc a été calculé sur quatre maillages de roche, de $4{,}74$ à $0{,}80$~mm (\cref{fig-hertz}). La réponse globale suit la force de Hertz $F = \frac43 E^*\sqrt R\,\delta^{3/2}$ à $-25$ à $+30~\%$ près en fin de charge, sans converger vers le rapport 1 au raffinement, et le pic local de contrainte n'est pas résolu : il passe de 266 à 2\,931~MPa quand la taille d'élément passe de $4{,}74$ à $0{,}80$~mm, pour une pression de Hertz de 4\,114~MPa. Ce calcul est antérieur à la campagne et n'avait pas de critère écrit. Le banc P2.2, préparé avec ses critères (force maximale, durée de contact et enfoncement à $5~\%$ de Hertz, sur quatre raffinements du rayon de contact), reprend la question ; son essai court donne la force filtrée à $+4{,}6~\%$ et l'enfoncement à $-3{,}6~\%$.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=\linewidth]{hertz_compare}
+\caption{Impact élastique d'une sphère sur quatre maillages : force contre enfoncement, rapport à Hertz et pic de von Mises contre taille d'élément.}
+\label{fig-hertz}
+\end{figure}
+
+\subsection{Invariants}
+
+\subsubsection{Charge nulle}
+
+Un contrôle à charge nulle laisse un modèle au repos et exige zéro joint rompu et un travail d'amortisseur négatif ou nul. Un contrôle existe pour chaque option de loi ou de contact, soit 26 en 2D et en 3D. Ils ont attrapé de vrais défauts : 158 joints rompus à charge nulle sur un maillage de Delaunay avant correction, et 5 joints rompus par des tétraèdres exactement tangents dans le contact par potentiel. Tous passent.
+
+\subsubsection{Bilan d'énergie}
+
+Le bilan (\cref{sec-B4}) ferme à l'arrondi en élastique ($10^{-17}$~J sur la barre en traction), à $0{,}005~\%$ sur une percussion 3D et à $1{,}5\times10^{-7}~\%$ sur le calcul St Anne de $300~\mu$s. Il ne voit pas une création d'énergie logée dans un poste compté : une coupe par un outil PDC en 2D injectait 408 fois le travail de l'outil pendant que le bilan restait fermé. Des indicateurs dédiés s'y ajoutent pour le contact d'outil, et la loi de joint se juge sur cycle fermé (\cref{tab-decharge}).
+
+\subsubsection{Nombre de fils}
+
+À un fil, les sorties sont identiques au bit à celles du calcul série ; à nombre de fils fixé, elles sont déterministes ; entre deux nombres de fils, l'ordre des sommes change et les pics s'écartent d'environ $2~\%$ (mesuré : $1{,}6~\%$ entre 2 et 4 fils sur un cas d'endommagement plastique). Huit configurations ancrées par l'empreinte de leurs sorties montrent qu'une option nouvelle ne change rien quand elle est absente ; cette discipline protège contre le changement involontaire et ne prouve pas la justesse.
+
+\subsection{Suite de non-régression}
+
+La suite compte 118 tests, dont 51 au niveau rapide. Classés selon la nature de leur référence, 56 relèvent de la vérification (11 analytiques au point matériel, 8 analytiques sur une structure, 26 invariants au repos, 11 invariants d'équivalence), 24 comparent un pic à $f_t$ avec un écart figé un jour donné, et 38 sont de la régression pure, qui ne démontre pas la justesse. Rejouée au niveau rapide, la suite passe 50 tests sur 51 ; l'échec porte sur un banc de raclage construit pour pomper de l'énergie et déclaré chaotique, dont l'écart sous Linux était déjà consigné.
+
+\subsection{Synthèse}
+
+Le \cref{tab-tests-standard} situe rockim par rapport aux tests de vérification que publient les codes de référence.
+
+\begin{table}[htbp]
+\centering
+\caption{Tests de vérification publiés par les codes FDEM de référence et statut dans rockim au 6 octobre 2026.}
+\label{tab-tests-standard}
+\small
+\begin{tabularx}{\linewidth}{@{}X l l l@{}}
+\toprule
+test & publié par & référence & rockim \\
+\midrule
+champ homogène, patch test & HOSS & exacte & préparé \\
+Kirsch & HOSS, Irazu & exacte & préparé \\
+verrouillage volumique & HOSS, Y3D & exacte & sans objet \\
+barre ou bande sous charge statique & MultiFracS & $\sigma L/E$ & fait \\
+onde unidimensionnelle & aucun en 3D & d'Alembert & fait \\
+conservation du contact & aucun chiffré & conservation & fait \\
+bloc glissant & Y2D (Xiang 2009), Guo & $v_0^2/(2\mu g)$ & fait \\
+Hertz & aucun & Hertz & calcul ancien, banc préparé \\
+énergie de rupture contre $G_f$ & aucun & $G_f$ & absent \\
+\bottomrule
+\end{tabularx}
+\end{table}

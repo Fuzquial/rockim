@@ -1,0 +1,77 @@
+\section{Sensibilités numériques}
+\label{sec-sensibilites}
+
+Les documentations de Guo (§{2.4} de la thèse), de Lisjak et de Tatone et Grasselli consacrent une partie aux paramètres purement numériques : pénalité, taille et orientation du maillage, vitesse de chargement, amortissement. Ce chapitre fait le point pour rockim. Seule la sensibilité à la pénalité a été mesurée en campagne.
+
+\subsection{Pénalité des joints}
+
+Un balayage du facteur de pénalité de 10 à 200 a été joué sur l'onde dans une barre (\cref{sec-V1}). Un modèle de joints en série prédit $M_\text{eff} = M/(1 + \alpha/p_f)$, donc $c_\text{eff}/c = (1 + \alpha/p_f)^{-1/2}$, avec $\alpha$ indépendant de $h$. La valeur $\alpha = 1{,}21$, calée sur le seul point $p_f = 20$, a été écrite avant le balayage. La prédiction tient à $0{,}05$ point près sur toute la plage, et l'ajustement sur les huit points donne $\alpha = 1{,}239$ (\cref{tab-pen,fig-pen}). Le pas de temps décroît comme $1/\sqrt{p_f}$.
+
+\begin{table}[htbp]
+\centering
+\caption{Retard de célérité de l'onde selon le facteur de pénalité intrinsèque, mesuré et prédit avant calcul.}
+\label{tab-pen}
+\small
+\begin{tabular}{@{}rrrrrr@{}}
+\toprule
+$p_f$ & $h$ (mm) & célérité mesurée & prédite & erreur $L^2$ & $\Delta t$ (ns) \\
+\midrule
+10 & 4 & $-5{,}54~\%$ & $-5{,}55~\%$ & $14{,}2~\%$ & $6{,}72$ \\
+20 & 4 & $-2{,}92~\%$ & $-2{,}89~\%$ & $7{,}7~\%$ & $4{,}89$ \\
+50 & 4 & $-1{,}23~\%$ & $-1{,}19~\%$ & $3{,}3~\%$ & $3{,}14$ \\
+100 & 4 & $-0{,}65~\%$ & $-0{,}60~\%$ & $1{,}8~\%$ & $2{,}24$ \\
+200 & 4 & $-0{,}35~\%$ & $-0{,}30~\%$ & $1{,}0~\%$ & $1{,}59$ \\
+200 & $2{,}83$ & $-0{,}35~\%$ & $-0{,}30~\%$ & $0{,}95~\%$ & $0{,}83$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.6\linewidth]{fig_penalite}
+\caption{Retard de célérité de l'onde contre le facteur de pénalité intrinsèque, sur deux maillages, avec la prédiction écrite avant le balayage et l'ajustement.}
+\label{fig-pen}
+\end{figure}
+
+Le choix de la pénalité devient une règle chiffrée : pour un biais de célérité $\varepsilon$, il faut $p_f \geq \alpha/(2\varepsilon) \approx 0{,}62/\varepsilon$, soit 62 pour $1~\%$ et 124 pour $0{,}5~\%$, au prix d'un pas de temps $1{,}8$ ou $2{,}5$ fois plus petit qu'à $p_f = 20$. Les codes de référence fixent la pénalité autrement. Tatone et Grasselli la balaient sur un essai de compression élastique et retiennent la valeur au-delà de laquelle le module ne bouge plus, environ deux ordres de grandeur au-dessus de $E$~\cite{tatone2015}. Yan et al. recommandent au moins 100 fois $E$ d'après une bande sous son poids~\cite{yan2023adaptive}. Guo recommande au contraire $E \leq p_0 \leq 10E$ pour préserver le pas de temps, ce qui correspond, selon la loi mesurée ici et en assimilant les deux définitions de la longueur $h$, à un biais de célérité de 10 à $46~\%$. Le banc de la fissure pressurisée de la campagne applique déjà la règle avec $p_f = 100$.
+
+\subsection{Loi de contact}
+\label{sec-sens-contact}
+
+La force par volume de recouvrement de Liu et al. a été comparée au potentiel de Munjiza sur le banc Kuru, sur $100~\mu$s, à 4 fils (\cref{tab-potvolume}). Elle réduit le temps de $36~\%$, mais le pic de la force de contact insert-roche et l'impulsion dépendent du facteur de raideur choisi, et aucun facteur ne reproduit Munjiza à la fois sur le pic et l'impulsion. Le facteur $8/3$ n'égale Munjiza qu'en contact face contre face entre tétraèdres égaux ; sur un recouvrement partiel, le rapport des deux forces suit la fraction de face couverte. Un calcul de thèse doit choisir l'une des lois et s'y tenir.
+
+\begin{table}[htbp]
+\centering
+\caption{Potentiel de Munjiza contre force par volume de recouvrement, banc Kuru, $100~\mu$s, 4 fils.}
+\label{tab-potvolume}
+\small
+\begin{tabular}{@{}lrrrr@{}}
+\toprule
+loi & temps (s) & pic $F_z$ (N) & impulsion (N\,s) & joints rompus \\
+\midrule
+Munjiza & 398 & 11\,400 & $0{,}264$ & 57 \\
+volume, facteur $8/3$ & 256 & 6\,850 & $0{,}167$ & 56 \\
+volume, facteur 4 & 254 & 10\,770 & $0{,}230$ & 36 \\
+volume, facteur 5 (défaut) & 255 & 10\,650 & $0{,}223$ & 53 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+La dispersion du nombre de joints rompus, de 36 à 57, n'a pas été séparée de la variabilité propre à la fragmentation. Sur le même banc, abaisser la raideur de contact de $E$ à $0{,}25\,E$ réduit la force maximale de $5~\%$ et augmente les ruptures de $13~\%$.
+
+\subsection{Taille du maillage}
+
+Guo a montré que la charge de rupture d'une fissure pressurisée ne converge pas quand la maille passe de 20 à $1{,}25$~mm : elle passe de $4{,}90$ à $3{,}09$~MPa pour $G_f = 50$~N/m et de $2{,}63$ à $2{,}10$~MPa pour $G_f = 10$~N/m. Il en tire la règle d'une maille de un tiers à un quart de la zone plastique. Lisjak trouve la résistance en compression convergée entre $0{,}4$ et $0{,}15$~mm sur l'argilite d'Opalinus.
+
+rockim n'a pas encore d'étude de convergence en rupture. Le banc P3.1 reprend le cas de Guo avec des références analytiques (mécanique de la rupture élastique linéaire en largeur finie, $1{,}94$ et $4{,}33$~MPa ; fissure cohésive exacte en plaque infinie, $3{,}33$ et $10{,}15$~MPa) et des critères écrits. Ses essais de fumée sur les maillages de 20 et 10~mm donnent un amorçage de $1{,}91$ à $1{,}99$~MPa pour $G_f = 10$~N/m en insertion intrinsèque, proche de la mécanique de la rupture et sous la solution cohésive ; l'insertion adaptative n'insère aucun joint à 20~mm et amorce à $4{,}48$~MPa à 10~mm. La variante la plus fine est estimée à 71 à 114~h de calcul. Sur l'impact, la réplique St Anne n'a tourné que sur un maillage, et le jumeau Kuru à maillage grossier n'est pas une étude de résolution, son piston étant plus léger.
+
+Le guide d'utilisation impose en amont une condition de faisabilité, $2\,\Delta x < \ell_{cz} = E G_f/f_t^2 < a$, où $a$ est le rayon de contact : un calcul où la zone cohésive (35~mm) dépassait largement le rayon de contact ($1{,}45$~mm) n'a rompu que 4 joints sur 158\,423.
+
+\subsection{Schéma d'insertion}
+\label{sec-insertion}
+
+Le choix entre insertion intrinsèque et adaptative n'est pas un réglage numérique neutre : il change la réponse en rupture. Sur le banc Kuru à maillage grossier, à $100~\mu$s, l'insertion intrinsèque rompt 6\,090 joints et forme un cône broyé de 24~mm sous l'insert ; l'insertion adaptative en rompt 27 et ne forme qu'une peau de 2~mm, avec des tétraèdres restés élastiques jusqu'à 1\,359~MPa. Évaluer le critère d'insertion sur le maximum des points de la face plutôt que sur leur moyenne (\cle{facetAverage = max}) multiplie les ruptures par 15 et porte le cône à 8~mm ; un facteur 6 subsiste avec l'intrinsèque, attribué au cliquet diffus des joints de pénalité, propriété de la discrétisation sur laquelle Yang et al. ont calé leurs paramètres. L'insertion adaptative double environ le pas de temps ($6{,}32$ contre $2{,}83$~ns). Sur un tunnel 2D, elle fragmente à l'échelle de l'élément ($75{,}7~\%$ de blocs formés d'un seul élément) et propage moins les fissures. Yan et al. comparent les deux schémas à paramètres égaux sur l'essai brésilien et la compression~\cite{yan2023adaptive} ; ce banc n'existe pas dans rockim. La configuration de référence de l'impact reste intrinsèque, comme Solidity, et le choix fait partie des questions de la thèse.
+
+\subsection{Vitesse de chargement et amortissement}
+
+Lisjak et Tatone montrent que la résistance devient indépendante de la vitesse des plateaux sous environ $0{,}25$~m/s et de l'amortissement au-delà de $0{,}01$ fois l'amortissement critique. Guo trouve un pic de flexion stable sous $0{,}01$~m/s. Ces deux sensibilités ne sont pas mesurées dans rockim : la vitesse fait partie des critères du banc de la fissure en aile, préparé ; l'amortissement n'a pas de banc. Un constat ancien en marque l'enjeu : sur un cas mal dimensionné, l'amortissement numérique a absorbé $12~\%$ de l'énergie contre $0{,}55~\%$ pour la fissuration, et sur un tunnel 2D, passer l'amortissement local de $0{,}15$ à $0{,}7$ divise l'endommagement par 4.

@@ -1,0 +1,49 @@
+\section{Introduction}
+\label{sec-introduction}
+
+\subsection{Contexte}
+
+Le forage percussif fragmente la roche par une succession de chocs. Un piston frappe le taillant ; l'onde de compression traverse le taillant et les inserts en carbure de tungstène la transmettent à la roche, qui se fissure, se broie sous l'insert et éjecte des fragments. Un modèle numérique utile à la conception des taillants doit représenter à la fois la propagation de l'onde dans l'acier, le contact entre l'insert et la roche, l'amorçage et la propagation des fissures, et l'interaction des fragments une fois détachés.
+
+La méthode des éléments finis et discrets combinés, introduite par Munjiza~\cite{munjiza2004fdem}, répond à ces quatre exigences dans un même cadre : le volume est discrétisé en éléments finis, la fissuration est portée par des éléments joints insérés entre les éléments, et les morceaux libérés sont traités comme des corps discrets en contact. L'équipe d'Imperial College l'a appliquée à l'impact d'un insert unique sur le calcaire de St Anne, le grès de la Rhune et le granite de Kuru, en confrontant le code Solidity aux essais de Mines Paris-PSL~\cite{yang2025validation,yang2026pulverisation}. rockim a été écrit pour reproduire ces simulations, en comprendre les ingrédients et les étendre au granite de Red Bohus, matériau de la thèse.
+
+\subsection{La lignée des codes FDEM}
+
+Les codes FDEM actuels descendent tous des codes Y2D et Y3D de Munjiza et partagent la même ossature : équation du mouvement nodale intégrée explicitement, éléments de volume à déformation constante, contact par potentiel distribué, rupture portée par des joints cohésifs à adoucissement. Ils diffèrent par l'élément de volume, la loi cohésive, la façon d'insérer les joints, le traitement de l'effet de vitesse et le parallélisme (\cref{tab-codes}).
+
+Y-Geo (Université de Toronto) est un code 2D documenté par la thèse de Lisjak~\cite{lisjak2013thesis} et l'article de Mahabadi et al.~\cite{mahabadi2012ygeo}. HOSS (Los Alamos) est un code 2D et 3D massivement parallèle, avec des tétraèdres composites non verrouillants~\cite{knight2020hoss}. MultiFracS (Wuhan) a introduit l'insertion adaptative des joints~\cite{yan2023adaptive}. Solidity (Imperial College) porte le modèle de fracture 3D de la thèse de Guo~\cite{guo2014thesis}, publié ensuite par Guo et al.~\cite{guo2020generic}, et sert aux simulations de forage percussif de Yang et al. rockim se situe dans la même lignée : sa formulation par défaut est celle de Munjiza, et ses options reproduisent une à une les choix de Solidity.
+
+\begin{table}[htbp]
+\centering
+\caption{Les codes FDEM de la lignée de Munjiza et rockim.}
+\label{tab-codes}
+\small
+\begin{tabularx}{\linewidth}{@{}l X X X X@{}}
+\toprule
+ & Y-Geo & HOSS & Solidity & rockim \\
+\midrule
+dimension & 2D & 2D et 3D & 3D & 2D et 3D \\
+élément de volume & triangle, élasticité linéaire, isotropie transverse & tétraèdre composite non verrouillant & tétraèdre néo-hookéen visqueux & tétraèdre co-rotationnel, néo-hookéen en option \\
+loi cohésive & courbe en z de Munjiza, Mohr-Coulomb & intrinsèque, extrinsèque ou unifiée & courbe en z, Mohr-Coulomb avec coupure en traction & courbe en z, Mohr-Coulomb avec coupure, plusieurs branches de décharge \\
+insertion des joints & intrinsèque & réglable & intrinsèque & intrinsèque ou adaptative \\
+contact & potentiel de Munjiza, Coulomb & potentiel lissé & potentiel de Munjiza, Coulomb & pénalité nœud-face ou potentiel de Munjiza, Coulomb \\
+effet de vitesse & inertie seule & inertie seule & facteurs dynamiques & facteurs dynamiques en option \\
+parallélisme & GPU (version ultérieure) & massivement parallèle & OpenMP & OpenMP \\
+licence & ouverte & commerciale & LGPL version 3 & aucune \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+MultiFracS et Irazu, absents du tableau, partagent l'ossature de Y-Geo ; MultiFracS se distingue par l'insertion adaptative, Irazu par le couplage hydromécanique.
+
+\subsection{rockim}
+
+rockim regroupe six solveurs derrière une interface commune : éléments finis 2D et 3D, éléments discrets 2D et 3D, FDEM 2D et 3D. Depuis le 14 août 2026, le développement se concentre sur la FDEM ; les autres modes sont gelés, et la production 3D calibrée de la thèse reste confiée à Abaqus avec les VUMAT de la thèse. Le mode FDEM 3D porte les impacts d'insert, le mode FDEM 2D la calibration sur le Red Bohus, et le mode éléments finis 3D sert de référence élastique et de contrepartie à Abaqus.
+
+Le code compte environ 47\,000 lignes. Il ne dépend que de la bibliothèque Eigen et se parallélise en mémoire partagée par OpenMP. Un calcul se décrit par un fichier de configuration de paires clé-valeur ; chaque ingrédient de la formulation est une clé, avec un défaut. Une règle de développement gouverne la lecture de ce rapport : toute capacité nouvelle est une option désactivée par défaut, et son absence laisse les sorties identiques au bit près. La loi utilisée pour un calcul est donc une combinaison de clés, et le rapport donne à chaque étape la clé et sa valeur dans la configuration de référence de l'impact.
+
+\subsection{Démarche du rapport}
+
+Le rapport suit l'ordre des documentations de Guo et de Lisjak : formulation, vérification, sensibilités numériques, validation, application, coût. Il adopte les définitions de la norme ASME V\&V~10~\cite{asme2019vv10} et d'Oberkampf et Roy~\cite{oberkampf2010vv}, plus strictes que celles de ces documentations. La vérification établit que le code résout correctement ses équations, contre une solution exacte ou une propriété mathématique. La validation établit que les équations représentent le matériau, contre un essai qui n'a pas servi au calage. Un test de non-régression, dont la référence est une sortie antérieure du code, ne relève d'aucune des deux.
+
+La campagne de vérification et validation de rockim, commencée le 3 octobre 2026, ajoute une règle que les documentations de référence n'appliquent pas : chaque critère d'acceptation est chiffré et écrit avant le premier calcul, et un échec est consigné tel quel. Les documentations de Y-Geo, HOSS et Solidity jugent leurs résultats a posteriori (\enquote{good agreement}, \enquote{within the range}). Les résultats de ce rapport sont signalés selon leur statut : exécuté en campagne, essai de fumée seulement, ou repris d'un document antérieur du dépôt.
