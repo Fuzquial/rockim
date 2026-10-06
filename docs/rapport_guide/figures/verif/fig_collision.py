@@ -44,8 +44,8 @@ for a in ax[:2]:
 # (c) ecarts finaux
 a = ax[2]
 x = np.arange(6)
-lab = [f"{t.split('_')[0][:3]}. {t.split('_')[1]}\n{p[:4]}." for t, p in
-       [(b["test"], b["phase"]) for b in bil]]
+NOMT = {"potentiel_2D": "pot. 2D", "potentiel_3D": "pot. 3D", "volume_3D": "vol. 3D"}
+lab = [f"{NOMT[b['test']]}, {'frontal' if b['phase'] == 'frontale' else 'oblique'}" for b in bil]
 dE = [float(b["dEc_sur_Ec0"]) for b in bil]
 dP = [float(b["dP_sur_P0"]) for b in bil]
 a.bar(x - 0.18, dE, 0.36, color="#1f4e79", label=r"$|\Delta E_c|/E_{c0}$")
@@ -53,7 +53,7 @@ a.bar(x + 0.18, dP, 0.36, color="#bfbfbf", label=r"$|\Delta \mathbf{P}|/|\mathbf
 a.set_yscale("log")
 a.set_ylim(1e-17, 1e-3)
 a.set_xticks(x)
-a.set_xticklabels(lab, fontsize=6.5)
+a.set_xticklabels(lab, fontsize=6.5, rotation=40, ha="right", rotation_mode="anchor")
 a.set_title("(c) écarts relatifs en fin d'essai", fontsize=9)
 a.legend(loc="upper right", fontsize=7, ncol=1)
 fig.tight_layout()

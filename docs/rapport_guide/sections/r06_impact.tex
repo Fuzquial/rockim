@@ -1,13 +1,15 @@
 \section{Application à l'impact d'un insert}
 \label{sec-impact}
 
-Ce chapitre suit l'ordre des articles de Yang et al.~\cite{yang2025validation,yang2026pulverisation}, modèle de la validation d'un impact par la FDEM : configuration, matériaux, critères, comparaison, mécanismes. Deux répliques ont été menées, sur le calcaire de St Anne à $10{,}66$~m/s et sur le granite de Kuru à 9~m/s. Il présente ensuite un impact d'insert court rejoué contre Hertz, les indentations et la validation croisée avec Abaqus.
+Le transfert de l'onde dans le train est juste, à $0{,}2~\%$ de la théorie unidimensionnelle. Sur le calcaire de St Anne, la vitesse d'indentation et le rayon du cratère tombent à 8 à $12~\%$ de la simulation de Yang et al., écart du même ordre que la précision de lecture de leurs figures ; l'enfoncement est trop grand de $17~\%$ et la masse de fragments de $88~\%$, sur un seul maillage et avec une configuration propre à cette réplique. La réplique du granite de Kuru n'est pas reproduite, et le schéma d'insertion y change la physique à paramètres égaux. Le contact maillé insert-roche est 1,7 à 1,9 fois plus raide que la solution de Hertz quand le rayon de contact n'est pas résolu, biais qui pèse sur la force et la vitesse d'indentation des deux répliques. Les écarts sont calculés contre des simulations ou des solutions exactes, aucun contre un essai.
+
+Ce chapitre suit l'ordre des articles de Yang et al.~\cite{yang2025validation,yang2026pulverisation}, modèle de la validation d'un impact par la FDEM : configuration, matériaux, critères, comparaison, mécanismes. Deux répliques ont été menées, sur le calcaire de St Anne à $10{,}66$~m/s et sur le granite de Kuru à 9~m/s ; s'y ajoutent un impact court comparé à la solution de Hertz, une indentation et une comparaison de code à code avec Abaqus.
 
 \subsection{Configuration commune}
 
 \subsubsection{Montage}
 
-Le montage reproduit le banc de Mines Paris-PSL à six corps (\cref{fig-montage}) : piston en acier de $13{,}25$~mm de rayon et 260~mm de long, lancé vers le bas ; taillant en acier de 15~mm de rayon et 265~mm ; insert en carbure, hémisphère de rayon $8{,}51$~mm sur un fût de $7{,}94$~mm, brasé dans le taillant et tenu par un circlip ; plaque de chargement ; roche cylindrique de 125~mm de rayon et 150~mm de haut, base encastrée, sans frontière absorbante. Le jeu entre l'insert et la roche vaut $0{,}02$~mm. Une jauge de 136 tétraèdres lit la contrainte axiale à mi-taillant.
+Le montage reproduit le banc de Mines Paris-PSL à six corps (\cref{fig-montage}) : piston en acier de $13{,}25$~mm de rayon et 260~mm de long, lancé vers le bas ; taillant en acier de 15~mm de rayon et 265~mm de long ; insert en carbure, hémisphère de rayon $8{,}51$~mm sur un fût de $7{,}94$~mm, brasé dans le taillant et tenu par un circlip ; plaque de chargement ; roche cylindrique de 125~mm de rayon et 150~mm de haut, base encastrée, sans frontière absorbante. Le jeu entre l'insert et la roche vaut $0{,}02$~mm. Une jauge de 136 tétraèdres lit la contrainte axiale à mi-taillant.
 
 \begin{figure}[htbp]
 \centering
@@ -25,13 +27,13 @@ Le piston frappe le taillant ; dans l'hypothèse de barres élastiques unidimens
 \end{equation}
 Avec les sections du maillage, le facteur vaut $0{,}438$ et non $1/2$, ce qui donne $185{,}1$~MPa pour St Anne et $156{,}3$~MPa pour Kuru. L'onde atteint l'insert environ $50~\mu$s après le choc.
 
-\subsubsection{Critères de validation et estimateurs}
+\subsubsection{Critères de comparaison et estimateurs}
 
-Yang et al. définissent sept critères, tracés contre la vitesse du piston (\cref{tab-criteres}). Ils montrent aussi qu'une validation sur la seule masse de fragments serait trompeuse : deux jeux de paramètres donnent la même masse avec des fissurations entièrement différentes. Leurs valeurs ne sont publiées que sous forme de graphiques et ont été lues à $10~\%$ près au mieux.
+Yang et al. définissent sept critères de comparaison à l'essai, tracés en fonction de la vitesse du piston (\cref{tab-criteres}). Ils montrent aussi qu'une validation sur la seule masse de fragments serait trompeuse : deux jeux de paramètres donnent la même masse avec des fissurations entièrement différentes. Leurs valeurs ne sont publiées que sous forme de graphiques et ont été lues à $10~\%$ près au mieux.
 
 \begin{table}[htbp]
 \centering
-\caption{Les sept critères de validation de Yang et al.}
+\caption{Les sept critères de comparaison de Yang et al.}
 \label{tab-criteres}
 \small
 \begin{tabularx}{\linewidth}{@{}l X@{}}
@@ -62,6 +64,8 @@ où les indices désignent le piston, le taillant, l'insert et le circlip. Le pr
 
 \subsubsection{Mise en données}
 
+Le tableau~\ref{tab-stanne-setup} donne la mise en données, relue dans la configuration archivée avec le calcul (\cle{config_effective.cfg}). Elle n'est pas la configuration de référence de l'impact, celle du jumeau grossier Kuru (\cref{sec-annexe-cles}), dont elle s'écarte sur trois points : la pénalité des joints ($p_0 = 3\,000$~GPa avec $h$ moyenne des arêtes, contre $p_f = 20$ avec la longueur \cle{min}), le frottement de contact de la roche ($0{,}6$ contre $0{,}18$) et l'absence de pulvérisation. La règle de raideur du contact par potentiel est la même (\cle{potStiffnessByPhase} = \cle{min}). Les chiffres de cette réplique ne valent donc pas pour la configuration de référence.
+
 \begin{table}[htbp]
 \centering
 \caption{Réplique St Anne : maillage, matériau et réglages.}
@@ -73,13 +77,14 @@ où les indices désignent le piston, le taillant, l'insert et le circlip. Le pr
 \midrule
 maillage & 108\,667 tétraèdres, 209\,380 joints ; cœur de rayon $12{,}5$~mm : 14\,030 tétraèdres d'arête médiane $1{,}42$~mm (Yang : 230\,788 éléments, 1~mm) \\
 masses & piston $1{,}058$~kg, taillant $1{,}288$~kg, insert $64{,}6$~g \\
-roche (table~4 de Yang 2025) & $\rho = 2\,731$~kg/m$^3$, $E = 57$~GPa, $\nu = 0{,}31$, $f_t = 7{,}0$~MPa, $c = 18{,}8$~MPa, $\tan\varphi = 1$, $G_I = 12$ et $G_{II} = 800$~J/m$^2$ \\
+roche (tableau~4 de Yang 2025) & $\rho = 2\,731$~kg/m$^3$, $E = 57$~GPa, $\nu = 0{,}31$, $f_t = 7{,}0$~MPa, $c = 18{,}8$~MPa, $\tan\varphi = 1$, $G_I = 12$ et $G_{II} = 800$~J/m$^2$ \\
 joints & intrinsèques, $p_0 = 3\,000$~GPa avec $h$ moyenne des arêtes ; \cle{plastic} avec plage de Coulomb et cliquet ; courbe en z ; deux points sur trois \\
 effet de vitesse & facteurs de Yang, $a_t = 0{,}17$, réévalués à chaque pas \\
-contact & potentiel de Munjiza, $p = 600$~GPa, $\mu = 0{,}6$, activation adaptative \\
+contact & potentiel de Munjiza, raideur de chaque paire égale au plus petit des deux modules (57~GPa pour les paires avec la roche), $\mu = 0{,}6$ pour toutes les phases, activation adaptative \\
 pulvérisation, amortissement & aucun \\
 pas de temps & $1{,}707$~ns, commandé à $93~\%$ par les joints ; 175\,786 pas \\
 calcul & 29~h~21 sur 14 fils, arrêt à $300~\mu$s \\
+binaire & \cle{rockim_g1y19.exe}, sources du commit \cle{bfb1880} (13 septembre 2026) \\
 \bottomrule
 \end{tabularx}
 \end{table}
@@ -107,7 +112,9 @@ fin de la phase de charge & $254~\mu$s & non publiée & $284{,}3~\mu$s & $+12~\%
 \end{tabular}
 \end{table}
 
-Quatre critères mesurables tombent à 6 à $12~\%$ de la simulation de Yang (\cref{tab-stanne}), dans la dispersion de $10~\%$ annoncée par les auteurs. La vitesse d'indentation vaut $7{,}08$ ou $7{,}34$~m/s selon le document, sans que la provenance de la seconde valeur soit retrouvée. Le pic de la jauge, $212{,}3$~MPa à $34{,}3~\mu$s, est un dépassement du front d'onde : le plateau entre 40 et $80~\mu$s vaut $184{,}7$~MPa en médiane, à $0{,}2~\%$ de la théorie unidimensionnelle (\ref{eq-impact1d}) (\cref{fig-stanne-synthese}a). Le transfert de l'onde dans le train est donc juste. L'enfoncement, la masse de fragments et la fin de charge tardive vont dans le même sens, celui d'un cratère plus ouvert et d'une charge plus longue. Trois causes ne sont pas départagées : le réglage du brossage des fragments, qui est un critère géométrique et non l'algorithme mécanique de Yang, un cratère réellement plus ouvert, ou des éléments comptés qu'un brossage physique ne détacherait pas. Le rebond n'est pas mesuré, faute de calcul au-delà de $300~\mu$s.
+Les écarts du tableau~\ref{tab-stanne} sont calculés contre la simulation de Yang et al., pas contre leur essai. Quatre critères mesurables tombent à 6 à $12~\%$ de cette simulation, écarts du même ordre que la précision de lecture des figures ($10~\%$), que le rayon du cratère ($-11~\%$) et la borne basse de la vitesse d'indentation ($-12~\%$) dépassent. Deux de ces quatre critères discriminent peu : la contrainte au taillant ne dépend pas du modèle de roche, puisqu'elle résulte de l'onde dans l'acier, et la longueur radiale dépend du rayon de noyau retenu ($29{,}6$ ou $17{,}7$~mm). Restent la vitesse d'indentation et le rayon du cratère. La vitesse d'indentation vaut $7{,}08$ ou $7{,}34$~m/s selon le document, sans que la provenance de la seconde valeur ait été retrouvée. Le pic de la jauge, $212{,}3$~MPa à $34{,}3~\mu$s, est un dépassement du front d'onde : le plateau entre 40 et $80~\mu$s vaut $184{,}7$~MPa en médiane, à $0{,}2~\%$ de la théorie unidimensionnelle (éq.~\ref{eq-impact1d} ; \cref{fig-stanne-synthese}a). Le transfert de l'onde dans le train est donc juste. L'enfoncement, la masse de fragments et la fin de charge tardive vont dans le même sens, celui d'un cratère plus ouvert et d'une charge plus longue.
+
+La masse de fragments de rockim est un brossage géométrique (\cle{tools/crater_metrics.py}) : elle vaut $0{,}8$ fois le volume des éléments détachés du corps principal de la roche et situés au-dessus de la profondeur maximale du réseau rompu, multiplié par la masse volumique. À $300~\mu$s, cela revient à $0{,}8$ fois tout le volume détaché (1\,721 contre 2\,153~mm$^3$). Yang et al. retirent les fragments par un essai mécanique dynamique, non reproduit. Trois causes de l'écart ne sont pas départagées : ce critère géométrique, un cratère réellement plus ouvert, ou des éléments comptés qu'un brossage physique ne détacherait pas. Le rebond n'est pas mesuré, faute de calcul au-delà de $300~\mu$s.
 
 \begin{figure}[htbp]
 \centering
@@ -150,7 +157,7 @@ $300~\mu$s & 12\,090 facettes rompues sur 209\,380, 4\,089 fragments \\
 \label{fig-stanne-evol}
 \end{figure}
 
-Le réseau se développe en trois temps (\cref{tab-stanne-chrono,fig-stanne-evol,tab-stanne-crat}). Jusqu'à $150~\mu$s, un noyau broyé se forme sous l'insert, dont l'extension vaut 1,5 à 2 fois le rayon de la peau rompue. Entre 150 et $255~\mu$s, les fissures radiales se propagent de $12{,}5$ à $29{,}6$~mm, soit environ $0{,}16$~mm/µs. Après $255~\mu$s, l'extension est figée et seule la profondeur progresse pendant la décharge, de $36{,}9$ à $40{,}9$~mm. Yang et al. datent l'arrêt des médianes à $291~\mu$s et celui des radiales à $388~\mu$s.
+Le réseau se développe en trois temps (\cref{tab-stanne-chrono,fig-stanne-evol,tab-stanne-crat}). Dans le tableau~\ref{tab-stanne-crat}, le rayon de peau est le 95\textsuperscript{e} centile du rayon des facettes rompues (joints rompus) situées dans une peau de surface épaisse de deux tailles médianes de joint ; l'extension est le plus grand rayon d'une facette rompue, à toute profondeur ; la profondeur est la plus grande profondeur d'une facette rompue sous la surface libre ; le volume détaché est celui des éléments séparés du corps principal de la roche. Jusqu'à $150~\mu$s, un noyau broyé, dont l'extension vaut 1,5 à 2 fois le rayon de la peau rompue, se forme sous l'insert. Entre 150 et $255~\mu$s, les fissures radiales se propagent de $12{,}5$ à $29{,}6$~mm, soit environ $0{,}16$~mm/µs. Après $255~\mu$s, l'extension est figée ; la profondeur passe de $36{,}6$ à $36{,}9$~mm jusqu'au retournement, puis de $36{,}9$ à $40{,}9$~mm entre 285 et $300~\mu$s. Yang et al. datent l'arrêt des fissures médianes, verticales sous l'insert, à $291~\mu$s et celui des radiales à $388~\mu$s.
 
 \begin{table}[htbp]
 \centering
@@ -195,7 +202,7 @@ La longueur radiale dépend de sa définition et du rayon du noyau dont on exclu
 \label{fig-stanne-surface}
 \end{figure}
 
-À $300~\mu$s, la contrainte principale majeure montre un noyau comprimé sous $-20$~MPa jusqu'à 18~mm de profondeur et 10~mm de rayon, entouré d'une couronne en traction de 5 à 15~MPa, la contrainte retombant sur les lèvres des radiales (\cref{fig-stanne-sig}). Parmi les 12\,090 facettes rompues, $53~\%$ sont classées en cisaillement et $76~\%$ des joints morts l'étaient en compression ; la partition entre modes reste indicative, à cause de la normalisation retenue pour le mode de rupture.
+À $300~\mu$s, la contrainte principale majeure montre un noyau comprimé sous $-20$~MPa jusqu'à 18~mm de profondeur et 10~mm de rayon, entouré d'une couronne en traction de 5 à 15~MPa, la contrainte retombant sur les lèvres des radiales (\cref{fig-stanne-sig}). Parmi les 12\,090 facettes rompues, $53~\%$ sont classées en cisaillement et $76~\%$ des joints morts étaient en compression à leur rupture ; la partition entre modes reste indicative, à cause de la normalisation retenue pour le mode de rupture.
 
 \begin{figure}[htbp]
 \centering
@@ -206,12 +213,12 @@ La longueur radiale dépend de sa définition et du rayon du noyau dont on exclu
 
 \subsubsection{Force et énergie}
 
-La force mesurée croît presque linéairement avec la pénétration jusqu'à $90{,}8$~kN, sans chute brutale (\cref{fig-stanne-fp}). La vitesse de l'insert s'annule à $260~\mu$s sous une force maintenue, puis s'inverse à $284{,}3~\mu$s (\cref{fig-stanne-retour}) : la première annulation est une pause, pas la fin de la charge. L'estimateur du train rigide (\ref{eq-estimateur}) surestime le maximum de $27~\%$ sur $300~\mu$s ($115{,}5$ contre $90{,}8$~kN) et de $70~\%$ sur les $134$ premières microsecondes, alors que les impulsions coïncident à $0{,}8~\%$. La cause est identifiée : l'insert descend jusqu'à $12{,}0$~m/s quand le taillant plafonne à $8{,}68$~m/s, et l'estimateur le compte à la vitesse du taillant. En lui donnant sa propre vitesse, l'écart quadratique à la force mesurée tombe de $22{,}1$ à $3{,}3$~kN et le maximum à $92{,}4$~kN. Les comparaisons de force antérieures, fondées sur le premier estimateur, sont à refaire.
+La force mesurée croît presque linéairement avec la pénétration jusqu'à $90{,}8$~kN, sans chute brutale (\cref{fig-stanne-fp}). La vitesse de l'insert s'annule à $260~\mu$s sous une force maintenue, puis s'inverse à $284{,}3~\mu$s (\cref{fig-stanne-retour}) : la première annulation est une pause, pas la fin de la charge. L'estimateur du train rigide (\ref{eq-estimateur}) surestime le maximum de $27~\%$ sur $300~\mu$s ($115{,}5$ contre $90{,}8$~kN) et de $70~\%$ sur les $134$ premières microsecondes, alors que les impulsions coïncident à $0{,}8~\%$. La cause est identifiée : la vitesse de descente de l'insert atteint $12{,}0$~m/s quand celle du taillant plafonne à $8{,}68$~m/s, et l'estimateur compte l'insert à la vitesse du taillant. Lorsqu'on lui donne sa propre vitesse, l'écart quadratique à la force mesurée tombe de $22{,}1$ à $3{,}3$~kN et le maximum à $92{,}4$~kN. Les comparaisons de force antérieures, fondées sur le premier estimateur, sont à refaire.
 
 \begin{figure}[htbp]
 \centering
 \includegraphics[width=\linewidth]{stanne_fp}
-\caption{Réplique St Anne : force de contact insert-roche mesurée contre l'estimateur du train rigide, en fonction de la pénétration et du temps, impulsions cumulées et autres paires de contact.}
+\caption{Réplique St Anne : force de contact insert-roche mesurée et estimateur du train rigide, en fonction de la pénétration et du temps, impulsions cumulées et autres paires de contact.}
 \label{fig-stanne-fp}
 \end{figure}
 
@@ -222,7 +229,7 @@ La force mesurée croît presque linéairement avec la pénétration jusqu'à $9
 \label{fig-stanne-retour}
 \end{figure}
 
-Le bilan d'énergie ferme à $1{,}5\times10^{-7}~\%$ de l'échelle (\cref{tab-stanne-B4}). L'énergie cinétique passe de $60{,}12$ à $3{,}28$~J. Les éléments en prélèvent $18{,}09$~J, dont $16{,}74$ restent stockés élastiquement ; les joints cohésifs $14{,}49$~J, fissuration et énergie stockée confondues ; le contact général $34{,}54$~J, dont $27{,}78$~J de frottement ; la correction du schéma apporte $10{,}26$~J. Le frottement représente donc $49~\%$ de l'énergie cinétique perdue. L'énergie de rupture proprement dite est contenue dans le poste des joints et n'est pas isolée par le solveur.
+Le résidu du bilan d'énergie vaut $1{,}5\times10^{-7}~\%$ de l'échelle (\cref{tab-stanne-B4}), ce qu'on attend d'une identité comptable (\cref{sec-B4}) ; il ne prouve pas qu'aucune énergie n'est créée. L'énergie cinétique passe de $60{,}12$ à $3{,}28$~J. Les éléments en prélèvent $18{,}09$~J, dont $16{,}74$~J restent stockés élastiquement ; les joints cohésifs $14{,}49$~J, fissuration et énergie stockée confondues ; le contact général $34{,}54$~J, dont $27{,}78$~J de frottement ; le poste d'intégration apporte $10{,}26$~J, soit $18~\%$ de l'énergie cinétique perdue, valeur qu'aucun critère ne juge encore. Le frottement représente $49~\%$ de l'énergie cinétique perdue. L'énergie de rupture proprement dite est contenue dans le poste des joints et n'est pas isolée par le solveur.
 
 \begin{table}[htbp]
 \centering
@@ -234,7 +241,7 @@ Le bilan d'énergie ferme à $1{,}5\times10^{-7}~\%$ de l'échelle (\cref{tab-st
 poste & énergie (J) \\
 \midrule
 énergie cinétique perdue, $E_c(0) - E_c(t)$ & $56{,}84$ \\
-correction du schéma & $+10{,}26$ \\
+poste d'intégration & $+10{,}26$ \\
 éléments, dont $16{,}74$~J stockés & $18{,}09$ \\
 joints cohésifs & $14{,}49$ \\
 contact général, dont $27{,}78$~J de frottement & $34{,}54$ \\
@@ -251,11 +258,11 @@ Cette comparaison n'est pas indépendante du choix des paramètres : la loi de j
 
 \subsubsection{Mise en données}
 
-Le montage est le même, avec les paramètres de Yang et al.~2026 : $\rho = 2\,626$~kg/m$^3$, $E = 60$~GPa, $\nu = 0{,}24$, $f_t = 10{,}98$~MPa, $c = 29{,}84$~MPa, $\tan\varphi = 1{,}85$, $G_I = 50$ et $G_{II} = 1\,000$~J/m$^2$, pulvérisation ($\delta_0 = 0{,}014$~mm, $\delta_F = 0{,}4$~mm, $D_\text{max} = 0{,}9$), frottement $0{,}18$, pénalité $p_f = 20$ non publiée par les auteurs. Deux maillages existent : un maillage fin ($s = 1$, 120\,185 tétraèdres, cœur à $1{,}37$~mm, pas de $1{,}0$~ns) et un jumeau grossier ($s = 2{,}5$, 10\,563 tétraèdres, pas de $2{,}83$~ns), dont le piston est $26~\%$ plus léger : leur comparaison n'est pas une étude de maillage. La configuration complète du jumeau grossier est donnée en \cref{sec-annexe-cles}.
+Le montage est le même, avec les paramètres de Yang et al.~2026 : $\rho = 2\,626$~kg/m$^3$, $E = 60$~GPa, $\nu = 0{,}24$, $f_t = 10{,}98$~MPa, $c = 29{,}84$~MPa, $\tan\varphi = 1{,}85$, $G_I = 50$ et $G_{II} = 1\,000$~J/m$^2$, pulvérisation ($\delta_0 = 0{,}014$~mm, $\delta_F = 0{,}4$~mm, $D_\text{max} = 0{,}9$), frottement $0{,}18$, pénalité $p_f = 20$ non publiée par les auteurs. Deux maillages existent : un maillage fin (facteur d'échelle de maille $s = 1$, 120\,185 tétraèdres, cœur à $1{,}37$~mm, pas de $1{,}0$~ns) et un jumeau grossier ($s = 2{,}5$, 10\,563 tétraèdres, pas de $2{,}83$~ns), dont le piston est $26~\%$ plus léger : leur comparaison n'est pas une étude de maillage. La configuration complète du jumeau grossier est donnée en \cref{sec-annexe-cles}. Le calcul fin a tourné avec \cle{rockim_g1y15.exe}, construit au commit \cle{9ead6c8} du 12 septembre 2026, avec la correction du proxy de contrainte normale (\cle{jointNormalProxy} = \cle{law}). Les calculs du jumeau grossier du tableau~\ref{tab-kuru-insertion} ont tourné la veille avec les binaires \cle{rockim_g1y3} à \cle{rockim_g1y9}, avant cette correction ; la source ne donne pas leur commit.
 
 \subsubsection{Résultats}
 
-Sur le maillage fin, arrêté à $182{,}9~\mu$s avant le retournement, la réplique n'est pas reproduite (\cref{tab-kuru}). La jauge lit $176$~MPa, pour $156{,}3$~MPa par la théorie corrigée des sections et environ 160~MPa chez Yang. La vitesse d'indentation est trop grande de $22~\%$, la pulvérisation reste quasi inactive (2 éléments contre environ 360) parce que son seuil déviatorique n'est presque jamais atteint, et le réseau reste un noyau dense de 7 à 9~mm sans étoile radiale (\cref{fig-kuru-paths}).
+Sur le maillage fin, avec un calcul arrêté à $182{,}9~\mu$s avant le retournement, la réplique n'est pas reproduite (\cref{tab-kuru}). La jauge lit $176$~MPa, pour $156{,}3$~MPa par la théorie corrigée des sections et environ 160~MPa chez Yang. La vitesse d'indentation est trop grande de $22~\%$, la pulvérisation reste quasi inactive (2 éléments contre environ 360) parce que son seuil déviatorique n'est presque jamais atteint avec l'interprétation retenue de ce seuil (\cref{sec-continu}), et le réseau reste un noyau dense de 7 à 9~mm sans étoile radiale (\cref{fig-kuru-paths}).
 
 \begin{table}[htbp]
 \centering
@@ -293,7 +300,7 @@ Sur le jumeau grossier, le schéma d'insertion change la physique à paramètres
 \setlength{\tabcolsep}{4pt}
 \begin{tabular}{@{}lrrrr@{}}
 \toprule
- & intrinsèque & \multicolumn{3}{c}{adaptatif} \\
+ & intrinsèque & \multicolumn{3}{c}{adaptative} \\
  & & moyenne & maximum & nodal \\
 \midrule
 pas de temps (ns) & $2{,}83$ & $6{,}32$ & $6{,}32$ & $6{,}32$ \\
@@ -313,30 +320,32 @@ pénétration (mm) & $0{,}299$ & $0{,}284$ & $0{,}291$ & non mesurée \\
 \label{fig-kuru-coupes}
 \end{figure}
 
-La transcription mot à mot de la loi de joint de Solidity, essayée sur ce banc, crée de l'énergie (\cref{sec-jointbench}) : sans garde-fou, le travail cumulé des joints atteint 2\,745~J pour $31{,}5$~J apportés. Cela n'établit pas que la version interne du code de Yang diverge de la même façon ; le code public ne contient ni l'effet de vitesse interne, ni la pulvérisation, ni la configuration du granite. Un diagnostic indépendant du 12 septembre 2026 conclut que les données ne démontrent pas une incapacité de la FDEM 3D à localiser la rupture, mais une reproduction encore non validée. Une demande de données aux auteurs est rédigée et n'a pas été envoyée.
+La transcription mot à mot de la loi de joint de Solidity, essayée sur ce banc, crée de l'énergie (\cref{sec-jointbench}) : sans garde-fou, le travail cumulé des joints atteint 2\,745~J pour $31{,}5$~J apportés. Cela n'établit pas que la version interne du code de Yang diverge de la même façon ; le code public ne contient ni l'effet de vitesse interne, ni la pulvérisation, ni la configuration du granite. Une relecture indépendante des données, menée le 12 septembre 2026, conclut que les données ne démontrent pas une incapacité de la FDEM 3D à localiser la rupture ; elles traduisent une reproduction encore non validée. Une demande de données aux auteurs a été rédigée mais n'a pas été envoyée.
 
-\subsection{Impact court contre Hertz}
+\subsection{Impact court et solution de Hertz}
 
-Un impact court a été rejoué pour ce rapport : un insert sphérique en carbure maillé ($R = 11$~mm, 79~g, 600~GPa) frappe à 8~m/s un bloc de roche de $80 \times 80 \times 50$~mm ($E = 50$~GPa, $\nu = 0{,}25$), maillé à $2{,}8$-$4{,}5$~mm, sur $50~\mu$s, une fois en roche élastique et une fois en roche fissurable ($f_t = 10$~MPa, $c = 25$~MPa, $\varphi = 40^\circ$, $G_I = 70$~J/m$^2$). La solution de Hertz pour une sphère de masse $m$ sur un demi-espace donne
+Un impact court a été rejoué pour ce rapport : un insert sphérique en carbure maillé ($R = 11$~mm, 79~g, 600~GPa) frappe à 8~m/s un bloc de roche de $80 \times 80 \times 50$~mm ($E = 50$~GPa, $\nu = 0{,}25$), maillé à $2{,}8$ à $4{,}5$~mm, sur $50~\mu$s, une fois en roche élastique et une fois en roche fissurable ($f_t = 10$~MPa, $c = 25$~MPa, $\varphi = 40^\circ$, $G_I = 70$~J/m$^2$). La solution de Hertz pour une sphère de masse $m$ sur un demi-espace donne
 \begin{equation}
 \delta_\text{max} = \left(\frac{15\,m\,v_0^2}{16\,E^*\sqrt R}\right)^{2/5} = 243~\mu\text{m}, \qquad F_\text{max} = 26{,}05~\text{kN}, \qquad t_c = 2{,}9432\,\frac{\delta_\text{max}}{v_0} = 89{,}4~\mu\text{s},
 \end{equation}
 avec un rayon de contact maximal de $1{,}64$~mm, plus petit que la maille : le contact n'est pas résolu au sens de Hertz.
 
-En roche élastique, le contact maillé est 1,7 à 1,9 fois plus raide que Hertz, et le pic arrive plus tôt et plus haut, $32{,}2$~kN à $34{,}3~\mu$s (\cref{fig-bench1}). En roche fissurable, avec seulement 8 joints rompus, la force tombe à $0{,}53$ à $0{,}66$ fois Hertz et la pénétration dépasse celle de Hertz : les joints, qui ont absorbé $0{,}64$~J contre $0{,}09$~J en élastique, assouplissent la roche par leur adoucissement avant toute rupture. Le nombre de joints rompus ne suffit donc pas à mesurer l'endommagement sous l'insert. L'impulsion du contact égale $m\,\Delta v$ de l'insert à $10^{-4}$ près en élastique ; en fissurable, l'amortissement local agit aussi sur l'insert et l'écart monte à $5~\%$. Le bilan ferme à $0{,}04$ et $0{,}004~\%$. Le calcul ne couvre ni la décharge ni la restitution, et le jeu initial a été ramené de $0{,}5$ à $0{,}02$~mm pour tenir dans le temps imparti.
+En roche élastique, le contact maillé est 1,7 à 1,9 fois plus raide que Hertz sur la charge, et le pic arrive plus tôt et plus haut, $32{,}2$~kN à $34{,}3~\mu$s (\cref{fig-bench1}). C'est l'effet attendu d'une maille plus grande que le rayon de contact. Les répliques St Anne et Kuru ont une maille de cœur de $1{,}37$ à $1{,}42$~mm, du même ordre que leur rayon de contact : la force insert-roche et la vitesse d'indentation y portent un biais de raideur du même type, non chiffré tant que le banc de la sphère de Hertz, qui résout le contact, n'a pas tourné (\cref{sec-verification}).
+
+En roche fissurable, avec seulement 8 joints rompus, la force tombe à $0{,}53$ à $0{,}66$ fois Hertz et la pénétration dépasse celle de Hertz. Les joints ont absorbé $0{,}64$~J contre $0{,}09$~J en élastique, ce qui suggère un assouplissement de la roche par leur adoucissement avant toute rupture. Les deux variantes ne diffèrent toutefois pas que par la rupture : la variante fissurable garde l'amortissement local du banc (\cle{dampingLocal} = $0{,}05$), qui prélève $0{,}12$~J et agit aussi sur l'insert, alors que la variante élastique n'est pas amortie. La baisse de force mêle donc adoucissement et amortissement ; un rejeu à amortissement nul est nécessaire pour les séparer. L'impulsion du contact égale $m\,\Delta v$ de l'insert à $10^{-4}$ près en élastique ; en fissurable, l'écart monte à $5~\%$, à cause du même amortissement. Le bilan se referme à $0{,}04$ et $0{,}004~\%$ respectivement. Le calcul ne couvre ni la décharge ni la restitution, et le jeu initial a été ramené de $0{,}5$ à $0{,}02$~mm pour tenir dans le temps imparti.
 
 \begin{figure}[htbp]
 \centering
 \includegraphics[width=\linewidth]{impact/bench1_hertz}
-\caption{Impact d'un insert en carbure sur roche élastique et fissurable, $50~\mu$s, rejoué : force de contact contre Hertz ; le contact maillé est trop raide, l'adoucissement des joints l'assouplit avant toute rupture.}
+\caption{Impact d'un insert en carbure sur roche élastique et fissurable, $50~\mu$s, rejoué : force de contact comparée à la solution de Hertz ; le contact maillé est trop raide ; en roche fissurable, amortie, la force baisse avant toute rupture.}
 \label{fig-bench1}
 \end{figure}
 
-\subsection{Indentation et validation croisée}
+\subsection{Indentation et comparaison avec Abaqus}
 
 \subsubsection{Indentation}
 
-Une indentation 2D d'un bouton sphérique, avec le modèle de Yan et une maille de $0{,}15$~mm, montre le développement des fissures médianes puis latérales, et un broyage sous le bouton à la décharge (\cref{fig-indent}) : 34, 456, 682 et 1\,096 joints rompus à 24, 44, 87 et $145~\mu$s. Avec l'architecture de Ye (volume de Mohr-Coulomb et joints cohésifs, bouton de 4~mm), plus de $90~\%$ des fissures naissent à la décharge ; avec un volume élastique, aucun joint ne rompt malgré 2,5~MN/m, parce que la demi-largeur de contact de Hertz à l'amorçage (0,02~mm) est vingt fois plus petite que la maille.
+Une indentation 2D d'un bouton sphérique, avec le modèle de Yan et une maille de $0{,}15$~mm, montre le développement des fissures médianes puis latérales, et un broyage sous le bouton à la décharge (\cref{fig-indent}) : 34, 456, 682 et 1\,096 joints rompus à 24, 44, 87 et $145~\mu$s. Avec l'architecture de Ye (volume de Mohr-Coulomb et joints cohésifs, bouton de 4~mm), plus de $90~\%$ des fissures naissent à la décharge ; avec un volume élastique, aucun joint ne rompt malgré 2,5~MN/m, parce que la demi-largeur de contact de Hertz à l'amorçage (0,02~mm) est vingt fois plus petite que la maille de ce modèle ($0{,}4$~mm).
 
 \begin{figure}[htbp]
 \centering
@@ -345,13 +354,13 @@ Une indentation 2D d'un bouton sphérique, avec le modèle de Yan et une maille 
 \label{fig-indent}
 \end{figure}
 
-\subsubsection{Validation croisée avec Abaqus}
+\subsubsection{Comparaison de code à code avec Abaqus}
 
-Une percussion par une sphère de 15~mm de rayon, $0{,}5$~kg à 8~m/s, sur un bloc de $100 \times 100 \times 80$~mm a été calculée par rockim et par Abaqus/Explicit avec la VUMAT de Saksala 2011, sur le même maillage de 62\,208 tétraèdres exporté de rockim, avec des critères fixés avant calcul sur les signaux filtrés à $10~\mu$s (\cref{tab-xval,fig-xval}). Le pic de force, l'énergie absorbée et la pénétration passent ; la restitution, très faible dans les deux codes, sort de sa bande. Sans amortissement de contact, la pénalité d'Abaqus oscille à $2{,}7$ fois le pic moyen autour de la même réponse.
+Une percussion par une sphère de 15~mm de rayon, $0{,}5$~kg à 8~m/s, sur un bloc de $100 \times 100 \times 80$~mm a été calculée par rockim en mode éléments finis 3D, sans joints (\cle{law} = \cle{saksala2011}), et par Abaqus/Explicit avec la VUMAT de Saksala 2011, sur le même maillage de 62\,208 tétraèdres exporté de rockim, avec un amortissement de contact de $5~\%$ du critique dans Abaqus, homologue de celui de rockim, et des critères fixés avant calcul sur les signaux filtrés à $10~\mu$s (\cref{tab-xval,fig-xval}). Le pic de force, l'énergie absorbée et la pénétration satisfont leur critère ; la restitution, faible dans les deux codes, diffère d'un facteur 2 et sort de sa bande. Sans amortissement de contact, la pénalité d'Abaqus oscille à $2{,}7$ fois le pic moyen autour de la même réponse. Cette comparaison porte sur la loi de volume et le contact, pas sur la FDEM.
 
 \begin{table}[htbp]
 \centering
-\caption{Validation croisée rockim et Abaqus sur la loi de Saksala 2011, même maillage.}
+\caption{Comparaison de code à code entre rockim et Abaqus sur la loi de Saksala 2011, même maillage.}
 \label{tab-xval}
 \small
 \begin{tabular}{@{}lrrrl@{}}
@@ -369,10 +378,10 @@ restitution & $0{,}111$ & $0{,}059$ & $0{,}052$ & $0{,}05$ \\
 \begin{figure}[htbp]
 \centering
 \includegraphics[width=\linewidth]{impact/xval_abaqus}
-\caption{Validation croisée rockim et Abaqus/Explicit, loi de Saksala 2011, même maillage : force de percussion filtrée contre le temps et la pénétration.}
+\caption{Comparaison de code à code entre rockim et Abaqus/Explicit, loi de Saksala 2011, même maillage : force de percussion filtrée en fonction du temps et de la pénétration.}
 \label{fig-xval}
 \end{figure}
 
 \subsubsection{Coupe par un outil PDC}
 
-La réplique 2D de la coupe de Heilman et al. sur le granite FORGE est un résultat négatif, cité comme tel. La zone cohésive ($\ell_{cz} = 65$~mm) y vaut soixante fois la passe, et le contact d'outil par pénalité injectait 77\,286~J/m pour 189~J/m de travail de l'outil, avec des vitesses nodales de 2\,544~m/s, pendant que le bilan d'énergie restait fermé à $10^{-10}~\%$. C'est ce cas qui a conduit au contact d'outil de Signorini (\cref{sec-verification}).
+La réplique 2D de la coupe de Heilman et al. sur le granite FORGE, par un outil PDC (diamant polycristallin compact), est un résultat négatif, cité comme tel. La zone cohésive ($\ell_{cz} = 65$~mm) y vaut soixante fois la passe, et le contact d'outil par pénalité injectait 77\,286~J/m pour 189~J/m de travail de l'outil, avec des vitesses nodales de 2\,544~m/s, pendant que le résidu du bilan d'énergie restait à $2\times10^{-10}~\%$. C'est ce cas qui a conduit au contact d'outil de Signorini (\cref{sec-verification}).
