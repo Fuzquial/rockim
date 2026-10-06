@@ -1,30 +1,33 @@
-\section{Bancs de validation préparés}
+\section{Bancs élémentaires préparés}
 \label{sec-validation}
 
-Le chapitre~3 de la thèse de Guo valide Solidity sur trois essais élémentaires : flexion trois points, essai brésilien, compression polyaxiale. Lisjak valide Y-Geo sur l'amorçage d'une fissure en aile et sur des essais de compression simple et brésiliens. Ce chapitre présente les bancs équivalents de la campagne de rockim. Aucun n'a encore tourné en campagne : ils sont préparés, avec leurs critères écrits avant calcul, et n'ont tourné qu'en essai de fumée. Leur liste de lancement figure en \cref{sec-annexe-simus}.
+Aucun banc élémentaire de rockim n'a encore tourné en campagne : sept bancs sont préparés, avec leurs critères écrits avant calcul, et n'ont été exécutés qu'en essai de mise au point. Deux de leurs critères sont mal posés et sont à réécrire avant le lancement (brésilien P4.2, fissure pressurisée P3.1). Trois bancs relèvent de la vérification et non de la validation, au sens du \cref{sec-introduction} : l'élasticité (P1.2, P1.3) et la partie exacte de la fissure pressurisée (P3.1). Ils figurent ici parce qu'ils sont préparés avec les autres. Ces bancs correspondent aux essais élémentaires des documentations de référence : le chapitre~3 de la thèse de Guo valide Solidity sur la flexion trois points, l'essai brésilien et la compression polyaxiale ; Lisjak valide Y-Geo sur l'amorçage d'une fissure en aile et sur des essais de compression simple et brésiliens. Les reproductions de Yan et al. et de Wang et al. (\cref{sec-yan,sec-tunnel}) ont déjà joué un brésilien, des compressions et un Kirsch, mais de code à code et hors campagne. Une partie de la liste de lancement figure en \cref{sec-annexe-simus}.
 
 \subsection{Bancs préparés}
 
-\Cref{tab-bancs-prepares} résume les bancs préparés. Les références sont les mêmes que celles des codes de référence, avec un critère chiffré en plus.
+Le tableau~\ref{tab-bancs-prepares} résume les sept bancs, en six lignes (P1.2 et P1.3 sont réunies). Les références sont celles qu'emploient les codes de la lignée, avec un critère chiffré en plus ; la dernière colonne indique la nature de la comparaison.
 
 \begin{table}[htbp]
 \centering
-\caption{Bancs de validation élémentaire préparés, avec leur référence et leur critère principal.}
+\caption{Bancs élémentaires préparés, avec leur référence, leur critère principal et la nature de la comparaison. Les critères marqués d'un astérisque sont mal posés (voir le texte).}
 \label{tab-bancs-prepares}
 \small
-\begin{tabularx}{\linewidth}{@{}l X X X@{}}
+\begin{tabularx}{\linewidth}{@{}l X X X l@{}}
 \toprule
-banc & référence & critère principal & essai de fumée \\
+banc & référence & critère principal & essai de mise au point & nature \\
 \midrule
-fissure pressurisée (P3.1) & Guo §{2.4} ; mécanique de la rupture ; fissure cohésive exacte & convergence à $5~\%$ ; écart à Guo $\leq 15~\%$ & amorçage $1{,}91$-$1{,}99$~MPa \\
-fissure en aile (P3.3) & Lisjak : $\sigma_{1c} = 7{,}0$~MPa, $\theta = 64^\circ$ ; mécanique de la rupture 5,1 à 14,6~MPa & $|\sigma_{1c}/7{,}0 - 1| \leq 15~\%$, angle à $10^\circ$ & chaîne fonctionnelle, valeurs sans objet \\
-flexion trois points (P4.1) & Guo §{3.3} ; poutre de Timoshenko & raideur et contrainte de rupture & chaîne fonctionnelle \\
-brésilien (P4.2) & Guo §{3.4} ; Hondros & $f_{bt}/f_t$ entre $0{,}85$ et $1{,}15$ & chaîne fonctionnelle \\
-élasticité (P1.2, P1.3) & Kirsch ; champ homogène & erreur nodale $\leq 10^{-6}$ ; $K_t$ à $2~\%$ & champ homogène à $7{,}5\times10^{-8}$ \\
-impact de bouton (B8) & Saksala 2011 & force maximale à $15~\%$ & $-14{,}7~\%$ sur maillage grossier \\
+fissure pressurisée (P3.1) & Guo §{2.4} ; mécanique de la rupture ; fissure cohésive exacte & convergence à $5~\%$ ; écart à Guo $\leq 15~\%$\,* & amorçage de $1{,}91$ à $1{,}99$~MPa & vérification et code à code \\
+fissure en aile (P3.3) & Lisjak : $\sigma_{1c} = 7{,}0$~MPa, $\theta = 64^\circ$ ; mécanique de la rupture 5,1 à 14,6~MPa & $|\sigma_{1c}/7{,}0 - 1| \leq 15~\%$, angle à $10^\circ$ & chaîne fonctionnelle, valeurs sans objet & code à code \\
+flexion trois points (P4.1) & Guo §{3.3} ; poutre de Timoshenko & raideur et contrainte de rupture & chaîne fonctionnelle & code à code \\
+brésilien (P4.2) & Guo §{3.4} ; Hondros & $f_{bt}/f_t$ entre $0{,}85$ et $1{,}15$\,* & chaîne fonctionnelle & code à code \\
+élasticité (P1.2, P1.3) & Kirsch ; champ homogène & erreur nodale $\leq 10^{-6}$ ; $K_t$ à $2~\%$ & champ homogène à $7{,}5\times10^{-8}$ & vérification \\
+impact de bouton (B8) & Saksala 2011 & force maximale à $15~\%$ & $-14{,}7~\%$ sur maillage grossier & code à code \\
 \bottomrule
 \end{tabularx}
 \end{table}
 
-Deux bancs appellent une précision. Pour le brésilien, les critères écrits avant calcul annoncent qu'ils ne peuvent pas passer ensemble : Guo trouve $f_{bt} = 1{,}96$~MPa pour $f_t = 3$~MPa, soit $0{,}65\,f_t$, qu'il attribue à la rupture en cisaillement sous les plateaux plans, alors qu'un modèle qui respecte Hondros doit amorcer au centre près de $f_t$. Pour la fissure en aile, deux des quatre solutions de mécanique de la rupture de la fourchette de Lisjak sont des reconstructions non vérifiées. La compression polyaxiale de Guo n'a pas de banc dans la campagne ; Guo y juge l'orientation des plans de cisaillement à l'œil, contre l'angle $\pm(45^\circ + \varphi/2)$.
+Pour le brésilien P4.2, le critère confond la contrainte d'amorçage au centre, que donne Hondros, et le pic $f_{bt}$, alors qu'un modèle cohésif amorce avant le pic. Il ne peut pas passer : Guo trouve $f_{bt} = 1{,}96$~MPa pour $f_t = 3$~MPa, soit $0{,}65\,f_t$, qu'il attribue à la rupture en cisaillement sous les plateaux plans, et la reproduction de Yan donne environ $4\,f_t$ (\cref{sec-yan}). Le critère est à scinder : contrainte au centre à l'amorçage du premier joint à $15~\%$ de $f_t$, et pic rapporté avec $\ell_{cz}/D$, sans critère d'acceptation, en comparaison à Guo.
 
+Pour la fissure pressurisée P3.1, les références encadrent la charge de rupture sans la fixer : elles diffèrent d'un facteur $1{,}7$ à $2{,}3$ (mécanique de la rupture élastique linéaire en largeur finie, $1{,}94$ et $4{,}33$~MPa ; fissure cohésive exacte en plaque infinie, $3{,}33$ et $10{,}15$~MPa, \cref{sec-sensibilites}). Le critère « écart à Guo $\leq 15~\%$ » vise une référence que Guo montre lui-même non convergée ($4{,}90$ puis $3{,}09$~MPa quand la maille passe de 20 à $1{,}25$~mm). La référence pertinente pour un modèle cohésif est une solution cohésive dans la même géométrie finie ; elle manque, et l'essai de mise au point ($1{,}91$ à $1{,}99$~MPa) n'est pas encore interprétable.
+
+Pour la fissure en aile, deux des quatre solutions de mécanique de la rupture de la fourchette de Lisjak sont des reconstructions non vérifiées. La compression polyaxiale de Guo n'a pas de banc dans la campagne ; Guo y juge l'orientation des plans de cisaillement à l'œil, par rapport à l'angle $\pm(45^\circ + \varphi/2)$.
