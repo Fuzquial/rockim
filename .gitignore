@@ -178,3 +178,4 @@ vv/run_queue.log
 vv/STOP
 vv/*/ENCOURS
 vv/*/queue.log
+sim_out/
