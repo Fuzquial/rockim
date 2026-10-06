@@ -71,7 +71,7 @@ Le tableau~\ref{tab-jb-cycles} et la figure~\ref{fig-jb-richardson} séparent de
 \label{fig-jb-cycles}
 \end{figure}
 
-Un recalcul du travail à partir des sorties confirme cette lecture. Intégré par la règle des trapèzes, d'ordre deux, le travail par cycle vaut zéro exactement pour \cle{plastic} et \cle{origin} sous le plafond, à toutes les résolutions, et vaut d'emblée la limite de Richardson pour \cle{solidity} ($1{,}898998\times10^{-8}$~J au premier pas de temps). Une seconde quadrature des mêmes sorties, d'ordre deux, donne donc la même conclusion. L'origine physique se lit sur la \cref{fig-jb-cycles}b : sous \cle{solidity}, la résistance au cisaillement croît avec la compression sans que la réponse normale en tienne compte ; le joint charge le glissement sous faible compression (contrainte tangentielle jusqu'à 33~MPa sur la branche A) et le restitue sous forte compression (41~MPa sur la branche C).
+Un recalcul du travail à partir des sorties confirme cette lecture. Intégré par la règle des trapèzes, d'ordre deux, le travail par cycle vaut zéro exactement pour \cle{plastic} et \cle{origin} sous le plafond, à toutes les résolutions, et vaut d'emblée la limite de Richardson pour \cle{solidity} ($1{,}898998\times10^{-8}$~J au premier pas de temps). L'origine physique se lit sur la \cref{fig-jb-cycles}b : sous \cle{solidity}, la résistance au cisaillement croît avec la compression sans que la réponse normale en tienne compte ; le joint charge le glissement sous faible compression (contrainte tangentielle jusqu'à 33~MPa sur la branche A) et le restitue sous forte compression (41~MPa sur la branche C).
 
 \begin{figure}[htbp]
 \centering
@@ -87,7 +87,7 @@ Le banc ne couvre ni l'effet de vitesse variable, ni la rotation pendant un cycl
 
 \subsubsection{Objet et équations}
 
-La force de contact dérive d'un potentiel : une collision élastique sans frottement ni amortissement doit conserver l'énergie, aux erreurs du schéma près, et la quantité de mouvement exactement, puisque les forces de paire sont égales et opposées par construction :
+La force de contact est construite à partir d'un potentiel. Si elle dérive d'une énergie, une collision élastique sans frottement ni amortissement conserve l'énergie, aux erreurs du schéma près ; la quantité de mouvement est conservée exactement, puisque les forces de paire sont égales et opposées par construction :
 \begin{equation}
 E_c + U_\text{pot} = \text{constante}, \qquad \mathbf P = m_A\mathbf v_A + m_B\mathbf v_B = \mathbf P_0 .
 \end{equation}
@@ -114,7 +114,7 @@ volume 3D & oblique & 9\,900 & $1{,}2\times10^{-11}$ & $6{,}7\times10^{-16}$ \\
 \end{tabular}
 \end{table}
 
-La quantité de mouvement est conservée au zéro machine dans les six cas, l'énergie cinétique à $5\times10^{-7}$ près au pire (\cref{tab-collision,fig-collision}). Pendant le choc frontal, l'énergie cinétique descend à la moitié de sa valeur initiale, transite par le potentiel et revient entière. Le test porte sur des corps rigides : il vérifie la force de paire et son intégration, pas son interaction avec la déformation des éléments.
+La quantité de mouvement est conservée au zéro machine dans les six cas, l'énergie cinétique à $5\times10^{-7}$ près au pire (\cref{tab-collision,fig-collision}). Pendant le choc frontal, l'énergie cinétique descend à la moitié de sa valeur initiale, transite par le potentiel et revient entière. Le test porte sur des corps rigides : il vérifie la force de paire et son intégration, pas son interaction avec la déformation des éléments, et ne démontre pas que la force dérive d'une énergie pour des tétraèdres déformés.
 
 \begin{figure}[htbp]
 \centering
@@ -162,7 +162,7 @@ $N$ & $v_\text{sortie}$ (m/s) & $v_\text{sortie}/2v$ & $t_c/(2L/c)$ & perte $\ti
 \end{tabular}
 \end{table}
 
-La perte vaut $1/N$ à $3~\%$ près sur deux décades et la durée de contact $2L/c$ à $0{,}15~\%$ près dès $N = 50$ (\cref{tab-t0b,fig-t0b}). La vitesse de sortie tend vers $2v$ plus lentement que $1/N$, parce qu'une partie de l'énergie part en vibration de la barre qui repart. Un amortissement de Cundall de $0{,}05$ mord sur l'impulsion de contact : la barre ne repart qu'à $16{,}9$~m/s pour $N = 100$, et la perte croît avec $N$ au-delà de $N = 50$ parce que le nombre de pas croît. D'où la règle de ne jamais amortir un banc où l'on mesure une force de contact.
+La perte vaut $1/N$ à $3~\%$ près sur deux décades et la durée de contact $2L/c$ à $0{,}15~\%$ près dès $N = 50$ (\cref{tab-t0b,fig-t0b}). La vitesse de sortie tend vers $2v$ plus lentement que $1/N$, parce qu'une partie de l'énergie part en vibration de la barre qui repart. Un amortissement de Cundall de $0{,}05$ mord sur l'impulsion de contact : la barre ne repart qu'à $16{,}9$~m/s pour $N = 100$, et la perte croît avec $N$ au-delà de $N = 50$ parce que le nombre de pas croît. Un banc où l'on mesure une force de contact ne doit donc jamais être amorti.
 
 \begin{figure}[htbp]
 \centering
@@ -178,7 +178,7 @@ Un outil à vitesse imposée est un réservoir d'énergie infini, et une pénali
 \subsection{Bilan d'énergie}
 \label{sec-verif-B4}
 
-Le bilan (\cref{sec-B4}) a été rejoué sur neuf calculs courts (\cref{tab-b4,fig-b4}). Le résidu y est rapporté à l'échelle définie en \cref{sec-B4}, plus grand de l'énergie cinétique initiale, de l'énergie cinétique finale et de la somme des valeurs absolues des postes. Il reste sous $0{,}1~\%$ de l'échelle, sauf dans le cas où la pesanteur n'est pas comptée : le poste manquant fait alors tout le résidu ($116~\%$), qui tombe à $0{,}084~\%$ quand il est compté.
+Le bilan (\cref{sec-B4}) a été rejoué sur neuf calculs courts (\cref{tab-b4,fig-b4}). Le résidu y est rapporté à l'échelle définie en \cref{sec-B4}, soit la plus grande des trois grandeurs suivantes : l'énergie cinétique initiale, l'énergie cinétique finale et la somme des valeurs absolues des postes. Il reste sous $0{,}1~\%$ de l'échelle, sauf dans le cas où la pesanteur n'est pas comptée : le poste manquant fait alors tout le résidu ($116~\%$), qui tombe à $0{,}084~\%$ quand il est compté.
 
 \begin{table}[htbp]
 \centering
@@ -209,11 +209,11 @@ percussion 2D, 174 joints rompus & FDEM 2D & $-0{,}58$~J/m & $3{,}2\times10^{-3}
 \label{fig-b4}
 \end{figure}
 
-La figure~\ref{fig-b4}b chiffre ce que le bilan ne voit pas. Sur la percussion 2D de référence, en contact par pénalité nœud-face, le poste d'intégration vaut $18\,393$~J/m pour $86{,}9$~J/m de travail de l'outil, soit 212 fois l'apport, et le bilan ferme pourtant à $0{,}003~\%$ parce que cette énergie est comptée dans un poste. Le même calcul signale une vitesse nodale de $8{,}4$ fois la vitesse de rebond rigide $2v$. Le bilan prouve qu'aucune force n'échappe aux compteurs, pas qu'aucune énergie n'est créée ; il se lit avec le poste d'intégration rapporté à l'apport, le rapport d'injection, la vitesse nodale maximale et le cycle fermé du joint. Ce rapport vaut $0{,}012$ sur la percussion 3D intrinsèque de 20~µs, $0{,}009$ sur le raclage sous Signorini et $0{,}60$ sous pénalité. Aucune tolérance n'est fixée pour lui dans le dépôt, ni sur sa valeur ni sur sa variation quand $\Delta t$ est divisé par deux : c'est une limite du critère, et un seuil reste à écrire avant calcul.
+La figure~\ref{fig-b4}b chiffre ce que le bilan ne voit pas. Sur la percussion 2D de référence, en contact par pénalité nœud-face, le poste d'intégration vaut $18\,393$~J/m pour $86{,}9$~J/m de travail de l'outil, soit 212 fois l'apport, et le bilan ferme pourtant à $0{,}003~\%$ parce que cette énergie est comptée dans un poste. Le même calcul signale une vitesse nodale de $8{,}4$ fois la vitesse de rebond rigide $2v$. Le bilan prouve qu'aucune force n'échappe aux compteurs, pas qu'aucune énergie n'est créée ; il se lit avec le poste d'intégration rapporté à l'apport, le rapport d'injection, la vitesse nodale maximale et le cycle fermé du joint. Le rapport du poste d'intégration à l'apport vaut $0{,}012$ sur la percussion 3D intrinsèque de 20~µs, $0{,}009$ sur le raclage sous Signorini et $0{,}60$ sous pénalité. Aucune tolérance n'est fixée pour lui dans le dépôt, ni sur sa valeur ni sur sa variation quand $\Delta t$ est divisé par deux : c'est une limite du critère, et un seuil reste à écrire avant calcul.
 
 \subsection{Barre en traction}
 
-Une barre est chargée en traction par une force imposée, avec une force imposée sur un groupe de nœuds. La FDEM 3D donne un allongement de $4{,}00122$~µm et une réaction de $-2\,000{,}49$~N, pour $\sigma L/E = 4{,}000$~µm et $-2\,000$~N exacts, soit $0{,}03~\%$ d'écart. En insertion intrinsèque, la même barre s'allonge de $4{,}5~\%$ de plus, effet statique de la souplesse des joints. MultiFracS publie le test analogue d'une bande sous son poids propre (\cref{sec-yan-bande}).
+Une barre est chargée en traction par une force imposée sur un groupe de nœuds. La FDEM 3D donne un allongement de $4{,}00122$~µm et une réaction de $-2\,000{,}49$~N, pour $\sigma L/E = 4{,}000$~µm et $-2\,000$~N exacts, soit $0{,}03~\%$ d'écart. En insertion intrinsèque, la même barre s'allonge de $4{,}5~\%$ de plus, effet statique de la souplesse des joints. MultiFracS publie le test analogue d'une bande sous son poids propre (\cref{sec-yan-bande}).
 
 \subsection{Onde de compression dans une barre}
 \label{sec-V1}
@@ -265,7 +265,7 @@ Les éléments finis 3D passent les cinq critères (\cref{tab-V1}), avec un ordr
 \begin{figure}[htbp]
 \centering
 \includegraphics[width=0.85\linewidth]{fig_signaux_fem3d}
-\caption{Onde dans une barre, éléments finis 3D, $h = 1$~mm : déplacements axiaux aux trois stations et au bout libre, et réaction de l'appui, contre la série de d'Alembert.}
+\caption{Onde dans une barre, éléments finis 3D, $h = 1$~mm : déplacements axiaux aux trois stations et au bout libre, et réaction de l'appui, comparés à la série de d'Alembert.}
 \label{fig-signaux-fem}
 \end{figure}
 
@@ -290,7 +290,7 @@ La FDEM en insertion intrinsèque avec $p_f = 20$ échoue : l'onde est $2{,}9$ �
 
 \subsubsection{Objet, mise en données et solution}
 
-Ce banc reprend le test de vérification du frottement de Xiang et al.~\cite{xiang2009validation} (FEM/DEM 2D du code Y), repris en 3D par Fukuda et al., et joué ici en 3D. Un cube de 50~mm ($\rho = 2\,650$~kg/m$^3$, $E = 1$~GPa, $\nu = 0{,}25$) glisse sous la pesanteur sur une dalle fixe de $600 \times 100 \times 20$~mm avec $\mu = 0{,}5$ ; les maillages ne coïncident pas et seul le contact relie les deux corps. Sans basculement :
+Ce banc est le test de vérification du frottement de Xiang et al.~\cite{xiang2009validation} (FEM/DEM 2D du code Y), transposé en 3D par Fukuda et al. dans Y-HFDEM, leur code FDEM 3D sur GPU, et joué ici en 3D. Un cube de 50~mm ($\rho = 2\,650$~kg/m$^3$, $E = 1$~GPa, $\nu = 0{,}25$) glisse sous la pesanteur sur une dalle fixe de $600 \times 100 \times 20$~mm avec $\mu = 0{,}5$ ; les maillages ne coïncident pas et seul le contact relie les deux corps. Sans basculement :
 \begin{equation}
 x(t) = v_0 t - \tfrac12 \mu g t^2 \quad (t \leq v_0/\mu g), \qquad L = \frac{v_0^2}{2\mu g} .
 \end{equation}
@@ -323,17 +323,17 @@ pénalité nœud-face & $0{,}5$ & $-0{,}46$ & $25{,}48$ & $-102~\%$ & 85~\% & $4
 
 Le contact par potentiel reproduit la cinématique aux trois vitesses avec un bilan d'énergie fermé à $10^{-12}~\%$ (\cref{tab-P21,fig-P21}) ; sur le premier millimètre, le travail du frottement égale $\mu m g$ fois la distance à $10^{-5}$ près. Le bloc glisse un peu trop loin, d'autant moins en relatif que la vitesse est grande, ce qui est attribué à la régularisation du frottement en fin d'essai ; cette attribution n'est pas vérifiée, et l'excès absolu croît avec $v_0$. À 1 et 2~m/s, il se soulève progressivement de $0{,}57$ et $0{,}59$~mm, contre 6~µm à $0{,}5$~m/s : un léger tangage sous le couple de frottement ou une remontée sur les marches du maillage non coïncident, que la rotation non mesurée ne permet pas de départager. La pénalité nœud-face échoue : le bloc accroche par son arête les triangles de la dalle, bascule, son centre monte de $4{,}8$~mm, et il finit $0{,}46$~mm derrière son point de départ, avec un bilan pourtant fermé. Xiang et al. montraient que le pas de stabilité ne suffit pas pour le frottement (erreur sur la distance devenue significative à $\Delta t = 10^{-7}$~s, négligeable à $10^{-8}$~s) ; ce banc n'a pas encore été rejoué en faisant varier le pas.
 
-\subsection{Impact élastique contre Hertz}
+\subsection{Impact élastique et solution de Hertz}
 
 Un impact élastique d'un insert sphérique en carbure ($R = 11$~mm) à 8~m/s sur un bloc de granite a été calculé avant la campagne sur quatre maillages de roche, de $4{,}74$ à $0{,}80$~mm, et comparé à
 \begin{equation}
 F = \tfrac43 E^*\sqrt R\,\delta^{3/2}, \qquad \frac{1}{E^*} = \frac{1-\nu_1^2}{E_1} + \frac{1-\nu_2^2}{E_2}, \qquad a = \sqrt{R\delta}, \qquad p_0 = \frac{3F}{2\pi a^2} .
 \end{equation}
-Le pic local de von Mises n'est pas résolu : il passe de 266 à 2\,931~MPa quand la maille passe de $4{,}74$ à $0{,}80$~mm, pour une pression de Hertz de 4\,114~MPa, dont le maximum de von Mises, situé sous la surface, ne vaut qu'une fraction : la comparaison mêle deux grandeurs. La comparaison en force n'est pas exploitable telle quelle : l'abscisse de la figure archivée est le déplacement de l'insert depuis l'origine, jeu initial de 50~µm compris, alors que la courbe de Hertz part de l'enfoncement nul ; les données brutes ne sont pas dans le dépôt pour la retracer. Le banc P2.2 de la campagne (les bancs y sont numérotés par famille, P1 élasticité, P2 contact, P3 rupture, P4 essais élémentaires, \cle{docs/VV_campagne.md} ; sphère de 20~mm à 1~m/s sur un bloc de module 1~GPa, quatre raffinements du rayon de contact, critères de $5~\%$ sur la force, la durée de contact et l'enfoncement) reprend la question ; son essai court donne la force filtrée à $+4{,}6~\%$ et l'enfoncement à $-3{,}6~\%$ de Hertz. Un impact court rejoué pour ce rapport est présenté au \cref{sec-impact}.
+Le pic local de von Mises n'est pas résolu : il passe de 266 à 2\,931~MPa quand la maille passe de $4{,}74$ à $0{,}80$~mm, pour une pression de Hertz de 4\,114~MPa, dont le maximum de von Mises, situé sous la surface, ne vaut qu'une fraction : la comparaison mêle deux grandeurs. La comparaison en force n'est pas exploitable telle quelle : l'abscisse de la figure archivée est le déplacement de l'insert depuis l'origine, jeu initial de 50~µm compris, alors que la courbe de Hertz part de l'enfoncement nul ; les données brutes ne sont pas dans le dépôt pour la retracer. La campagne (\cle{docs/VV_campagne.md}) numérote ses bancs par famille : P1 élasticité, P2 contact, P3 rupture, P4 essais élémentaires. Son banc P2.2 reprend la question avec une sphère de 20~mm à 1~m/s sur un bloc de module 1~GPa, quatre raffinements du rayon de contact et des critères de $5~\%$ sur la force, la durée de contact et l'enfoncement ; son essai de mise au point donne la force filtrée à $+4{,}6~\%$ et l'enfoncement à $-3{,}6~\%$ de Hertz. Un impact court rejoué pour ce rapport est présenté au \cref{sec-impact}.
 
 \subsection{Invariants et non-régression}
 
-Un contrôle à charge nulle laisse un modèle au repos et exige zéro joint rompu et un travail d'amortisseur négatif ou nul ; il en existe 26, un par option de loi ou de contact, et ils ont détecté de vrais défauts (158 joints rompus à charge nulle sur un maillage de Delaunay avant correction, 5 joints rompus par des tétraèdres exactement tangents dans le contact par potentiel). À un fil, les sorties sont identiques au bit près à celles du calcul série ; entre deux nombres de fils, les pics s'écartent d'environ $2~\%$. La suite de non-régression compte 118 tests ; 56 relèvent de la vérification, 24 vérifient qu'un pic reste à l'écart de $f_t$ constaté à une date donnée, sans référence exacte, 38 sont de la régression pure. Rejouée au niveau rapide le 6 octobre, elle a d'abord passé 49 tests sur 51 : les deux tests du raclage n'ont pas trouvé leur maillage (\cle{meshes/t1_toolcontact.msh}). Une fois le banc de raclage relancé avec son maillage, elle passe 50 tests sur 51, le seul échec étant le raclage en pénalité décrit plus haut. Le tableau~\ref{tab-tests-standard} situe ces tests par rapport aux codes de référence.
+Un contrôle à charge nulle laisse un modèle au repos et exige zéro joint rompu et un travail d'amortisseur négatif ou nul. Il en existe 26, un par option de loi ou de contact, et ils ont détecté de vrais défauts (158 joints rompus à charge nulle sur un maillage de Delaunay avant correction, 5 joints rompus par des tétraèdres exactement tangents dans le contact par potentiel). À un fil, les sorties sont identiques au bit près à celles du calcul série ; entre deux nombres de fils, les pics s'écartent d'environ $2~\%$. La suite de non-régression compte 118 tests ; 56 relèvent de la vérification, 24 vérifient qu'un pic garde l'écart à $f_t$ constaté à une date donnée, sans référence exacte, 38 sont de la régression pure. Rejouée au niveau rapide le 6 octobre, elle a d'abord passé 49 tests sur 51 : les deux tests du raclage n'ont pas trouvé leur maillage (\cle{meshes/t1_toolcontact.msh}). Une fois le banc de raclage relancé avec son maillage, elle passe 50 tests sur 51, le seul échec étant le raclage en pénalité décrit plus haut. Le tableau~\ref{tab-tests-standard} situe ces tests par rapport aux codes de référence.
 
 \subsection{Synthèse}
 
@@ -351,10 +351,10 @@ conservation du contact & aucun chiffré & conservation & fait, rejoué \\
 contact d'outil, onde de Saint-Venant & aucun & $2v$, $2L/c$ & fait, rejoué \\
 barre ou bande sous charge statique & MultiFracS & $\sigma L/E$ & fait \\
 onde unidimensionnelle & aucun en 3D & d'Alembert & fait \\
-bloc glissant & Y2D (Xiang), Y-HFDEM (Fukuda) & $v_0^2/(2\mu g)$ & fait \\
+bloc glissant & Y2D (Xiang), Y-HFDEM (Fukuda, \cref{sec-P21}) & $v_0^2/(2\mu g)$ & fait \\
 champ homogène, Kirsch & HOSS & exacte & Kirsch 2D fait (tunnel, \cref{sec-tunnel-controles}), banc 3D préparé \\
 Hertz & Y-HFDEM, sans chiffre & Hertz & impact court rejoué (\cref{sec-impact}), banc P2.2 préparé \\
-énergie de rupture contre $G_f$ & aucun & $G_f$ & joint isolé seulement \\
+énergie de rupture comparée à $G_f$ & aucun & $G_f$ & joint isolé seulement \\
 \bottomrule
 \end{tabularx}
 \end{table}
