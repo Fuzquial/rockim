@@ -79,12 +79,20 @@ RUNS = [
     ("epfl", f"{ARCH}/run_cut_epfl.log", 229.0, 4.33),
     ("a2", f"{ARCH}/run_cut_a2.log", 311.0, 0.798),
 ]
-for lab, run in (("v3\nrejeu", "out_v3_rejeu"), ("Sig.\nrejeu", "out_v3sig_rejeu"),
-                 ("Sig.\ncliquet", "out_v3sig_ratchet")):
+for lab, run in (("v3 (r)", "out_v3_rejeu"), ("Sig. (r)", "out_v3sig_rejeu"),
+                 ("Sig. + cliquet (r)", "out_v3sig_ratchet")):
     log = os.path.join(DON, run + ".log")
     RUNS.append((lab, log, lit(log, r"v nodale max"), pic_fx(run)))
 
 lab = [r[0] for r in RUNS]
+
+
+def fmt(v):
+    """3 chiffres significatifs, virgule decimale, espace fine des milliers."""
+    if v >= 1000:
+        return f"{v:,.0f}".replace(",", " ")
+    return f"{v:.3g}".replace(".", ",")
+
 inj = np.array([injection(r[1]) for r in RUNS])
 vb = np.array([r[2] for r in RUNS]) / 20.0
 fx = np.array([r[3] for r in RUNS])
@@ -92,7 +100,7 @@ x = np.arange(len(RUNS))
 col = ["#b2182b"] * 5 + ["#b2182b", "#2166ac", "#4dac26"]
 hat = [""] * 5 + ["//", "//", "//"]
 
-fig, axs = plt.subplots(1, 3, figsize=(7.2, 2.9))
+fig, axs = plt.subplots(1, 3, figsize=(7.2, 3.1))
 for ax, y, tit, ref, reflab in (
         (axs[0], inj, "(a) injection outil / travail de corps rigide", 1.0, "1"),
         (axs[1], vb, r"(b) $v_\mathrm{max} / 2v_\mathrm{outil}$", 1.0, "borne 1")):
@@ -102,17 +110,17 @@ for ax, y, tit, ref, reflab in (
     ax.axhline(2.0, color="0.5", ls=":", lw=0.8)
     ax.set_title(tit, fontsize=9)
     for xi, yi in zip(x, y):
-        ax.text(xi, yi * 1.15, f"{yi:.3g}".replace(".", ","), ha="center", fontsize=6.5)
+        ax.text(xi, yi * 1.15, fmt(yi), ha="center", fontsize=6.5)
 ax = axs[2]
 ax.bar(x, fx, color=col, hatch=hat, edgecolor="k", linewidth=0.4)
 ax.axhline(3.08, color="k", ls="--", lw=0.8)
-ax.text(len(x) - 0.5, 3.25, "Heilman 3,08", ha="right", fontsize=7)
+ax.text(6.7, 3.3, "Heilman\n3,08", ha="center", va="bottom", fontsize=6.5)
 ax.set_title(r"(c) pic de $|F_x|$ (MN/m)", fontsize=9)
 for xi, yi in zip(x, fx):
-    ax.text(xi, yi + 0.15, f"{yi:.3g}".replace(".", ","), ha="center", fontsize=6.5)
+    ax.text(xi, yi + 0.15, fmt(yi), ha="center", fontsize=6.5)
 for ax in axs:
     ax.set_xticks(x)
-    ax.set_xticklabels(lab, fontsize=6.5, rotation=0)
+    ax.set_xticklabels(lab, fontsize=6.5, rotation=45, ha="right", rotation_mode="anchor")
     ax.tick_params(axis="y", labelsize=7)
 fig.tight_layout(pad=0.4)
 fig.savefig(os.path.join(HERE, "fig_coupe_synthese.pdf"))

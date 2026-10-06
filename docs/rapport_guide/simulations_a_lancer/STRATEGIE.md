@@ -27,6 +27,7 @@ Base : `tunnel/red_tip16.cfg` (8 min 42 s à 1 fil le 06/10 ; travail net du con
 | `tip16_plastic` | `jointShearUnload = plastic` | la décharge `origin`, non conservative, crée l'énergie |
 | `tip16_gcpen` | `gcBirth = penalty` | la naissance du contact sur un joint mort (rampe) crée l'énergie |
 | `tip16_mu0` | `contactMu = 0` | le frottement de contact (ressort plus Coulomb) crée l'énergie |
+| `tip16_ratchet` | `jointSecantRatchet = true` | la décharge `origin` SANS cliquet crée l'énergie (piste du chapitre coupe : +115 J/m dans les joints, supprimé par le cliquet) |
 
 À extraire du `.log` de fin de run (bloc de bilan) : travail net du contact, énergie cohésive,
 dissipation de Cundall, résidu B4, joints rompus ; comparer à la base ci-dessus.
