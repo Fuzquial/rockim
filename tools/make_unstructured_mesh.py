@@ -4,6 +4,7 @@
 # uniforme (le maillage "a la Yan et al. 2023") pour rockim `mesh = file`.
 #
 #   python3 tools/make_unstructured_mesh.py box3d W D H h out.msh [seed]
+#   python3 tools/make_unstructured_mesh.py box3dbc W D H h out.msh [seed]
 #   python3 tools/make_unstructured_mesh.py box2d W H   h out.msh [seed]
 #   python3 tools/make_unstructured_mesh.py bench1 W D H R gap h hIns out.msh [seed]
 #   python3 tools/make_unstructured_mesh.py tunnelhs W H hFine rFine hFar out.msh [seed]
@@ -12,6 +13,11 @@
 # INSERT spherique de rayon R centre au-dessus (volume physique "insert"),
 # separes de `gap`, mailles a h (roche) et hIns (insert). C'est le premier
 # jalon de la trajectoire Solidity : l'impact insert-roche en maille.
+#
+# box3dbc (2026-10-03) : le bloc de box3d avec des groupes physiques NOMMES
+# pour les charges et CL par groupes de fdem3d (fix.<g>, force.<g>, ...) :
+# volume "solid", faces xmin xmax ymin ymax bottom (z = 0) top (z = H),
+# coins c000 c100 c010 c110 c001 c101 c011 c111 (indices x y z).
 #
 # Sortie : Gmsh MSH 2.2 ASCII (tets type 4 en 3D, triangles type 2 en 2D).
 # Gmsh est LE mailleur de la pratique FDEM (Akantu, OpenFDEM, litterature) ;
@@ -103,7 +109,7 @@ def build_tunnel_hs(cx, cy0, P=TUNNEL_HS):
 
 def main():
     kind = sys.argv[1]
-    if kind == "box3d":
+    if kind in ("box3d", "box3dbc"):
         W, D, H, h = map(float, sys.argv[2:6])
         out = sys.argv[6]
         seed = int(sys.argv[7]) if len(sys.argv) > 7 else 1
@@ -172,9 +178,22 @@ def main():
     # superieure (Delaunay pur : 1,1) — trois directions de fissure imposees.
     gmsh.option.setNumber("Mesh.Algorithm", 5)        # Delaunay 2D (jamais 6)
     gmsh.option.setNumber("Mesh.Optimize", 1)
-    if kind == "box3d":
-        gmsh.model.occ.addBox(0, 0, 0, W, D, H)
+    if kind in ("box3d", "box3dbc"):
+        vol = gmsh.model.occ.addBox(0, 0, 0, W, D, H)
         gmsh.model.occ.synchronize()
+        if kind == "box3dbc":
+            tol = 1e-4 * max(W, D, H)        # boites OCC elargies (~1e-7)
+            gmsh.model.addPhysicalGroup(3, [vol], name="solid")
+            for _, s in gmsh.model.getEntities(2):
+                x0, y0, z0, x1, y1, z1 = gmsh.model.getBoundingBox(2, s)
+                nm = ("xmin" if x1 < tol else "xmax" if x0 > W - tol else
+                      "ymin" if y1 < tol else "ymax" if y0 > D - tol else
+                      "bottom" if z1 < tol else "top")
+                gmsh.model.addPhysicalGroup(2, [s], name=nm)
+            for _, pt in gmsh.model.getEntities(0):
+                x, y, z = gmsh.model.getValue(0, pt, [])
+                nm = "c%d%d%d" % (x > 0.5 * W, y > 0.5 * D, z > 0.5 * H)
+                gmsh.model.addPhysicalGroup(0, [pt], name=nm)
         gmsh.option.setNumber("Mesh.Algorithm3D", 1)  # Delaunay 3D
         gmsh.option.setNumber("Mesh.OptimizeNetgen", 1)
         gmsh.model.mesh.generate(3)
@@ -294,7 +313,7 @@ def main():
     gmsh.write(out)
     # bilan qualite : diametre inscrit min/med (ce qui pilote le dt rockim)
     import numpy as np
-    if kind in ("box3d", "bench1"):
+    if kind in ("box3d", "box3dbc", "bench1"):
         _, _, conn = gmsh.model.mesh.getElements(3)
         tets = np.array(conn[0], dtype=int).reshape(-1, 4)
         tags, xyz, _ = gmsh.model.mesh.getNodes()

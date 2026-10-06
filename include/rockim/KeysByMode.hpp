@@ -1,5 +1,5 @@
 #pragma once
-// KeysByMode.hpp — GENERE par tools/gen_keys_by_mode.py le 2026-09-13 01:15:59 : NE PAS EDITER.
+// KeysByMode.hpp — GENERE par tools/gen_keys_by_mode.py le 2026-10-03 18:40:54 : NE PAS EDITER.
 // Registre lisible : tools/keys_by_mode.json (methode dans la docstring du generateur).
 // Table des cles PROPRES A UN MODE (lues par un seul solveur) ; toute autre cle est commune.
 #include <stdexcept>
@@ -126,6 +126,7 @@ inline const Entry kTable[] = {
     {"contactForcePairs", "fdem3d"},
     {"cutterDia", "fdem3d"},
     {"dtBudgetTangential", "fdem3d"},
+    {"dtUpdate", "fdem3d"},
     {"fragBrushDirZ", "fdem3d"},
     {"jbAmp", "fdem3d"},
     {"jbCycles", "fdem3d"},
@@ -139,7 +140,9 @@ inline const Entry kTable[] = {
     {"jbUnloadAt", "fdem3d"},
     {"jointPenaltyLength", "fdem3d"},
     {"lawPhase", "fdem3d"},
+    {"potForce", "fdem3d"},
     {"potStiffnessByPhase", "fdem3d"},
+    {"potVolumeFactor", "fdem3d"},
     {"trackGroup", "fdem3d"},
     {"trackGroups", "fdem3d"},
     {"viscousInInsertion", "fdem3d"},
@@ -319,6 +322,7 @@ inline const char* const kKnown[] = {
     "dprCap",
     "dtBudgetTangential",
     "dtFactor",
+    "dtUpdate",
     "elasticGaugeHi",
     "elasticGaugeLo",
     "energyBodyForces",
@@ -503,9 +507,11 @@ inline const char* const kKnown[] = {
     "platenHalfWidth",
     "platenPenaltyFactor",
     "platenTributary",
+    "potForce",
     "potPenaltyFactor",
     "potStiffnessByPhase",
     "potTangentFactor",
+    "potVolumeFactor",
     "potXi",
     "preBrokenAngleDeg",
     "preBrokenJoints",
@@ -631,6 +637,8 @@ inline const char* const kKnown[] = {
 // C1 (w21) : familles de cles construites dynamiquement ("phase." + nom...) :
 // une cle de ces familles non lue = nom de phase/groupe inconnu.
 inline const char* const kDynamicPrefix[] = {
+    "amplitude.",
+    "box.",
     "contactMu.",
     "gauge.",
     "gb.",
@@ -639,6 +647,8 @@ inline const char* const kDynamicPrefix[] = {
     "groupPhase.",
     "groupVel.",
     "phase.",
+    "point.",
+    "velocity.",
     nullptr
 };
 
@@ -804,6 +814,7 @@ inline const Readers kReaders[] = {
     {"dprCap", "shared"},
     {"dtBudgetTangential", "fdem3d"},
     {"dtFactor", "dem dem3d fdem fdem3d fem3d shared"},
+    {"dtUpdate", "fdem3d"},
     {"elasticGaugeHi", "fdem"},
     {"elasticGaugeLo", "fdem"},
     {"energyBodyForces", "fdem fdem3d"},
@@ -988,9 +999,11 @@ inline const Readers kReaders[] = {
     {"platenHalfWidth", "fdem"},
     {"platenPenaltyFactor", "fdem"},
     {"platenTributary", "fdem"},
+    {"potForce", "fdem3d"},
     {"potPenaltyFactor", "fdem fdem3d"},
     {"potStiffnessByPhase", "fdem3d"},
     {"potTangentFactor", "fdem fdem3d"},
+    {"potVolumeFactor", "fdem3d"},
     {"potXi", "fdem"},
     {"preBrokenAngleDeg", "fdem"},
     {"preBrokenJoints", "fdem"},

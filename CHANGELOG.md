@@ -5,6 +5,182 @@ plan de robustesse du 2026-09-05). L'arbre `g0` est sous git depuis le tag `g0-0
 reçoit les lignes exigées par les règles déjà en vigueur — dont **toute ancre de bit-identité changée**
 (`tools/bitid_refs.json`, règle de `tools/BITID.md`).
 
+## [Non publié] — arbre g1, 2026-10-03 : contact par volume de recouvrement `potForce = volume` (Liu et al. 2022)
+
+### Ajouté (opt-in, défaut bit-identique)
+
+- **`potForce = volume`** et **`potVolumeFactor`** (5) (fdem3d, sous `contact = potential`) : force
+  fondée sur le volume de recouvrement (Liu, Ma, Liu, Tang & Fish, CMAME 395, 2022), appliquée face par
+  face du polyèdre de recouvrement, champ conservatif. `pot3::pairForceVolume`. DOCUMENTATION §5,
+  lignes `potForce` et `potVolumeFactor`.
+- `rockim selftest-potvolume3d` et le repère `selftest_potvolume3d` (tier fast) : ΔKE/KE₀ = 7e-15
+  (frontal), 1,2e-11 (oblique).
+- `tools/potvolume_partiel.cpp` : deux tétras en recouvrement partiel, volume contre Munjiza.
+- Registre des clés régénéré (`potForce`, `potVolumeFactor` propres à fdem3d).
+
+### Mesuré
+
+- **Ce n'est pas la même loi.** À enfoncement égal la force volume croît comme l'aire² de contact, celle
+  de Munjiza comme l'aire : le facteur 8/3 ne les égale que face contre face entre tétras égaux ; à 47 %
+  de face couverte, rapport 0,49 ; tétra moitié plus petit, 0,77.
+- Banc Yang s = 2,5 (v3P, T = 1e-4, Linux 4 fils) :
+
+| loi | temps | contact / pas | pic F_z outil-roche | impulsion | joints rompus |
+|---|---|---|---|---|---|
+| Munjiza | 398 s | 7,07 ms | 11 400 N | 0,264 N·s | 57 |
+| volume ×8/3 | 256 s | 3,35 ms | 6 850 N | 0,167 N·s | 56 |
+| volume ×4 | 254 s | 3,26 ms | 10 770 N | 0,230 N·s | 36 |
+| volume ×5 (défaut) | 255 s | 3,28 ms | 10 650 N | 0,223 N·s | 53 |
+
+  La dispersion des ruptures (36 à 57) n'est pas encore séparée du bruit propre à la fragmentation.
+- Kuru9 court sur Mac mini M4 (10 cœurs, `tools/bench_threads.sh`) : ×1,63 à 10 fils avec `dtUpdate`,
+  inchangé par `potForce = volume` (peu de débris).
+
+### Performances de la campagne sur Mac mini M4 (`tools/bench_threads.sh`, Kuru9 court)
+
+| fils | avant (aac12f8) | après, défaut | + dtUpdate | + dtUpdate + volume |
+|---|---|---|---|---|
+| 1 | 49,8 s | 45,2 s (×1,10) | 37,0 s (×1,35) | 36,1 s (×1,38) |
+| 2 | 33,2 s | 28,1 s (×1,18) | 22,8 s (×1,46) | 22,1 s (×1,51) |
+| 4 | 24,6 s | 18,4 s (×1,33) | 14,7 s (×1,67) | 13,9 s (×1,76) |
+| 10 | 21,0 s | 15,8 s (×1,33) | 12,9 s (×1,63) | 12,9 s (×1,63) |
+
+Le gain par défaut croît avec le nombre de fils (travail série retiré) ; de 4 à 10 fils on ne gagne que
+14 % (6 cœurs efficacité du M4, partage statique des boucles).
+
+## [Non publié] — arbre g1, 2026-10-03 : pas de temps variable `dtUpdate = inserted` (Wu et al. 2024)
+
+### Ajouté (opt-in, défaut bit-identique)
+
+- **`dtUpdate = inserted`** (fdem3d, exige `insertion = adaptive`) : le pas initial ne compte plus la
+  raideur des joints LIÉS, qui n'exercent aucune force ; elle entre dans le budget à l'insertion, et le
+  pas diminue alors si le nœud devient critique. Boucle principale pilotée par le temps quand le pas
+  varie (`Solver::variableDt()`, faux par défaut). DOCUMENTATION §5.1.
+- Repères `dtupdate_elastique_3d`, `dtupdate_rupture_3d` (tier full).
+
+### Mesuré (Linux, 4 fils, mesures alternées)
+
+| banc | pas de temps | justesse | temps |
+|---|---|---|---|
+| barre élastique (`verify_fdem3d_loads`) | ×1,9 | allongement 4,00122 µm identique, réaction −2 000,5 N | — |
+| rupture adaptative (`fdem3d_loads_rupture`) | ×1,9 puis 1,33e-8 s après insertions | 408 insérés / 2 rompus identiques ; pic 12,2749 contre 12,2745 MPa ; écart max 0,017 MPa | **−37 %** (90,7 → 57,0 s) |
+| impact Kuru9 court | ×1,24 | KE finale 417,488 contre 417,476 J ; mêmes énergies par corps | **−21 %** (35,0 → 27,7 s) |
+
+Sans la clé : sorties octet pour octet identiques (decks bitid). Le résidu B4 est plus grand sous la
+clé (9e-4 % contre 7e-5 % sur la rupture) : le saute-mouton est d'ordre 1 aux instants où le pas
+change.
+
+## [Non publié] — arbre g1, 2026-10-03 : performances (contact, joints, VTK), sans changer un résultat
+
+Trois commits (`fdem3d : contact par potentiel et joints plus rapides`, `fdem 2D et fem3d : fusions et
+grilles de contact`, `VtkWriter : formatage ASCII parallele`). Rang 2 de la feuille de route
+`phd_geothermie/reports/Accélération du solveur FDEM explicite.md`.
+
+### Modifié (bit-identique)
+
+- `potentialContact()` : la grille dense ne vide plus que les seaux remplis au pas précédent (le
+  balayage série de 1,6 M seaux coûtait 4,3 ms/pas sur Kuru9) ; tri des paires par fil puis fusion
+  (même suite que `std::sort`) ; phase A parallèle (recherches en table, insertions série dans l'ordre
+  canonique). Même vidage ciblé dans `generalContact()` (fdem3d) et dans les deux grilles du 2D.
+- `jointForces()` (fdem3d) : liste compacte des joints vivants, chaque fil garde sa tranche historique
+  de l'`omp for schedule(static)` : mêmes sommes partielles, même fusion par nœud.
+- Fusions des tampons par fil parallélisées PAR NŒUD, dans l'ordre t = 0..nT-1 (joints 2D,
+  `Fem3dSolver::elementForces()`).
+- `VtkWriter` : formatage ASCII par tranches parallèles (`copyfmt`), écriture dans l'ordre.
+- `jointForces()` (fdem3d) : la liste des joints vivants est tenue à jour à l'insertion (`jLiveAdd_`) au lieu d'être rebalayée sur tous les joints à chaque pas d'insertion. Vérifié après fusion : 7 decks bitid identiques octet pour octet à 4 fils.
+
+### Mesuré (Linux g++, 4 cœurs partagés, une paire avant/après par cas)
+
+| banc | 1 fil | 2 fils | 4 fils |
+|---|---|---|---|
+| `fdem3d_kuru9_court` (impact, contact dominant) | −21 % | −28 % | **−39 %** (18,3 → 11,2 s) |
+| `fdem3d_cut3d_heilman_court` | −1 à −3 % | −5 % | −13 % |
+| `fdem_ucs_yan_adaptive_court` (2D) | −4,5 % | −7 % | −5,5 % |
+| `fem3d_dpr_T1_court` | −5 % | ~0 | −4 % |
+
+Profil Kuru9 à 4 fils : contact 8,3 → 2,7 ms/pas (−67 %), joints 0,54 → 0,04 ms/pas ; éléments et
+insertion inchangés. Écarts < 5 % : dans le bruit.
+
+### Bit-identité
+
+Sur la branche fusionnée (avec le portage fem3d des charges par groupes) : les 7 decks de
+`tests_f2/bitid/` jouables depuis le clone, à 4 fils, `history.csv`, `frames.csv` et fichiers finaux
+identiques octet pour octet aux sorties d'avant ces commits ; l'agent a aussi vérifié Kuru9, dpr et
+UCS à 1 et 2 fils (VTU compris). Suite `fast` 48/49 (seul `t1_toolcontact_penalty` échoue, aux mêmes
+chiffres qu'avant : écart Linux préexistant) ; `--only loads_` 7/7.
+
+## [Non publié] — arbre g1, 2026-10-03 : charges et conditions aux limites par groupes (fdem3d)
+
+Demande de Fernando : « une forme géométrique quelconque, une force ponctuelle ou surfacique », en
+reprenant ce que fait Solidity (tables `/YD/YDB/` de leur code public) sans perdre l'insertion
+adaptative. Documentation : `DOCUMENTATION_rockim.md` §5.21. Code : `src/Fdem3dLoads.cpp`.
+
+### Ajouté (opt-in, défaut bit-identique)
+
+- **`scenario = loads`** (fdem3d) : ni outil analytique, ni appui implicite, `dampingLocal` = 0 par
+  défaut. Le montage est décrit par les clés ci-dessous.
+- **`fix.<g>`**, **`velocity.<g>`** (axes `free` permis), **`traction.<g>`** (charge morte),
+  **`pressure.<g>`** (suiveuse), **`force.<g>`** (force totale), **`amplitude.<g>`** (table
+  linéaire ou `ramp T`), **`point.<g>`**, **`box.<g>`**. Valables dans tous les scénarios fdem3d
+  sauf `jointbench`, refusées sur un nœud déjà tenu par le montage du scénario.
+- Lecture des groupes physiques Gmsh de dimension 0, 1 et 2 (`buildMeshFile`) ; un groupe de surface
+  est apparié aux faces extérieures du maillage.
+- Insertion adaptative : traction et pression sur les copies du tétra de surface, force de sommet
+  partagée entre copies au prorata des masses, vitesse imposée sur toutes les copies. L'intégrateur
+  (branche par groupes et branche par nœud) ne met ni ressort, ni amortisseur, ni Cundall sur un axe
+  imposé.
+- Bilan B4 : postes `charges` et `liaisons` (sources extérieures, dans `sumW`, dans l'échelle et dans
+  la borne d'énergie de `budgetAbortPct`). `history.csv` : `U_<g>_*`, `RF_<g>_*`, `F_<g>_*`, `eLoad`,
+  `eBc` en fin de ligne. Résumé : une ligne `groupe <g> : U = … ; RF = … ; F = …` par groupe.
+- `make_unstructured_mesh.py box3dbc` : bloc avec faces et coins nommés. Maillage de la suite
+  `meshes/loads_bar_h4.msh` (exception `.gitignore`), decks `configs/verify_fdem3d_loads.cfg` et
+  `configs/fdem3d_loads_rupture.cfg`. Repères `loads_traction_3d` (fast), `loads_pression_3d`,
+  `loads_force_3d`, `loads_intrinseque_3d` (full).
+- Registre des clés régénéré (`Fdem3dLoads` appartient à fdem3d ; préfixes `amplitude.`, `box.`,
+  `point.`, `velocity.`).
+
+### Mesuré
+
+- Barre élastique 20 × 20 × 40 mm, traction 5 MPa : allongement 4,00122e-6 m (exact 4,0e-6),
+  réaction −2 000,49 N (exact −2 000), résidu B4 7e-13 %. Pression suiveuse, force totale et
+  intrinsèque concordent (§5.21).
+- Rupture adaptative écrite par groupes contre `scenario = tension` : 408 joints insérés et 2 rompus
+  des deux côtés, pic 12,27 MPa des deux côtés, force d'appui à 0,1 % (vitesse lue à t + dt/2).
+- Bit-identité : binaire d'avant contre binaire d'après, même machine (Linux g++), 4 fils, sur les 7 decks de `tools/bitid.py` dont le maillage est au dépôt (fdem3d Heilman, Kuru9, visc Yan ; fdem toolcontact Signorini, UCS Yan adaptatif ; fem3d dpr T1, sk2011 cylindre) : `history.csv`, `frames.csv` et fichiers finaux **identiques octet pour octet** (seul l'en-tête de `config_effective.cfg` change : il porte le nom de l'exécutable). Non joués : `fem3d_cdp_PQ_court` et `fdem3d_yang_v2_court`, maillages absents du clone.
+- Exemple `exemples/barre_encastree/` : barre encastrée à gauche, pression à droite.
+
+### Ajouté — portage `fem3d` (même jour, opt-in, défaut bit-identique)
+
+- **`scenario = loads`** et les clés `fix.<g>`, `velocity.<g>`, `traction.<g>`, `pressure.<g>`,
+  `force.<g>`, `amplitude.<g>`, `point.<g>`, `box.<g>` en **fem3d** (`src/Fem3dLoads.cpp`) : même
+  sémantique, mêmes messages d'erreur, mêmes colonnes `history.csv` (`U_<g>_*`, `RF_<g>_*`, `F_<g>_*`,
+  `eLoad`, `eBc`, en toute fin de ligne) et même ligne de résumé qu'en fdem3d — un deck change de mode
+  par sa ligne `mode`. Un sommet = un nœud (pas de copies) ; une face d'élément érodé ne reçoit plus de
+  charge. `buildMeshFile` de fem3d lit les groupes physiques de dimension 0, 1 et 2.
+- **Bilan d'énergie par postes en fem3d** (`scenario = loads` seulement) : éléments, outil,
+  confinement, charges, liaisons, ressorts, Cundall, Lysmer (exact), correction saute-mouton ; verdict
+  `[OK]/[CHECK]` à 1 % de l'échelle comme le B4 de fdem3d. Ailleurs : ligne `charges … liaisons …` et
+  résumé par groupe seulement.
+- Briques communes aux deux modes : `include/rockim/GroupLoads.hpp` (nombres stricts, amplitudes,
+  axes de `fix.`, vitesses de `velocity.`). `src/Fdem3dLoads.cpp` s'en sert sans changer de
+  comportement (repères `loads_*_3d` identiques au chiffre imprimé près).
+- Deck `configs/verify_fem3d_loads.cfg` ; repères `loads_traction_fem3d` (fast),
+  `loads_pression_fem3d`, `loads_force_fem3d` (full). Registre des clés régénéré (`Fem3dLoads`
+  appartient à fem3d ; aucune clé ne change de statut).
+
+### Mesuré — portage `fem3d`
+
+- Même barre (`meshes/loads_bar_h4.msh`, `law = elastic`), traction 5 MPa : U_top_z = 4,00108e-6 m
+  (exact 4,0e-6), RF_bottom_z = −2 000,50 N, résidu du bilan 3e-17 J (4e-13 %) ; pression suiveuse
+  4,00087e-6 m / −2 000,39 N ; force totale 4,00108e-6 m / −2 000,50 N. 2 s de calcul par variante.
+- Bit-identité (binaire d'avant `rockim_final` contre binaire d'après, même machine, 4 fils) :
+  `fem3d_dpr_T1_court`, `fem3d_sk2011_cyl_court` et `fdem3d_cut3d_heilman_court` :
+  `history.csv`, `frames.csv` et fichiers finaux **identiques octet pour octet** (seul l'en-tête de
+  `config_effective.cfg` change). Console identique pour les deux decks fem3d ; pour Heilman seul le
+  résidu B4 imprimé bouge au dernier chiffre (4,7e-16 contre 4,4e-16 J) — le binaire d'avant, relancé,
+  imprime lui-même 5,0e-16 J : ordre de la réduction OpenMP, pas une différence de code. Non joué :
+  `fem3d_cdp_PQ_court` (maillage absent du clone, refusé à la lecture par les deux binaires).
+
 ## [Non publié] — arbre g1, 2026-09-11 soir : le point sur les impacts Yang/Solidity
 
 Point demandé par Fernando (« à chaque fois une nouvelle erreur, c'est infini »). Document :

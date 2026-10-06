@@ -292,7 +292,7 @@ Colonne « portée » : modes qui lisent la clé. Défauts entre parenthèses.
 | clé (défaut) | rôle | portée |
 |---|---|---|
 | `mode` (fem) | fem \| fem3d \| dem \| dem3d \| fdem \| fdem3d | — |
-| `scenario` (percussion) | percussion \| shear \| tension ; + `bar_wave` (fem) ; + `brazilian`, `shpb` (fdem) ; + **`jointbench`** (fdem3d, **S3 du 13/09** : banc de joint cinématique à un seul joint entre deux tétraèdres, §5.4 sexies — construit son maillage, refuse `mesh`/`W`/`D`/`H`/`nx`/`ny`/`nz`) | tous |
+| `scenario` (percussion) | percussion \| shear \| tension ; + `bar_wave` (fem) ; + `brazilian`, `shpb` (fdem) ; + **`jointbench`** (fdem3d, **S3 du 13/09** : banc de joint cinématique à un seul joint entre deux tétraèdres, §5.4 sexies — construit son maillage, refuse `mesh`/`W`/`D`/`H`/`nx`/`ny`/`nz`) ; + **`loads`** (fdem3d et fem3d, 2026-10-03 : ni outil, ni appui implicite, `dampingLocal` = 0 par défaut — le montage est entièrement décrit par les clés de §5.21) | tous |
 | `geometry` (box ; disc si brazilian, shpb si shpb) | box \| disc (fdem) ; box \| cylinder (fem3d) | fdem, fem3d |
 | `mesh` (grid) | grid \| voronoi (GBM) \| **file** (maillage non structuré importé, « à la Yan ») | fdem, fdem3d |
 | `meshFile` (requis si mesh = file) | chemin d'un Gmsh MSH 2.2 ASCII (type 2 en 2D, type 4 en 3D) ; boîte translatée à l'origine, W/H/D relus de l'enveloppe ; générer via `tools/make_unstructured_mesh.py` — variantes `box3d`, `box2d`, `bench1` (bloc + insert spherique), **`bench1g`** (idem GRADUE : `bench1g W D H R gap h hIns hFin rFin dFin out.msh [seed]`, champ de taille en rampe, fin dans un cylindre de rayon `rFin` et profondeur `dFin` sous l'axe d'impact — resserrer sur le rayon de contact de Hertz, pas sur l'etendue du champ visible), `tunnel` | fdem, fdem3d |
@@ -305,6 +305,7 @@ Colonne « portée » : modes qui lisent la clé. Défauts entre parenthèses.
 | `nx, ny` (64×64 fdem ; 96×48 fem) + `nz` (20×20×15 fdem3d ; 24×24×18 fem3d) | découpage grille | maillages grid |
 | `seed` (12345 ; **42 en dem**) | graine du maillage (jitter, Voronoï, phases) | tous |
 | `dtFactor` (0.2 fdem/dem ; 0.15 fdem3d ; 0.3 fem3d) / `cfl` (0.7, fem 2D) | fraction du pas critique | tous |
+| `dtUpdate` (fixed) | **`inserted`** (2026-10-03, exige `insertion = adaptive`) : pas de temps **variable**, idée de Wu et al. 2024 (Comput. Geotech. 174). Un joint encore LIÉ n'exerce aucune force (ses copies intègrent comme un seul nœud) : sa raideur n'entre pas dans le pas initial, qui ne compte que les éléments, le contact, la CFL et la viscosité. À chaque insertion, la raideur du joint inséré (kPara·pj·A0/3) est ajoutée à ses 6 nœuds et le pas **diminue** si l'un d'eux devient critique (il ne remonte jamais) ; `relax_` (gcBirthTau) et le filtre du taux sont recalculés. Le pilote boucle alors sur le TEMPS (trames aux instants k·T/frames). Mesuré : barre élastique pas ×1,9, allongement identique (4,00122 µm) ; rupture adaptative 408 insérés / 2 rompus des deux côtés, pic 12,2749 contre 12,2745 MPa, écart max 0,017 MPa sur tout le run, **−37 %** de temps ; impact Kuru9 court pas ×1,24, KE finale 417,488 contre 417,476 J, **−21 %**. Résidu B4 plus grand (9e-4 % contre 7e-5 % sur la rupture : le schéma saute-mouton à pas variable est d'ordre 1 aux instants de réduction) | fdem3d |
 | `dampingLocal` (0.02 fdem dyn ; 0.7 fdem QS ; **0 en SHPB** ; 0.05 fdem3d/fem3d ; 0.02/0.7 dem) | amortissement de Cundall | tous sauf fem 2D |
 | `gravity` (0) | force de volume ρg selon −y [m/s²], valeur positive | fdem |
 | `extraContacts` (2 fdem ; 8 dem) | budget de contacts dans le dt stable | fdem*, dem* |
@@ -480,6 +481,8 @@ tous être refusés avec un message explicatif).
 | `gcActEvery` (64) | cadence maximale du balayage d'activation [pas] |
 | **`contact`** (penalty) | penalty \| **potential** = contact général par **potentiel de Munjiza** (éq. 2-5 de Yan et al. 2023), **2D et 3D**. Paires d'**éléments** (et non nœud-face) : force normale distribuée F = p·∮(φ_A−φ_B)·n dΓ sur le bord du recouvrement — polygone triangle-triangle en 2D (φ = 3·min λ), **polyèdre tet-tet** en 3D (φ = 4·min λ, clip par les 4 demi-espaces + face de coupe reconstruite). Intégration **exacte** (subdivision aux plans de médiane : 6 en 2D, 12 en 3D), lumping nodal consistant, 3e loi de Newton **machine**, champ **conservatif** — collisions élastiques : ΔKE/KE₀ = 3,7e-12 (2D), 2,0e-8 (3D), transfert exact (selftest-potential2d/3d). Frottement tangentiel incrémental à ressort + cap de Coulomb (éq. 4-5, vectoriel en 3D), historique par paire. Détection O(N) type NBS (binning AABB), exclusion des paires liées par un joint **vivant**, compose avec `gcActivation`/`gcXwindow`. Relève de naissance par **aire/volume** de recouvrement (pen0_ du potentiel, τ = `gcBirthTau`) : une paire née en recouvrement (joint mort comprimé) ne matérialise pas son énergie potentielle — signe absorbant garanti (une rampe temporelle ferait l'inverse, mesuré +179 J/m). Gardes 3D : plancher de volume relatif (1e-12·min V) + contrôle de **fermeture** du polyèdre (les tets exactement tangents produisaient des slivers à faces non refermées — 5 joints cassés à charge nulle, attrapés par le contrôle zeroload). ⚠️ le gcWork peut porter un petit résidu positif (biais O(dt) du compteur + relève) — annoté dans le résumé, pas une pathologie en potentiel. L'outil analytique reste en pénalité (un outil MAILLÉ passe sous le potentiel via les groupes physiques + `toolShape = none`). SHPB : onde incidente identique au penalty à 3e-6 près ; zone broyée **conservative** → rebond plus élastique (percussion 2D : e 0,55 → 0,71, moins de casses) — écart de loi physique assumé. Coût par paire supérieur au nœud-face : combiner avec `gcActivation = adaptive`. **Perf (N1, 2026-08-14, tout bit-neutre)** : grille dense à seaux réutilisés + **ordre canonique des paires** (tri (eLo,eHi) — les sommes de forces ne dépendent plus de l'ordre de découverte ; réf shpb_mini_potential recalée 595 → 578, dernier changement d'ordre autorisé), **pré-filtre SAT complet 3D** (8 plans de faces + 36 axes d'arêtes croisées, cache du dernier axe séparateur par paire à la Baraff — jeu complet : s'il ne sépare pas, le recouvrement est réel), clip **sans copie** (ping-pong de pointeurs — l'ancien `P = Q` déplaçait ~9 Ko ×4 par clip). Compteurs `potential stats` au résumé (paires / joint-vivant / sep-hint / sep-face / sep-arête / clip-vide / clip-force, tGrid / tLoop) : sur percussion 3D T = 5e-5, 230 M de paires → 61 % réglées par le cache d'axe, 22 % de **clips VIDES** (~4 µs chacun — contacts rasants : recouvrement réel sous plancher). Mesures : 682 s (grille naïve) → 643 (seaux) → 477 (SAT faces) → 448 s (ping-pong) à T = 5e-5. Sur la **longue** T = 2e-4 (3 474 s vs 488 s pénalité, ~7×), les compteurs renversent le tableau : le poste dominant est l'**intégration exacte des 33 M de clips AVEC force** (paires de débris en contact permanent, ~70 µs pièce — la subdivision aux 12 plans — ≈ 2/3 du run), les clips vides ne pèsent que ~12 %, et le scan SAT complet n'y sépare plus rien (37 k sur 479 M — les axes d'arêtes sont dispensables en régime débris). Le critère N1 (≤ 1,3×) demande donc une refonte de l'INTÉGRATION en régime de contact persistant (quadrature moins chère = perte d'exactitude à arbitrer, warm-start du polyèdre, cadence des contacts stationnaires) — pistes au plan v2, décision à prendre |
 | `potPenaltyFactor` (1.0) | pénalité normale du potentiel, en multiples de E·épaisseur (2D) / de E (3D) |
+| `potForce` (munjiza) | munjiza \| **`volume`** (2026-10-03, fdem3d, sous `contact = potential`) : force fondée sur le **volume de recouvrement**, Liu, Ma, Liu, Tang & Fish, CMAME 395 (2022) 114981 (cadre de Feng). Potentiel Φ = ½·kn·V²/V′, V′ = 2·V_A·V_B/(V_A+V_B) ; la force −(kn·V/V′)·Σ aᵢnᵢ est appliquée **face par face** du polyèdre de recouvrement (faces de A d'un côté, faces de coupe de B de l'autre), ce qui garde le champ conservatif (selftest-potvolume3d : ΔKE/KE₀ = 7e-15 frontal, 1,2e-11 oblique, contre 2e-8 en Munjiza). Même clip et mêmes gardes que le potentiel de Munjiza ; ce qui disparaît, c'est l'intégration exacte aux 12 plans, poste dominant en régime de débris. ⚠️ **Loi différente, pas une accélération à résultat égal** : à enfoncement égal la force croît comme l'**aire²** de contact (Munjiza : comme l'aire), si bien qu'aucun facteur ne reproduit Munjiza partout. Le facteur 8/3 l'égale exactement face contre face entre tétras égaux ; sur un recouvrement partiel le rapport volume/Munjiza ≈ fraction de face couverte (0,82 à 79 %, 0,49 à 47 %, 0,25 à 24 % ; tétra moitié plus petit : 0,77 — `tools/potvolume_partiel.cpp`). Banc Yang s = 2,5 (v3P, T = 1e-4, 4 fils) : temps 398 → 255 s (**−36 %**, contact 7,07 → 3,3 ms/pas) quel que soit le facteur ; pic F_z outil-roche 11 400 N (Munjiza) contre 6 850 (×8/3), 10 770 (×4), **10 650 (×5)** ; impulsion 0,264 contre 0,167 / 0,230 / **0,223 N·s** ; joints rompus 57 contre 56 / 36 / 53 (dispersion de la fragmentation non encore mesurée). Un calcul de thèse choisit l'une ou l'autre loi et s'y tient. | fdem3d |
+| `potVolumeFactor` (5) | kn de `potForce = volume` en multiples de la pénalité du potentiel (potPenaltyFactor·E, ou ·min E sous `potStiffnessByPhase = min`). 5 = valeur centrale de Liu et al. §2.6 (3 à 10) ; 8/3 = équivalence exacte face contre face seulement (trop mou en impact : −40 % de pic sur Yang) | fdem3d |
 | `potTangentFactor` (1.0) | raideur tangentielle de l'éq. 4-5, en multiples de E·épaisseur (2D) / de E·hmin (3D) |
 | `insertionPenaltyFactor` (4) | pénalité des joints ACTIVÉS en mode adaptatif (décharge/contact) |
 | `jointWeibullM` (0 = off) | m > 1 : ft et cohésion de chaque joint × facteur Weibull(m) de moyenne 1 (Gf non tiré) |
@@ -2425,6 +2428,163 @@ pullDelay = 3 rampes, OMP 4, 7 s par run) : à la fin de la consolidation σ_xx 
 −49,97 / −49,86 MPa (tol ±0,5), KE 3,5e-7 J, ε_vol = −P/K à 0,13 % ; phase axiale q/ε_ax = 77,64 GPa (E à
 −0,03 %, 501 points) ; variante **qui doit échouer** (pullDelay = 0) : σ_zz = −31,3 MPa à la jauge de
 confinement (écart 18,7 MPa > 10 ; −2νP = −29 MPa attendu à ε_zz = 0). `python check_bench.py out_delay out_nodelay`.
+
+### 5.21 Charges et conditions aux limites par groupes (`fdem3d` et `fem3d`, 2026-10-03)
+
+**Pourquoi.** Jusqu'ici un deck ne pouvait charger le solide que par les montages câblés des scénarios
+(outil analytique, fond encastré en percussion, mors en traction, pression de confinement uniforme).
+Le code public de Solidity porte, lui, une table de conditions aux limites par nœud (`/YD/YDB/` :
+vitesse imposée par axe, force nodale, accélération ; `Y3Drd.c` l. 1221-1260, `Y3Dsd.c` l. 80-102 et
+238), remplie par le préprocesseur. rockim fait la même chose **par groupes nommés**, avec une
+amplitude en temps, et **compatible avec l'insertion adaptative**. Code : `src/Fdem3dLoads.cpp` ;
+portage `fem3d` du même jour : `src/Fem3dLoads.cpp` (§ « Mode fem3d » ci-dessous) ; briques communes
+(nombres stricts, amplitudes, axes) : `include/rockim/GroupLoads.hpp`.
+Tout est opt-in : sans aucune des clés ci-dessous, aucune instruction ne change (bit-identité vérifiée
+par `tools/bitid.py`, §ci-dessous).
+
+**Les groupes.** Un nom de groupe vient de l'une de ces sources (un nom défini deux fois est refusé) :
+
+| source | dimension | ce qui est retenu |
+|---|---|---|
+| groupe physique Gmsh de **surface** (`$PhysicalNames` dim 2, triangles type 2) | 2 | ses triangles, appariés aux faces EXTÉRIEURES du maillage, et leurs sommets |
+| groupe physique Gmsh de **courbe** ou de **point** (dim 1, dim 0) | 1, 0 | ses sommets |
+| **corps** (volume physique, dim 3 ; `all` sans groupes physiques) | 3 | toutes les copies de nœuds de ses tétraèdres |
+| `point.<g> = x y z` | 0 | le sommet le plus proche (distance imprimée) |
+| `box.<g> = x0 y0 z0 x1 y1 z1` | 2 | les faces extérieures dont les trois sommets sont dans la boîte |
+
+Coordonnées de `point.` et `box.` : **repère solveur** (le maillage est translaté pour que sa boîte
+englobante parte de l'origine ; la translation est imprimée). `box.` marche aussi sur `mesh = grid` et
+`mesh = voronoi`. Générateur avec faces nommées : `make_unstructured_mesh.py box3dbc W D H h out.msh`
+(volume `solid`, faces `xmin xmax ymin ymax bottom top`, coins `c000` … `c111`).
+
+**Les clés.**
+
+| clé | rôle |
+|---|---|
+| `fix.<g> = x y z \| all` | vitesse nulle sur les axes donnés (`xy`, `x z`, `all`… acceptés) |
+| `velocity.<g> = vx vy vz` | vitesse imposée [m/s] ; `free` laisse un axe libre (`free free -0.05`) ; exclusive de `fix.<g>` |
+| `traction.<g> = tx ty tz` | charge **morte** [Pa] sur une surface, aire de référence, répartie A/3 par nœud |
+| `pressure.<g> = p` | pression **suiveuse** [Pa] sur une surface, aire et normale COURANTES, `p > 0` comprime (comme `confiningPressure`) |
+| `force.<g> = Fx Fy Fz` | force **totale** [N] : surface → au prorata des aires ; point ou courbe → parts égales par sommet ; corps → au prorata des masses |
+| `amplitude.<g> = t0 a0 t1 a1 …` | facteur en temps, linéaire par morceaux, constant hors de la table ; `ramp T` = montée en cosinus de 0 à 1 sur T, puis 1. S'applique à toutes les clés du groupe. Sans elle : 1 dès t = 0 |
+
+Les vitesses imposées sont évaluées à mi-pas (t + dt/2, la vitesse du schéma saute-mouton), les forces
+à t. Traction et pression exigent une surface dont **tous** les triangles sont des faces extérieures :
+un triangle intérieur à un corps, ou posé sur l'interface de deux corps non liés (deux faces
+extérieures superposées, ambiguë), est refusé avec son compte.
+
+**Insertion adaptative — pourquoi ça reste juste.** Une face extérieure appartient à UN tétraèdre :
+traction et pression vont aux copies de nœuds de CE tétraèdre, donc la charge reste sur la matière de
+surface quand un joint s'insère dessous. Une force de sommet est partagée entre les copies du sommet
+au prorata de leurs masses : tant qu'elles sont liées la somme est la force voulue, et elle le reste
+après la scission (chaque fragment reçoit sa part). Une vitesse imposée contraint **toutes** les copies
+du sommet : un groupe lié reste lié, un groupe scindé reste tenu. Dans l'intégrateur, un axe imposé ne
+reçoit ni ressort absorbant, ni amortisseur de Lysmer, ni Cundall, et sort du terme de correction
+saute-mouton ; les axes libres du même nœud sont intégrés normalement.
+
+**Gardes.** Groupe inconnu (la liste des groupes disponibles est imprimée) ; traction ou pression sur
+un groupe qui n'est pas une surface ; nombres à virgule ; `fix.` et `velocity.` sur le même groupe ;
+deux groupes qui imposent des valeurs DIFFÉRENTES au même ddl (arête ou coin commun) ; une liaison sur
+un nœud déjà tenu par le montage du scénario (fond encastré en percussion et coupe, mors en traction :
+poser `scenario = loads`) ; `amplitude.`, `point.` ou `box.` qui ne servent à aucune charge ni liaison ;
+`scenario = jointbench`.
+
+**Sorties.** `history.csv`, en fin de ligne, pour chaque groupe utilisé (groupes de `fix.`, puis
+`velocity.`, `traction.`, `pressure.`, `force.`, par ordre alphabétique dans chaque famille ; l'en-tête fait foi) : `U_<g>_x/y/z` (déplacement moyen des copies), `RF_<g>_x/y/z` (réaction
+du pas, R = m(v_imposée − v)/dt − f, sur les axes que CE groupe impose) si le groupe est tenu,
+`F_<g>_x/y/z` (charge appliquée au pas) s'il est chargé ; puis `eLoad` (travail cumulé des charges) et
+`eBc` (travail des liaisons). Résumé : ligne `charges : … J, liaisons … J`. Les deux postes entrent dans
+le bilan B4, dans son échelle et dans la borne d'énergie de `budgetAbortPct` (ce sont des sources
+extérieures). Une arête commune à deux groupes tenus compte dans les deux réactions.
+
+**Validation (2026-10-03, Linux g++, maillage `tests_f2/loads/bar_h4.msh`, barre 20 × 20 × 40 mm,
+1 662 tets, E = 50 GPa, ν = 0,25).** Deck `tests_f2/loads/bar_traction.cfg` : traction 5 MPa sur `top`
+en `ramp 1e-4`, `fix.bottom = z`, `fix.c000 = x y`, `fix.c100 = y` (appuis isostatiques),
+`dampingLocal = 0,3`, insertion adaptative sans rupture (continuum exact) :
+
+| variante | U_top_z (exact 4,000e-6 m) | RF_bottom_z (exact −2 000 N) | résidu B4 |
+|---|---|---|---|
+| `traction.top = 0 0 5e6` | 4,00122e-6 | −2 000,49 | 7e-13 % |
+| `pressure.top = -5e6` (suiveuse) | 4,00102e-6 | −2 000,40 (F appliquée 1 999,9 : l'aire se contracte de 2νε) | 1e-12 % |
+| `force.top = 0 0 2000` | 4,00122e-6 | −2 000,49 | 6e-14 % |
+| traction, `insertion = intrinsic`, `jointPenaltyFactor = 20` | 4,17871e-6 (+4,5 % : souplesse des joints de pénalité) | −1 999,96 | 4e-13 % |
+
+Contraction latérale du centre de `top` : U_x = −2,28e-7 m pour −νεW/2 = −2,5e-7 m (le coin `c000`
+est tenu, pas le centre). L'écart résiduel de 0,03 % sur U est la dynamique non encore amortie à
+T = 3e-4 s.
+
+**Rupture avec insertion adaptative, contre le scénario `tension` (deck `configs/fdem3d_loads_rupture.cfg`).**
+Même maillage, ft = 10 MPa, `dampingLocal = 0`, T = 3e-4 s. `scenario = tension` (`pullV = 0,05`,
+`pullRamp = 5e-5`) contre `scenario = loads` avec `fix.bottom = all`, `velocity.top = 0 0 0.05`,
+`amplitude.top = ramp 5e-5`, c'est-à-dire le même montage écrit par groupes :
+
+| | `tension` (mors câblés) | `loads` (groupes) |
+|---|---|---|
+| joints insérés / rompus | 408 / 2 | 408 / 2 |
+| pic de contrainte | 12,27 MPa | 12,27 MPa |
+| résidu B4 | −4,58925e-8 J | −4,58925e-8 J |
+| écart max de la force d'appui sur 2 061 lignes | — | 4,75 N sur 4 910 N (0,1 %) |
+
+L'écart de 0,1 % est attendu et ne vient pas d'une erreur : `tension` lit la vitesse des mors à t et
+rapporte la somme des forces internes des nœuds tenus, `loads` lit la vitesse à t + dt/2 et rapporte
+la réaction R = m·a − f. La rupture, elle, est la même.
+
+**Repères de la suite.** `loads_traction_3d` (tier `fast`), `loads_pression_3d`, `loads_force_3d`,
+`loads_intrinseque_3d` (tier `full`) : U_top_z à 2e-8 m, réaction à 1 N, résidu B4 à 1e-9 J.
+
+**Bit-identité.** `tools/bitid.py` sur ses neuf decks (fem3d, fdem3d dont Kuru et Yang v2, fdem),
+binaire d'avant contre binaire d'après, même machine et 4 fils : voir CHANGELOG.
+
+**Mode `fem3d` (portage du 2026-10-03).** Mêmes clés, même sémantique, mêmes messages d'erreur, mêmes
+colonnes `history.csv` (en toute fin de ligne, après `wDampLocal`) et même ligne de résumé `groupe <g> :
+U = … ; RF = … ; F = …` : un deck passe d'un mode à l'autre en changeant la ligne `mode` (et les clés
+propres à chaque mode : `insertion`, `ft`… côté fdem3d, `law` côté fem3d). Différences de structure :
+
+- nœuds partagés, sans copies ni insertion : un sommet = un nœud. Les groupes « corps » sont les
+  volumes physiques de `mesh = file` (`all` sans volume nommé) ; `point.` retient le nœud porteur de
+  masse le plus proche ; `box.` marche aussi sur `mesh = grid` et `mesh = voronoi` ;
+- une face dont l'élément est **érodé** ne reçoit plus de traction ni de pression (même règle que
+  `confiningPressure`) ;
+- `scenario = loads` : ni outil (`toolShape` refusée sauf `none`, `toolPulseForce` refusée), fond non
+  encastré, `dampingLocal` = 0 par défaut, `absorbing` permis ; `symmetryY` et `quarterModel` refusées
+  (elles annulent des vitesses hors du bilan : poser `fix.<g> = y`). Dans les autres scénarios les clés
+  restent permises, avec la même garde « nœud déjà tenu par le montage » ;
+- **bilan d'énergie.** fem3d n'avait pas de bilan B4 : il en reçoit un, imprimé en `scenario = loads`
+  seulement (ailleurs : la ligne `charges … liaisons …` et le résumé par groupe). Postes cumulés au sens
+  f · v(n−½) dt : éléments, outil, confinement, charges, liaisons, ressorts de champ lointain, Cundall,
+  Lysmer (variation exacte d'énergie cinétique de la division implicite), plus la correction
+  saute-mouton (f² dt²/2m sur les axes libres, f (v_imp − v)/2 dt sur les axes imposés). Le résidu est
+  un zéro d'arrondi quand la comptabilité est complète. Coût : deux sommes f · v par pas, seulement si
+  une clé est posée. L'intégration d'un nœud libre passe alors par `Fem3dSolver::integrateUserNode`
+  (mêmes formules que la boucle d'origine) ; sans les clés la boucle d'origine est intacte.
+
+Validation fem3d (Linux g++, même maillage `meshes/loads_bar_h4.msh`, 477 nœuds, 1 662 tets, `law =
+elastic`, E = 50 GPa, ν = 0,25, deck `configs/verify_fem3d_loads.cfg` : traction 5 MPa sur `top` en
+`ramp 1e-4`, `fix.bottom = z`, `fix.c000 = x y`, `fix.c100 = y`, `dampingLocal = 0,3`, T = 3e-4 s,
+dt = 5,14e-8 s, 5 833 pas, 2 s de calcul) :
+
+| variante | U_top_z (exact 4,000e-6 m) | RF_bottom_z (exact −2 000 N) | résidu du bilan |
+|---|---|---|---|
+| `traction.top = 0 0 5e6` | 4,00108e-6 | −2 000,50 | 3e-17 J (4e-13 %) |
+| `pressure.top = -5e6` (suiveuse) | 4,00087e-6 | −2 000,39 (F appliquée 1 999,9 N) | −1e-17 J (2e-13 %) |
+| `force.top = 0 0 2000` | 4,00108e-6 | −2 000,50 | −5e-17 J (6e-13 %) |
+| traction, T = 6e-4 s | 3,99991e-6 | −1 999,98 | 3e-17 J |
+
+Travail prélevé par les éléments 4,005e-3 J pour ½ F U = 4,001e-3 J (énergie élastique stockée, écart
+0,1 % = dynamique non amortie à T = 3e-4 s ; 0,07 % à 6e-4 s), Cundall 3,9e-5 J. Contraction
+latérale du centre de `top` : U_x = −2,29e-7 m (fdem3d : −2,28e-7). Les deux modes concordent à
+0,004 % sur U_top_z. Variantes contrôlées hors suite (résidu ≤ 4e-13 % chaque fois) : vitesse imposée
+`velocity.top = 0 0 0.05` en `ramp 5e-5` sur `fix.bottom = all` (liaisons mobiles, eBc = 3,63e-3 J),
+force de corps `force.solid` + `box.` + `point.` avec une amplitude tabulée, `absorbing = sides`
+(Lysmer 1,27e-4 J et ressorts 6,65e-4 J dans le bilan), et une force ponctuelle en `scenario =
+percussion` (pas de bilan, ligne charges seule). Gardes testées une à une, messages identiques à
+fdem3d (seul le compte de ddl en conflit diffère : fdem3d compte les copies). Repères de la suite :
+`loads_traction_fem3d` (tier `fast`), `loads_pression_fem3d`, `loads_force_fem3d` (tier `full`) :
+U_top_z à 2e-8 m (0,5 %), réaction à 1 N, résidu à 1e-9 J — mêmes bandes que les repères fdem3d.
+
+**Ce qui n'est pas fait.** Le mode `fdem` (2D) ne lit pas ces clés : un deck de ce mode qui les porte
+est refusé (clé non lue). L'accélération imposée de Solidity (`D1BNA*`) n'a pas
+d'équivalent : une vitesse imposée avec une amplitude linéaire par morceaux couvre le même besoin.
 
 ## 6. Sorties
 

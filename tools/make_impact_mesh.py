@@ -56,6 +56,10 @@ LEGER = len(sys.argv) > 5 and sys.argv[5] == "leger"
 
 GAP = float(_kw.get("gap", 2.0e-4))   # jeu piston/bit [m]
 R_ROCK, H_ROCK = 0.125, 0.150
+# bloc REDUIT (2026-10-03, rang 1 de la feuille de route acceleration) :
+# rrock= et hrock= [m] retaillent le cylindre de roche ; absents = inchange.
+R_ROCK = float(_kw.get("rrock", R_ROCK))
+H_ROCK = float(_kw.get("hrock", H_ROCK))
 R_INS, R_SHANK, H_INS = 0.00851, 0.00794, 0.0232
 R_BIT = 0.015
 L_BIT = 0.265 - H_INS        # le bit fait 265 mm INSERT COMPRIS

@@ -25,6 +25,7 @@
 #include "rockim/ToolPdc3d.hpp"
 
 #include <algorithm>
+#include <iterator>
 #include <cmath>
 #include <cstdio>
 #include <fstream>
@@ -67,6 +68,29 @@ struct F3Prof {
 double f3now() {
     return std::chrono::duration<double>(
                std::chrono::steady_clock::now().time_since_epoch()).count();
+}
+
+// (2026-10-03, performances) tri par base (LSD, chiffres de 11 bits) des
+// cles de paires du contact par potentiel. Les cles sont DISTINCTES : la
+// suite triee est unique, identique a celle de std::sort. Les chiffres
+// constants sur tout le tableau (bits de poids fort des indices) sont sautes.
+void radixSortU64(std::vector<uint64_t>& v, std::vector<uint64_t>& tmp) {
+    const std::size_t n = v.size();
+    if (n < 256) { std::sort(v.begin(), v.end()); return; }
+    uint64_t orAll = 0, andAll = ~(uint64_t)0;
+    for (uint64_t x : v) { orAll |= x; andAll &= x; }
+    const uint64_t varying = orAll ^ andAll;
+    tmp.resize(n);
+    std::size_t cnt[2048];
+    for (int sh = 0; sh < 64; sh += 11) {
+        if (((varying >> sh) & 0x7FFu) == 0) continue;
+        std::fill(cnt, cnt + 2048, (std::size_t)0);
+        for (uint64_t x : v) ++cnt[(x >> sh) & 0x7FFu];
+        std::size_t acc = 0;
+        for (int d = 0; d < 2048; ++d) { std::size_t c = cnt[d]; cnt[d] = acc; acc += c; }
+        for (uint64_t x : v) tmp[cnt[(x >> sh) & 0x7FFu]++] = x;
+        v.swap(tmp);
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -487,8 +511,9 @@ void Fdem3dSolver::init() {
     else if (sc == "shear")      scen_ = Scenario::SHEAR;
     else if (sc == "tension")    scen_ = Scenario::TENSION;
     else if (sc == "jointbench") scen_ = Scenario::JOINTBENCH;   // S3 (13/09)
+    else if (sc == "loads")      scen_ = Scenario::LOADS;   // 2026-10-03
     else throw std::runtime_error("fdem3d scenario must be percussion | shear | "
-                                  "tension | jointbench");
+                                  "tension | jointbench | loads");
 
     // ---- S3 (campagne du 13/09, DIAGNOSTIC §6.2) : scenario = jointbench ---
     // Les cles jb* ne sont lues QUE sous ce scenario ; posees ailleurs elles
@@ -586,7 +611,10 @@ void Fdem3dSolver::init() {
     ny_ = cfg_.geti("ny", 20);
     nz_ = cfg_.geti("nz", 15);
     T_ = cfg_.getd("T", 2e-4);
-    damping_ = cfg_.getd("dampingLocal", scen_ == Scenario::TENSION ? 0.7 : 0.05);
+    // scenario = loads : aucun amortissement par defaut — le bilan des
+    // charges et des liaisons doit se lire sans poste parasite
+    damping_ = cfg_.getd("dampingLocal", scen_ == Scenario::TENSION ? 0.7
+                         : scen_ == Scenario::LOADS ? 0.0 : 0.05);
 
     buildMesh();
 
@@ -814,6 +842,19 @@ void Fdem3dSolver::init() {
             throw std::runtime_error("insertion must be intrinsic | adaptive "
                                      "| none (got '" + ins + "')");
         adaptive_ = ins == "adaptive";
+        {   // dtUpdate = fixed (defaut) | inserted (2026-10-03, Wu 2024)
+            std::string du = cfg_.gets("dtUpdate", "fixed");
+            if (du != "fixed" && du != "inserted")
+                throw std::runtime_error("dtUpdate must be fixed | inserted");
+            dtIns_ = du == "inserted";
+            if (dtIns_ && !adaptive_)
+                throw std::runtime_error("dtUpdate = inserted exige insertion "
+                    "= adaptive : en intrinseque chaque joint exerce sa force "
+                    "des t = 0 et sa raideur borne le pas");
+            if (dtIns_ && cfg_.gets("scenario", "percussion") == "jointbench")
+                throw std::runtime_error("dtUpdate = inserted est sans objet "
+                                         "sous scenario = jointbench");
+        }
         // insertion = none : CONTINUUM PUR — miroir exact du 2D, voir
         // FdemSolver.cpp pour la mesure qui a motive la cle (impact 3D
         // DP-DFH du 2026-08-25 : 53 J devenus -89 GJ en 10 us par
@@ -1632,6 +1673,23 @@ void Fdem3dSolver::init() {
     if (contactPot_) {
         potP_ = cfg_.getd("potPenaltyFactor", 1.0) * phases_.maxE();
         jcAdaptive_ = cfg_.gets("jointContactPenalty", "fixed") == "adaptive";
+        {   // potForce = munjiza (defaut) | volume (2026-10-03, Liu et al. 2022)
+            std::string pf = cfg_.gets("potForce", "munjiza");
+            if (pf != "munjiza" && pf != "volume")
+                throw std::runtime_error("potForce must be munjiza | volume");
+            potVol_ = pf == "volume";
+            potVolF_ = cfg_.getd("potVolumeFactor", 5.0);
+            if (potVol_ && !(potVolF_ > 0.0))
+                throw std::runtime_error("potVolumeFactor must be > 0");
+            if (potVol_)
+                std::cout << "[FDEM3D] potForce = volume : force normale par le "
+                             "VOLUME de recouvrement (Liu et al., CMAME 395, "
+                             "2022 ; Phi = kn V^2 / 2V', V' = 2 VA VB/(VA+VB)), "
+                             "appliquee face par face ; kn = " << potVolF_
+                          << " x la penalite de Munjiza (Liu : 3 a 10, 5 retenu). "
+                             "L integration exacte aux 12 plans de cassure "
+                             "n est plus calculee.\n";
+        }
         if (jcAdaptive_)
             std::cout << "[FDEM3D] jointContactPenalty = adaptive : k- = "
                          "k+(D) = (1-D) pj (EPFL arXiv:2511.14323 sec. 4)\n";
@@ -1699,6 +1757,7 @@ void Fdem3dSolver::init() {
     placeTool();
     setupBoundaries();
     setupConfinement();
+    setupUserLoads();                      // no-op sans fix./force./...
     // ---- viscosite de Yan : mu par element ------------------------------
     // mu = xi h sqrt(E rho) : xi est le taux d amortissement a l echelle de
     // la MAILLE. xi = 2 est exactement l amortissement critique de Munjiza
@@ -2046,6 +2105,8 @@ void Fdem3dSolver::buildMeshFile() {
     std::vector<std::array<int, 4>> tets;
     std::vector<long> tetPhys;             // tag physique par tet (0 = aucun)
     std::map<long, std::string> physVol;   // id physique (dim 3) -> nom
+    std::map<long, int> physLow;           // id physique (dim 0-2) -> mshLow_
+    mshLow_.clear();
     bool sawFormat = false;
     while (std::getline(in, line)) {
         if (line.rfind("$MeshFormat", 0) == 0) {
@@ -2067,7 +2128,11 @@ void Fdem3dSolver::buildMeshFile() {
                 auto q1 = nm.rfind('"');
                 if (q0 != std::string::npos && q1 > q0)
                     nm = nm.substr(q0 + 1, q1 - q0 - 1);
-                if (dim == 3) physVol[id] = nm;        // surfaces : plus tard
+                if (dim == 3) physVol[id] = nm;
+                else if (dim >= 0 && dim <= 2) {       // charges/CL (10/2026)
+                    physLow[id] = (int)mshLow_.size();
+                    mshLow_.push_back({nm, dim, {}, {}});
+                }
             }
         } else if (line.rfind("$Nodes", 0) == 0) {
             long n = 0;
@@ -2097,8 +2162,21 @@ void Fdem3dSolver::buildMeshFile() {
                         + std::to_string(type) + " unsupported (tets only; "
                         "export a pure tetrahedral mesh)");
                 std::array<int, 4> vv{};
+                // groupe physique de dimension 0-2 : ses sommets (et ses
+                // triangles) servent aux charges et CL (fix., force., ...)
+                auto pl = nn < 4 ? physLow.find(phys) : physLow.end();
+                if (pl != physLow.end() && nn - 1 != mshLow_[pl->second].dim)
+                    pl = physLow.end();
                 for (int q = 0; q < nn; ++q) {
                     long nid; in >> nid;
+                    if (pl != physLow.end()) {
+                        auto it = id2idx.find(nid);
+                        if (it == id2idx.end())
+                            throw std::runtime_error("meshFile: element "
+                                + std::to_string(id) + " reference le noeud "
+                                "inconnu id " + std::to_string(nid));
+                        vv[q] = it->second;
+                    }
                     if (nn == 4) {
                         auto it = id2idx.find(nid);
                         if (it == id2idx.end())
@@ -2111,6 +2189,10 @@ void Fdem3dSolver::buildMeshFile() {
                 if (nn == 4) {                         // points/lines/tris:
                     tets.push_back(vv);                // boundary — skipped
                     tetPhys.push_back(phys);
+                } else if (pl != physLow.end()) {
+                    UMsh& G = mshLow_[pl->second];
+                    for (int q = 0; q < nn; ++q) G.verts.push_back(vv[q]);
+                    if (nn == 3) G.tris.push_back({vv[0], vv[1], vv[2]});
                 }
             }
         }
@@ -2126,6 +2208,7 @@ void Fdem3dSolver::buildMeshFile() {
     Eigen::Vector3d lo = vpos[0], hi = vpos[0];
     for (const auto& p : vpos) { lo = lo.cwiseMin(p); hi = hi.cwiseMax(p); }
     for (auto& p : vpos) p -= lo;
+    meshOrigin_ = lo;
     W_ = hi.x() - lo.x();
     D_ = hi.y() - lo.y();
     H_ = hi.z() - lo.z();
@@ -3428,6 +3511,7 @@ void Fdem3dSolver::activateJoint(int jI, double sig,
     Joint& J = jt_[jI];
     if (!J.bonded || J.perm) return;      // perm : groupContinuum, jamais inseree
     J.bonded = false;
+    jLiveAdd_.push_back(jI);               // jointForces : liste des vivants
     // ---- DIF de Yang et al. 2025, FIGE ICI ------------------------------
     // Applique AVANT les decalages de continuite de contrainte ci-dessous,
     // qui lisent J.ft, J.coh et J.pj. Se COMPOSE avec le facteur statistique
@@ -3522,6 +3606,33 @@ void Fdem3dSolver::activateJoint(int jI, double sig,
     rebindVertex(vOf_[J.a[0]]);
     rebindVertex(vOf_[J.a[1]]);
     rebindVertex(vOf_[J.a[2]]);
+    if (dtIns_) dtOnInsert(J);             // dtUpdate = inserted
+}
+
+// dtUpdate = inserted : la raideur du joint qui vient d etre insere entre dans
+// le budget de ses 6 noeuds ; le pas diminue si l un d eux devient critique.
+// Meme formule que computeStableDt (kPara pj A0/3, 2 sqrt(m/K), dtFactor),
+// et la borne CFL des elements et la borne visqueuse, deja dans le pas
+// initial, ne peuvent que rester satisfaites puisque le pas ne remonte pas.
+// Les deux grandeurs mises en cache a partir du pas sont recalculees.
+void Fdem3dSolver::dtOnInsert(const Joint& J) {
+    const double kPara = paraElastic_ ? 2.0 : 1.0;
+    const double k = noJoints_ ? 0.0 : kPara * J.pj * J.A0 / 3.0;
+    double dtNew = dt_;
+    for (int q = 0; q < 3; ++q)
+        for (int i : {J.a[q], J.b[q]}) {
+            Kdt_[i] += k;
+            const double dti = dtFacDt_ * 2.0
+                             * std::sqrt(m_[i] / (Kdt_[i] + kExtraDt_));
+            if (dti < dtNew) dtNew = dti;
+        }
+    if (dtNew < dt_) {
+        dt_ = dtNew;
+        relax_ = std::exp(-dt_ / cfg_.getd("gcBirthTau", 1e-6));
+        srRelax_ = (!srFilterOff_ && srTau_ > 0.0) ? std::exp(-dt_ / srTau_)
+                                                   : 0.0;
+        ++dtCuts_;
+    }
 }
 
 void Fdem3dSolver::placeTool() {
@@ -3573,6 +3684,15 @@ void Fdem3dSolver::placeTool() {
     // (physical group + groupVel), et toolContact / tool_.integrate sont
     // court-circuites DUR (lecon du disque fantome brezilien 2D).
     std::string sh = cfg_.gets("toolShape", "sphere");
+    // scenario = loads : AUCUN outil analytique, AUCUN appui implicite — le
+    // montage est entierement decrit par fix./velocity./force./...
+    if (scen_ == Scenario::LOADS) {
+        if (cfg_.has("toolShape") && sh != "none")
+            throw std::runtime_error("scenario = loads n a pas d outil "
+                "analytique : retirer toolShape (ou poser toolShape = none) et "
+                "charger par force./traction./pressure./velocity.");
+        sh = "none";
+    }
     // OUTIL FANTOME (mesure du 2026-09-11) : un deck a corps MAILLE lance par
     // groupVel qui oublie toolShape = none recoit EN PLUS la sphere analytique
     // par defaut (0,5 kg a 8 m/s, 16 J) — masse et energie non voulues au
@@ -3586,6 +3706,13 @@ void Fdem3dSolver::placeTool() {
                   << cfg_.getd("impactSpeed", 8.0) << " m/s). Si l outil est "
                      "le corps maille, poser toolShape = none.\n\n";
     if (sh == "none") {
+        if (scen_ == Scenario::LOADS) {
+            toolNone_ = true;
+            tool_.free = false;
+            tool_.x = {1e9, 1e9, 1e9};
+            tool_.v.setZero();
+            return;
+        }
         // reprise post-revue 2026-08-28 : le piege du relais mord autant
         // avec un insert MAILLE — la notice ne doit pas etre sautee.
         if (scen_ == Scenario::PERCUSSION && !deathOnDamage_)
@@ -3766,9 +3893,9 @@ void Fdem3dSolver::setupBoundaries() {
                         cAbs_[nid](a) += mp.rho * c * At3;
                         kAbs_[nid](a) += sF * G / (a == 2 ? R : 2.0 * R) * At3;
                     }
-                } else {                       // percussion AND shear: the
-                    flag_[nid] = FIXED;        // block needs its support
-                }
+                } else if (scen_ != Scenario::LOADS) { // percussion AND
+                    flag_[nid] = FIXED;        // shear: the block needs its
+                }                              // support (loads : fix.<g>)
             }
         }
     }
@@ -3923,6 +4050,7 @@ void Fdem3dSolver::computeStableDt() {
             k = std::max(k0, kPara * J.pj) * J.A0 / 3.0;
         }
         const double kb = noJoints_ ? 0.0 : kPara * J.pj * J.A0 / 3.0;
+        if (dtIns_ && J.bonded) continue;  // joint lie : aucune force (Wu 2024)
         for (int q = 0; q < 3; ++q) {
             K[J.a[q]] += k;   K[J.b[q]] += k;
             Kb[J.a[q]] += kb; Kb[J.b[q]] += kb;
@@ -4039,6 +4167,17 @@ void Fdem3dSolver::computeStableDt() {
                                         * hEl_[eI] / (4.0 * muEl_[eI]));
     double dtSpr = std::min(dtMin, cfl);
     dt_ = cfg_.getd("dtFactor", 0.15) * std::min(dtSpr, dtVis);
+    if (dtIns_) {                          // dtUpdate = inserted : etat garde
+        Kdt_ = K;
+        kExtraDt_ = nExtra * kContact;
+        dtFacDt_ = cfg_.getd("dtFactor", 0.15);
+        dtStart_ = dt_;
+        std::cout << "[FDEM3D] dtUpdate = inserted : pas initial " << dt_
+                  << " s sans la raideur des joints LIES (ils n exercent "
+                     "aucune force en insertion adaptative, Wu et al. 2024) ; "
+                     "il diminue a chaque insertion qui raidit un noeud "
+                     "critique. Boucle pilotee par le temps.\n";
+    }
     // ---- COMPARAISON HONNETE du pas sous camacho et sous penalty ---------
     // computeStableDt n est appele qu UNE FOIS, a l initialisation : le pas
     // est fige pour tout le run, et le budget camacho ci-dessus porte donc
@@ -4121,6 +4260,7 @@ void Fdem3dSolver::step() {
         toolContact();
     }
     confiningForces();                     // no-op si confiningPressure = 0
+    if (uOn_) userLoadForces();            // force./traction./pressure.
     if (confP_ > 0.0 && !confLatched_
         && t_ >= std::max(cfg_.getd("confineGaugeTime", 3.0 * confRamp_),
                           20.0 * dt_)) {
@@ -4158,7 +4298,8 @@ void Fdem3dSolver::step() {
     // B8, scenarios SANS outil (traction, cisaillement) : miroir exact du 2D —
     // on fige tant qu'aucun joint n'a rompu, si bien que le dernier releve est
     // celui du pas precedant la premiere fissure.
-    if (scen_ == Scenario::TENSION || scen_ == Scenario::SHEAR)
+    if (scen_ == Scenario::TENSION || scen_ == Scenario::SHEAR
+        || scen_ == Scenario::LOADS)
         if (nBroken_ == 0) scanSubCriticalDamage();
     if (jbOn_) jbRecord();                 // S3 : etat du joint a t_
 
@@ -4240,6 +4381,10 @@ void Fdem3dSolver::checkEnergyAbort() {
         sumW  += gravWork_ + brushWork_;
         gross += std::abs(gravWork_) + std::abs(brushWork_);
     }
+    if (uOn_) {                            // charges et liaisons par groupes
+        sumW  += uLoadW_ + uBcW_;
+        gross += std::abs(uLoadW_) + std::abs(uBcW_);
+    }
     double scale = std::max({keInit_, ke, gross, 1e-30});
     if (scale < 1e-12) return;             // charge nulle : pas de verdict
     double resid = (ke - keInit_) - sumW;
@@ -4256,6 +4401,7 @@ void Fdem3dSolver::checkEnergyAbort() {
     {
         double ext = toolWork_ + bcWork_ + confWork_;
         if (eBody_) ext += gravWork_ + brushWork_;
+        if (uOn_) ext += uLoadW_ + uBcW_;
         const double excess = ke - keInit_ - std::max(0.0, ext);
         if (excess > 0.01 * eAbortPct_ * scale && excess > eAbortMin_) {
             int iw = 0; double vw = 0.0;
@@ -5390,6 +5536,51 @@ void Fdem3dSolver::jointForces() {
         }
     };
 
+    // ---- (2026-10-03, performances) liste compacte des joints vivants ----
+    // processJoint() sort aussitot sur un joint mort ou lie : ne visiter que
+    // les autres, DANS LE MEME ORDRE d indice, ne change aucune operation
+    // flottante. La liste est batie au premier appel, les joints inseres
+    // depuis (jLiveAdd_, empiles par activateJoint) y sont fusionnes en
+    // ordre, et les morts du pas sont retirees apres la boucle (un joint qui
+    // meurt est encore evalue au pas de sa mort, comme avant).
+    const int nJ = (int)jt_.size();
+    if (jLiveDirty_) {
+        jLive_.clear();
+        for (int j = 0; j < nJ; ++j)
+            if (!jt_[j].dead && !jt_[j].bonded) jLive_.push_back(j);
+        std::vector<char> mk(X0_.size(), 0);
+        for (int j : jLive_)
+            for (int k = 0; k < 3; ++k) mk[jt_[j].a[k]] = mk[jt_[j].b[k]] = 1;
+        jLiveNodes_.clear();
+        for (int i = 0; i < (int)X0_.size(); ++i)
+            if (mk[i]) jLiveNodes_.push_back(i);
+        jLiveAdd_.clear();
+        jLiveDirty_ = false;
+    } else if (!jLiveAdd_.empty()) {
+        std::sort(jLiveAdd_.begin(), jLiveAdd_.end());
+        std::vector<int> merged(jLive_.size() + jLiveAdd_.size());
+        std::merge(jLive_.begin(), jLive_.end(), jLiveAdd_.begin(),
+                   jLiveAdd_.end(), merged.begin());
+        jLive_.swap(merged);
+        std::vector<int> nodes;
+        nodes.reserve(6 * jLiveAdd_.size());
+        for (int j : jLiveAdd_)
+            for (int k = 0; k < 3; ++k) {
+                nodes.push_back(jt_[j].a[k]);
+                nodes.push_back(jt_[j].b[k]);
+            }
+        std::sort(nodes.begin(), nodes.end());
+        nodes.erase(std::unique(nodes.begin(), nodes.end()), nodes.end());
+        std::vector<int> uni;
+        uni.reserve(jLiveNodes_.size() + nodes.size());
+        std::set_union(jLiveNodes_.begin(), jLiveNodes_.end(), nodes.begin(),
+                       nodes.end(), std::back_inserter(uni));
+        jLiveNodes_.swap(uni);
+        jLiveAdd_.clear();
+    }
+    const int nL = (int)jLive_.size();
+    bool anyDead = false;
+
 #ifdef _OPENMP
     int nT = omp_get_max_threads();
     if (nT > 1) {
@@ -5401,6 +5592,7 @@ void Fdem3dSolver::jointForces() {
         }
         std::vector<long> nbT(nT, 0);
         std::vector<double> dwT(nT, 0.0), jwT(nT, 0.0);
+        std::vector<char> deadT(nT, 0);
 #pragma omp parallel
         {
             int t = omp_get_thread_num();
@@ -5414,12 +5606,35 @@ void Fdem3dSolver::jointForces() {
                 if (!seen[i]) { seen[i] = 1; tl.push_back(i); }
                 fb[i] += v3;
             };
-#pragma omp for schedule(static)
-            for (int jI = 0; jI < (int)jt_.size(); ++jI)
-                processJoint(jt_[jI], addF, nb, dw, jw);
+            // Tranche de CE fil dans l ancien `omp for schedule(static)` sur
+            // [0, nJ) : c est cette partition qui fixe l arithmetique (somme
+            // par fil dans l ordre des joints, puis fusion t = 0..nT-1). On la
+            // relit aupres du runtime lui-meme, par la meme boucle dans la
+            // meme equipe (corps vide : quelques dizaines de microsecondes),
+            // puis le fil ne parcourt que les vivants de sa tranche — memes
+            // sommes partielles, bit pour bit.
+            int lo = nJ, hi = nJ - 1;
+            bool first = true;
+#pragma omp for schedule(static) nowait
+            for (int jI = 0; jI < nJ; ++jI) {
+                if (first) { lo = jI; first = false; }
+                hi = jI;
+            }
+            if (first) { lo = nJ; hi = nJ - 1; }    // tranche vide
+            const int k0 = (int)(std::lower_bound(jLive_.begin(), jLive_.end(),
+                                                  lo) - jLive_.begin());
+            const int k1 = (int)(std::lower_bound(jLive_.begin(), jLive_.end(),
+                                                  hi + 1) - jLive_.begin());
+            char dd = 0;
+            for (int k = k0; k < k1; ++k) {
+                Joint& J = jt_[jLive_[k]];
+                processJoint(J, addF, nb, dw, jw);
+                if (J.dead) dd = 1;
+            }
             nbT[t] = nb;
             dwT[t] = dw;
             jwT[t] = jw;
+            deadT[t] = dd;
         }
         // ---- fusion des forces par fil, PARALLELE PAR NOEUD (audit C, 13/09)
         // L ancienne fusion (boucle exterieure sur les fils, listes touchedTL_)
@@ -5427,11 +5642,14 @@ void Fdem3dSolver::jointForces() {
         // des 32,4 ms des joints a s = 1 (95 % du poste, Amdahl sur 7/14 fils).
         // Ici chaque noeud somme ses contributions dans le MEME ordre t = 0..nT-1
         // que la boucle d origine : bit-identique par construction, et les
-        // tranches de noeuds se partagent entre les fils.
+        // tranches de noeuds se partagent entre les fils. Depuis le 2026-10-03
+        // la fusion ne parcourt que les noeuds des joints vivants (les autres
+        // n ont aucune contribution : seen = 0 pour tout t).
         {
-            const int nN = (int)X0_.size();
+            const int nN = (int)jLiveNodes_.size();
 #pragma omp parallel for schedule(static)
-            for (int i = 0; i < nN; ++i) {
+            for (int q = 0; q < nN; ++q) {
+                const int i = jLiveNodes_[q];
                 for (int t = 0; t < nT; ++t) {
                     if (!seenTL_[t][i]) continue;
                     f_[i] += fTL_[t][i];
@@ -5444,17 +5662,31 @@ void Fdem3dSolver::jointForces() {
             nBroken_ += nbT[t];
             dampWork_ += dwT[t];
             jointWork_ += jwT[t];
+            if (deadT[t]) anyDead = true;
         }
-        return;
-    }
+    } else
 #endif
-    long nb1 = 0;                        // 1 thread: bit-identical to serial
-    double dw1 = 0.0, jw1 = 0.0;
-    auto addF1 = [&](int i, const Eigen::Vector3d& v3) { f_[i] += v3; };
-    for (auto& J : jt_) processJoint(J, addF1, nb1, dw1, jw1);
-    nBroken_ += nb1;
-    dampWork_ += dw1;
-    jointWork_ += jw1;
+    {
+        long nb1 = 0;                    // 1 thread: bit-identical to serial
+        double dw1 = 0.0, jw1 = 0.0;
+        auto addF1 = [&](int i, const Eigen::Vector3d& v3) { f_[i] += v3; };
+        for (int k = 0; k < nL; ++k) {
+            Joint& J = jt_[jLive_[k]];
+            processJoint(J, addF1, nb1, dw1, jw1);
+            if (J.dead) anyDead = true;
+        }
+        nBroken_ += nb1;
+        dampWork_ += dw1;
+        jointWork_ += jw1;
+    }
+    // morts du pas : retirees de la liste (les noeuds restent dans
+    // jLiveNodes_, sur-ensemble sans effet sur la fusion)
+    if (anyDead) {
+        int w = 0;
+        for (int k = 0; k < nL; ++k)
+            if (!jt_[jLive_[k]].dead) jLive_[w++] = jLive_[k];
+        jLive_.resize(w);
+    }
 }
 
 void Fdem3dSolver::rebuildContactFaces() {
@@ -5637,6 +5869,12 @@ void Fdem3dSolver::activationSweep() {
 // incremental vectoriel. Serie et deterministe.
 // ---------------------------------------------------------------------------
 void Fdem3dSolver::potentialContact() {
+    // (2026-10-03, performances) table element -> joints (CSR), batie avec
+    // jointOfPair_ : la recherche du joint d une paire lit les <= 4 joints
+    // de eLo au lieu d une table de hachage (un defaut de cache par paire).
+    // Meme reponse : jointOfPair_ garde le DERNIER j ecrit pour une cle,
+    // soit le plus grand indice — la recherche prend le plus grand aussi.
+    static std::vector<int> jOfElOff, jOfEl;
     if (jointOfPair_.empty() && !jt_.empty()) {
         jointOfPair_.reserve(2 * jt_.size());
         for (int j = 0; j < (int)jt_.size(); ++j) {
@@ -5644,7 +5882,25 @@ void Fdem3dSolver::potentialContact() {
             uint64_t b = (uint64_t)std::max(jt_[j].eA, jt_[j].eB);
             jointOfPair_[(a << 32) | b] = j;
         }
+        jOfElOff.assign(el_.size() + 1, 0);
+        for (const Joint& J : jt_) { ++jOfElOff[J.eA + 1]; ++jOfElOff[J.eB + 1]; }
+        for (std::size_t e = 0; e < el_.size(); ++e) jOfElOff[e + 1] += jOfElOff[e];
+        jOfEl.assign(jOfElOff.back(), -1);
+        std::vector<int> fill(jOfElOff.begin(), jOfElOff.end() - 1);
+        for (int j = 0; j < (int)jt_.size(); ++j) {
+            jOfEl[fill[jt_[j].eA]++] = j;
+            jOfEl[fill[jt_[j].eB]++] = j;
+        }
     }
+    auto jointOf = [&](int eLo, int eHi) {
+        int jI = -1;
+        if (jOfElOff.empty()) return jI;
+        for (int k = jOfElOff[eLo]; k < jOfElOff[eLo + 1]; ++k) {
+            const Joint& J = jt_[jOfEl[k]];
+            if ((J.eA == eHi || J.eB == eHi) && jOfEl[k] > jI) jI = jOfEl[k];
+        }
+        return jI;
+    };
     // ---- (1) elements uniques du jeu actif -------------------------------
     static std::vector<long> emark;
     static std::vector<int> elems;
@@ -5681,10 +5937,19 @@ void Fdem3dSolver::potentialContact() {
     static std::vector<char> einb;
     einb.resize(elems.size());
     static std::vector<std::vector<int>> eg;
+    // (2026-10-03, performances) seaux NON VIDES du pas precedent : la
+    // remise a zero ne vide plus que ceux-la. L ancienne boucle balayait les
+    // 1,6 M de seaux de la grille dense a chaque pas (4,3 ms SERIE sur 10 ms
+    // de contact, kuru9 a 2 fils) pour quelques milliers de seaux occupes.
+    // Meme contenu de grille a l entree du binning : bit-neutre.
+    static std::vector<std::size_t> egUsed;
     {
         std::size_t nC = (std::size_t)egx * egy * egz;
-        if (eg.size() != nC) eg.assign(nC, {});
-        else for (auto& c : eg) c.clear();
+        if (eg.size() != nC) { eg.assign(nC, {}); egUsed.clear(); }
+        else {
+            for (std::size_t c : egUsed) eg[c].clear();
+            egUsed.clear();
+        }
     }
     // (2026-09-11) AABB en parallele (ecritures par q, independantes), puis
     // rangement en seaux en serie (push_back partage). Meme contenu de grille.
@@ -5717,8 +5982,11 @@ void Fdem3dSolver::potentialContact() {
         int z1 = std::clamp(int((hi.z() - egMin.z()) / cl), 0, egz - 1);
         for (int cz = z0; cz <= z1; ++cz)
             for (int cy = y0; cy <= y1; ++cy)
-                for (int cx = x0; cx <= x1; ++cx)
-                    eg[ecid(cx, cy, cz)].push_back(q);
+                for (int cx = x0; cx <= x1; ++cx) {
+                    const std::size_t c = ecid(cx, cy, cz);
+                    if (eg[c].empty()) egUsed.push_back(c);
+                    eg[c].push_back(q);
+                }
     }
 
     // ---- (3) paires candidates, en ordre CANONIQUE (voir 2D) -------------
@@ -5733,7 +6001,9 @@ void Fdem3dSolver::potentialContact() {
 #ifdef _OPENMP
     nT3 = std::max(1, omp_get_max_threads());
 #endif
+    static std::vector<std::vector<uint64_t>> sortTmpTL;   // tri par base
     if ((int)pstampTL.size() < nT3) { pstampTL.resize(nT3); pairsTL.resize(nT3); }
+    if ((int)sortTmpTL.size() < nT3) sortTmpTL.resize(nT3);
     for (int t = 0; t < nT3; ++t) {
         if (pstampTL[t].size() != elems.size()) pstampTL[t].assign(elems.size(), -1);
         else std::fill(pstampTL[t].begin(), pstampTL[t].end(), -1);
@@ -5762,20 +6032,39 @@ void Fdem3dSolver::potentialContact() {
                         out.push_back((a << 32) | b);
                     }
     };
+    // (2026-10-03, performances) chaque fil TRIE sa liste dans la region
+    // parallele, puis les listes triees sont fusionnees deux a deux. Les cles
+    // sont des paires DISTINCTES (une paire n est emise que par son q le plus
+    // petit, une seule fois grace a pstamp) : la suite triee est unique, donc
+    // identique a celle de l ancien std::sort serie (1,4 ms a 2 fils sur
+    // kuru9), quel que soit l algorithme — ici un tri par base.
 #ifdef _OPENMP
 #pragma omp parallel num_threads(nT3)
     {
         const int t = omp_get_thread_num();
 #pragma omp for schedule(static)
         for (int q = 0; q < nEl; ++q) genPairs(q, pstampTL[t], pairsTL[t]);
+        radixSortU64(pairsTL[t], sortTmpTL[t]);
     }
 #else
     for (int q = 0; q < nEl; ++q) genPairs(q, pstampTL[0], pairsTL[0]);
+    radixSortU64(pairsTL[0], sortTmpTL[0]);
 #endif
-    pairs.clear();
-    for (int t = 0; t < nT3; ++t)
-        pairs.insert(pairs.end(), pairsTL[t].begin(), pairsTL[t].end());
-    std::sort(pairs.begin(), pairs.end());
+    {
+        static std::vector<uint64_t> mtmp;
+        int nL = nT3;                          // fusion en arbre : log2(nT)
+        for (int w = 1; w < nL; w *= 2)        // passes sur les listes
+            for (int t = 0; t + w < nL; t += 2 * w) {
+                mtmp.resize(pairsTL[t].size() + pairsTL[t + w].size());
+                std::merge(pairsTL[t].begin(), pairsTL[t].end(),
+                           pairsTL[t + w].begin(), pairsTL[t + w].end(),
+                           mtmp.begin());
+                pairsTL[t].swap(mtmp);
+                pairsTL[t + w].clear();
+            }
+        pairs.swap(pairsTL[0]);                // pairsTL[0] repart vide au
+        pairsTL[0].clear();                    // prochain pas (clear ci-dessus)
+    }
     {
         auto t1 = std::chrono::steady_clock::now();
         potStats_.tGrid += std::chrono::duration<double>(t1 - potTic).count();
@@ -5805,16 +6094,43 @@ void Fdem3dSolver::potentialContact() {
     static std::vector<PCand> cand;
     static std::vector<PRes> res;
     cand.clear();
-    for (uint64_t pk : pairs) {
+    // (2026-10-03, performances) phase A en deux temps. Les RECHERCHES
+    // (jointOf, potFt_.find : acces const concurrents, aucun
+    // ecrivain pendant la boucle) passent en parallele ; seule l INSERTION
+    // d une paire nouvelle dans potFt_ reste serie, dans l ordre canonique
+    // des paires comme avant — meme suite d insertions, meme table.
+    static std::vector<int> pairJ;             // joint de la paire, -1 sinon
+    static std::vector<PotHist*> pairH;        // entree existante, nullptr sinon
+    static std::vector<char> pairLive;         // 1 = joint vivant, paire ecartee
+    const int nPairs = (int)pairs.size();
+    pairJ.resize(pairs.size());
+    pairH.resize(pairs.size());
+    pairLive.resize(pairs.size());
+#ifdef _OPENMP
+#pragma omp parallel for schedule(static) if (nPairs >= 256)
+#endif
+    for (int i = 0; i < nPairs; ++i) {
+        const uint64_t pk = pairs[i];
+        const int jI = jointOf((int)(pk >> 32), (int)(pk & 0xFFFFFFFFu));
+        pairJ[i] = jI;
+        pairLive[i] = (jI >= 0 && !jt_[jI].dead) ? 1 : 0;
+        pairH[i] = nullptr;
+        if (!pairLive[i]) {
+            auto itH = potFt_.find(pk);
+            if (itH != potFt_.end()) pairH[i] = &itH->second;
+        }
+    }
+    for (int i = 0; i < nPairs; ++i) {
+        const uint64_t pk = pairs[i];
         const int eLo = (int)(pk >> 32);
         const int eHi = (int)(pk & 0xFFFFFFFFu);
-        auto itJ = jointOfPair_.find(pk);
-        const int jI = (itJ != jointOfPair_.end()) ? itJ->second : -1;
-        if (jI >= 0 && !jt_[jI].dead) {
+        const int jI = pairJ[i];
+        if (pairLive[i]) {
             ++potStats_.joint;
             continue;      // le joint vivant porte la paire
         }
-        cand.push_back({pk, eLo, eHi, &potFt_[pk], jI});
+        PotHist* H = pairH[i] ? pairH[i] : &potFt_[pk];
+        cand.push_back({pk, eLo, eHi, H, jI});
     }
     const int nCand = (int)cand.size();
     res.resize(cand.size());
@@ -5842,7 +6158,13 @@ void Fdem3dSolver::potentialContact() {
         const double pP = potByPhase_
             ? potPF_ * std::min(phases_.mat[EA.phase].E, phases_.mat[EB.phase].E)
             : potP_;
-        r.code = pot3::pairForce(r.pa, r.pb, pP, r.R) ? 0 : 4;
+        if (potVol_) {                     // potForce = volume
+            const double VA = EA.V0, VB = EB.V0;
+            r.code = pot3::pairForceVolume(r.pa, r.pb, potVolF_ * pP,
+                                           2.0 * VA * VB / (VA + VB), r.R)
+                   ? 0 : 4;
+        } else
+            r.code = pot3::pairForce(r.pa, r.pb, pP, r.R) ? 0 : 4;
     }
     for (int ci = 0; ci < nCand; ++ci) {
         {
@@ -6093,15 +6415,24 @@ void Fdem3dSolver::generalContact() {
     } else {
         // reuse the buckets instead of destroying them: assign() frees every
         // inner vector every step, clear() keeps their capacity (bit-neutral)
+        // (2026-10-03, performances) seuls les seaux remplis au pas
+        // precedent sont vides (gridUsed) : meme grille, sans le balayage
+        // serie des millions de seaux vides de la grille dense.
+        static std::vector<std::size_t> gridUsed;
         std::size_t nCells = (std::size_t)gx_ * gy_ * gz_;
-        if (grid_.size() != nCells) grid_.assign(nCells, {});
-        else for (auto& c : grid_) c.clear();
+        if (grid_.size() != nCells) { grid_.assign(nCells, {}); gridUsed.clear(); }
+        else {
+            for (std::size_t c : gridUsed) grid_[c].clear();
+            gridUsed.clear();
+        }
         for (std::size_t k = 0; k < act_.size(); ++k) {
             if (!inBox[k]) continue;
             int cx = std::clamp(int((cen[k].x() - gmin_.x()) / cell_), 0, gx_ - 1);
             int cy = std::clamp(int((cen[k].y() - gmin_.y()) / cell_), 0, gy_ - 1);
             int cz = std::clamp(int((cen[k].z() - gmin_.z()) / cell_), 0, gz_ - 1);
-            grid_[cidx(cx, cy, cz)].push_back((int)k);
+            const std::size_t c = cidx(cx, cy, cz);
+            if (grid_[c].empty()) gridUsed.push_back(c);
+            grid_[c].push_back((int)k);
         }
     }
 
@@ -6520,6 +6851,9 @@ void Fdem3dSolver::integrate() {
         keInit_ = ke0;
     }
     double cw = 0.0, lw = 0.0, bw = 0.0, bias = 0.0;  // V2/B4 compteurs
+    double ubw = 0.0;                      // liaisons fix./velocity. (10/2026)
+    // vitesse imposee a mi-pas (leapfrog : v_ vit en t + dt/2)
+    const double tMid = t_ + 0.5 * dt_;
     // insertion = none : les groupes lies doivent AUSSI integrer comme UN
     // noeud, sinon les copies bougent independamment et le maillage se
     // comporte comme un NUAGE de tetraedres libres (bug observe le
@@ -6533,7 +6867,7 @@ void Fdem3dSolver::integrate() {
         // 2D solver. Copies of a group share flags (same position) and stay
         // bit-identical: groups only ever split, never merge.
 #ifdef _OPENMP
-#pragma omp parallel for schedule(static) reduction(+:cw,lw,bw,bias)
+#pragma omp parallel for schedule(static) reduction(+:cw,lw,bw,bias,ubw)
 #endif
         for (int vv = 0; vv < nVert_; ++vv) {
             for (const auto& g : grpsOfVert_[vv]) {
@@ -6578,10 +6912,13 @@ void Fdem3dSolver::integrate() {
                 Eigen::Vector3d F = Eigen::Vector3d::Zero();
                 Eigen::Vector3d cS = Eigen::Vector3d::Zero();
                 double M = 0.0;
+                // axes imposes par fix./velocity. : ni ressort, ni
+                // amortisseur, ni Cundall (le ddl ne bouge pas librement)
+                const unsigned mk = uOn_ ? uMask_[i0] : 0u;
                 for (int i : g) {
                     F += f_[i];
                     for (int a = 0; a < 3; ++a)
-                        if (kAbs_[i](a) > 0) {
+                        if (kAbs_[i](a) > 0 && !((mk >> a) & 1u)) {
                             double fk = kAbs_[i](a) * u_[i](a);
                             F(a) -= fk;
                             lw -= fk * v_[i0](a) * dt_;   // V2/B4 ressort
@@ -6591,17 +6928,39 @@ void Fdem3dSolver::integrate() {
                 }
                 if (damping_ > 0)
                     for (int a = 0; a < 3; ++a) {
+                        if ((mk >> a) & 1u) continue;
                         double fd = damping_ * std::abs(F(a))
                                 * (v_[i0](a) > 0 ? 1.0 : (v_[i0](a) < 0 ? -1.0 : 0.0));
                         F(a) -= fd;
                         cw -= fd * v_[i0](a) * dt_;       // V2/B4 Cundall
                     }
-                bias += F.squaredNorm() * dt_ * dt_ / (2.0 * M);
+                if (mk == 0u)
+                    bias += F.squaredNorm() * dt_ * dt_ / (2.0 * M);
+                else
+                    for (int a = 0; a < 3; ++a)
+                        if (!((mk >> a) & 1u))
+                            bias += F(a) * F(a) * dt_ * dt_ / (2.0 * M);
                 Eigen::Vector3d vn = v_[i0] + (dt_ / M) * F;
                 for (int a = 0; a < 3; ++a)
-                    if (cS(a) > 0) {
+                    if (cS(a) > 0 && !((mk >> a) & 1u)) {
                         vn(a) /= 1.0 + dt_ * cS(a) / M;
                         lw -= cS(a) * vn(a) * vn(a) * dt_;  // V2/B4 amortisseur
+                    }
+                if (mk != 0u)                  // fix./velocity. : meme formule
+                    for (int a = 0; a < 3; ++a) {   // que les platines (R = m a - f)
+                        if (!((mk >> a) & 1u)) continue;
+                        const int k = uAmpOf_[i0][a];
+                        const double vt = k < 0 ? uVel_[i0](a)
+                                        : uVel_[i0](a) * userAmp(k, tMid);
+                        const double vo = v_[i0](a);
+                        double Ra = 0.0;
+                        for (int i : g) {
+                            double Ri = m_[i] * (vt - vo) / dt_ - f_[i](a);
+                            uR_[i](a) = Ri;
+                            Ra += Ri;
+                        }
+                        ubw += Ra * 0.5 * (vt + vo) * dt_;
+                        vn(a) = vt;
                     }
                 if (facetNodal_ && !accN_.empty()) {   // partition dynamique
                     const Eigen::Vector3d acc = (vn - v_[i0]) / dt_;
@@ -6617,11 +6976,12 @@ void Fdem3dSolver::integrate() {
         lysWork_ += lw;
         bcWork_ += bw;
         biasW_ += bias;
+        uBcW_ += ubw;
         if (scen_ != Scenario::TENSION && !toolNone_) tool_.integrate(dt_);
         return;
     }
 #ifdef _OPENMP
-#pragma omp parallel for schedule(static) reduction(+:cw,lw,bw,bias)
+#pragma omp parallel for schedule(static) reduction(+:cw,lw,bw,bias,ubw)
 #endif
     for (int i = 0; i < (int)X0_.size(); ++i) {
         if (flag_[i] == FIXED) {
@@ -6660,7 +7020,9 @@ void Fdem3dSolver::integrate() {
             u_[i] += dt_ * v_[i];
             continue;
         }
+        const unsigned mk = uOn_ ? uMask_[i] : 0u;   // fix./velocity.
         for (int a = 0; a < 3; ++a) {
+            if ((mk >> a) & 1u) continue;      // axe impose : ni ressort ni amortisseur
             if (kAbs_[i](a) > 0) {
                 double fk = kAbs_[i](a) * u_[i](a);
                 f_[i](a) -= fk;
@@ -6672,6 +7034,29 @@ void Fdem3dSolver::integrate() {
                 f_[i](a) -= fd;
                 cw -= fd * v_[i](a) * dt_;     // V2/B4 : Cundall (<= 0)
             }
+        }
+        if (mk != 0u) {                        // fix./velocity. (10/2026)
+            for (int a = 0; a < 3; ++a) {
+                if ((mk >> a) & 1u) {
+                    const int k = uAmpOf_[i][a];
+                    const double vt = k < 0 ? uVel_[i](a)
+                                    : uVel_[i](a) * userAmp(k, tMid);
+                    const double vo = v_[i](a);
+                    const double Ri = m_[i] * (vt - vo) / dt_ - f_[i](a);
+                    uR_[i](a) = Ri;
+                    ubw += Ri * 0.5 * (vt + vo) * dt_;
+                    v_[i](a) = vt;
+                } else {
+                    bias += f_[i](a) * f_[i](a) * dt_ * dt_ / (2.0 * m_[i]);
+                    v_[i](a) += (dt_ / m_[i]) * f_[i](a);
+                    if (cAbs_[i](a) > 0) {
+                        v_[i](a) /= 1.0 + dt_ * cAbs_[i](a) / m_[i];
+                        lw -= cAbs_[i](a) * v_[i](a) * v_[i](a) * dt_;
+                    }
+                }
+            }
+            u_[i] += dt_ * v_[i];
+            continue;
         }
         bias += f_[i].squaredNorm() * dt_ * dt_ / (2.0 * m_[i]);
         v_[i] += (dt_ / m_[i]) * f_[i];
@@ -6686,6 +7071,7 @@ void Fdem3dSolver::integrate() {
     lysWork_ += lw;
     bcWork_ += bw;
     biasW_ += bias;
+    uBcW_ += ubw;
     if (scen_ != Scenario::TENSION && !toolNone_) tool_.integrate(dt_);
 }
 
@@ -7096,6 +7482,7 @@ void Fdem3dSolver::historyHeader(std::ostream& os) const {
                << "_y,Fc_" << groupName_[p.first] << "_" << groupName_[p.second]
                << "_z";
         if (eBreak_) os << ",eVp,eDamT,eDamC";         // §3.2 eq. 26
+        if (uOn_) userHistoryHeader(os);
         os << "\n";
         return;
     }
@@ -7116,6 +7503,7 @@ void Fdem3dSolver::historyHeader(std::ostream& os) const {
     os << ",eEl,eJnt,eGc,eFric,eCund,eLys";
     if (bdOn_) os << ",nPulv,bdWork";
     if (eBreak_) os << ",eVp,eDamT,eDamC";             // §3.2 eq. 26
+    if (uOn_) userHistoryHeader(os);
     os << "\n";
 }
 
@@ -7149,6 +7537,7 @@ void Fdem3dSolver::historyRow(std::ostream& os) const {
         for (const auto& s : fcSum_)                   // S2 : forces a -> b
             os << "," << s.x() << "," << s.y() << "," << s.z();
         if (eBreak_) energyBreakdownRow(os);           // §3.2 eq. 26
+        if (uOn_) userHistoryRow(os);
         os << "\n";
         return;
     }
@@ -7211,6 +7600,7 @@ void Fdem3dSolver::historyRow(std::ostream& os) const {
        << gcFricWork_ << "," << cundWork_ << "," << lysWork_;   // V2/B4
     if (bdOn_) os << "," << nPulv_ << "," << bdWork_;
     if (eBreak_) energyBreakdownRow(os);               // §3.2 eq. 26
+    if (uOn_) userHistoryRow(os);
     os << "\n";
 }
 
@@ -7273,6 +7663,7 @@ void Fdem3dSolver::finalize() {
         double sumW = elWork_ + jointWork_ + gcWork_ + cundWork_ + lysWork_
                     + toolWork_ + bcWork_ + confWork_ + biasW_;
         if (eBody_) sumW += gravWork_ + brushWork_;
+        if (uOn_) sumW += uLoadW_ + uBcW_;
         double dKE = keBlock - keInit_;
         double resid = dKE - sumW;
         // echelle du verdict : le flux BRUT echange (la somme signee est ~0
@@ -7284,6 +7675,7 @@ void Fdem3dSolver::finalize() {
                      + std::abs(lysWork_) + std::abs(toolWork_)
                      + std::abs(bcWork_) + std::abs(confWork_);
         if (eBody_) gross += std::abs(gravWork_) + std::abs(brushWork_);
+        if (uOn_) gross += std::abs(uLoadW_) + std::abs(uBcW_);
         double scale = std::max({keInit_, keBlock, gross, 1e-30});
         // a charge nulle l'echelle est elle-meme un zero machine : le ratio
         // de deux zeros n'a pas de sens, le verdict se rend sur l'absolu
@@ -7339,6 +7731,12 @@ void Fdem3dSolver::finalize() {
         if (confP_ > 0.0)                  // sortie inchangee si pas confine
             std::cout << "[FDEM3D]   confinement  : " << confWork_
                       << " J (pression suiveuse -> solide)\n";
+        if (uOn_)                          // sortie inchangee sans fix./force.
+            std::cout << "[FDEM3D]   charges      : " << uLoadW_
+                      << " J (force./traction./pressure. -> solide), "
+                         "liaisons " << uBcW_
+                      << " J (fix./velocity. -> solide)\n";
+        if (uOn_) userSummary();
         if (gravity_ > 0.0 || brushArmed_)
             std::cout << "[FDEM3D]   forces vol.  : pesanteur " << gravWork_
                       << " J, tri des fragments " << brushWork_ << " J  ["
@@ -8249,7 +8647,7 @@ void Fdem3dSolver::jbReport() {
 // travail de convention solveur (f.v avant le kick) — la conservation se
 // juge sur dKE, comme en 2D.
 // ---------------------------------------------------------------------------
-int potentialSelftest3d(const std::string& csvPath) {
+int potentialSelftest3d(const std::string& csvPath, bool volumeForce) {
     using V3 = Eigen::Vector3d;
     using M3 = Eigen::Matrix3d;
     std::ofstream csv(csvPath);
@@ -8314,6 +8712,16 @@ int potentialSelftest3d(const std::string& csvPath) {
 
         double KE0 = 0.5 * A.m * A.v.squaredNorm();
         V3 P0 = A.m * A.v + B.m * B.v;
+        double vRefTet;
+        {
+            V3 pa0[4], pb0[4];
+            A.pos(pa0);
+            B.pos(pb0);
+            pot3::Bary4 ba, bb;
+            ba.set(pa0[0], pa0[1], pa0[2], pa0[3]);
+            bb.set(pb0[0], pb0[1], pb0[2], pb0[3]);
+            vRefTet = 2.0 * ba.vol * bb.vol / (ba.vol + bb.vol);
+        }
         double W = 0.0, volMax = 0.0;
         long nTouch = 0;
 
@@ -8325,7 +8733,12 @@ int potentialSelftest3d(const std::string& csvPath) {
             pot3::PairForce3 Rp;
             V3 FA = V3::Zero(), FB = V3::Zero();
             V3 tA = V3::Zero(), tB = V3::Zero();
-            if (pot3::pairForce(pa, pb, p, Rp)) {
+            // potForce = volume : meme collision, loi de Liu et al. 2022
+            // (kn = 5 p, V' = volume commun des deux tets egaux)
+            const bool hit = volumeForce
+                ? pot3::pairForceVolume(pa, pb, 5.0 * p, vRefTet, Rp)
+                : pot3::pairForce(pa, pb, p, Rp);
+            if (hit) {
                 ++nTouch;
                 volMax = std::max(volMax, Rp.vol);
                 for (int k = 0; k < 4; ++k) {
@@ -8388,6 +8801,12 @@ int potentialSelftest3d(const std::string& csvPath) {
               << "pot3_mom_rel = " << worstP << "\n";
     bool ok = fails == 0 && worstW < 5e-3 && worstKE < 1e-4
               && worstP < 1e-10;
+    if (volumeForce) {
+        std::cout << (ok ? "[PASS]" : "[FAIL]")
+                  << " selftest-potvolume3d : contact par volume de "
+                     "recouvrement (Liu et al. 2022) en 3D, memes criteres\n";
+        return ok ? 0 : 1;
+    }
     std::cout << (ok ? "[PASS]" : "[FAIL]")
               << " selftest-potential3d : contact conservatif de Munjiza en "
                  "3D (conservation jugee sur dKE ; biais O(dt) du compteur "

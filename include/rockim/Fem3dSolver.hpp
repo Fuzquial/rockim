@@ -41,7 +41,9 @@ public:
 
 private:
     enum Flag { FREE = 0, FIXED = 1, PRESCRIBED = 2 };
-    enum class Scenario { PERCUSSION, SHEAR, TENSION };
+    // LOADS (2026-10-03) : ni outil, ni appui implicite — le montage est
+    // entierement decrit par les cles fix./velocity./force./... (Fem3dLoads.cpp)
+    enum class Scenario { PERCUSSION, SHEAR, TENSION, LOADS };
 
     struct Elem {
         std::array<int, 4> n;                  // SHARED node ids
@@ -122,6 +124,16 @@ private:
     void setupProbes();                          // probes = x,y,z ; ... (opt-in)
     void probesHeader(std::ostream&) const;
     void probesRow(std::ostream&) const;
+    // chargements et conditions aux limites par groupes (Fem3dLoads.cpp)
+    void setupUserLoads();
+    void userLoadForces();
+    void userHistoryHeader(std::ostream& os) const;
+    void userHistoryRow(std::ostream& os) const;
+    void userSummary() const;
+    void userEnergySummary() const;
+    double userAmp(int k, double t) const;
+    double userPower() const;                    // sum f.v (bilan, uOn_ seul)
+    void integrateUserNode(int i);               // noeud libre, uOn_ seul
 
     Config cfg_;
     std::string out_;
@@ -373,6 +385,78 @@ private:
     std::vector<int> probeSlot_;                 // par element : -1 ou creneau
     std::vector<Eigen::Matrix3d> probeSig_, probeEps_;   // par creneau
     std::unique_ptr<std::ofstream> probesOut_;   // <outputDir>/probes.csv
+
+    // ---- Chargements et conditions aux limites PAR GROUPES (2026-10-03) ----
+    // Portage de fdem3d (Fdem3dSolver.hpp, meme bloc ; DOCUMENTATION §5.21) :
+    // memes cles, meme semantique, memes messages, memes colonnes. Cles
+    // (toutes opt-in, absentes = rien ne change au bit pres) :
+    //   fix.<g>       = x y z | all          (sous-ensemble des axes)
+    //   velocity.<g>  = vx vy vz             ('free' = axe libre) [m/s]
+    //   traction.<g>  = tx ty tz             [Pa] charge morte, aire de reference
+    //   pressure.<g>  = p                    [Pa] suiveuse, > 0 comprime
+    //   force.<g>     = Fx Fy Fz             [N] force TOTALE sur le groupe
+    //   amplitude.<g> = t0 a0 t1 a1 ... | ramp T   (defaut : 1)
+    //   point.<g>     = x y z                groupe = noeud le plus proche
+    //   box.<g>       = x0 y0 z0 x1 y1 z1    groupe = faces exterieures dans la boite
+    // Groupes : physiques Gmsh de dimension 0, 1, 2 (mesh = file), corps
+    // (volumes physiques, `all` sans groupe), point.<g>, box.<g>. Coordonnees :
+    // repere SOLVEUR. fem3d n'a ni copies de noeuds ni insertion : un sommet
+    // = un noeud. Une face dont l'element est ERODE ne recoit plus rien (comme
+    // le confinement). Bilan d'energie complet en scenario = loads seulement
+    // (les autres scenarios ont des mors, un fond encastre ou un outil que
+    // fem3d ne comptabilise pas) : postes elements, charges, liaisons,
+    // ressorts, Cundall, Lysmer, confinement, correction saute-mouton.
+    struct UGroup {
+        std::string name;
+        int dim = -1;                          // 0 point, 1 courbe, 2 surface, 3 volume
+        std::vector<BFace> faces;              // dim 2 : faces exterieures
+        std::vector<int> nodes;                // noeuds du groupe (tries)
+        long missing = 0;                      // triangles hors frontiere
+    };
+    struct UAmp {
+        std::vector<double> t, a;
+        bool smooth = false;                   // ramp T : montee en cosinus
+    };
+    struct ULoad {
+        int grp = -1, kind = 0;                // 0 traction, 1 pression, 2 force
+        Eigen::Vector3d val = Eigen::Vector3d::Zero();
+        int amp = -1;
+        std::vector<std::pair<int, double>> nodeW;  // force hors surface
+        double area0 = 0.0;
+        Eigen::Vector3d Fnow = Eigen::Vector3d::Zero();
+    };
+    struct UBc {
+        int grp = -1, mask = 0, amp = -1;
+        Eigen::Vector3d v = Eigen::Vector3d::Zero();
+    };
+    struct UMsh {                              // groupes physiques dim 0-2
+        std::string name;
+        int dim = 0;
+        std::vector<int> verts;
+        std::vector<std::array<int, 3>> tris;
+    };
+    std::vector<UMsh> mshLow_;                 // lus par buildMeshFile
+    Eigen::Vector3d meshOrigin_ = Eigen::Vector3d::Zero();
+    bool uOn_ = false;
+    std::vector<UGroup> uGrp_;
+    std::vector<UAmp> uAmp_;
+    std::vector<int> uGrpAmp_;                 // amplitude par groupe (-1 = 1)
+    std::vector<ULoad> uLoad_;
+    std::vector<UBc> uBc_;
+    std::vector<unsigned char> uMask_;         // par noeud : bits x,y,z imposes
+    std::vector<Eigen::Vector3d> uVel_;        // vitesse imposee de base
+    std::vector<std::array<int, 3>> uAmpOf_;   // amplitude par axe
+    std::vector<Eigen::Vector3d> uR_;          // reaction du pas, par noeud
+    double uLoadW_ = 0.0;                      // travail des charges -> solide
+    double uBcW_ = 0.0;                        // travail des liaisons -> solide
+    // bilan (uOn_ seulement) : travaux cumules au sens f . v_(n-1/2) dt
+    double uElW_ = 0.0;                        // forces internes des elements
+    double uToolW_ = 0.0;                      // contact outil -> solide
+    double uSprW_ = 0.0;                       // ressorts de champ lointain
+    double uCundW_ = 0.0;                      // amortissement local (exact)
+    double uLysW_ = 0.0;                       // amortisseurs de Lysmer (exact)
+    double uBias_ = 0.0;                       // correction saute-mouton
+    double uKe0_ = 0.0;                        // energie cinetique initiale
 
     // OpenMP scratch (shared-node scatter)
     std::vector<std::vector<Eigen::Vector3d>> fTL_;

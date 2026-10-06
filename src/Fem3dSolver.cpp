@@ -215,9 +215,11 @@ void Fem3dSolver::init() {
     if      (sc == "percussion") scen_ = Scenario::PERCUSSION;
     else if (sc == "shear")      scen_ = Scenario::SHEAR;
     else if (sc == "tension")    scen_ = Scenario::TENSION;
+    else if (sc == "loads")      scen_ = Scenario::LOADS;   // 2026-10-03
     else throw std::runtime_error("fem3d scenario must be percussion | "
-                                  "shear | tension (tension with pullV < 0 "
-                                  "is the uniaxial compression test)");
+                                  "shear | tension | loads (tension with "
+                                  "pullV < 0 is the uniaxial compression "
+                                  "test)");
 
     W_ = cfg_.getd("W", 0.1);
     D_ = cfg_.getd("D", 0.1);
@@ -226,8 +228,11 @@ void Fem3dSolver::init() {
     ny_ = cfg_.geti("ny", 24);
     nz_ = cfg_.geti("nz", 18);
     T_ = cfg_.getd("T", 2e-4);
+    // scenario = loads : aucun amortissement par defaut (comme fdem3d) — le
+    // bilan des charges et des liaisons doit se lire sans poste parasite
     damping_ = cfg_.getd("dampingLocal",
-                         scen_ == Scenario::TENSION ? 0.7 : 0.05);
+                         scen_ == Scenario::TENSION ? 0.7
+                         : scen_ == Scenario::LOADS ? 0.0 : 0.05);
     nanEvery_ = cfg_.geti("nanCheckEvery", 256);       // C4 (w20), 0 = off
 
     // mesh = grid (defaut, tets de Kuhn miroites + jitter : STRUCTURE) ou
@@ -519,6 +524,7 @@ void Fem3dSolver::init() {
     placeTool();
     setupBoundaries();
     setupConfinement();
+    setupUserLoads();                      // no-op sans fix./force./...
     computeStableDt();
     setupProbes();                         // probes = ... (opt-in ; rien sans la cle)
     if (bv_) {
@@ -543,7 +549,7 @@ void Fem3dSolver::init() {
     // d'exception : dtFactor = 0,7 est un choix documente sur les maillages
     // Gmsh ; a dtFactor <= 0,35 le combine reste < 0,5 quel que soit kp). En
     // mode signorini la penalite kp n'est pas utilisee : rien n'est imprime.
-    if (!toolSig_) {
+    if (!toolSig_ && scen_ != Scenario::LOADS) {   // loads : pas d'outil
         double mMin = 1e300;
         for (std::size_t i = 0; i < X0_.size(); ++i)
             if (m_[i] > 0.0) mMin = std::min(mMin, m_[i]);
@@ -875,6 +881,8 @@ void Fem3dSolver::buildMeshFile() {
     // fichier et etait perdue. On garde le PREMIER tag (le tag physique).
     std::vector<long> tetPhys;             // tag physique par tet (0 = aucun)
     std::map<long, std::string> physVol;   // id physique (dim 3) -> nom
+    std::map<long, int> physLow;           // id physique (dim 0-2) -> mshLow_
+    mshLow_.clear();
     bool sawFormat = false;
     while (std::getline(in, line)) {
         if (line.rfind("$MeshFormat", 0) == 0) {
@@ -895,7 +903,11 @@ void Fem3dSolver::buildMeshFile() {
                 auto q1 = nm.rfind('"');
                 if (q0 != std::string::npos && q1 > q0)
                     nm = nm.substr(q0 + 1, q1 - q0 - 1);
-                if (dim == 3) physVol[id] = nm;        // surfaces : ignorees
+                if (dim == 3) physVol[id] = nm;
+                else if (dim >= 0 && dim <= 2) {       // charges/CL (10/2026)
+                    physLow[id] = (int)mshLow_.size();
+                    mshLow_.push_back({nm, dim, {}, {}});
+                }
             }
         } else if (line.rfind("$Nodes", 0) == 0) {
             long n = 0; in >> n;
@@ -922,8 +934,21 @@ void Fem3dSolver::buildMeshFile() {
                     throw std::runtime_error("meshFile: element type "
                         + std::to_string(type) + " unsupported (tets only)");
                 std::array<int, 4> vv{};
+                // groupe physique de dimension 0-2 : ses sommets (et ses
+                // triangles) servent aux charges et CL (fix., force., ...)
+                auto pl = nn < 4 ? physLow.find(phys) : physLow.end();
+                if (pl != physLow.end() && nn - 1 != mshLow_[pl->second].dim)
+                    pl = physLow.end();
                 for (int q = 0; q < nn; ++q) {
                     long nid; in >> nid;
+                    if (pl != physLow.end()) {
+                        auto it = id2idx.find(nid);
+                        if (it == id2idx.end())
+                            throw std::runtime_error("meshFile: element "
+                                + std::to_string(id) + " reference le noeud "
+                                "inconnu id " + std::to_string(nid));
+                        vv[q] = it->second;
+                    }
                     if (nn == 4) {
                         auto it = id2idx.find(nid);
                         if (it == id2idx.end())
@@ -936,6 +961,10 @@ void Fem3dSolver::buildMeshFile() {
                 if (nn == 4) {                         // points/lignes/tris :
                     tets.push_back(vv);                // bords — ignores
                     tetPhys.push_back(phys);
+                } else if (pl != physLow.end()) {
+                    UMsh& G = mshLow_[pl->second];
+                    for (int q = 0; q < nn; ++q) G.verts.push_back(vv[q]);
+                    if (nn == 3) G.tris.push_back({vv[0], vv[1], vv[2]});
                 }
             }
         }
@@ -948,6 +977,7 @@ void Fem3dSolver::buildMeshFile() {
     Eigen::Vector3d lo = vpos[0], hi = vpos[0];
     for (const auto& p : vpos) { lo = lo.cwiseMin(p); hi = hi.cwiseMax(p); }
     for (auto& p : vpos) p -= lo;
+    meshOrigin_ = lo;
     W_ = hi.x() - lo.x(); D_ = hi.y() - lo.y(); H_ = hi.z() - lo.z();
     if (!(W_ > 0 && D_ > 0 && H_ > 0))
         throw std::runtime_error("meshFile: degenerate bounding box");
@@ -1470,6 +1500,24 @@ void Fem3dSolver::finishMesh(const std::vector<std::array<int, 4>>& tetsIn) {
 
 void Fem3dSolver::placeTool() {
     if (scen_ == Scenario::TENSION) return;
+    // scenario = loads : AUCUN outil analytique, AUCUN appui implicite — le
+    // montage est entierement decrit par fix./velocity./force./... (meme
+    // message qu'en fdem3d ; toolShape = none y est accepte pour la meme
+    // raison : un deck reste interchangeable entre les deux modes)
+    if (scen_ == Scenario::LOADS) {
+        if (cfg_.has("toolShape") && cfg_.gets("toolShape", "") != "none")
+            throw std::runtime_error("scenario = loads n a pas d outil "
+                "analytique : retirer toolShape (ou poser toolShape = none) et "
+                "charger par force./traction./pressure./velocity.");
+        if (pulseF_ > 0.0)
+            throw std::runtime_error("scenario = loads n a pas d outil : "
+                "toolPulseForce n'aurait rien a pousser — charger par force.<g> "
+                "avec amplitude.<g>");
+        tool_.free = false;
+        tool_.x = {1e9, 1e9, 1e9};
+        tool_.v.setZero();
+        return;
+    }
     tool_.mass   = cfg_.getd("toolMass", 0.5);
     tool_.radius = cfg_.getd("toolRadius", 0.015);
     double gap = cfg_.getd("toolGap", 1e-4);
@@ -1608,7 +1656,8 @@ void Fem3dSolver::setupConfinement() {
               << " faces, rampe " << confRamp_ << " s, jauge a "
               << confGaugeT_ << " s, outil gele jusqu'a " << toolDelay_
               << " s\n";
-    if (toolDelay_ < confGaugeT_ && scen_ != Scenario::TENSION)
+    if (toolDelay_ < confGaugeT_ && scen_ != Scenario::TENSION
+        && scen_ != Scenario::LOADS)
         std::cout << "[FEM3D] WARNING: l'outil frappe avant la jauge de "
                      "confinement (toolDelay < confineGaugeTime)\n";
 }
@@ -1707,7 +1756,8 @@ void Fem3dSolver::setupBoundaries() {
             if (cen.z() > H_ - tol) continue;              // impact surface
             bool bottom = A.z() < tol && B.z() < tol && C.z() < tol;
             if (bottom && ab != "all") {
-                for (int nid : bf.n) flag_[nid] = FIXED;
+                if (scen_ != Scenario::LOADS)      // loads : fix.<g>
+                    for (int nid : bf.n) flag_[nid] = FIXED;
                 continue;
             }
             if (!bottom && ab == "none") continue;
@@ -1762,7 +1812,8 @@ void Fem3dSolver::setupBoundaries() {
                         cAbs_[nid](a) += mp.rho * c * At3;
                         kAbs_[nid](a) += sF * G / (a == 2 ? R : 2.0 * R) * At3;
                     }
-                } else if (!bottomFree_) {     // percussion AND shear: the
+                } else if (!bottomFree_        // percussion AND shear: the
+                           && scen_ != Scenario::LOADS) {   // (loads : fix.<g>)
                     flag_[nid] = FIXED;        // block needs its support
                 }                              // bottomFree : fond libre (bloc flottant, comme un
                                                // deck Abaqus sans condition au fond ; opt-in)
@@ -1821,8 +1872,14 @@ void Fem3dSolver::step() {
     }
 
     elementForces();
+    // bilan des charges par groupes (uOn_ seul) : puissance des forces
+    // internes, puis de l'outil, sur v_(n-1/2) — meme convention que confWork_
+    double uP0 = 0.0;
+    if (uOn_) { uP0 = userPower(); uElW_ += dt_ * uP0; }
     toolContact();
+    if (uOn_) uToolW_ += dt_ * (userPower() - uP0);
     confiningForces();                     // no-op sans confinement
+    if (uOn_) userLoadForces();            // force./traction./pressure.
     if ((confP_ > 0.0 || topP_ > 0.0) && !confLatched_ && t_ >= confGaugeT_) {
         confAchieved_ = achievedConfinement();
         confLatched_ = true;
@@ -2113,12 +2170,22 @@ void Fem3dSolver::elementForces() {
                 processElem(el_[eI], addF, acc);
             eroT[t] = acc;
         }
+        // (2026-10-03, performances) fusion PARALLELE PAR NOEUD (patron de
+        // Fdem3dSolver::jointForces, audit C du 13/09) : chaque noeud somme
+        // ses contributions dans le MEME ordre t = 0..nT-1 que l ancienne
+        // boucle serie sur les listes touchedTL_ — bit-identique.
+        {
+            const int nN = (int)X0_.size();
+#pragma omp parallel for schedule(static)
+            for (int i = 0; i < nN; ++i)
+                for (int t = 0; t < nT; ++t) {
+                    if (!seenTL_[t][i]) continue;
+                    f_[i] += fTL_[t][i];
+                    fTL_[t][i].setZero();
+                    seenTL_[t][i] = 0;
+                }
+        }
         for (int t = 0; t < nT; ++t) {
-            for (int i : touchedTL_[t]) {
-                f_[i] += fTL_[t][i];
-                fTL_[t][i].setZero();
-                seenTL_[t][i] = 0;
-            }
             nEro += eroT[t].law;
             nEroGeo += eroT[t].geo;
             vEroLaw += eroT[t].vLaw;
@@ -2150,7 +2217,7 @@ void Fem3dSolver::elementForces() {
 }
 
 void Fem3dSolver::toolContact() {
-    if (scen_ == Scenario::TENSION) return;
+    if (scen_ == Scenario::TENSION || scen_ == Scenario::LOADS) return;
     if (t_ < toolDelay_) return;               // outil gele (confinement)
     if (activeNodes_ && activeDirty_) refreshActiveNodes();
     for (int i = 0; i < (int)X0_.size(); ++i) {
@@ -2311,6 +2378,10 @@ void Fem3dSolver::integrate() {
             u_[i] += dt_ * v_[i];
             continue;
         }
+        // charges et CL par groupes (2026-10-03) : noeud libre integre par
+        // Fem3dLoads.cpp — memes formules, plus les axes imposes (fix./
+        // velocity.) et la comptabilite du bilan. Sans les cles : jamais pris.
+        if (uOn_) { integrateUserNode(i); continue; }
         double fLoc[3] = {0.0, 0.0, 0.0};   // A2 : force d'amortissement local
         for (int a = 0; a < 3; ++a) {
             // A1 / HET-03 : le ressort s'oppose au deplacement RELATIF a
@@ -2553,6 +2624,7 @@ void Fem3dSolver::historyHeader(std::ostream& os) const {
         if (triax_) os << ",sigZZmid,sigXXmid,sigYYmid,epsAxMid,epsVolMid,epsAxGrip";
         if (bv_) os << ",wBulk";               // viscosite de volume
         absorbHeader(os, absOn_, damping_ > 0);  // A2 / HET-15
+        if (uOn_) userHistoryHeader(os);       // charges par groupes (10/2026)
         os << "\n";
         return;
     }
@@ -2565,6 +2637,7 @@ void Fem3dSolver::historyHeader(std::ostream& os) const {
     if (triax_) os << ",sigZZmid,sigXXmid,sigYYmid,epsAxMid,epsVolMid,epsAxGrip";
     if (bv_) os << ",wBulk";                   // viscosite de volume
     absorbHeader(os, absOn_, damping_ > 0);    // A2 / HET-15
+    if (uOn_) userHistoryHeader(os);           // charges par groupes (10/2026)
     os << "\n";
 }
 
@@ -2651,6 +2724,7 @@ void Fem3dSolver::historyRow(std::ostream& os) const {
         os << "," << uSpr << "," << lysWork_;
     }
     if (damping_ > 0) os << "," << locWork_;
+    if (uOn_) userHistoryRow(os);              // charges par groupes (10/2026)
     os << "\n";
     // sondes de point materiel : une ligne de probes.csv a la meme cadence
     // (history.csv lui-meme n'est pas touche ; rien sans la cle probes)
@@ -2923,6 +2997,9 @@ void Fem3dSolver::finalize() {
     if (bv_)
         std::cout << "[FEM3D] viscosite de volume (b1 = " << bvB1_ << ", b2 = " << bvB2_
                   << ") : dissipation wBulk = " << wBulk_ << " J (>= 0 attendu)\n";
+    // charges et CL par groupes (2026-10-03) : sortie inchangee sans les cles
+    if (uOn_) userEnergySummary();
+    if (scen_ == Scenario::LOADS) return;  // ni outil ni mors : rien d'autre
 
     if (scen_ == Scenario::TENSION) {
         bool comp = pullV_ < 0.0;
