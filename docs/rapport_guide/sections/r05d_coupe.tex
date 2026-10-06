@@ -61,7 +61,7 @@ LeBaron et al. mesurent $1\,668 \pm 483$~N de force moyenne à la même passe et
 Le contact d'outil historique est une pénalité nœud-outil (\cref{eq-coupe-penalite}). Pour un nœud de position $\mathbf p$, d'arête $\mathbf x_o$, de normale de face $\mathbf n = (\cos\theta, \sin\theta)$ et de direction de face $\mathbf t = (-\sin\theta, \cos\theta)$, avec $\theta$ la garde :
 \begin{gather}
 d_n = (\mathbf p - \mathbf x_o)\cdot\mathbf n, \qquad d_t = (\mathbf p - \mathbf x_o)\cdot\mathbf t, \qquad \text{contact si } -e < d_n < 0 \text{ et } 0 \leq d_t \leq L, \notag\\
-g = \min(-d_n,\ 0{,}6\,h_e), \qquad f_n = \max\left(0,\ k_p\,g - 2\xi\sqrt{k_p m}\,\mathbf v_\text{rel}\cdot\mathbf n\right), \qquad f_\text{tan} = -\mu f_n \tanh\frac{\mathbf v_\text{rel}\cdot\mathbf t}{v_\text{reg}} ,
+g = \min(-d_n,\ 0{,}6\,h_e), \notag\\ f_n = \max\left(0,\ k_p\,g - 2\xi\sqrt{k_p m}\,\mathbf v_\text{rel}\cdot\mathbf n\right), \qquad f_\text{tan} = -\mu f_n \tanh\frac{\mathbf v_\text{rel}\cdot\mathbf t}{v_\text{reg}} ,
 \label{eq-coupe-penalite}
 \end{gather}
 où $e$ est l'épaisseur du cutter, $L$ la longueur de la face, $h_e$ la taille de l'élément du nœud, $m$ sa masse et $\mathbf v_\text{rel}$ sa vitesse relative à l'outil. L'écrêtage à $0{,}6\,h_e$ borne la pénétration, pas l'impulsion. En un pas, un nœud libre au contact d'un outil à vitesse imposée reçoit
