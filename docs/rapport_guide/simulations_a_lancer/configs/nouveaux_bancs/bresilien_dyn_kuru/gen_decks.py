@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Écrit les quatre decks SHPB du banc B11 (brésilien dynamique, granite de Kuru,
-# Saksala et al. 2013, IJRMMS 59, 128-138, doi:10.1016/j.ijrmms.2012.12.011).
+# Saksala et al. 2013, IJRMMS 59, 128-138, doi:10.1016/j.ijrmms.2012.12.018).
 # Lancer depuis n'importe où : python3 .../bresilien_dyn_kuru/gen_decks.py
 #
 # Impulsions incidentes : approximations linéaires par morceaux de la fig. 2a de

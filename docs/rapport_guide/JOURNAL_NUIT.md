@@ -25,3 +25,5 @@ Chaque initiative est inscrite ici AVANT d'être lancée, puis mise à jour avec
 | 00 h 30 | Diagnostic de l'injection d'énergie par le contact (3 calculs, une clé chacun) confié à la session de calcul | réserve n° 1 du rapport | envoyé |
 | 01 h 30 | Intégration du rejeu de Yan (session de calcul, RESULTATS_yan.md) : nouvelle section sec-yan-rejeu, résumé, introduction, discussion, annexe C | **change une conclusion** : la campagne d'août tient avec le binaire courant (UCS +0,09 %) ; l'écart macOS du 4/10 vient du tirage de Voronoï | fait |
 | 01 h 30 | Relecture : tours 1 et 2 appliqués (delta 30,7 % puis 8,0 %) | méthode validée par le doctorant | fait |
+| 01 h 45 | Nouveaux bancs : 7 retenus (écaillage Bohus, brésilien dynamique Kuru, Lamb, anneau, Petersson, taillant Saksala 2014, Bobet-Einstein), decks prêts pour 3 | demande du doctorant | fait (NOUVEAUX_BANCS.md) |
+| 01 h 50 | File de la session de calcul complétée : écaillage (2) et SHPB Kuru (8) après le diagnostic du contact, avant l'impact | bancs de VALIDATION contre l'essai, courts ; plus utiles que l'impact prolongé | envoyé |
