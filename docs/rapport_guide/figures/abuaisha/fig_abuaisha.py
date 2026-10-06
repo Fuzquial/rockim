@@ -37,11 +37,38 @@ RUNS = sys.argv[2] if len(sys.argv) > 2 else \
     "/tmp/claude-0/-home-user/95ba17a5-6321-5243-8157-c0b3e0616268/scratchpad/runs/abuaisha"
 
 plt.rcParams.update({
-    "font.family": "STIXGeneral", "mathtext.fontset": "stix",
     "font.size": 10, "axes.titlesize": 10, "axes.labelsize": 10,
-    "legend.fontsize": 8.5, "axes.formatter.use_locale": False,
-    "pdf.fonttype": 42,
+    "legend.fontsize": 8.5,
 })
+# --- Style commun du rapport : Computer Modern (CMU Serif, a defaut Latin Modern
+# Roman 10), virgule decimale sur toutes les graduations, signe moins ASCII.
+import glob as _glob
+import matplotlib.ticker as _mticker
+from matplotlib import font_manager as _fm
+for _f in (_glob.glob("/usr/share/fonts/**/cmun*.[ot]tf", recursive=True)
+           + _glob.glob("/usr/share/texmf/fonts/opentype/public/lm/lmroman10-*.otf")
+           + _glob.glob("/usr/share/texlive/texmf-dist/fonts/opentype/public/lm/lmroman10-*.otf")):
+    _fm.fontManager.addfont(_f)
+_fm.fontManager.ttflist = [_e for _e in _fm.fontManager.ttflist
+                           if _e.name != "Latin Modern Roman" or "lmroman10" in _e.fname]
+plt.rcParams.update({
+    "font.family": "serif",
+    "font.serif": ["CMU Serif", "Latin Modern Roman", "Computer Modern Roman", "DejaVu Serif"],
+    "mathtext.fontset": "cm",
+    "axes.unicode_minus": False,
+    "axes.formatter.use_locale": False,
+    "pdf.fonttype": 3,
+})
+_sf_call = _mticker.ScalarFormatter.__call__
+
+
+def _sf_virgule(self, x, pos=None):
+    s = _sf_call(self, x, pos)
+    return s.replace(".", "{,}") if "$" in s else s.replace(".", ",")
+
+
+_mticker.ScalarFormatter.__call__ = _sf_virgule
+# --- fin du style commun
 
 
 def virg(x, nd=1):
@@ -288,8 +315,8 @@ def fig_rejeu():
     b.set_ylim(0, 0.17)
     b.set_title("(b) Fissure de Parker sous 2 MPa nets", loc="left")
     fmt_axes(b)
-    fig.text(0.5, -0.01, "rejoué le 2026-10-06, binaire f0209ef, "
-             "maillages grossiers (hFine = 12 mm)", ha="center",
+    fig.text(0.5, -0.01, "calculs rejoués sur maillages grossiers "
+             "(maille fine de 12 mm)", ha="center",
              fontsize=7.5, color="0.35")
     fig.tight_layout()
     fig.savefig(os.path.join(HERE, "fig_abuaisha_rejeu.pdf"),
