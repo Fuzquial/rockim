@@ -1,7 +1,7 @@
 # rockim
 
 Solveur FDEM (méthode des éléments finis et discrets combinés, lignée Munjiza) écrit pour la thèse
-« forage percussif dans le granite de Red Bohus » (F. Uzquiano, Mines Paris – PSL). Il simule
+ optimisation du rop dans les formations granitiques profondes (F. Uzquiano, Mines Paris – PSL). Il simule
 l'impact d'un insert de carbure sur la roche : élasticité de volume, joints cohésifs insérés entre
 éléments, contact entre fragments, frottement, effets de vitesse, bilan d'énergie.
 
