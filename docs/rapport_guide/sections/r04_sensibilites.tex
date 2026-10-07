@@ -61,6 +61,8 @@ volume, facteur 5 (défaut) & 255 & 10\,650 & $0{,}223$ & 53 \\
 
 La dispersion du nombre de joints rompus, de 36 à 57, n'a pas été séparée de la variabilité propre à la fragmentation. Ces nombres sont bien inférieurs aux 6\,090 joints rompus du \cref{tab-kuru-insertion} sur le même maillage au même instant, obtenus le 11 septembre avec le jeu de clés antérieur à la configuration de référence (\cref{sec-insertion}). Sur le jumeau grossier de Kuru ($s = 2{,}5$, facteur d'échelle de maille, \cref{sec-impact}) prolongé à 300~µs, passer au contact de Solidity (raideur $0{,}25\,E$ et naissance du contact \cle{gcBirth = penalty}) réduit la force maximale de $5~\%$ et augmente les ruptures de $13~\%$.
 
+La raideur normale du potentiel pilote l'injection d'énergie par le contact sur le tunnel réduit, sans frottement (\cref{sec-tunnel-diag}). Divisée par 10, elle retire $88{,}4~\%$ du travail net injecté ; multipliée par 10, elle l'augmente de $351~\%$. L'énergie cohésive et le nombre de joints rompus suivent ($-36~\%$ et $-9~\%$ à $p/10$) : le faciès dépend de cette raideur. La vérification avec frottement est en cours.
+
 \subsection{Taille du maillage}
 
 Guo a montré que la charge de rupture d'une fissure pressurisée ne converge pas quand la maille passe de 20 à $1{,}25$~mm : elle passe de $4{,}90$ à $3{,}09$~MPa pour $G_f = 50$~J/m$^2$ et de $2{,}63$ à $2{,}10$~MPa pour $G_f = 10$~J/m$^2$. Il en tire la règle d'une maille d'un tiers à un quart de la zone plastique. Lisjak trouve que la résistance en compression converge pour des mailles comprises entre $0{,}4$ et $0{,}15$~mm sur l'argilite d'Opalinus.
