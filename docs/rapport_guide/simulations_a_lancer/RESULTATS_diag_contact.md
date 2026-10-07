@@ -55,7 +55,7 @@ contact » est ici le travail INJECTÉ (positif = source).
    divise par deux la vitesse nodale max (25,9 → 11,9 m/s). `plastic` et `ratchet` divisent aussi
    la vitesse max par 2,3 : le pic de 25,9 m/s de la base est un événement local, pas l'injection
    globale.
-5. **Le résidu B4 est le même dans les cinq calculs (−1,30 à −1,34e6 J/m)**, alors que les autres
+5. [Lecture corrigée par le diagnostic 3 : le résidu varie avec dt.] **Le résidu B4 est le même dans les cinq calculs (−1,30 à −1,34e6 J/m)**, alors que les autres
    termes varient d'un facteur 2 à 5. C'est un terme fixe non compté par le bilan (piste : travail
    de la pré-contrainte in situ ou du relâchement d'excavation), indépendant du contact. À
    départager avant de lire le bilan comme un diagnostic fin.
@@ -83,6 +83,42 @@ contact elle-même**, pas la naissance ni la décharge des joints. La vitesse no
 Piste suivante : la raideur de pénalité normale (p = 1e10 N/m) contre le pas de temps et la taille
 des éléments (biais O(dt) du potentiel de Munjiza, que le solveur dit « petit » : il ne l'est pas
 ici), par exemple un balayage de `potPenaltyFactor` (× 0,1 / × 10) ou `dtFactor` / 2 sur `tip16_mu0`.
+
+## Diagnostic 3 : raideur normale du potentiel et pas de temps (2026-10-07, 00 h 38 à 01 h 35)
+
+Base : `tip16_mu0` (sans frottement, pour isoler la partie normale). Même maillage de 23 004
+triangles (`meshFile` seul repointé). Les trois calculs sont allés au bout (T = 0,25 s), aucun
+arrêt à 30 min. Le premier essai de `pot01` a été perdu dans un redémarrage du conteneur et relancé.
+
+| run | clé changée | p (N/m) | dt (s) | travail net du contact | cohésif | Cundall | KE finale | résidu B4 | joints rompus / insérés | v nodale max (trames) | durée |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| `tip16_mu0` | — | 1e10 | 5,586e-6 | 1,235e7 | 1,379e6 | 1,957e7 | 2,206e5 | −1,333e6 (3,37 %) | 12 202 / 13 825 | 23,80 m/s | 311 s |
+| `tip16_mu0_pot01` | `potPenaltyFactor = 0.1` | 1e9 | 5,586e-6 | 1,435e6 (**−88,4 %**) | 8,878e5 (−35,6 %) | 9,743e6 (−50,2 %) | 2,071e5 | −1,296e6 (5,98 %) | 11 068 / 13 044 | 12,59 m/s | 690 s |
+| `tip16_mu0_dt05` | `dtFactor = 0.1` | 1e10 | 2,793e-6 | 7,266e6 (**−41,2 %**) | 8,630e5 (−37,4 %) | 1,367e7 (−30,1 %) | 1,601e5 | **−6,543e5** (2,24 %) | 11 755 / 13 270 | 22,83 m/s | 1 472 s |
+| `tip16_mu0_pot10` | `potPenaltyFactor = 10` | 1e11 | 3,484e-6 | 5,574e7 (**+351 %**) | 2,186e6 (+58,5 %) | 6,948e7 (+255 %) | 4,341e5 | −8,464e5 (0,66 %) | 13 193 / 14 562 | 31,42 m/s | 1 272 s |
+
+Lecture :
+
+1. **L'injection est un artefact de la raideur normale du potentiel.** Elle suit p de près :
+   ×8,6 de 1e9 à 1e10 N/m, ×4,5 de 1e10 à 1e11 N/m (pente log-log 0,93 puis 0,65). À
+   p = 1e9 N/m, le contact n'injecte plus que 1,6 fois l'énergie cohésive (1,44e6 contre 8,9e5 J/m),
+   contre 9,0 fois à 1e10 et 25 fois à 1e11.
+2. **Elle dépend aussi du pas de temps** : dt divisé par 2 retire 41 % (un biais d'ordre 1 en dt
+   retirerait 50 %). C'est la signature d'une erreur d'intégration du potentiel (raideur de contact
+   mal résolue par le pas), pas d'un terme physique. Avec `pot10`, le solveur réduit lui-même dt
+   (3,48e-6 au lieu de 5,59e-6 s), ce qui n'empêche pas l'injection de quadrupler.
+3. **Le résidu B4 « constant » des diagnostics 1 et 2 ne l'est pas** : il est divisé par 2 avec dt
+   (−1,33e6 → −6,5e5 J/m) et tombe à −8,5e5 avec `pot10` (dt réduit). C'est aussi une erreur
+   d'intégration en O(dt), et pas un terme de pré-contrainte ou d'excavation non compté comme le
+   suggérait la lecture 5 plus haut. Cette lecture est donc retirée.
+4. L'énergie cohésive et le nombre de joints rompus bougent avec p (−36 % et −9 % à p/10 ; +59 %
+   et +8 % à 10 p) : le faciès lui-même dépend de la raideur de contact sur ce banc. Le chapitre ne
+   doit pas comparer de faciès de tunnel obtenus à des p différents.
+5. Recommandation : p = 1e9 N/m (`potPenaltyFactor = 0.1`) ramène l'injection à l'ordre de
+   l'énergie cohésive sans changer le pas de temps, pour un coût ×2,2 en temps de calcul (690 s
+   contre 311 s, plus de joints restent en contact longtemps). Vérifier sur la base AVEC frottement
+   (`red_tip16`) et sur le maillage de production avant de l'adopter ; vérifier aussi
+   l'interpénétration maximale au contact à p = 1e9 (non imprimée ici).
 
 ## Réserves
 
