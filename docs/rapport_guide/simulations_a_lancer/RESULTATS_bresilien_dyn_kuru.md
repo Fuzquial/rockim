@@ -38,10 +38,20 @@ calcul sans résultat exploitable. La file a été arrêtée à 00 h 27 et le te
 
 - Arrivée de l'onde incidente au disque vers 320 µs (1,6 m à 5 048 m/s = 317 µs) : cohérent.
 - Premiers joints rompus à 380 µs, environ 60 µs après l'arrivée de l'onde.
-- `sxxC` est NÉGATIF pendant toute la montée (−95 MPa à 402 µs) : le centre du disque est en
-  compression selon x, alors que le brésilien doit y mettre de la traction. À vérifier avant toute
-  exploitation : convention de signe de `sxxC`, orientation de l'axe de chargement (x = axe des
-  barres ?), ou écrasement local aux appuis qui domine la mesure au centre.
+- `sxxC` est NÉGATIF pendant toute la montée (−95 MPa à 402 µs). **Vérifié dans le code
+  (2026-10-07), ce n'est pas une erreur de signe** : `FdemSolver::discCentreStress`
+  (`src/FdemSolver.cpp` l. 9017) moyenne `e.sxx` et `e.syy` sur les éléments dont le centroïde est
+  à moins de 0,15 R du centre du disque, en convention traction positive. Les barres sont selon x :
+  `sxxC` est la contrainte parallèle à l'axe de chargement, donc la compression du brésilien ; la
+  traction indirecte est **`syyC`**, comme le dit l'en-tête de `history.csv` (« fig. 25b reads
+  syyC »). La signature brésilienne y est : sxxC/syyC = −3,0/0,9 à 322 µs et −24,8/9,0 à 362 µs,
+  soit −3,3 et −2,8, pour −3 attendu pour une charge linéique. Les grandeurs de NOUVEAUX_BANCS.md
+  (fiche B11, « contrainte au centre `sxxC` ») sont à corriger en `syyC`.
+- Traction au centre (`syyC`) : **maximum 10,80 MPa à 371,9 µs**, soit 0,98 × f_t (10,98 MPa), sans
+  DIF ; premier joint rompu 8,5 µs plus tard (380,4 µs, syyC retombée à 3,2 MPa). Le disque s'amorce
+  donc au centre à la résistance statique, comme attendu en `nodif`. Ensuite, sxxC et syyC deviennent
+  toutes deux fortement compressives (−268 et −249 MPa à 462 µs) : c'est l'écrasement du disque
+  fissuré entre les barres, pas une mesure de traction.
 
 ## À faire sur le poste local (14 fils)
 
