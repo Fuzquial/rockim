@@ -33,9 +33,10 @@ avec `ratchet` (« secantes de decharge NON CROISSANTES … Phi >= 0 »).
 | `tip16_mu0` | `contactMu = 0` | 1,235e7 (**+373 %**) | 1,508e6 | 1,379e6 (+38,2 %) | 0 | 1,957e7 (+114 %) | 2,206e5 | −1,333e6 (3,37 %) | 12 202 / 13 825 | 23,80 m/s |
 | `tip16_plastic` | `jointShearUnload = plastic` | 5,582e6 (**+114 %**) | 1,257e6 | 1,178e6 (+18,0 %) | 4,059e6 | 1,235e7 (+35,3 %) | 1,503e5 | −1,304e6 (5,02 %) | 11 535 / 13 403 | 11,27 m/s |
 | `tip16_ratchet` | `jointSecantRatchet = true` | 2,187e6 (**−16,2 %**) | 1,011e6 | 9,461e5 (−5,2 %) | 2,497e6 | 8,515e6 (−6,7 %) | 1,663e5 | −1,325e6 (7,02 %) | 11 784 / 13 406 | 11,18 m/s |
+| `tip16_mu0_gcpen` | `contactMu = 0` + `gcBirth = penalty` | 9,556e6 (**+266 %** ; −22,6 % sur `mu0`) | 1,351e6 | 1,237e6 (+23,9 %) | 0 | 1,625e7 (+78,0 %) | 1,864e5 | −1,328e6 (4,00 %) | 11 679 / 13 286 | 30,15 m/s |
 
 Contact en potentiel de Munjiza (p = kt = 1e10 N/m), insertion adaptative (pénalité 4 E/h),
-amortissement local 0,7. Signe : le bilan imprime le contact en −travail injecté ; « travail net du
+amortissement local `dampingLocal = 0.15` (deck ligne 99). Signe : le bilan imprime le contact en −travail injecté ; « travail net du
 contact » est ici le travail INJECTÉ (positif = source).
 
 ## Lecture
@@ -61,6 +62,27 @@ contact » est ici le travail INJECTÉ (positif = source).
 6. Piste suivante suggérée : la partie normale du potentiel au relais joint → contact (65 % des
    joints meurent en compression ; charge normale lâchée au relais 1,69e6 kN/m cumulés dans la
    base). Un calcul `contactMu = 0` + `gcBirth = penalty` séparerait naissance et potentiel normal.
+
+## Diagnostic 2 : `tip16_mu0_gcpen` (2026-10-06, 23 h 35, même maillage de 23 004 triangles)
+
+Deck `configs/diag_contact/tip16_mu0_gcpen.cfg`, seul `meshFile` repointé vers le maillage
+régénéré de la base (la version versionnée depuis, `tunnel_hs_red.msh` d'origine à 22 730 triangles,
+n'est pas celle de `base_tip16`). Durée 263 s.
+
+| comparaison | travail net du contact | effet de `gcBirth = penalty` |
+|---|---|---|
+| avec frottement : `base_tip16` → `tip16_gcpen` | 2,611e6 → 2,058e6 | −21,2 % (−5,5e5 J/m) |
+| sans frottement : `tip16_mu0` → `tip16_mu0_gcpen` | 1,235e7 → 9,556e6 | −22,6 % (−2,8e6 J/m) |
+
+La naissance du contact sur un joint mort pèse la même PART (≈ 22 %) avec ou sans frottement. Sans
+frottement et avec naissance par pénalité, le contact injecte encore 9,6e6 J/m, soit **7,7 fois
+l'énergie cohésive** (1,24e6 J/m) : **la source dominante est la réponse normale du potentiel de
+contact elle-même**, pas la naissance ni la décharge des joints. La vitesse nodale max monte à
+30,1 m/s (trame 7). Le résidu B4 reste à −1,328e6 J/m, toujours identique.
+
+Piste suivante : la raideur de pénalité normale (p = 1e10 N/m) contre le pas de temps et la taille
+des éléments (biais O(dt) du potentiel de Munjiza, que le solveur dit « petit » : il ne l'est pas
+ici), par exemple un balayage de `potPenaltyFactor` (× 0,1 / × 10) ou `dtFactor` / 2 sur `tip16_mu0`.
 
 ## Réserves
 
