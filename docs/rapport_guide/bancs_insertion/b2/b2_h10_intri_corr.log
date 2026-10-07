@@ -1,0 +1,35 @@
+[FDEM] mesh = file: '/tmp/claude-0/-home-user/95ba17a5-6321-5243-8157-c0b3e0616268/scratchpad/bancs_insertion/meshes/bar_h0.01.msh' — 15 nodes, 18 triangles, box 0.02 x 0.03 m
+[FDEM] joint softening: Yan et al. f(D), a = 0.63, b = 1.8, c = 6, int f(D) dD = 0.386307
+[FDEM] gcRestitution = 0.2 (DEFAUT) : detente normale du contact general a ce facteur — a figer au deck des que e ou l ejection est une metrique (NB : branche penalite seulement — inerte sous contact = potential)
+[FDEM] contact: Munjiza potential (eq. 2-5), p = 5e+10 N/m, kt = 5e+10 N/m
+[FDEM] gcBirth = offset (2026-10-07) : une paire nee EN recouvrement fige e0 = E(S0) = p int_S0 (phiA+phiB) et ne porte que le potentiel decale U = (E-e0)^2/E (force continue, nulle a la naissance) ; e0 ne fait que decroitre quand la paire se separe, et une paire retrouvee apres un pas sans recouvrement RENAIT (nouvel e0). Aucune energie n est creee a geometrie fixee (ENQUETE_CONTACT.md §2). Toute paire nait avec e0 = E(S1) > 0, y compris par approche : aucune n est en Munjiza pur.
+[FDEM] potForceExact = true : forces nodales du potentiel = -grad E exact (E = p int_S (phiA+phiB)), terme non gradient p I grad lambda retranche
+[FDEM] contactCandidates = vertex : candidats du potentiel = elements actifs + leurs voisins par sommet + eventails des joints declenches (endommages D > 0 ou morts, insertion intrinseque) ; seules les paires reliees par un joint VIVANT restent exclues
+[FDEM] 18 elements, 22 joints, 54 nodes, dt = 1.86225e-08 s, steps = 67124
+[FDEM] voronoi: 1 grains, 1 phase(s), 0 grain-boundary joints, hmin = 0.00396605 m
+[rockim] cles : 145 consommees (28 du deck, 117 au defaut), 1 du deck non lues -> /tmp/claude-0/-home-user/95ba17a5-6321-5243-8157-c0b3e0616268/scratchpad/bancs_insertion/b2/b2_h10_intri_corr_out/config_effective.cfg
+  10%   20%   30%   40%   50%   60%   70%   80%   90%   100%
+
+[FDEM] ---- summary ----
+[FDEM] block kinetic energy at end: 9.2677e-05 J/m
+[FDEM] net work injected by general contact: -1.3251e-10 J/m
+[FDEM] (contact = potential : le biais O(dt) du compteur est NEGATIF — un residu positif est une injection reelle, sous-estimee, et non le biais ; en mode penalty tout positif est aussi une injection)
+[FDEM] joint dashpot work: 0 J/m  [OK, dissipative]
+[FDEM] energy budget (V2/B4): KE 0 -> 9.2677e-05 J/m
+[FDEM]   elements     : 0.00101089 J/m preleve (stocke elastique 5.86867e-05 J/m)
+[FDEM]   joints       : 1.13409 J/m cohesif (fissuration + stocke), dashpot -0 J/m
+[FDEM]   contact      : 1.3251e-10 J/m (dont frottement 4.48049e-11 J/m)
+[FDEM]   Cundall      : 0.233719 J/m
+[FDEM]   frontieres   : -0 J/m (dont stocke ressorts 0 J/m)
+[FDEM]   outil->solide: 0 J/m, platines/grips: 1.36645 J/m
+[FDEM]   contact, naissances : 37 paires, energie de recouvrement a la naissance 4.38165e-10 J/m (neutralisee par gcBirth = offset)
+[FDEM]   contact, renaissances (gcBirth = offset) : 34565 paires retrouvees apres au moins un pas sans recouvrement, energie neutralisee 1.2967e-06 J/m
+[FDEM]   contact, candidats : contactCandidates = vertex, 536992 elements-pas ajoutes au jeu actif
+[FDEM]   integration  : +0.0022838 J/m (correction leapfrog f^2 dt^2/2m)
+[FDEM]   residu       : 0.000172037 J/m (0.00628956 % de l'echelle) [OK]
+[FDEM] grains: 1, phases: rock 100% (target 100%)
+[FDEM] joints intra/homo/hetero: 22/0/0, broken: 4/0/0  (intergranular fraction 0 %)
+[FDEM] tension result (GB-controlled, verifyFt=off):
+[FDEM]   peak macro stress = 11.9262 MPa = 1.19262 x bulk ft (weak-boundary reference gbAlphaTen = 1)
+[FDEM]   broken joints = 4 / 22
+[rockim] wall time: 1.59319 s, output in '/tmp/claude-0/-home-user/95ba17a5-6321-5243-8157-c0b3e0616268/scratchpad/bancs_insertion/b2/b2_h10_intri_corr_out'

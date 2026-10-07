@@ -1,0 +1,28 @@
+[FDEM] mesh = file: '/tmp/claude-0/-home-user/95ba17a5-6321-5243-8157-c0b3e0616268/scratchpad/bancs_insertion/meshes/b1_t45.msh' — 8 nodes, 8 triangles, box 0.01 x 0.09 m
+[FDEM] jointResidualMu = 0 : le frottement du joint glisse du PIC tan(frictionDeg) vers ce residuel par la meme f(D) que la cohesion. C est la distinction pic/fracture de Y-Geo (AbuAisha et al. 2015, eq. 7.5) et l equivalent du glissement que Solidity applique au joint rompu remis au contact (0,6 calcaire, 0,18 granite chez Yang et al.).
+[FDEM] gcRestitution = 0.2 (DEFAUT) : detente normale du contact general a ce facteur — a figer au deck des que e ou l ejection est une metrique
+[FDEM] 8 elements, 9 joints, 24 nodes, dt = 8.78451e-08 s, steps = 34152
+[FDEM] voronoi: 1 grains, 1 phase(s), 0 grain-boundary joints, hmin = 0.00492313 m
+[rockim] cles : 138 consommees (25 du deck, 113 au defaut), 1 du deck non lues -> /tmp/claude-0/-home-user/95ba17a5-6321-5243-8157-c0b3e0616268/scratchpad/bancs_insertion/b1/b1_II_intri_p10_lin_out/config_effective.cfg
+  10%   20%   30%   40%   50%   60%   70%   80%   90%   100%
+
+[FDEM] ---- summary ----
+[FDEM] block kinetic energy at end: 0.00147046 J/m
+[FDEM] net work injected by general contact: 0 J/m
+[FDEM] joint dashpot work: 0 J/m  [OK, dissipative]
+[FDEM] energy budget (V2/B4): KE 0 -> 0.00147046 J/m
+[FDEM]   elements     : 0.146057 J/m preleve (stocke elastique 6.93643e-05 J/m)
+[FDEM]   joints       : 9.90331 J/m cohesif (fissuration + stocke), dashpot -0 J/m
+[FDEM]   contact      : -0 J/m (dont frottement -0 J/m)
+[FDEM]   Cundall      : 15.006 J/m
+[FDEM]   frontieres   : -0 J/m (dont stocke ressorts 0 J/m)
+[FDEM]   outil->solide: 0 J/m, platines/grips: 24.9504 J/m
+[FDEM]   integration  : +0.0657228 J/m (correction leapfrog f^2 dt^2/2m)
+[FDEM]   residu       : 0.0406767 J/m (0.081344 % de l'echelle) [OK]
+[FDEM] relais joint->contact: 1 joints morts, dont 0 EN COMPRESSION (0 %) ; charge normale lachee au relais 0 kN/m cumules, 0 kN/m au maximum pour un joint
+[FDEM] grains: 1, phases: rock 100% (target 100%)
+[FDEM] joints intra/homo/hetero: 9/0/0, broken: 1/0/0  (intergranular fraction 0 %)
+[FDEM] tension result (GB-controlled, verifyFt=off):
+[FDEM]   peak macro stress = 50.6218 MPa = 5.06218 x bulk ft (weak-boundary reference gbAlphaTen = 1)
+[FDEM]   broken joints = 1 / 9
+[rockim] wall time: 0.347264 s, output in '/tmp/claude-0/-home-user/95ba17a5-6321-5243-8157-c0b3e0616268/scratchpad/bancs_insertion/b1/b1_II_intri_p10_lin_out'

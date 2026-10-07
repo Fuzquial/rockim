@@ -1,0 +1,4 @@
+/home/user/rockim/docs/rapport_guide/bancs_insertion/b3/b3_h2.5_adapt.cfg
+/home/user/rockim/docs/rapport_guide/bancs_insertion/b3/b3_h2.5_intri.cfg
+/home/user/rockim/docs/rapport_guide/bancs_insertion/b3/b3_h1.25_adapt.cfg
+/home/user/rockim/docs/rapport_guide/bancs_insertion/b3/b3_h1.25_intri.cfg

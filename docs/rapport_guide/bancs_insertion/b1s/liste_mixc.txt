@@ -1,0 +1,8 @@
+/home/user/rockim/docs/rapport_guide/bancs_insertion/b1s/b1s_mixc_adapt_p100_lin.cfg
+/home/user/rockim/docs/rapport_guide/bancs_insertion/b1s/b1s_mixc_adapt_p100_yan.cfg
+/home/user/rockim/docs/rapport_guide/bancs_insertion/b1s/b1s_mixc_adapt_p10_lin.cfg
+/home/user/rockim/docs/rapport_guide/bancs_insertion/b1s/b1s_mixc_adapt_p10_yan.cfg
+/home/user/rockim/docs/rapport_guide/bancs_insertion/b1s/b1s_mixc_intri_p100_lin.cfg
+/home/user/rockim/docs/rapport_guide/bancs_insertion/b1s/b1s_mixc_intri_p100_yan.cfg
+/home/user/rockim/docs/rapport_guide/bancs_insertion/b1s/b1s_mixc_intri_p10_lin.cfg
+/home/user/rockim/docs/rapport_guide/bancs_insertion/b1s/b1s_mixc_intri_p10_yan.cfg

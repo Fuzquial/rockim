@@ -1,0 +1,33 @@
+[FDEM] mesh = file: '/tmp/claude-0/-home-user/95ba17a5-6321-5243-8157-c0b3e0616268/scratchpad/bancs_insertion/meshes/bar_h0.00125.msh' — 547 nodes, 1012 triangles, box 0.02 x 0.03 m
+[FDEM] joint softening: Yan et al. f(D), a = 0.63, b = 1.8, c = 6, int f(D) dD = 0.386307
+[FDEM] adaptive insertion: 1478 bonded edges, activation penalty 100 E/h
+[FDEM] gcRestitution = 0.2 (DEFAUT) : detente normale du contact general a ce facteur — a figer au deck des que e ou l ejection est une metrique (NB : branche penalite seulement — inerte sous contact = potential)
+[FDEM] contact: Munjiza potential (eq. 2-5), p = 5e+10 N/m, kt = 5e+10 N/m
+[FDEM] 1012 elements, 1478 joints, 3036 nodes, dt = 2.17488e-09 s, steps = 1379387
+[FDEM] voronoi: 1 grains, 1 phase(s), 0 grain-boundary joints, hmin = 0.000473965 m
+[rockim] cles : 145 consommees (25 du deck, 120 au defaut), 1 du deck non lues -> /tmp/claude-0/-home-user/95ba17a5-6321-5243-8157-c0b3e0616268/scratchpad/bancs_insertion/b2L/b2L_h1.25_adapt_brut_out/config_effective.cfg
+  10%   20%   30%   40%   50%   60%   70%   80%   90%   100%
+
+[FDEM] ---- summary ----
+[FDEM] block kinetic energy at end: 0.000283236 J/m
+[FDEM] net work injected by general contact: -1.59009e-11 J/m
+[FDEM] (contact = potential : le biais O(dt) du compteur est NEGATIF — un residu positif est une injection reelle, sous-estimee, et non le biais ; en mode penalty tout positif est aussi une injection)
+[FDEM] joint dashpot work: 0 J/m  [OK, dissipative]
+[FDEM] energy budget (V2/B4): KE 0 -> 0.000283236 J/m
+[FDEM]   elements     : 0.000304009 J/m preleve (stocke elastique 9.51021e-05 J/m)
+[FDEM]   joints       : 1.20147 J/m cohesif (fissuration + stocke), dashpot -0 J/m
+[FDEM]   contact      : 1.59009e-11 J/m (dont frottement 1.45136e-11 J/m)
+[FDEM]   Cundall      : 0.228561 J/m
+[FDEM]   frontieres   : -0 J/m (dont stocke ressorts 0 J/m)
+[FDEM]   outil->solide: 0 J/m, platines/grips: 1.43017 J/m
+[FDEM]   contact, naissances : 15 paires, energie de recouvrement a la naissance 1.63895e-16 J/m (materialisable sans travail par la rampe gcBirth = ramp : en totalite a geometrie figee, quelle que soit gcBirthTau)
+[FDEM]   integration  : +0.000438794 J/m (correction leapfrog f^2 dt^2/2m)
+[FDEM]   residu       : 2.41524e-06 J/m (8.4434e-05 % de l'echelle) [OK]
+[FDEM] adaptive insertion: 405 / 1478 joints inserted (27.4019 %), 17 fully broken
+[FDEM] relais joint->contact: 16 joints morts, dont 0 EN COMPRESSION (0 %) ; charge normale lachee au relais 0 kN/m cumules, 0 kN/m au maximum pour un joint
+[FDEM] grains: 1, phases: rock 100% (target 100%)
+[FDEM] joints intra/homo/hetero: 1478/0/0, broken: 17/0/0  (intergranular fraction 0 %)
+[FDEM] tension result (GB-controlled, verifyFt=off):
+[FDEM]   peak macro stress = 12.4158 MPa = 1.24158 x bulk ft (weak-boundary reference gbAlphaTen = 1)
+[FDEM]   broken joints = 17 / 1478
+[rockim] wall time: 621.009 s, output in '/tmp/claude-0/-home-user/95ba17a5-6321-5243-8157-c0b3e0616268/scratchpad/bancs_insertion/b2L/b2L_h1.25_adapt_brut_out'
