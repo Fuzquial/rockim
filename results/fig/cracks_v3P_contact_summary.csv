@@ -1,0 +1,18 @@
+metric,value,unit
+label,out_yang_bench_s25_v3P_contact  trame 13  t = 300.0 us  (geometrie de reference),-
+nBroken,424,-
+nComponents,1,-
+noyauId,0,-
+noyauFacets,424,-
+nArms,10,-
+yangRadialLength,0.010847718472518513,m
+longestArmAny,0.014011327266422832,m
+craterRmax,0.014011327266422832,m
+craterRmeanSect,0.009259616890248316,m
+craterRminSect,0.0034496589246263646,m
+craterCover,1.0,-
+rmaxAllVertices,0.014011327266422832,m
+rmaxAllCentroids,0.011887374194562884,m
+depthAll,0.010529136714999998,m
+rcore,0.006,m
+skin,0.001,m

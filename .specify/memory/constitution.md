@@ -57,7 +57,7 @@ un bug bloquant, pas un bruit.
 
 ### VII. Documentation au fil de l'eau
 `DOCUMENTATION_rockim.md` (référence des clés et sorties — le code fait
-foi), `ROADMAP_rockim.md` et le plan actif sont mis à jour **dans le même
+foi), `docs/notes/ROADMAP_rockim.md` et le plan actif sont mis à jour **dans le même
 commit** que le code. Les leçons chèrement acquises (pièges, règles maison)
 sont consignées avec leur date et leur mesure. Les messages de commit
 racontent le POURQUOI et les chiffres, pas seulement le quoi.

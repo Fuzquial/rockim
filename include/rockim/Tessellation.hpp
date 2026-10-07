@@ -93,7 +93,36 @@ struct Tessellation {
                               int refine,
                               const std::vector<double>& phaseFraction,
                               std::mt19937& rng, bool randomSeeds = false,
-                              bool useDelaunay = false, double elemSize = 0.0);
+                              bool useDelaunay = false, double elemSize = 0.0,
+                              double sizeSpread = 0.0,
+                              const std::vector<double>& phaseSize = {},
+                              bool randomInterior = false);
+    // randomInterior : POINTS INTERIEURS ALEATOIRES du Delaunay intra-grain
+    //            (2026-09-02, opt-in grainMeshRandom). Le reseau triangulaire
+    //            historique pave chaque grain en triangles quasi equilateraux
+    //            alignes — le meme defaut que l algorithme frontal de Gmsh,
+    //            banni pour l eprouvette (trois directions de fissure imposees
+    //            a l interieur des grains). Poisson-disc dans le polygone :
+    //            distance >= 0,75 h entre points, marge 0,55 h aux aretes.
+    //            false = comportement historique, bit-identique.
+    // sizeSpread : POLYDISPERSITE (2026-09-02, opt-in). Ecart-type de
+    //            ln(taille) : chaque graine de Poisson porte son propre
+    //            espacement s_i = s L_i, L_i log-normale de moyenne 1 ; les
+    //            graines sont placees du plus GRAND au plus petit (addition
+    //            sequentielle triee), acceptees a >= 0,35 (s_i + s_j), et les
+    //            cellules sont celles du diagramme de LAGUERRE dont les poids
+    //            sont resolus (Newton amorti, Kitagawa-Merigot-Thibert 2019)
+    //            pour que l aire de chaque cellule soit EXACTEMENT ~ s_i^2
+    //            (Bourne et al. 2020). Un Voronoi ordinaire moyenne les
+    //            tailles des voisines (0,5 demande -> 0,16 realise) ; des
+    //            poids fixes (kappa s_i)^2 n en rendent que 40 %.
+    //            Moyenne conservee, nombre de grains / exp(sigma^2). Exige
+    //            randomSeeds. 0 = comportement historique, bit-identique.
+    // phaseSize : taille cible PAR PHASE [m] (<= 0 = indifferent). Les grains
+    //            sont alors affectes par ordre d aire decroissante avec une
+    //            affinite log-normale a la taille de la phase, le deficit
+    //            restant pondere par l AIRE : les fractions globales sont
+    //            conservees par construction, quelle que soit la distribution.
 };
 
 } // namespace rockim

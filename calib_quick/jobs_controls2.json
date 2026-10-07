@@ -1,0 +1,10 @@
+[
+ {"cfg": "calib_quick/q1v070_P050.cfg", "out": "out_q1v070_P050"},
+ {"cfg": "calib_quick/q1v070_P020.cfg", "out": "out_q1v070_P020"},
+ {"cfg": "calib_quick/q1v070_P100.cfg", "out": "out_q1v070_P100"},
+ {"cfg": "calib_quick/q1v070d03_P050.cfg", "out": "out_q1v070d03_P050"},
+ {"cfg": "calib_quick/q1v070d01_P050.cfg", "out": "out_q1v070d01_P050"},
+ {"cfg": "calib_quick/q1v070ip20_P050.cfg", "out": "out_q1v070ip20_P050"},
+ {"cfg": "calib_quick/q1v070intr_P050.cfg", "out": "out_q1v070intr_P050"},
+ {"cfg": "calib_quick/q1v070L_P050.cfg", "out": "out_q1v070L_P050"}
+]

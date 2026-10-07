@@ -94,6 +94,7 @@ private:
     void contactForces();
     void toolAndWallForces();
     void integrate();
+    void checkFinite();                  // C4 (w20) : NaN/Inf reel
     void computeFragments();
 
     // E4 (2026-08-19) : la cle est desormais TRIEE. Sans tri, (i,j) et (j,i)
@@ -128,6 +129,7 @@ private:
     double pullRamp_ = 0.0;               // grip velocity rise time [s]
     bool gripFree_ = false;               // frictionless tension grips
 
+    long nanEvery_ = 256, nanStep_ = 0;  // nanCheckEvery (C4, w20)
     std::vector<Part> p_;
     std::vector<Bond> b_;
     std::vector<int> nIntact_;

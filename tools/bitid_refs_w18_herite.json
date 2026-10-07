@@ -1,0 +1,204 @@
+{
+ "_meta": {
+  "date": "2026-09-05 18:34:44",
+  "exe": "rockim_f2w18.exe",
+  "exe_mtime": "2026-09-05 13:45:12",
+  "exe_path": "C:\\Users\\fuzquianoalricabi\\simulations\\FDEM\\rockim_f2\\rockim_f2w18.exe",
+  "exe_sha256": "655a87329c68b0d88e499a6eebfa73543d5869d9373685ea6430d7c5f1e8c008",
+  "exe_size": 1878528,
+  "hash": "sha256 du contenu de history.csv, frames.csv, probes.csv (si present) et des .vtu de la derniere trame ; comparable au MEME nombre de fils seulement",
+  "host": "PCP-103720",
+  "partial_updates": [
+   {
+    "date": "2026-09-05 18:37:31",
+    "decks": [
+     "fdem3d_visc_yan_3d"
+    ],
+    "exe": "rockim_f2w18.exe",
+    "exe_sha256": "655a87329c68b0d88e499a6eebfa73543d5869d9373685ea6430d7c5f1e8c008",
+    "only": "fdem3d_visc"
+   },
+   {
+    "date": "2026-09-05 18:42:56",
+    "decks": [
+     "fdem3d_visc_yan_3d"
+    ],
+    "exe": "rockim_f2w18.exe",
+    "exe_sha256": "655a87329c68b0d88e499a6eebfa73543d5869d9373685ea6430d7c5f1e8c008",
+    "only": "fdem3d_visc"
+   },
+   {
+    "date": "2026-09-05 19:33:32",
+    "decks": [
+     "fem3d_cdp_PQ_court"
+    ],
+    "exe": "rockim_f2w18.exe",
+    "exe_sha256": "655a87329c68b0d88e499a6eebfa73543d5869d9373685ea6430d7c5f1e8c008",
+    "only": "fem3d_cdp_PQ_court"
+   }
+  ],
+  "platform": "Windows-11-10.0.26200-SP0",
+  "python": "3.12.10",
+  "regle": "toute ancre changee = ligne CHANGELOG.md « ancre bitid changee : raison » + commit du json",
+  "threads": 4
+ },
+ "decks": {
+  "fdem3d_cut3d_heilman_court": {
+   "apex_retries": 0,
+   "cfg": "tests_f2/bitid/fdem3d_cut3d_heilman_court.cfg",
+   "date": "2026-09-05 18:34:44",
+   "dt_s": 1.54296e-09,
+   "exe": "rockim_f2w18.exe",
+   "exe_sha256": "655a87329c68b0d88e499a6eebfa73543d5869d9373685ea6430d7c5f1e8c008",
+   "hashes": {
+    "fdem3d_0003.vtu": "a8922a4e3d7c02e969e64ced9272064507a52aba69a00a39e000c40cdfbabe00",
+    "fdem3d_joints_0003.vtu": "1c8a348e8113179d3ef5bf3a8cefd69fb24dd7995a8f71e3d4aca941861877d9",
+    "frames.csv": "f5604b32880fc9ff32e87bacb508ea869eca78cbd2a0d8626cefe2abebf7c6c4",
+    "history.csv": "abcbbdad4ef39a74f921ed86ec2ed3eb22d72deb358cf2a2dc8c13c4ce9034d6"
+   },
+   "law": "(joints cohesifs, volume elastique)",
+   "mode": "fdem3d",
+   "peak_force_N": 19541.3,
+   "steps": 3889,
+   "threads": 4,
+   "wall_s": 93.6073
+  },
+  "fdem3d_kuru9_court": {
+   "apex_retries": 0,
+   "cfg": "tests_f2/bitid/fdem3d_kuru9_court.cfg",
+   "date": "2026-09-05 18:34:44",
+   "dt_s": 3.61373e-09,
+   "exe": "rockim_f2w18.exe",
+   "exe_sha256": "655a87329c68b0d88e499a6eebfa73543d5869d9373685ea6430d7c5f1e8c008",
+   "hashes": {
+    "fdem3d_0002.vtu": "e44b5aa3d1fd8f857bf3e8e7c77b18cf5b0c6019241305a23cbcef74532ecf15",
+    "fdem3d_joints_0002.vtu": "56d504dfee1e8a722d34766ee1b4420e250f739f3bbd76ce8b564b484b6cace4",
+    "frames.csv": "b6e78ab13daadbc282eca03638c83804c3c0c4bd798decf9c21cfbc7f1fdf6cb",
+    "history.csv": "1c0d7cba74fe1c866d6b691a90f1c9b2cec18ca9e1cc6e2a087ed61d8d801774"
+   },
+   "law": "(joints cohesifs + bulkDamage yang)",
+   "mode": "fdem3d",
+   "peak_force_N": 0.0,
+   "steps": 2768,
+   "threads": 4,
+   "wall_s": 233.837
+  },
+  "fdem3d_visc_yan_3d": {
+   "apex_retries": 0,
+   "cfg": "tests_f2/bitid/fdem3d_visc_yan_3d.cfg",
+   "date": "2026-09-05 18:42:56",
+   "dt_s": 7.15193e-09,
+   "exe": "rockim_f2w18.exe",
+   "exe_sha256": "655a87329c68b0d88e499a6eebfa73543d5869d9373685ea6430d7c5f1e8c008",
+   "hashes": {
+    "fdem3d_0002.vtu": "3feb409709a875b5ee7b0b93005aadc90b38166a9fa78e78f500cf6e92aa5c12",
+    "fdem3d_joints_0002.vtu": "af143536820122cd7c5805b51b08a3f5a8d9c11bf288fac66c33148b3bc9e718",
+    "frames.csv": "37943002f9c24c388eaaa3da0c5d43db77dc4f8110774ac53fe40613f296c2e2",
+    "history.csv": "d5e75bf8a679913fea106235c90a7791c78bb657f3556ef87eb98a236866f58d"
+   },
+   "law": "(joints cohesifs + viscosite Yan)",
+   "mode": "fdem3d",
+   "peak_force_N": null,
+   "steps": 19576,
+   "threads": 4,
+   "wall_s": 207.482
+  },
+  "fdem_toolcontact_signorini": {
+   "apex_retries": 0,
+   "cfg": "tests_f2/bitid/fdem_toolcontact_signorini.cfg",
+   "date": "2026-09-05 18:34:44",
+   "dt_s": 1.46053e-09,
+   "exe": "rockim_f2w18.exe",
+   "exe_sha256": "655a87329c68b0d88e499a6eebfa73543d5869d9373685ea6430d7c5f1e8c008",
+   "hashes": {
+    "fdem_0007.vtu": "e3de044d793467285f489989d45406d99803728f6121b0962d031c8c490c368a",
+    "fdem_joints_0007.vtu": "86d5b2b945f1c4606030a71b80fd5626f57bb8d0c362e3f650db90bae151b0ae",
+    "frames.csv": "13f14bd526e2f9204aaa8122ea69fb2ca8f57104fd61b002ff9d6c4b29f48d71",
+    "history.csv": "cca67df9d8aef5fddb89174d910894c7cedf3108f2777d5ebe32680846a8c888"
+   },
+   "law": "(joints cohesifs, volume elastique)",
+   "mode": "fdem",
+   "peak_force_N": 205788.0,
+   "steps": 205405,
+   "threads": 4,
+   "wall_s": 99.5137
+  },
+  "fdem_ucs_yan_adaptive_court": {
+   "apex_retries": 0,
+   "cfg": "tests_f2/bitid/fdem_ucs_yan_adaptive_court.cfg",
+   "date": "2026-09-05 18:34:44",
+   "dt_s": 1.46441e-08,
+   "exe": "rockim_f2w18.exe",
+   "exe_sha256": "655a87329c68b0d88e499a6eebfa73543d5869d9373685ea6430d7c5f1e8c008",
+   "hashes": {
+    "fdem_0002.vtu": "c9ea1942ca9591f1d179bb3304a8fb3443348f3d455646f8379f21a6efa56f6d",
+    "fdem_joints_0002.vtu": "7af7122e40eb65abdb260f9ea523500bcde71669679fead52a4a8739e860eed4",
+    "frames.csv": "8d487de361fd2140f422812d789335639b83330c0aa5849b1465a1d0c2295f13",
+    "history.csv": "abeaff1358e7a7a8d89ec6c5bc676778326ffb0235a6305d3e83311338a1280d"
+   },
+   "law": "(joints cohesifs yan, insertion adaptative)",
+   "mode": "fdem",
+   "peak_force_N": null,
+   "steps": 136574,
+   "threads": 4,
+   "wall_s": 179.971
+  },
+  "fem3d_cdp_PQ_court": {
+   "apex_retries": 0,
+   "cfg": "tests_f2/bitid/fem3d_cdp_PQ_court.cfg",
+   "date": "2026-09-05 19:33:32",
+   "dt_s": 1.23807e-08,
+   "exe": "rockim_f2w18.exe",
+   "exe_sha256": "655a87329c68b0d88e499a6eebfa73543d5869d9373685ea6430d7c5f1e8c008",
+   "hashes": {
+    "fem3d_0003.vtu": "e2e42e15c8fbdf2d58d9e1fb3865a7acd78e3b6c577fc80df4bdd370fd8ffa96",
+    "frames.csv": "6670a60ed53648e0962f3a40fdbea15400eab92b18a8bd7c5d4f106b596bbca6",
+    "history.csv": "e43ca95062fbc58b7c0d1c43d3754b225f650d3598f5e43015e67ca7eb90291c"
+   },
+   "law": "cdp",
+   "mode": "fem3d",
+   "peak_force_N": 7916.75,
+   "steps": 10501,
+   "threads": 4,
+   "wall_s": 106.444
+  },
+  "fem3d_dpr_T1_court": {
+   "apex_retries": 0,
+   "cfg": "tests_f2/bitid/fem3d_dpr_T1_court.cfg",
+   "date": "2026-09-05 18:34:44",
+   "dt_s": 1.27045e-08,
+   "exe": "rockim_f2w18.exe",
+   "exe_sha256": "655a87329c68b0d88e499a6eebfa73543d5869d9373685ea6430d7c5f1e8c008",
+   "hashes": {
+    "fem3d_0002.vtu": "a091dbf168fb6a8455b3a25134b1be236b7b4e54d36ebb9b8d6fb6aa8f242560",
+    "frames.csv": "14d5f7f70b97905dc56b8b80bcc3cb690b162f6444046043c3370d8699164eac",
+    "history.csv": "756bc37d5e33f28680c652255e8464688877dc16280b5a20db2c9e10ee363429"
+   },
+   "law": "dpr",
+   "mode": "fem3d",
+   "peak_force_N": 6775.14,
+   "steps": 1968,
+   "threads": 4,
+   "wall_s": 221.571
+  },
+  "fem3d_sk2011_cyl_court": {
+   "apex_retries": 0,
+   "cfg": "tests_f2/bitid/fem3d_sk2011_cyl_court.cfg",
+   "date": "2026-09-05 18:34:44",
+   "dt_s": 1.77513e-07,
+   "exe": "rockim_f2w18.exe",
+   "exe_sha256": "655a87329c68b0d88e499a6eebfa73543d5869d9373685ea6430d7c5f1e8c008",
+   "hashes": {
+    "fem3d_0003.vtu": "da88a5ba839b1d628374380fd6bd8a9c496378da64d1173275fa08e7ffc47ef1",
+    "frames.csv": "6f4b7a8006182f30f4cc5cbc47d7c684e07f12dc5a2ffd525a6faa14d19bfd06",
+    "history.csv": "1ea51ebd4a9da03116ae9e8e2ecfa467bef5002ce8618bb162caa34d45af1000"
+   },
+   "law": "saksala2011",
+   "mode": "fem3d",
+   "peak_force_N": 30390.2,
+   "steps": 1127,
+   "threads": 4,
+   "wall_s": 102.266
+  }
+ }
+}

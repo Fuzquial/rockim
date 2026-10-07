@@ -28,6 +28,15 @@ import sys
 
 import gmsh
 
+# arguments NOMMES optionnels (2026-09-11), a n'importe quelle position :
+#   gap=<m>   jeu piston/bit   (defaut 2e-4 : inchange, maillage bit-identique)
+#   gapr=<m>  jeu insert/roche (equivalent du 3e argument positionnel)
+# Mesure : 0,2 mm de jeu piston/bit = 22 us de vol a 9 m/s = 0,8 h de calcul
+# pour zero physique ; 0,2 mm insert/roche = 44 us de plus a ~4,5 m/s. Yang
+# et al. : insert POSE (le poids sur l'outil assied le bit).
+_kw = {a.split("=", 1)[0]: a.split("=", 1)[1] for a in sys.argv[1:] if "=" in a}
+sys.argv = [a for a in sys.argv if "=" not in a]
+
 out = sys.argv[1] if len(sys.argv) > 1 else "impact.msh"
 s = float(sys.argv[2]) if len(sys.argv) > 2 else 1.0
 # jeu insert/roche optionnel (3e argument, m). Defaut 0,2 mm = insert en vol ;
@@ -35,6 +44,7 @@ s = float(sys.argv[2]) if len(sys.argv) > 2 else 1.0
 # poids sur l'outil assied le bit) — c'est elle qui donne la courbe F-p en
 # rampe de leur fig. 7b, l'onde de frappe enfoncant l'insert directement.
 GAPR = float(sys.argv[3]) if len(sys.argv) > 3 else 2.0e-4
+GAPR = float(_kw.get("gapr", GAPR))
 # echelle PROPRE A LA ROCHE (4e argument, defaut = s). Les fissures vivent
 # dans la roche : on peut la mailler a l'echelle de l'article (1,0) en
 # laissant l'acier grossier — le dt reste commande par l'insert.
@@ -44,8 +54,12 @@ SR = float(sys.argv[4]) if len(sys.argv) > 4 else s
 # bit+insert etant lance directement a la vitesse d indentation mesuree.
 LEGER = len(sys.argv) > 5 and sys.argv[5] == "leger"
 
-GAP = 2.0e-4                 # jeu piston/bit [m]
+GAP = float(_kw.get("gap", 2.0e-4))   # jeu piston/bit [m]
 R_ROCK, H_ROCK = 0.125, 0.150
+# bloc REDUIT (2026-10-03, rang 1 de la feuille de route acceleration) :
+# rrock= et hrock= [m] retaillent le cylindre de roche ; absents = inchange.
+R_ROCK = float(_kw.get("rrock", R_ROCK))
+H_ROCK = float(_kw.get("hrock", H_ROCK))
 R_INS, R_SHANK, H_INS = 0.00851, 0.00794, 0.0232
 R_BIT = 0.015
 L_BIT = 0.265 - H_INS        # le bit fait 265 mm INSERT COMPRIS
@@ -128,6 +142,51 @@ gmsh.model.mesh.field.setNumber(f3, "DistMax", 0.100)
 fmin = gmsh.model.mesh.field.add("Min")
 gmsh.model.mesh.field.setNumbers(fmin, "FieldsList", [f1, f2, f3])
 gmsh.model.mesh.field.setAsBackgroundMesh(fmin)
+# ---- options nommees du 13/09 (T3, campagne de correction) ; defaut = inchange
+#   srfar=x      echelle du SEUL champ lointain (SizeMax du seuil : 10 mm x srfar
+#                entre R 25 et R 100 mm) ; defaut = SR. Permet de raffiner la
+#                boule (SR < 1) sans multiplier les tetras du bord de la roche.
+#   train=fixed  le TRAIN (insert, bit, piston, circlip, plaque) ne depend plus
+#                de SR. Par defaut, le champ de fond (boules + seuil, echelle SR)
+#                s'applique a TOUS les corps : Mesh.MeshSizeExtendFromBoundary = 0
+#                fait que les tailles aux points OCC (set_pts) ne gouvernent que
+#                les COURBES, et l'interieur de l'insert, du bit et du piston
+#                suit le champ de la ROCHE. Mesure (tools/mesh_quality.py) :
+#                piston 1 033 tetras et 1,057 kg a SR = 1, 209 tetras et 0,777 kg
+#                a SR = 2,5, pour le meme s. Ici le maillage se fait en DEUX
+#                PASSES : (1) roche cachee (Mesh.MeshOnlyVisible), le train est
+#                maille sous une copie du meme champ a l'echelle s ; (2) roche
+#                visible, Mesh.MeshOnlyEmpty, la roche est maillee sous le champ
+#                a l'echelle SR. Le train ne depend ainsi ni de SR ni de l'ordre
+#                de generation (un premier essai par champs Restrict laissait
+#                le train varier avec SR : la perturbation aleatoire de gmsh est
+#                consommee par les faces de la roche, maillees AVANT celles du
+#                train — volume du piston 9,61e-5 contre 9,89e-5 m3). Verifie :
+#                train identique (noeuds, surface, volume) a SR = 2,5 / 1 / 5.
+#                Contrepartie : a SR = s le fichier n'est PAS bit-identique au
+#                defaut (autre ordre de generation). Sans la cle : rien ne change.
+if "srfar" in _kw:
+    gmsh.model.mesh.field.setNumber(f3, "SizeMax", 0.010 * float(_kw["srfar"]))
+TRAIN_FIXED = _kw.get("train", "") == "fixed"
+if TRAIN_FIXED:
+    t1 = gmsh.model.mesh.field.add("Ball")
+    gmsh.model.mesh.field.setNumber(t1, "VIn", 0.001 * s)
+    gmsh.model.mesh.field.setNumber(t1, "VOut", 1.0)
+    gmsh.model.mesh.field.setNumber(t1, "Radius", 0.0125)
+    t2 = gmsh.model.mesh.field.add("Ball")
+    gmsh.model.mesh.field.setNumber(t2, "VIn", 0.002 * s)
+    gmsh.model.mesh.field.setNumber(t2, "VOut", 1.0)
+    gmsh.model.mesh.field.setNumber(t2, "Radius", 0.025)
+    t3 = gmsh.model.mesh.field.add("Threshold")
+    gmsh.model.mesh.field.setNumber(t3, "InField", fd)
+    gmsh.model.mesh.field.setNumber(t3, "SizeMin", 0.002 * s)
+    gmsh.model.mesh.field.setNumber(t3, "SizeMax", 0.010 * s)
+    gmsh.model.mesh.field.setNumber(t3, "DistMin", 0.025)
+    gmsh.model.mesh.field.setNumber(t3, "DistMax", 0.100)
+    tmin = gmsh.model.mesh.field.add("Min")
+    gmsh.model.mesh.field.setNumbers(tmin, "FieldsList", [t1, t2, t3])
+elif "train" in _kw:
+    raise SystemExit("train=%s inconnu (fixed)" % _kw["train"])
 gmsh.option.setNumber("Mesh.MeshSizeExtendFromBoundary", 0)
 gmsh.option.setNumber("Mesh.MeshSizeFromPoints", 1)
 
@@ -145,9 +204,183 @@ if not LEGER:
     set_pts(names["plate"], 0.004 * s)
 
 gmsh.option.setNumber("Mesh.RandomSeed", 1)
-gmsh.model.mesh.generate(3)
+# CORRECTIF 2026-08-30 (v2, mesure) : ni le frontal (6, defaut implicite) ni
+# le Delaunay (5) ne conviennent SOUS CHAMP DE FOND : les deux pavent la zone
+# fine en hexagones alignes (fabric d'orientation 10,8 mesure sur la face de
+# roche ; pics a 3 directions -> facies de fissuration invalide). Seul
+# MeshAdapt (1) casse le reseau (fabric 2,2), et Netgen repare sa qualite
+# d'element : h inscrit min 0,43 mm contre 0,29 (Delaunay) et 0,06 (MeshAdapt
+# seul) — c'est h_min qui commande le pas de temps. Matrice testee le
+# 2026-08-30 (A/B/C/D/B2, echelle 2) ; RandomFactor et ExtendFromBoundary
+# sont sans effet sur le reseau.
+gmsh.option.setNumber("Mesh.Algorithm", int(_kw.get("algo2d", 1)))   # MeshAdapt (jamais 5/6 sous champ) ; algo2d=N (13/09) pour MESURER
+# CHASSE AUX SLIVERS (13/09) — options nommees, toutes facultatives, defauts =
+# maillage inchange. Mesure du 13/09 sur impact_yang_s1_pose.msh (tools/
+# mesh_quality.py) : les 25 pires tetras de la roche (h inscrit 0,226-0,30 mm
+# pour des aretes de 0,8-1,4 mm) ont DEUX noeuds sur la face z = 0 et deux a
+# 0,7-1,1 mm sous elle — premiere couche sous la surface ; les tetras
+# interieurs ont h >= 0,323 mm. Netgen et Relocate3D ne bougent pas les
+# noeuds de surface, d ou leur inefficacite (opt=2 : 0,2267 inchange).
+#   optthr=x   Mesh.OptimizeThreshold (defaut gmsh 0,3), seuil de l optimiseur interne
+#   smooth=N   Mesh.Smoothing (defaut 1), passes de lissage de la surface
+#   optgmsh=N  N passes de l optimiseur interne apres generation
+#   opt2d=N    N passes Relocate2D (les noeuds de SURFACE bougent)
+#   lap2d=N    N passes Laplace2D (lissage laplacien de la surface)
+#   quality=hxt  PRESET retenu le 13/09 (mesure a s = 1, tools/mesh_quality.py) :
+#              HXT (algo3d = 10) + Mesh.OptimizeThreshold 0,5. Roche : h min
+#              0,2265 -> 0,270 mm (+19 %), tetras sous 0,3 mm 25 -> 5 ; insert
+#              0,205 -> 0,250. Les autres combinaisons mesurees font moins bien
+#              (seuil 0,7 + passes gmsh 0,247-0,258 ; Relocate2D 0,244 ;
+#              lissage de surface sans effet ; frontal 4 idem Delaunay ; MMG3D
+#              absent de ce gmsh). Le sliver de surface ne part pas sans
+#              remailleur de qualite : le gain sur le pas de temps reste ~+9 %
+#              sous jointPenaltyLength = edge. Surface : MeshAdapt inchange.
+if _kw.get("quality") == "hxt":
+    _kw.setdefault("algo3d", "10")
+    _kw.setdefault("optthr", "0.5")
+elif "quality" in _kw:
+    raise SystemExit("quality=%s inconnu (hxt)" % _kw["quality"])
+if "optthr" in _kw:
+    gmsh.option.setNumber("Mesh.OptimizeThreshold", float(_kw["optthr"]))
+if "smooth" in _kw:
+    gmsh.option.setNumber("Mesh.Smoothing", int(_kw["smooth"]))
+# algo3d=N (2026-09-11) : 1 = Delaunay (defaut, inchange), 10 = HXT (Delaunay
+# parallele + optimiseur de qualite propre). Mesure du jour sur s = 1 : le
+# Delaunay laisse des slivers de 0,226 mm de diametre inscrit a la surface de
+# la roche sous l insert (mediane 0,40 dans la zone fine), que deux passes
+# Netgen ne corrigent pas ; ce sont eux qui commandent le pas de temps.
+gmsh.option.setNumber("Mesh.Algorithm3D", int(_kw.get("algo3d", 1)))
+gmsh.option.setNumber("Mesh.OptimizeNetgen", 1)
+if TRAIN_FIXED:
+    # (1) Le train, une seule fois : roche cachee (Mesh.MeshOnlyVisible), champ
+    # a l'echelle s, generate(3) — gmsh re-amorce son generateur aleatoire a
+    # chaque generate(), et seul le train est maille : il ne depend de rien
+    # d'autre. (2) La roche dans un SECOND modele (cylindre + champs a l'echelle
+    # SR). (3) Fusion ecrite par le script. Deux schemas en un seul modele ont
+    # ete essayes et REFUTES le 13/09 : champs Restrict par volume (le train
+    # variait avec SR : la perturbation aleatoire de gmsh est consommee par les
+    # faces de la roche, maillees avant celles du train) et passes par
+    # visibilite/dimension (generate(d) re-execute les dimensions inferieures et
+    # EFFACE les faces de tout le modele, groupe cache compris).
+    gmsh.option.setNumber("General.Terminal", int(_kw.get("verbose", 0)))   # verbose=1 : journal gmsh
+    phys_info = [(gmsh.model.getPhysicalGroups(3)[i][1], nm, tags)
+                 for i, (nm, tags) in enumerate(names.items())]
+    gmsh.model.mesh.field.setAsBackgroundMesh(tmin)
+    gmsh.model.setVisibility([(3, t) for t in names["rock"]], 0, True)
+    gmsh.option.setNumber("Mesh.MeshOnlyVisible", 1)
+    gmsh.model.mesh.generate(3)
+    for _ in range(int(_kw.get("opt2d", 0))):          # memes passes que le defaut,
+        gmsh.model.mesh.optimize("Relocate2D")          # appliquees au train seul
+    for _ in range(int(_kw.get("lap2d", 0))):
+        gmsh.model.mesh.optimize("Laplace2D")
+    for _ in range(int(_kw.get("optgmsh", 0))):
+        gmsh.model.mesh.optimize("")
+    for _ in range(int(_kw.get("opt", 0))):
+        gmsh.model.mesh.optimize("Netgen")
+        gmsh.model.mesh.optimize("Relocate3D")
+
+    def _extraire(corps):
+        # corps : liste de (tag physique, nom, [tags de volume]) -> (coords {tag: xyz},
+        # [(tag physique, nom, tag de volume, tetras (n, 4))])
+        ntags, xyz, _ = gmsh.model.mesh.getNodes()
+        coords = {int(t): xyz[3 * i:3 * i + 3] for i, t in enumerate(ntags)}
+        blocs = []
+        for ptag, nm, vtags in corps:
+            for vt in vtags:
+                types, etags, ntg = gmsh.model.mesh.getElements(3, vt)
+                for ty, nn in zip(types, ntg):
+                    if ty == 4:
+                        blocs.append((ptag, nm, vt, nn.reshape(-1, 4).astype(int)))
+        return coords, blocs
+
+    train_coords, train_blocs = _extraire([p for p in phys_info if p[1] != "rock"])
+    # (2) la roche seule, memes constantes, memes champs a l'echelle SR (+ srfar)
+    gmsh.option.setNumber("Mesh.MeshOnlyVisible", 0)
+    gmsh.model.add("rock_only")
+    occ = gmsh.model.occ
+    rock2 = occ.addCylinder(0, 0, -H_ROCK, 0, 0, H_ROCK, R_ROCK)
+    pt2 = occ.addPoint(0, 0, 0)
+    occ.synchronize()
+    r1 = gmsh.model.mesh.field.add("Ball")
+    gmsh.model.mesh.field.setNumber(r1, "VIn", 0.001 * SR)
+    gmsh.model.mesh.field.setNumber(r1, "VOut", 1.0)
+    gmsh.model.mesh.field.setNumber(r1, "Radius", 0.0125)
+    r2 = gmsh.model.mesh.field.add("Ball")
+    gmsh.model.mesh.field.setNumber(r2, "VIn", 0.002 * SR)
+    gmsh.model.mesh.field.setNumber(r2, "VOut", 1.0)
+    gmsh.model.mesh.field.setNumber(r2, "Radius", 0.025)
+    rd = gmsh.model.mesh.field.add("Distance")
+    gmsh.model.mesh.field.setNumbers(rd, "PointsList", [pt2])
+    r3 = gmsh.model.mesh.field.add("Threshold")
+    gmsh.model.mesh.field.setNumber(r3, "InField", rd)
+    gmsh.model.mesh.field.setNumber(r3, "SizeMin", 0.002 * SR)
+    gmsh.model.mesh.field.setNumber(r3, "SizeMax", 0.010 * float(_kw.get("srfar", SR)))
+    gmsh.model.mesh.field.setNumber(r3, "DistMin", 0.025)
+    gmsh.model.mesh.field.setNumber(r3, "DistMax", 0.100)
+    rmin = gmsh.model.mesh.field.add("Min")
+    gmsh.model.mesh.field.setNumbers(rmin, "FieldsList", [r1, r2, r3])
+    gmsh.model.mesh.field.setAsBackgroundMesh(rmin)
+    set_pts([rock2], 0.010 * SR)
+    gmsh.model.mesh.generate(3)
+    rock_phys = [p for p in phys_info if p[1] == "rock"][0]
+    # les passes opt* du chemin par defaut (ci-dessous) s'appliquent alors a la roche
+    TRAIN_DATA = (train_coords, train_blocs, (rock_phys[0], "rock", rock_phys[2][0]))
+else:
+    gmsh.model.mesh.generate(3)
+# opt=N (2026-09-11) : N passes d'optimisation SUPPLEMENTAIRES (Netgen puis
+# relocalisation des noeuds) contre les slivers. Mesure sur s = 1 : le pas de
+# temps des joints de la roche suit le PLUS PETIT diametre inscrit (0,226 mm
+# pour une mediane de 0,4 mm dans la zone fine) — un sliver sur cent mille
+# commande 20 h de calcul. Defaut 0 = maillage bit-identique.
+for _ in range(int(_kw.get("opt2d", 0))):
+    gmsh.model.mesh.optimize("Relocate2D")
+for _ in range(int(_kw.get("lap2d", 0))):
+    gmsh.model.mesh.optimize("Laplace2D")
+for _ in range(int(_kw.get("optgmsh", 0))):
+    gmsh.model.mesh.optimize("")
+for _ in range(int(_kw.get("opt", 0))):
+    gmsh.model.mesh.optimize("Netgen")
+    gmsh.model.mesh.optimize("Relocate3D")
 gmsh.option.setNumber("Mesh.MshFileVersion", 2.2)
-gmsh.write(out)
-ntet = len(gmsh.model.mesh.getElementsByType(4)[0])
+if TRAIN_FIXED:
+    # (3) fusion ecrite par le script, format v2.2 de gmsh (2 tags : physique,
+    # elementaire, ceux du PREMIER modele ; fins de ligne CRLF comme gmsh sous
+    # Windows) : blocs par tag elementaire croissant (roche = 1 d'abord, comme
+    # gmsh), noeuds du train puis de la roche, renumerotes ; comme gmsh avec
+    # Mesh.SaveAll = 0, seuls les noeuds des tetras sauves sont ecrits (verifie :
+    # 0 orphelin dans les fichiers du defaut), coordonnees en %.16g comme gmsh.
+    train_coords, train_blocs, (rp_tag, _, rv_tag) = TRAIN_DATA
+    rock_coords, rock_blocs = _extraire([(rp_tag, "rock", [rock2])])
+    blocs = [(pt, nm, vt, tets, train_coords) for pt, nm, vt, tets in train_blocs]
+    blocs += [(rp_tag, "rock", rv_tag, tets, rock_coords) for _, _, _, tets in rock_blocs]
+    blocs.sort(key=lambda b: b[2])
+    newid, lignes_noeuds = {}, []
+    for coords in (train_coords, rock_coords):
+        cle = id(coords)
+        utilises = set()
+        for b in blocs:
+            if id(b[4]) == cle:
+                utilises.update(b[3].ravel().tolist())
+        for t in sorted(utilises):
+            newid[(cle, t)] = len(lignes_noeuds) + 1
+            x, y, z = coords[t]
+            lignes_noeuds.append("%d %.16g %.16g %.16g" % (len(lignes_noeuds) + 1, x, y, z))
+    lignes_el, k = [], 0
+    for pt, nm, vt, tets, coords in blocs:
+        cle = id(coords)
+        for tet in tets:
+            k += 1
+            lignes_el.append("%d 4 2 %d %d %d %d %d %d" % (k, pt, vt, newid[(cle, tet[0])], newid[(cle, tet[1])],
+                                                           newid[(cle, tet[2])], newid[(cle, tet[3])]))
+    with open(out, "w", newline="\r\n") as f:
+        f.write("$MeshFormat\n2.2 0 8\n$EndMeshFormat\n$PhysicalNames\n%d\n" % len(phys_info))
+        for ptag, nm, _ in sorted(phys_info):
+            f.write('3 %d "%s"\n' % (ptag, nm))
+        f.write("$EndPhysicalNames\n$Nodes\n%d\n%s\n$EndNodes\n$Elements\n%d\n%s\n$EndElements\n"
+                % (len(lignes_noeuds), "\n".join(lignes_noeuds), len(lignes_el), "\n".join(lignes_el)))
+    ntet = k
+else:
+    gmsh.write(out)
+    ntet = len(gmsh.model.mesh.getElementsByType(4)[0])
 gmsh.finalize()
 print("ecrit : %s  (%d tets, echelle %.2f, roche %.2f)" % (out, ntet, s, SR))

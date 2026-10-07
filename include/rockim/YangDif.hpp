@@ -17,9 +17,24 @@
 //   * avec 0,07 la loi saute de 1 a 1,1245 en 5e-6 /s (+12,4 %) et de 1,5160
 //     a 1,85 en 1e2 /s (+22 %) — elle ne se raccorde a aucune de ses bornes ;
 //   * la COURBE TRACEE dans leur propre figure 2(b) suit un exposant voisin
-//     de 0,17, et 0,1707 raccorde EXACTEMENT les deux bornes (1,0031 en bas,
+//     de 0,17, et 0,1707 raccorde EXACTEMENT les deux bornes (1,0010 en bas,
 //     1,8500 en haut). Deux raccords simultanes avec un seul parametre : ce
 //     n est pas une coincidence.
+//
+// CORRECTION 2026-08-30 (contre-audit). Cette ligne portait « 1,0031 en bas ».
+// C etait FAUX : 0,95 + 0,41*(5e-6)^0,1707 = 1,001039, soit 1,0010 — valeur
+// que le lot 2b (biblio_insertion/2026-08-29_lot2b_...md l. 217) donnait deja
+// juste. Le raccord HAUT, lui, est exact : 0,95 + 0,41*(1e2)^0,1707 = 1,84989.
+// L argument est inchange, mais il ne faut pas citer 1,0031 : c est le seul
+// chiffre errone de cet en-tete, et il etait justement produit en PREUVE.
+//
+// ET LE MOT « PREDICTION » N EST PAS SOUTENABLE. L article confirmateur est
+// IJRMMS 206 (2026) 106660, soit la MEME ANNEE que cette derivation
+// (2026-08-18) ; rien ici n etablit qu il n etait pas deja paru. A presenter
+// comme une INFERENCE INDEPENDANTE — ce qu elle est, et ce qui suffit :
+// l exposant litteral 0,07 ne raccorde AUCUNE de ses deux bornes (1,1245 au
+// lieu de 1 ; 1,5160 au lieu de 1,85, soit 22 % de discontinuite), 0,1707
+// raccorde les deux, et l article de 2026 imprime 0,17.
 // L eq. 2 (compression) est elle CONFIRMEE a 0,07 par sa figure 2(a).
 //
 // MESURE : le saut de 22 % en 1e2 /s est un ATTRACTEUR dans un schema
@@ -48,11 +63,22 @@ inline double difTensionYang(double edot, double n) {
     return v < 1.0 ? 1.0 : (v > 1.85 ? 1.85 : v);
 }
 
-inline double difCompressionYang(double edot) {
+// Exposant de la COMPRESSION parametre a son tour (2026-09-11, portage de la
+// note de septembre 2026, eq. 13 : DIF_t et DIF_s a exposants SEPARES, a_s <
+// a_t). La forme a un argument ci-dessous delegue avec le 0,07 litteral de
+// l article — la valeur du double est la meme, l appel a std::pow est le
+// meme : BIT-IDENTIQUE. Cette surcharge remplace les deux transcriptions
+// locales que les lots 2D et 3D avaient du recopier faute de pouvoir toucher
+// ce fichier : il n en existe a nouveau qu UNE dans le depot.
+inline double difCompressionYang(double edot, double n) {
     if (edot <= 5.0e-6) return 1.0;
     if (edot > 1.0e4)   return 1.84;
-    double v = 0.77 + 0.56 * std::pow(edot, 0.07);
+    double v = 0.77 + 0.56 * std::pow(edot, n);
     return v < 1.0 ? 1.0 : (v > 1.84 ? 1.84 : v);
+}
+
+inline double difCompressionYang(double edot) {
+    return difCompressionYang(edot, 0.07);
 }
 
 // ---------------------------------------------------------------------------

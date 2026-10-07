@@ -67,6 +67,8 @@ def main():
     ap.add_argument("run")
     ap.add_argument("--stem", default="fig_impact")
     ap.add_argument("--frame", type=int, default=-1)
+    ap.add_argument("--title", default=None,
+                    help="titre de la planche (defaut : le cas St Anne 10,66 m/s)")
     a = ap.parse_args()
 
     h = history(a.run)
@@ -97,8 +99,8 @@ def main():
     print("  joints rompus          : %7d" % m["n"])
 
     fig = plt.figure(figsize=(12.4, 10.2))
-    fig.suptitle("Impact à insert unique — calcaire St Anne, piston à "
-                 "10,66 m/s  (schéma adaptatif, DIF Yang fig. 2)", fontsize=13)
+    fig.suptitle(a.title or ("Impact à insert unique — calcaire St Anne, piston à "
+                 "10,66 m/s  (schéma adaptatif, DIF Yang fig. 2)"), fontsize=13)
 
     A = fig.add_subplot(2, 2, 1)
     if "vz_piston" in h:                # montage complet ; absent en allege

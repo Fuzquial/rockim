@@ -33,7 +33,7 @@ le 2026-08-17** (clone vierge → compilation → suite à 15/15) :
    s'est manifesté le 2026-08-17 quand le clone a été déplacé sans Eigen ;
 3. `pip install gmsh numpy matplotlib scipy` pour les outils Python ;
 4. compiler — **107 s** mesurées. Sur une machine dont Visual Studio n'est pas
-   au chemin par défaut, `build_chk.cmd` échoue (chemin de `vcvars64.bat` en
+   au chemin par défaut, `scripts/windows/build_chk.cmd` échoue (chemin de `vcvars64.bat` en
    dur) : passer par **CMake**, qui trouve Eigen seul ;
 5. **régénérer les maillages** : les `.msh` ne sont PAS dans le dépôt (156 Mo,
    exclus par `.gitignore` car reproductibles). La ligne de commande de

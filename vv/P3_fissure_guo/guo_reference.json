@@ -1,0 +1,293 @@
+{
+ "source": "Guo L. (2014), Development of a three-dimensional fracture model for the combined finite-discrete element method, PhD thesis, Imperial College London, §2.4 Mesh size sensitivity, p. 79-100",
+ "fichier_texte": "~/phd_geothermie_git/bibliographie/Guo-L-2014-PhD-Thesis_split/texte/02_Three_dimensional_fracture_model.txt (l. 1328-1830)",
+ "methode_numerisation": "pdfimages sur sections/02.4_Mesh_size_sensitivity.pdf p. 18 (these p. 96), centroides des marqueurs par couleur, axes cales sur les graduations ; les quatre valeurs citees dans le texte sont retrouvees a 0,01 MPa pres",
+ "geometrie": {
+  "domaine_xy_mm": [
+   120,
+   120
+  ],
+  "epaisseur_z_mm": 20,
+  "longueur_fissure_mm": 40,
+  "largeur_fissure_mm": 20,
+  "note_fissure": "fig. 2.17 (p. 80) : fissure centrale traversante 40 x 20 mm (toute l'epaisseur), plan normal a y ; demi-modele droit, rouleau (u_x = 0) sur le plan de symetrie yz",
+  "source": "fig. 2.17 et texte p. 80"
+ },
+ "chargement": {
+  "P_Pa": "1.0e10 t (eq. 2.61), pression sur les deux levres de la fissure preexistante",
+  "pesanteur": "non"
+ },
+ "materiau": {
+  "rho": 2340,
+  "E_GPa": 26,
+  "nu": 0.2,
+  "ft_MPa": 3,
+  "c_MPa": 15,
+  "phi_deg": 30,
+  "Gf_N_par_m": [
+   10,
+   50
+  ],
+  "frottement_levres": 0.6,
+  "source": "table 2.3 p. 81 et texte p. 81"
+ },
+ "loi_de_joint": {
+  "delta_p": "2 f h/p0 (eq. 2.25-2.26), h = longueur moyenne des aretes",
+  "p0": "E <= p0 <= 10 E (eq. 2.28), valeur de §2.4 non publiee",
+  "delta_c": "3 Gf/f (eq. 2.30)",
+  "critere": "Mohr-Coulomb avec coupure en traction",
+  "source": "§2.3, p. 66-69"
+ },
+ "maillages": {
+  "type": "tetraedres a 4 noeuds structures",
+  "h_mm": [
+   20,
+   10,
+   5,
+   2.5,
+   1.25
+  ],
+  "N_elements": [
+   432,
+   3456,
+   27648,
+   221184,
+   1769472
+  ],
+  "source": "table 2.4 p. 82",
+  "note": "432 = 3 x 6 x 1 cubes de 20 mm x 24 tetraedres : decoupage a 24 tets par cube (centre du cube et centres de face), deduit des nombres"
+ },
+ "definitions": {
+  "fracture_load": "pression interne a laquelle la fissure preexistante commence a se propager (p. 95, legende fig. 2.29)",
+  "propagation_time": "temps necessaire a la fissure pour se propager jusqu'au bord du modele (p. 95)",
+  "h_normalise": "h / 20 mm"
+ },
+ "fracture_load_MPa": {
+  "Gf10": {
+   "20": {
+    "valeur": 2.63,
+    "valeur_brute_numerisee": 2.632,
+    "incertitude": 0.005,
+    "source": "texte p. 97 (§2.4.3), confirme par la figure 2.29 a 0,01 MPa pres"
+   },
+   "10": {
+    "valeur": 2.62,
+    "valeur_brute_numerisee": 2.615,
+    "incertitude": 0.02,
+    "source": "lu sur la figure 2.29 (numerisation des marqueurs, image 7015 x 4960 px, 711,6 px par MPa)"
+   },
+   "5": {
+    "valeur": 2.47,
+    "valeur_brute_numerisee": 2.468,
+    "incertitude": 0.02,
+    "source": "lu sur la figure 2.29 (numerisation des marqueurs, image 7015 x 4960 px, 711,6 px par MPa)"
+   },
+   "2.5": {
+    "valeur": 2.29,
+    "valeur_brute_numerisee": 2.293,
+    "incertitude": 0.02,
+    "source": "lu sur la figure 2.29 (numerisation des marqueurs, image 7015 x 4960 px, 711,6 px par MPa)"
+   },
+   "1.25": {
+    "valeur": 2.1,
+    "valeur_brute_numerisee": 2.099,
+    "incertitude": 0.005,
+    "source": "texte p. 97 (§2.4.3), confirme par la figure 2.29 a 0,01 MPa pres"
+   }
+  },
+  "Gf50": {
+   "20": {
+    "valeur": 4.9,
+    "valeur_brute_numerisee": 4.899,
+    "incertitude": 0.005,
+    "source": "texte p. 97 (§2.4.3), confirme par la figure 2.29 a 0,01 MPa pres"
+   },
+   "10": {
+    "valeur": 4.61,
+    "valeur_brute_numerisee": 4.61,
+    "incertitude": 0.02,
+    "source": "lu sur la figure 2.29 (numerisation des marqueurs, image 7015 x 4960 px, 711,6 px par MPa)"
+   },
+   "5": {
+    "valeur": 4.24,
+    "valeur_brute_numerisee": 4.241,
+    "incertitude": 0.02,
+    "source": "lu sur la figure 2.29 (numerisation des marqueurs, image 7015 x 4960 px, 711,6 px par MPa)"
+   },
+   "2.5": {
+    "valeur": 3.73,
+    "valeur_brute_numerisee": 3.73,
+    "incertitude": 0.02,
+    "source": "lu sur la figure 2.29 (numerisation des marqueurs, image 7015 x 4960 px, 711,6 px par MPa)"
+   },
+   "1.25": {
+    "valeur": 3.09,
+    "valeur_brute_numerisee": 3.094,
+    "incertitude": 0.005,
+    "source": "texte p. 97 (§2.4.3), confirme par la figure 2.29 a 0,01 MPa pres"
+   }
+  }
+ },
+ "propagation_time_us": {
+  "Gf10": {
+   "20": {
+    "valeur": 29.4,
+    "valeur_brute_numerisee": 29.39,
+    "incertitude": 0.5,
+    "source": "lu sur la figure 2.30 (numerisation des marqueurs, 54,7 px par us)"
+   },
+   "10": {
+    "valeur": 34.9,
+    "valeur_brute_numerisee": 34.93,
+    "incertitude": 0.5,
+    "source": "lu sur la figure 2.30 (numerisation des marqueurs, 54,7 px par us)"
+   },
+   "5": {
+    "valeur": 41.3,
+    "valeur_brute_numerisee": 41.29,
+    "incertitude": 0.5,
+    "source": "lu sur la figure 2.30 (numerisation des marqueurs, 54,7 px par us)"
+   },
+   "2.5": {
+    "valeur": 47.9,
+    "valeur_brute_numerisee": 47.9,
+    "incertitude": 0.5,
+    "source": "lu sur la figure 2.30 (numerisation des marqueurs, 54,7 px par us)"
+   },
+   "1.25": {
+    "valeur": 52.2,
+    "valeur_brute_numerisee": 52.25,
+    "incertitude": 0.5,
+    "source": "lu sur la figure 2.30 (numerisation des marqueurs, 54,7 px par us)"
+   }
+  },
+  "Gf50": {
+   "20": {
+    "valeur": 8.6,
+    "valeur_brute_numerisee": 8.6,
+    "incertitude": 0.5,
+    "source": "lu sur la figure 2.30 (numerisation des marqueurs, 54,7 px par us)"
+   },
+   "10": {
+    "valeur": 15.0,
+    "valeur_brute_numerisee": 15.02,
+    "incertitude": 0.5,
+    "source": "lu sur la figure 2.30 (numerisation des marqueurs, 54,7 px par us)"
+   },
+   "5": {
+    "valeur": 24.5,
+    "valeur_brute_numerisee": 24.53,
+    "incertitude": 0.5,
+    "source": "lu sur la figure 2.30 (numerisation des marqueurs, 54,7 px par us)"
+   },
+   "2.5": {
+    "valeur": 39.8,
+    "valeur_brute_numerisee": 39.75,
+    "incertitude": 0.5,
+    "source": "lu sur la figure 2.30 (numerisation des marqueurs, 54,7 px par us)"
+   },
+   "1.25": {
+    "valeur": 63.0,
+    "valeur_brute_numerisee": 63.03,
+    "incertitude": 0.5,
+    "source": "lu sur la figure 2.30 (numerisation des marqueurs, 54,7 px par us)"
+   }
+  }
+ },
+ "instants_figures_us": {
+  "note": "instants des vues des fig. 2.19 a 2.28 (premiere vue a peu pres a l'amorcage, derniere apres la separation) ; P = 1e10 t donne 1 MPa par 100 us",
+  "Gf10": {
+   "20": [
+    260,
+    280,
+    293,
+    443
+   ],
+   "10": [
+    260,
+    272,
+    284,
+    292,
+    296,
+    436
+   ],
+   "5": [
+    240,
+    264,
+    276,
+    284,
+    288,
+    448
+   ],
+   "2.5": [
+    220,
+    251,
+    264,
+    273,
+    277,
+    437
+   ],
+   "1.25": [
+    200,
+    233,
+    247,
+    257,
+    262,
+    382
+   ]
+  },
+  "Gf50": {
+   "20": [
+    460,
+    494,
+    498,
+    648
+   ],
+   "10": [
+    440,
+    471,
+    476,
+    586
+   ],
+   "5": [
+    420,
+    441,
+    449,
+    589
+   ],
+   "2.5": [
+    370,
+    391,
+    402,
+    409,
+    413,
+    503
+   ],
+   "1.25": [
+    300,
+    337,
+    354,
+    367,
+    372,
+    502
+   ]
+  }
+ },
+ "cpu_par_pas_s": {
+  "valeurs": {
+   "20": 0.0005,
+   "10": 0.00465,
+   "5": 0.0434,
+   "2.5": 0.377,
+   "1.25": 2.62
+  },
+  "machine": "Intel Xeon E5-2680 2,70 GHz, code serie",
+  "source": "table 2.5 p. 100"
+ },
+ "observations_texte": [
+  "aucune convergence en h (p. 99) : la charge de rupture decroit encore entre 2,5 et 1,25 mm",
+  "pour h = 1,25 mm et Gf = 10 la fissure met plus longtemps a atteindre le bord qu'a Gf = 50 (p. 98)",
+  "zone plastique de 3, 6 et 12 elements a h = 5, 2,5 et 1,25 mm pour Gf = 10, soit une longueur constante d'environ 15 mm (p. 89)",
+  "Guo attribue l'ecart a ft (charges > 3 MPa a Gf = 50, < 3 MPa a Gf = 10) a la vitesse de chargement dynamique et a l'effet de structure (p. 97)"
+ ]
+}

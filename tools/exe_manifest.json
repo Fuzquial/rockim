@@ -1,0 +1,471 @@
+{
+ "_meta": {
+  "date": "2026-09-05 21:16:54",
+  "root": "C:\\Users\\fuzquianoalricabi\\simulations\\FDEM\\rockim_f2",
+  "journal": "etude_lois_fem\\JOURNAL.md",
+  "n_exe": 49,
+  "n_documentes": 20,
+  "note": "SHA-256 du fichier exe ; journal_row = ligne du tableau « Binaires » de etude_lois_fem/JOURNAL.md dont le motif (`*` = lettres seulement) correspond au nom, sinon « non documente » ; journal_mentions = autres lignes du JOURNAL citant le nom complet"
+ },
+ "exe": [
+  {
+   "name": "rockim_f2.exe",
+   "sha256": "6249f26c3fb9e3bc11f66abb8ea18865b23ed5733f790d8c9c48a4e9fabb9195",
+   "size": 1517056,
+   "mtime": "2026-09-01 14:34:00",
+   "journal_line": null,
+   "journal_row": "non documente",
+   "journal_mentions": []
+  },
+  {
+   "name": "rockim_f2b.exe",
+   "sha256": "5ab696e8a497811183bc7a119b17b366e1ca6c9b2df384d476243863a26a67f7",
+   "size": 1523200,
+   "mtime": "2026-09-01 15:26:36",
+   "journal_line": null,
+   "journal_row": "non documente",
+   "journal_mentions": []
+  },
+  {
+   "name": "rockim_f2c.exe",
+   "sha256": "4aa290682cbcdd11e425cae287cfd6b68e191f83e96921f91d0d0a83c7e8089a",
+   "size": 1523200,
+   "mtime": "2026-09-01 15:34:43",
+   "journal_line": null,
+   "journal_row": "non documente",
+   "journal_mentions": []
+  },
+  {
+   "name": "rockim_f2d.exe",
+   "sha256": "744810fcdbf15a2e391fa442d049fc09e77465ee459f62437a9fb897a76bdf1f",
+   "size": 1522176,
+   "mtime": "2026-09-01 15:58:05",
+   "journal_line": null,
+   "journal_row": "non documente",
+   "journal_mentions": []
+  },
+  {
+   "name": "rockim_f2e.exe",
+   "sha256": "65f8f21343ec9b6dc37dd42740cfe05b55e7f3afe6cd6ba62929390f15e47623",
+   "size": 1536000,
+   "mtime": "2026-09-01 17:38:41",
+   "journal_line": null,
+   "journal_row": "non documente",
+   "journal_mentions": []
+  },
+  {
+   "name": "rockim_f2f.exe",
+   "sha256": "39e43bf62ed1adfb264d5732f027df3f64aa79b3d36222688b792845468cc76e",
+   "size": 1547776,
+   "mtime": "2026-09-01 21:00:53",
+   "journal_line": null,
+   "journal_row": "non documente",
+   "journal_mentions": []
+  },
+  {
+   "name": "rockim_f2g.exe",
+   "sha256": "1d1b9f5c8e3da6d51060b2fedb9f968dd65f2bd41d9fcf79f1d7087cc5e223f1",
+   "size": 1548288,
+   "mtime": "2026-09-01 21:05:55",
+   "journal_line": null,
+   "journal_row": "non documente",
+   "journal_mentions": []
+  },
+  {
+   "name": "rockim_f2h.exe",
+   "sha256": "314648e2c232562dfb99c3fb5fd55e55caffbfbed91a72d6680d9250052c9123",
+   "size": 1559552,
+   "mtime": "2026-09-01 23:30:06",
+   "journal_line": null,
+   "journal_row": "non documente",
+   "journal_mentions": []
+  },
+  {
+   "name": "rockim_f2i.exe",
+   "sha256": "9cd81583585beb3eb46c8e948eb2d64a9434eea7728918386bdee7a179e2c236",
+   "size": 1559552,
+   "mtime": "2026-09-01 23:41:22",
+   "journal_line": null,
+   "journal_row": "non documente",
+   "journal_mentions": []
+  },
+  {
+   "name": "rockim_f2j.exe",
+   "sha256": "1ec3493e38ceb5160c9a0bdab9a93ec7a4136536be0231035c34e1c013c6a630",
+   "size": 1563648,
+   "mtime": "2026-09-02 09:08:35",
+   "journal_line": null,
+   "journal_row": "non documente",
+   "journal_mentions": []
+  },
+  {
+   "name": "rockim_f2k.exe",
+   "sha256": "1653447806167a95ecb00b6879b2018098e0566cdd0a07b6f83952f0309979c0",
+   "size": 1572864,
+   "mtime": "2026-09-02 12:10:01",
+   "journal_line": null,
+   "journal_row": "non documente",
+   "journal_mentions": []
+  },
+  {
+   "name": "rockim_f2l.exe",
+   "sha256": "a32d3641624f88ab4d0413397bb2e553aecb0abe97af87f9ef4ec049c858df88",
+   "size": 1585152,
+   "mtime": "2026-09-02 12:43:00",
+   "journal_line": null,
+   "journal_row": "non documente",
+   "journal_mentions": []
+  },
+  {
+   "name": "rockim_f2m.exe",
+   "sha256": "675ed96f236b7732b30676e5a05ee2ce7f3c82ca8ad03d265eeb9b81a696164a",
+   "size": 1589760,
+   "mtime": "2026-09-02 13:53:09",
+   "journal_line": null,
+   "journal_row": "non documente",
+   "journal_mentions": []
+  },
+  {
+   "name": "rockim_f2n.exe",
+   "sha256": "e711946da3d9d11865f59f60cb2aaf33d38440729de554ecffede852600f72d7",
+   "size": 1590784,
+   "mtime": "2026-09-02 14:04:48",
+   "journal_line": null,
+   "journal_row": "non documente",
+   "journal_mentions": []
+  },
+  {
+   "name": "rockim_f2t0.exe",
+   "sha256": "7bb3e0786f478e744f0dad24f1ebccb39bd76912da03ec0abaf93e2ddfd4acd8",
+   "size": 1596416,
+   "mtime": "2026-09-02 15:47:10",
+   "journal_line": null,
+   "journal_row": "non documente",
+   "journal_mentions": []
+  },
+  {
+   "name": "rockim_f2u.exe",
+   "sha256": "79106ef72cb5fe942d4ce1b92937dab43d1c1333f89db104472df3b6e3753e64",
+   "size": 1606144,
+   "mtime": "2026-09-02 18:33:41",
+   "journal_line": null,
+   "journal_row": "non documente",
+   "journal_mentions": []
+  },
+  {
+   "name": "rockim_f2p_probe.exe",
+   "sha256": "d96dc04ea5a4ad0b747dd7bde472e49b05f4fbf5b69fcffea5601391e9eb4907",
+   "size": 1623040,
+   "mtime": "2026-09-03 14:19:07",
+   "journal_line": null,
+   "journal_row": "non documente",
+   "journal_mentions": []
+  },
+  {
+   "name": "rockim_f2p.exe",
+   "sha256": "3066d9bf912a97fa7f4a4967a60dfc1983daa36c1ffcbd7e46078ac903f30152",
+   "size": 1623040,
+   "mtime": "2026-09-03 14:20:35",
+   "journal_line": null,
+   "journal_row": "non documente",
+   "journal_mentions": []
+  },
+  {
+   "name": "rockim_f2w0.exe",
+   "sha256": "eb5cf1046e97c9b45dee8e63b04f235cac6c048ae0a3df50b5a6850734aa13ec",
+   "size": 1623040,
+   "mtime": "2026-09-03 23:29:31",
+   "journal_line": 12,
+   "journal_row": "| `rockim_f2w0.exe` (03/09 23:29) | vivantes INTACTES (identiques à f2p pour fem3d) | référence de bit-identité (`bitid_w0/`), phase A |",
+   "journal_mentions": []
+  },
+  {
+   "name": "rockim_f2w1a.exe",
+   "sha256": "a21c1b38c74676a992646367f5e0db091bf880fd5ebf73988f8a3c6953e35771",
+   "size": 1637888,
+   "mtime": "2026-09-03 23:44:09",
+   "journal_line": 13,
+   "journal_row": "| `rockim_f2w1*.exe` | intermédiaires (liens PARTIELS après modif d'en-tête : INVALIDES pour fem3d) | ne pas utiliser |",
+   "journal_mentions": []
+  },
+  {
+   "name": "rockim_f2w1.exe",
+   "sha256": "3934bf08ca2210a291b813a8cf0b845f5dccd719f74c239e3c3321606a0158d9",
+   "size": 1655296,
+   "mtime": "2026-09-03 23:47:56",
+   "journal_line": 13,
+   "journal_row": "| `rockim_f2w1*.exe` | intermédiaires (liens PARTIELS après modif d'en-tête : INVALIDES pour fem3d) | ne pas utiliser |",
+   "journal_mentions": []
+  },
+  {
+   "name": "rockim_f2w1b.exe",
+   "sha256": "16c3a32a52d2f8f8fdf16969347c0064c16a79535cf9e41c83ed5c74f15f7f47",
+   "size": 1656320,
+   "mtime": "2026-09-03 23:49:40",
+   "journal_line": 13,
+   "journal_row": "| `rockim_f2w1*.exe` | intermédiaires (liens PARTIELS après modif d'en-tête : INVALIDES pour fem3d) | ne pas utiliser |",
+   "journal_mentions": []
+  },
+  {
+   "name": "rockim_f2w1c.exe",
+   "sha256": "489ef85b837d514858cafa29e513dd422d0a6315150f0c63a3225fd5036c85ef",
+   "size": 1656832,
+   "mtime": "2026-09-03 23:51:23",
+   "journal_line": 13,
+   "journal_row": "| `rockim_f2w1*.exe` | intermédiaires (liens PARTIELS après modif d'en-tête : INVALIDES pour fem3d) | ne pas utiliser |",
+   "journal_mentions": []
+  },
+  {
+   "name": "rockim_f2w1d.exe",
+   "sha256": "5306f490d6460983d0af3465c4cfa8c4cfc9c01455a7c8fc10a99c7f2d5d88f3",
+   "size": 1658368,
+   "mtime": "2026-09-03 23:53:01",
+   "journal_line": 13,
+   "journal_row": "| `rockim_f2w1*.exe` | intermédiaires (liens PARTIELS après modif d'en-tête : INVALIDES pour fem3d) | ne pas utiliser |",
+   "journal_mentions": []
+  },
+  {
+   "name": "rockim_f2w2.exe",
+   "sha256": "df876cae0dc12d32549abe237259b13cadf68520b2eb6ec5750c6858ff58281a",
+   "size": 1656832,
+   "mtime": "2026-09-03 23:56:00",
+   "journal_line": 14,
+   "journal_row": "| `rockim_f2w2.exe` (03/09 23:56) | items 1-5 sans `eroCode`, dpr lisant `capP0` sans garde | phase B (bancs courts), `selftest-triax` OK |",
+   "journal_mentions": []
+  },
+  {
+   "name": "rockim_f2w3.exe",
+   "sha256": "b7767470d4a89b9305fdcaa2f519d36d27b6d09b167efda267aa1670e057d6f3",
+   "size": 1657344,
+   "mtime": "2026-09-04 00:04:49",
+   "journal_line": 15,
+   "journal_row": "| `rockim_f2w3.exe` (04/09 00:04) | + `eroCode` (canal d'érosion), `dprCap` (garde du cap sur dpr) | **bit-identique w0 sur les 10 configs** (`bitid_w3/`) |",
+   "journal_mentions": []
+  },
+  {
+   "name": "rockim_f2w4.exe",
+   "sha256": "ed5cdfe3ebd748519a3307d72e4c42045b53a6064f2cca58b1e2226fd5cc1770",
+   "size": 1657856,
+   "mtime": "2026-09-04 00:21:05",
+   "journal_line": 16,
+   "journal_row": "| `rockim_f2w4.exe` (00:21) | + lame : corps = derrière les DEUX faces (B4 : 15 MN avant) ; `erodeStrainMax` (plafond d'étirement, B3 : cascade sans lui) | bancs B2-B4 rejoués |",
+   "journal_mentions": []
+  },
+  {
+   "name": "rockim_f2w5.exe",
+   "sha256": "e1d6899b2fd919a5c549814f0d280589177219da50e0b55510aa393c86731c4f",
+   "size": 1658368,
+   "mtime": "2026-09-04 00:33:53",
+   "journal_line": 17,
+   "journal_row": "| `rockim_f2w5.exe` (00:33) | + `erodeWfrac` (spall sur l'énergie dissipée) | A2b : wPlas −2·10⁴ J → défaut d'apex trouvé |",
+   "journal_mentions": []
+  },
+  {
+   "name": "rockim_f2w6.exe",
+   "sha256": "fa5d6de6e799a166d1cb251fa0920086deb2da3c48b2f63f3a3e0994821efaf9",
+   "size": 1658368,
+   "mtime": "2026-09-04 00:55:56",
+   "journal_line": 18,
+   "journal_row": "| `rockim_f2w6.exe` (00:53) | + `dpApex` (pas de retour DP au-delà de l'apex), lame : corps borné | phase B : T3 OK, lame µ=0 exacte, mini-bloc stable sans érosion, E1 bande 1,9 lc (h) / 3,0 lc (h/2) ; A2b sain (wPlas +10,7 J, 38 érodés) |",
+   "journal_mentions": []
+  },
+  {
+   "name": "rockim_f2w7.exe",
+   "sha256": "e337416e52b68b87ee714313ed5d9ca5e2f211284643658dfcecee85016ff381",
+   "size": 1659904,
+   "mtime": "2026-09-04 01:33:11",
+   "journal_line": 19,
+   "journal_row": "| `rockim_f2w7.exe` (01:31) | + `dpTension = off`, lame par bissectrice, jauge σ_xx en tranche, `bottomPressure`, wPlas nominal | E1 objectif (1,05), A2b sain (wPlas +8,4 J), bit-identique w0 ; la bissectrice fait perdre le contact de la lame |",
+   "journal_mentions": []
+  },
+  {
+   "name": "rockim_f2w8.exe",
+   "sha256": "221e2f1dbc75601d9053bf10784631623916e4d2e003403d83a88a952eafa359",
+   "size": 1659904,
+   "mtime": "2026-09-04 01:55:11",
+   "journal_line": 20,
+   "journal_row": "| **`rockim_f2w8.exe` (01:57)** | lame : règle par hauteur rétablie | **binaire de la matrice** : lame exacte (tan 20° à 10° et 60° de dépouille), témoin du noyau d'origine (wPlas −2,4·10⁴ J), **bit-identique w0 (10 configs)** |",
+   "journal_mentions": [
+    155
+   ]
+  },
+  {
+   "name": "rockim_f2w9.exe",
+   "sha256": "2a41b4311304b80aa44422b9fa0ba232cccc869429f21ee55ffff696e533d863",
+   "size": 1660416,
+   "mtime": "2026-09-04 06:36:37",
+   "journal_line": null,
+   "journal_row": "non documente",
+   "journal_mentions": []
+  },
+  {
+   "name": "rockim_f2w10.exe",
+   "sha256": "63315321e496db2a2070b3452dc525496bcf7cce5485ec1f748b338f399d80ca",
+   "size": 1668608,
+   "mtime": "2026-09-04 06:50:41",
+   "journal_line": null,
+   "journal_row": "non documente",
+   "journal_mentions": [
+    108
+   ]
+  },
+  {
+   "name": "rockim_f2w11_triax.exe",
+   "sha256": "e5efc1bcdfb15e9ffc7d40faa8bba819b512e1aafec98bc6a22999ec4c11fda7",
+   "size": 1778176,
+   "mtime": "2026-09-04 14:34:16",
+   "journal_line": null,
+   "journal_row": "non documente",
+   "journal_mentions": []
+  },
+  {
+   "name": "rockim_f2w11_gif.exe",
+   "sha256": "e5efc1bcdfb15e9ffc7d40faa8bba819b512e1aafec98bc6a22999ec4c11fda7",
+   "size": 1778176,
+   "mtime": "2026-09-04 15:05:10",
+   "journal_line": null,
+   "journal_row": "non documente",
+   "journal_mentions": []
+  },
+  {
+   "name": "rockim_f2w11.exe",
+   "sha256": "1f8125cb747754c242f8236a4dd314fcc6976250593eb0e709b27843f12818c3",
+   "size": 1801728,
+   "mtime": "2026-09-04 15:16:05",
+   "journal_line": 21,
+   "journal_row": "| `rockim_f2w11.exe` (04/09 13:39, rebuild de revue 14:54) | + loi `cdp` opt-in (Concrete Damaged Plasticity), `selftest-cdp`, `matpoint`, fem3d `pullDelay` / `gripSection` / `triaxStats` — chantier `CONTINUUM/calib_bohus_triax/cdp_rockim/`, doc §5.19 ; revue : ftScale honoré par cdp, `cdpViscosity`, clés `cdp*` inconnues refusées, pilote `Hold1D` réécrit (crochet + Illinois), colonne `residu` / rc 2 de matpoint, exception de la loi relancée hors région OpenMP (`elementForces`) | **bit-identique w10 sur les 10 configs + `fem3d_shear_short` à OMP 14 (`history`, `frames`, `.vtu`)** et sur 7 configs à OMP 4 (`bitid_w11/`, `comparaison*.txt`) ; ne remplace PAS w10 pour la matrice ; chaîne OMP 14 finie : 11/11 identiques. **Rebuild 15:16 (soir)** : + `cdpCompLength` (crack band en compression, opt-in : branche post-pic des tables de compression remise à l'échelle L_ref/lc, gardes G2c/G3/G4), banc (m) de `selftest-cdp` (79 [OK]), colonne `eps_in_c` de matpoint — bit-identique w10 sur 3 configs à OMP 4 (`bitid_w11/w11/`, `comparaison.txt`) |",
+   "journal_mentions": []
+  },
+  {
+   "name": "rockim_f2w11_perc.exe",
+   "sha256": "fceeeabcff5d840edb5798de9379c13b2a5b2b6efbb5f8a760b0455e2a8e509e",
+   "size": 1801728,
+   "mtime": "2026-09-04 16:10:25",
+   "journal_line": null,
+   "journal_row": "non documente",
+   "journal_mentions": []
+  },
+  {
+   "name": "rockim_f2w13d.exe",
+   "sha256": "e8e45d52cc1204d9da564c448d415a5d7f84caed6fcf558d6258bf770357265d",
+   "size": 1826304,
+   "mtime": "2026-09-04 23:54:58",
+   "journal_line": null,
+   "journal_row": "non documente",
+   "journal_mentions": []
+  },
+  {
+   "name": "rockim_f2w12.exe",
+   "sha256": "0a799da6686b2ffd463278b02184e862e79eccb1a83308a24ec57308a01728c4",
+   "size": 1841152,
+   "mtime": "2026-09-05 00:06:16",
+   "journal_line": null,
+   "journal_row": "non documente",
+   "journal_mentions": []
+  },
+  {
+   "name": "rockim_f2w13.exe",
+   "sha256": "656103f40360c36a389328bc7a4af656854c1d8f82c19a58a2c5dc1512f3983d",
+   "size": 1841152,
+   "mtime": "2026-09-05 00:51:57",
+   "journal_line": null,
+   "journal_row": "non documente",
+   "journal_mentions": []
+  },
+  {
+   "name": "rockim_f2w14.exe",
+   "sha256": "f7e303e0571f62c6703d2d7e71e951d1bb4f72fe32594b4b8c7e4a82bab72416",
+   "size": 1846784,
+   "mtime": "2026-09-05 03:44:56",
+   "journal_line": null,
+   "journal_row": "non documente",
+   "journal_mentions": []
+  },
+  {
+   "name": "rockim_f2w15.exe",
+   "sha256": "5046d40767c000c601192d42e2006359de88880cb549be7ce1ef425b4736b431",
+   "size": 1849856,
+   "mtime": "2026-09-05 05:44:05",
+   "journal_line": 22,
+   "journal_row": "| `rockim_f2w15.exe` (05/09 05:44, build complet en place, `Remove-Item *.obj` + `build_f2.cmd`) | + `bulkViscosity = b1 b2` (fem3d, viscosité de volume à la Abaqus/Explicit, opt-in : contrainte visqueuse q I sur les forces internes seulement, colonne `wBulk` en fin de `history.csv` si active, dt CFL × (√(1+b1²) − b1)), `Elem::Jbv` (J du pas précédent), doc §5.20 ¶ bulkViscosity | **bit-identique w14 sur `PQ_cdpI_P020_court` à OMP 2** (`bitid_w15/comparaison_w15.txt`, history/frames/4 vtu, cmp) ; banc `bitid_w15/SELFTEST_bv.md` : `0 0` ≡ sans clé, `0.06 1.2` sonnerie de tête −23 % / wBulk > 0 / dt × 0,94180, `0.3 1.2` −62 % / dt × 0,74403, porte compression du terme quadratique vérifiée ; pas de scénario à volume constant |",
+   "journal_mentions": []
+  },
+  {
+   "name": "rockim_f2w16.exe",
+   "sha256": "569d6b9a122207dc453e3c09e7cd1fddf17aee97a6d1e3868c808bc44eeb30d0",
+   "size": 1858560,
+   "mtime": "2026-09-05 06:13:50",
+   "journal_line": 23,
+   "journal_row": "| `rockim_f2w16.exe` (05/09 06:13, build complet en place, `Remove-Item *.obj` + `build_f2.cmd`) | + `kinematics = biot \\| hencky` (fem3d, opt-in, défaut biot = chemin historique) : hencky = ε = ln U par décomposition spectrale de Fᵀ F (`include/rockim/Fem3dKinematics.hpp`, R = F U⁻¹ exacte), contrainte de la loi lue comme Cauchy co-rotationnelle, forces internes sur la configuration courante P = J R σ U⁻¹ ; doc §5.20 ¶ « Cinématique hencky » | **bit-identique w15 sur `PQ_cdpI_P020_court` à OMP 2** et `kinematics = biot` ≡ sans clé (`bitid_w16/comparaison_w16.txt`, cmp 6/6) ; banc `bitid_w16/SELFTEST_hencky.md` : formes fermées à −0,01 % (biot E(λ−1), hencky λ^(−2ν) E ln λ), mauvaise forme rejetée (+27 % à λ = 0,8), rotation rigide P = 0 (test unitaire 23/23), petites déformations −0,215 % |",
+   "journal_mentions": [
+    277
+   ]
+  },
+  {
+   "name": "rockim_f2w17.exe",
+   "sha256": "81334bf48cc8098918044ecef7e954f2ab6e2bd6785ccd49e7d3e75d8f51a1ba",
+   "size": 1859584,
+   "mtime": "2026-09-05 11:02:59",
+   "journal_line": null,
+   "journal_row": "non documente",
+   "journal_mentions": [
+    276
+   ]
+  },
+  {
+   "name": "rockim_f2w18.exe",
+   "sha256": "655a87329c68b0d88e499a6eebfa73543d5869d9373685ea6430d7c5f1e8c008",
+   "size": 1878528,
+   "mtime": "2026-09-05 13:45:12",
+   "journal_line": null,
+   "journal_row": "non documente",
+   "journal_mentions": [
+    325
+   ]
+  },
+  {
+   "name": "rockim_f2w19.exe",
+   "sha256": "7d31311ef47af436af8c613d065724b570bbf9e7fd6f57e3596e4bd022933988",
+   "size": 1942016,
+   "mtime": "2026-09-05 17:15:03",
+   "journal_line": 24,
+   "journal_row": "| `rockim_f2w19.exe` (05/09 17:15, build complet en place, `Remove-Item *.obj` + `build_f2.cmd` ; après w17 `toolLockXY` et w18 `probes`, non listés ici) | + `tensionDamage = scalar \\| fixed` + `tensionShearRetention = β` (dpr/saksala, opt-in, défaut scalar = chemin actuel) : endommagement de traction à direction figée (fixed crack model Rashid 1968 / Rots 1989), jusqu'à trois directions figées dans le complément orthogonal, cinétique de bande de fissuration (f_t, G_f, l_c) par direction, S_ii (1 − d_i) si ouverte, S_ij (1 − β max d^ouv), `MatState::Fcm`, champs VTU/probes `dFix1..3`, `rockim selftest-fixed` ; doc §5.20 ¶ « Endommagement de traction à direction figée » | **bit-identique w18 sur `PQ_cdpI_P020_court` (cdp) ET sur le deck court dpr `bitid_w19/C_T1_R_P000_court_grid` à OMP 2** (`bitid_w19/comparaison_w19.txt`, cmp 6/6 + 6/6, `scalar` explicite ≡ sans clé 6/6, contrôle `fixed` 6/6 différent) ; banc `bitid_w19/selftest_fixed/SELFTEST_fixed.md` 33/33 : raideur y après fissure x = E (fixed) contre 0,1 E (scalar, rejeté), unilatéral, 45°, stress locking 0,242/0,924, G_f à 0,1 % |",
+   "journal_mentions": [
+    372
+   ]
+  },
+  {
+   "name": "rockim_f2w20.exe",
+   "sha256": "c3a902665eac70463fec6b55830d46c045aeb62c920f5000c039799bad6b6b02",
+   "size": 1980416,
+   "mtime": "2026-09-05 18:08:21",
+   "journal_line": 25,
+   "journal_row": "| `rockim_f2w20.exe` (05/09 18:08, build complet en place, `Remove-Item *.obj` + `build_f2.cmd`) | gardes des entrées C3/C4/C6 (`include/rockim/Guards.hpp`, registre des clés par mode `tools/keys_by_mode.json` / `KeysByMode.hpp`) : nœud orphelin / masse nulle / tet dégénéré = erreur, NaN → code 3 + ERROR.txt, `hydro*` et clé d'un autre mode refusées ; doc §8.10 | **8/8 IDENTIQUE** contre l'ancre bitid w18 (`tools/bitid.py`, 4 fils) ; banc `bitid_w20/selftest_gardes/` 30/30 ; suite fast 48/48 OMP 1 |",
+   "journal_mentions": [
+    443
+   ]
+  },
+  {
+   "name": "rockim_f2w21.exe",
+   "sha256": "c8c748b3b2d383d11df9bf0919bd10fdba8c75dfe8cac9afd3fabfcb5a649523",
+   "size": 2039808,
+   "mtime": "2026-09-05 20:12:51",
+   "journal_line": 26,
+   "journal_row": "| `rockim_f2w21.exe` (05/09 20:12, build complet en place) | **clé inconnue = erreur** (décision Fernando 20:00, C1) : `Config` suit les clés consommées, `include/rockim/KeyGuard.hpp` (obsolète / autre mode / famille dynamique / suggestion Levenshtein ≤ 2 / inconnue, `unknownKeys = error \\| warn`), C7 `config_effective.cfg`, `tools/obsolete_keys.json`, `tools/scan_decks.py` ; doc §8.11 | **8/8 IDENTIQUE** (ancre w18, 4 fils, `bitid_w21/bitid_w21.log`) ; banc `bitid_w21/selftest_cles/` 37/37 ; relecture adverse : D1 (clés à ≥ 2 lecteurs hors mode acceptées) et D2 (`config_effective.cfg` non rejouable) → **remplacé par w22** |",
+   "journal_mentions": [
+    499
+   ]
+  },
+  {
+   "name": "rockim_f2w22.exe",
+   "sha256": "7e683603c53b2f90ad50aa0e5148993653ddffa389302007c8900bbfcc7714bd",
+   "size": 2065920,
+   "mtime": "2026-09-05 20:51:06",
+   "journal_line": 27,
+   "journal_row": "| `rockim_f2w22.exe` (05/09 20:51, build complet en place, `build_w22.log`, sha256 7e683603c53b2f90…) | corrections D1/D2 : règle des **lecteurs** (`kReaders` : clé non consommée légitime ssi le mode courant ou le code partagé la lit, sinon « sans effet en mode Y : cles des modes Z1, Z2 »), `config_effective.cfg` rejouable (défauts commentés, clés du deck non lues gardées actives), `Config::seal()` (plus de verrou ni de chaîne de défaut dans les getters de `step()`) ; `scan_decks.py` : gardes pré-init + fichiers sans clé de solveur | **8/8 IDENTIQUE** (ancre w18, 4 fils, `bitid_w22/bitid_w22.log`) ; banc `selftest_cles` 47/47 (A 21, C 6 rejeux bit-identiques, B 20) ; 0 deck existant sur 957 touché par la règle des lecteurs ; suite fast : `bitid_w22/suite_fast_w22.log` |",
+   "journal_mentions": [
+    527
+   ]
+  }
+ ]
+}

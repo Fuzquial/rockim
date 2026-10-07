@@ -1,0 +1,30 @@
+{
+ "exe": "C:\\Users\\fuzquianoalricabi\\simulations\\FDEM\\rockim_g1\\rockim_g1y16.exe",
+ "exe_sha256": "82c4adc520ecb0d6c6271d0286d1e2452798c9b7197d3fd047d6039c229219a0",
+ "date": "2026-09-12 13:15:27",
+ "refs": "tools/bitid_refs_jointlaw.json",
+ "update": false,
+ "results": {
+  "fdem3d_yang_v2_court": {
+   "rc": 0,
+   "tries": 1,
+   "apex_retries": 0,
+   "wall_total_s": 184.1,
+   "peak_force_N": 0.0,
+   "wall_s": 183.919,
+   "dt_s": 2.82757e-09,
+   "steps": 7074,
+   "hashes": {
+    "history.csv": "467e45653244bacd1ee0412e7a614f8954598e336fd60e6520307554097f25a6",
+    "frames.csv": "f9b2522148cb0b67b0862aa8300d0dfde99169bd90daf7bbcefda3ea7e9bd761",
+    "fdem3d_0002.vtu": "997e417108c59e9a4c4a60901d635f409f876c9d4bd5e93c7b6665f5e82bd950",
+    "fdem3d_joints_0002.vtu": "59b2b196bff44115929ec2af809e70837e453fce0b7f8961e8d6b67f7f1daf0e"
+   },
+   "cfg": "tests_f2/bitid/fdem3d_yang_v2_court.cfg",
+   "mode": "fdem3d",
+   "law": "(joints cohesifs, conventions Solidity, DIF continu)",
+   "threads": 4,
+   "verdict": "IDENTIQUE"
+  }
+ }
+}

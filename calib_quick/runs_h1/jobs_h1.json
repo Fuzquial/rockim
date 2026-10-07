@@ -1,0 +1,1052 @@
+[
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_000_BTS.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_000_BTS",
+  "id": "h1_000",
+  "conf": "BTS",
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_000_P020.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_000_P020",
+  "id": "h1_000",
+  "conf": 20.0,
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_000_P050.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_000_P050",
+  "id": "h1_000",
+  "conf": 50.0,
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_001_BTS.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_001_BTS",
+  "id": "h1_001",
+  "conf": "BTS",
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_001_P020.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_001_P020",
+  "id": "h1_001",
+  "conf": 20.0,
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_001_P050.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_001_P050",
+  "id": "h1_001",
+  "conf": 50.0,
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_002_BTS.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_002_BTS",
+  "id": "h1_002",
+  "conf": "BTS",
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_002_P020.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_002_P020",
+  "id": "h1_002",
+  "conf": 20.0,
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_002_P050.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_002_P050",
+  "id": "h1_002",
+  "conf": 50.0,
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_003_BTS.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_003_BTS",
+  "id": "h1_003",
+  "conf": "BTS",
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_003_P020.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_003_P020",
+  "id": "h1_003",
+  "conf": 20.0,
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_003_P050.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_003_P050",
+  "id": "h1_003",
+  "conf": 50.0,
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_004_BTS.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_004_BTS",
+  "id": "h1_004",
+  "conf": "BTS",
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_004_P020.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_004_P020",
+  "id": "h1_004",
+  "conf": 20.0,
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_004_P050.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_004_P050",
+  "id": "h1_004",
+  "conf": 50.0,
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_005_BTS.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_005_BTS",
+  "id": "h1_005",
+  "conf": "BTS",
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_005_P020.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_005_P020",
+  "id": "h1_005",
+  "conf": 20.0,
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_005_P050.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_005_P050",
+  "id": "h1_005",
+  "conf": 50.0,
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_006_BTS.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_006_BTS",
+  "id": "h1_006",
+  "conf": "BTS",
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_006_P020.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_006_P020",
+  "id": "h1_006",
+  "conf": 20.0,
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_006_P050.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_006_P050",
+  "id": "h1_006",
+  "conf": 50.0,
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_007_BTS.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_007_BTS",
+  "id": "h1_007",
+  "conf": "BTS",
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_007_P020.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_007_P020",
+  "id": "h1_007",
+  "conf": 20.0,
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_007_P050.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_007_P050",
+  "id": "h1_007",
+  "conf": 50.0,
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_008_BTS.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_008_BTS",
+  "id": "h1_008",
+  "conf": "BTS",
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_008_P020.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_008_P020",
+  "id": "h1_008",
+  "conf": 20.0,
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_008_P050.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_008_P050",
+  "id": "h1_008",
+  "conf": 50.0,
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_009_BTS.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_009_BTS",
+  "id": "h1_009",
+  "conf": "BTS",
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_009_P020.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_009_P020",
+  "id": "h1_009",
+  "conf": 20.0,
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_009_P050.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_009_P050",
+  "id": "h1_009",
+  "conf": 50.0,
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_010_BTS.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_010_BTS",
+  "id": "h1_010",
+  "conf": "BTS",
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_010_P020.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_010_P020",
+  "id": "h1_010",
+  "conf": 20.0,
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_010_P050.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_010_P050",
+  "id": "h1_010",
+  "conf": 50.0,
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_011_BTS.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_011_BTS",
+  "id": "h1_011",
+  "conf": "BTS",
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_011_P020.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_011_P020",
+  "id": "h1_011",
+  "conf": 20.0,
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_011_P050.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_011_P050",
+  "id": "h1_011",
+  "conf": 50.0,
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_012_BTS.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_012_BTS",
+  "id": "h1_012",
+  "conf": "BTS",
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_012_P020.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_012_P020",
+  "id": "h1_012",
+  "conf": 20.0,
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_012_P050.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_012_P050",
+  "id": "h1_012",
+  "conf": 50.0,
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_013_BTS.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_013_BTS",
+  "id": "h1_013",
+  "conf": "BTS",
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_013_P020.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_013_P020",
+  "id": "h1_013",
+  "conf": 20.0,
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_013_P050.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_013_P050",
+  "id": "h1_013",
+  "conf": 50.0,
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_014_BTS.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_014_BTS",
+  "id": "h1_014",
+  "conf": "BTS",
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_014_P020.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_014_P020",
+  "id": "h1_014",
+  "conf": 20.0,
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_014_P050.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_014_P050",
+  "id": "h1_014",
+  "conf": 50.0,
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_015_BTS.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_015_BTS",
+  "id": "h1_015",
+  "conf": "BTS",
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_015_P020.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_015_P020",
+  "id": "h1_015",
+  "conf": 20.0,
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_015_P050.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_015_P050",
+  "id": "h1_015",
+  "conf": 50.0,
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_016_BTS.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_016_BTS",
+  "id": "h1_016",
+  "conf": "BTS",
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_016_P020.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_016_P020",
+  "id": "h1_016",
+  "conf": 20.0,
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_016_P050.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_016_P050",
+  "id": "h1_016",
+  "conf": 50.0,
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_017_BTS.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_017_BTS",
+  "id": "h1_017",
+  "conf": "BTS",
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_017_P020.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_017_P020",
+  "id": "h1_017",
+  "conf": 20.0,
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_017_P050.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_017_P050",
+  "id": "h1_017",
+  "conf": 50.0,
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_018_BTS.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_018_BTS",
+  "id": "h1_018",
+  "conf": "BTS",
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_018_P020.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_018_P020",
+  "id": "h1_018",
+  "conf": 20.0,
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_018_P050.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_018_P050",
+  "id": "h1_018",
+  "conf": 50.0,
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_019_BTS.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_019_BTS",
+  "id": "h1_019",
+  "conf": "BTS",
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_019_P020.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_019_P020",
+  "id": "h1_019",
+  "conf": 20.0,
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_019_P050.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_019_P050",
+  "id": "h1_019",
+  "conf": 50.0,
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_020_BTS.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_020_BTS",
+  "id": "h1_020",
+  "conf": "BTS",
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_020_P020.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_020_P020",
+  "id": "h1_020",
+  "conf": 20.0,
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_020_P050.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_020_P050",
+  "id": "h1_020",
+  "conf": 50.0,
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_021_BTS.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_021_BTS",
+  "id": "h1_021",
+  "conf": "BTS",
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_021_P020.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_021_P020",
+  "id": "h1_021",
+  "conf": 20.0,
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_021_P050.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_021_P050",
+  "id": "h1_021",
+  "conf": 50.0,
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_022_BTS.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_022_BTS",
+  "id": "h1_022",
+  "conf": "BTS",
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_022_P020.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_022_P020",
+  "id": "h1_022",
+  "conf": 20.0,
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_022_P050.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_022_P050",
+  "id": "h1_022",
+  "conf": 50.0,
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_023_BTS.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_023_BTS",
+  "id": "h1_023",
+  "conf": "BTS",
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_023_P020.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_023_P020",
+  "id": "h1_023",
+  "conf": 20.0,
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_023_P050.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_023_P050",
+  "id": "h1_023",
+  "conf": 50.0,
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_024_BTS.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_024_BTS",
+  "id": "h1_024",
+  "conf": "BTS",
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_024_P020.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_024_P020",
+  "id": "h1_024",
+  "conf": 20.0,
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_024_P050.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_024_P050",
+  "id": "h1_024",
+  "conf": 50.0,
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_025_BTS.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_025_BTS",
+  "id": "h1_025",
+  "conf": "BTS",
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_025_P020.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_025_P020",
+  "id": "h1_025",
+  "conf": 20.0,
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_025_P050.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_025_P050",
+  "id": "h1_025",
+  "conf": 50.0,
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_026_BTS.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_026_BTS",
+  "id": "h1_026",
+  "conf": "BTS",
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_026_P020.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_026_P020",
+  "id": "h1_026",
+  "conf": 20.0,
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_026_P050.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_026_P050",
+  "id": "h1_026",
+  "conf": 50.0,
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_027_BTS.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_027_BTS",
+  "id": "h1_027",
+  "conf": "BTS",
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_027_P020.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_027_P020",
+  "id": "h1_027",
+  "conf": 20.0,
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_027_P050.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_027_P050",
+  "id": "h1_027",
+  "conf": 50.0,
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_028_BTS.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_028_BTS",
+  "id": "h1_028",
+  "conf": "BTS",
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_028_P020.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_028_P020",
+  "id": "h1_028",
+  "conf": 20.0,
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_028_P050.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_028_P050",
+  "id": "h1_028",
+  "conf": 50.0,
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_029_BTS.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_029_BTS",
+  "id": "h1_029",
+  "conf": "BTS",
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_029_P020.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_029_P020",
+  "id": "h1_029",
+  "conf": 20.0,
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_029_P050.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_029_P050",
+  "id": "h1_029",
+  "conf": 50.0,
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_030_BTS.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_030_BTS",
+  "id": "h1_030",
+  "conf": "BTS",
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_030_P020.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_030_P020",
+  "id": "h1_030",
+  "conf": 20.0,
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_030_P050.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_030_P050",
+  "id": "h1_030",
+  "conf": 50.0,
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_031_BTS.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_031_BTS",
+  "id": "h1_031",
+  "conf": "BTS",
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_031_P020.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_031_P020",
+  "id": "h1_031",
+  "conf": 20.0,
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_031_P050.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_031_P050",
+  "id": "h1_031",
+  "conf": 50.0,
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_032_BTS.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_032_BTS",
+  "id": "h1_032",
+  "conf": "BTS",
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_032_P020.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_032_P020",
+  "id": "h1_032",
+  "conf": 20.0,
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_032_P050.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_032_P050",
+  "id": "h1_032",
+  "conf": 50.0,
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_033_BTS.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_033_BTS",
+  "id": "h1_033",
+  "conf": "BTS",
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_033_P020.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_033_P020",
+  "id": "h1_033",
+  "conf": 20.0,
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_033_P050.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_033_P050",
+  "id": "h1_033",
+  "conf": 50.0,
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_034_BTS.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_034_BTS",
+  "id": "h1_034",
+  "conf": "BTS",
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_034_P020.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_034_P020",
+  "id": "h1_034",
+  "conf": 20.0,
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_034_P050.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_034_P050",
+  "id": "h1_034",
+  "conf": 50.0,
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_035_BTS.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_035_BTS",
+  "id": "h1_035",
+  "conf": "BTS",
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_035_P020.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_035_P020",
+  "id": "h1_035",
+  "conf": 20.0,
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_035_P050.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_035_P050",
+  "id": "h1_035",
+  "conf": 50.0,
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_036_BTS.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_036_BTS",
+  "id": "h1_036",
+  "conf": "BTS",
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_036_P020.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_036_P020",
+  "id": "h1_036",
+  "conf": 20.0,
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_036_P050.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_036_P050",
+  "id": "h1_036",
+  "conf": 50.0,
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_037_BTS.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_037_BTS",
+  "id": "h1_037",
+  "conf": "BTS",
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_037_P020.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_037_P020",
+  "id": "h1_037",
+  "conf": 20.0,
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_037_P050.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_037_P050",
+  "id": "h1_037",
+  "conf": 50.0,
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_038_BTS.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_038_BTS",
+  "id": "h1_038",
+  "conf": "BTS",
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_038_P020.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_038_P020",
+  "id": "h1_038",
+  "conf": 20.0,
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_038_P050.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_038_P050",
+  "id": "h1_038",
+  "conf": 50.0,
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_039_BTS.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_039_BTS",
+  "id": "h1_039",
+  "conf": "BTS",
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_039_P020.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_039_P020",
+  "id": "h1_039",
+  "conf": 20.0,
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_039_P050.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_039_P050",
+  "id": "h1_039",
+  "conf": 50.0,
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_040_BTS.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_040_BTS",
+  "id": "h1_040",
+  "conf": "BTS",
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_040_P020.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_040_P020",
+  "id": "h1_040",
+  "conf": 20.0,
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_040_P050.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_040_P050",
+  "id": "h1_040",
+  "conf": 50.0,
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_041_BTS.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_041_BTS",
+  "id": "h1_041",
+  "conf": "BTS",
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_041_P020.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_041_P020",
+  "id": "h1_041",
+  "conf": 20.0,
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_041_P050.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_041_P050",
+  "id": "h1_041",
+  "conf": 50.0,
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_042_BTS.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_042_BTS",
+  "id": "h1_042",
+  "conf": "BTS",
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_042_P020.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_042_P020",
+  "id": "h1_042",
+  "conf": 20.0,
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_042_P050.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_042_P050",
+  "id": "h1_042",
+  "conf": 50.0,
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_043_BTS.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_043_BTS",
+  "id": "h1_043",
+  "conf": "BTS",
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_043_P020.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_043_P020",
+  "id": "h1_043",
+  "conf": 20.0,
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_043_P050.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_043_P050",
+  "id": "h1_043",
+  "conf": 50.0,
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_044_BTS.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_044_BTS",
+  "id": "h1_044",
+  "conf": "BTS",
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_044_P020.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_044_P020",
+  "id": "h1_044",
+  "conf": 20.0,
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_044_P050.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_044_P050",
+  "id": "h1_044",
+  "conf": 50.0,
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_045_BTS.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_045_BTS",
+  "id": "h1_045",
+  "conf": "BTS",
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_045_P020.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_045_P020",
+  "id": "h1_045",
+  "conf": 20.0,
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_045_P050.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_045_P050",
+  "id": "h1_045",
+  "conf": 50.0,
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_046_BTS.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_046_BTS",
+  "id": "h1_046",
+  "conf": "BTS",
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_046_P020.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_046_P020",
+  "id": "h1_046",
+  "conf": 20.0,
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_046_P050.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_046_P050",
+  "id": "h1_046",
+  "conf": 50.0,
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_047_BTS.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_047_BTS",
+  "id": "h1_047",
+  "conf": "BTS",
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_047_P020.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_047_P020",
+  "id": "h1_047",
+  "conf": 20.0,
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_047_P050.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_047_P050",
+  "id": "h1_047",
+  "conf": 50.0,
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_048_BTS.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_048_BTS",
+  "id": "h1_048",
+  "conf": "BTS",
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_048_P020.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_048_P020",
+  "id": "h1_048",
+  "conf": 20.0,
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_048_P050.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_048_P050",
+  "id": "h1_048",
+  "conf": 50.0,
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_049_BTS.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_049_BTS",
+  "id": "h1_049",
+  "conf": "BTS",
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_049_P020.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_049_P020",
+  "id": "h1_049",
+  "conf": 20.0,
+  "seed": null
+ },
+ {
+  "cfg": "calib_quick\\runs_h1\\h1_h1_049_P050.cfg",
+  "out": "calib_quick\\runs_h1\\out_h1_h1_049_P050",
+  "id": "h1_049",
+  "conf": 50.0,
+  "seed": null
+ }
+]

@@ -1,0 +1,10 @@
+cle,cas,unite,residu,residu_pct_echelle,verdict,Ec0,Ec_fin,ratio_injection_outil
+bar,"barre en traction, élastique (fdem3d)",J,-5.59614e-17,6.92359e-13,OK,0,3.12021e-08,
+rupt,"barre, rupture adaptative (fdem3d)",J,-4.58925e-08,6.8108e-05,OK,0,0.000387753,
+zl_bench1,deux corps au repos (fdem3d),J,-5.151e-24,0.00141753,OK (zero machine),0,3.65048e-22,
+perc3d_20us,"percussion 3D, 20 µs (fdem3d)",J,-1.48277e-10,2.57028e-08,OK,0,0.0145012,
+perc_goff,"pesanteur non comptée (fdem3d, 2 µs)",J,1.71064e-10,116.344,CHECK,0,1.47032e-10,
+perc_gon,"pesanteur comptée (fdem3d, 2 µs)",J,-1.64459e-13,0.0838693,OK,0,1.47032e-10,
+t1_pen,"raclage T1, pénalité (fdem)",J/m,5.66436e-13,1.5903e-12,OK,0,0.815713,2.98519
+t1_sig,"raclage T1, Signorini (fdem)",J/m,-2.73115e-14,5.67523e-13,OK,0,1.16686,0.904801
+perc2d,"percussion 2D, 250 µs (fdem)",J/m,-0.578774,0.00315025,OK,0,193.533,0.786245

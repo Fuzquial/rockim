@@ -1,0 +1,247 @@
+{
+ "source": "Guo L. (2014), Development of a three-dimensional fracture model for the combined finite-discrete element method, PhD thesis, Imperial College London, chapitre 3",
+ "fichiers": {
+  "texte": "~/phd_geothermie_git/bibliographie/Guo-L-2014-PhD-Thesis_split/texte/03_Validation_tests.txt",
+  "pdf_33": "sections/03.3_Three_point_bending_tests.pdf",
+  "pdf_34": "sections/03.4_Brazilian_tests.pdf"
+ },
+ "methode_lecture": "Tableaux et textes recopies. Pics des figures 3.3, 3.7 et 3.9 lus par numerisation des pixels (pdftoppm 300 dpi, sommet de chaque courbe coloree hors legende, axes cales sur les graduations). Incertitude de lecture : 1 pixel = 0,39 N (fig. 3.3 et 3.7), 2,8 N (fig. 3.9) ; on retient +/- 3 N et +/- 15 N en incluant l'epaisseur du trait.",
+ "P41_flexion_trois_points": {
+  "section": "§3.3, p. 104-119",
+  "geometrie": {
+   "L_mm": 320,
+   "h_mm": 40,
+   "b_mm": 20,
+   "axes": "L selon x, h selon y, b selon z",
+   "page": "p. 104, fig. 3.1a"
+  },
+  "portee": {
+   "valeur_mm": 314,
+   "incertitude_mm": 4,
+   "origine": "non cotee ; appuis au ras des extremites sur la fig. 3.1a, platines d'environ 6 mm (maille des platines ~6 mm, 87 elements pour 3 platines)"
+  },
+  "chargement": {
+   "Vy_m_s": [
+    0.02,
+    0.01,
+    0.005,
+    0.002
+   ],
+   "rampe_s": 0.001,
+   "forme": "rampe lineaire puis palier (fig. 3.2)",
+   "platines": "les trois platines bougent : poincon vers le bas, appuis vers le haut, chacun a Vy (vitesse relative 2 Vy)",
+   "page": "p. 105-107"
+  },
+  "materiaux": {
+   "tableau": "3.1, p. 106",
+   "poutre": {
+    "rho": 2340,
+    "E_GPa": 26,
+    "nu": 0.2,
+    "ft_MPa": 3,
+    "c_MPa": 10.5,
+    "phi_deg": 30,
+    "Gf_J_m2": 30
+   },
+   "platine_acier": {
+    "rho": 7850,
+    "E_GPa": 200,
+    "nu": 0.28,
+    "loi": "viscoelastique, sans rupture"
+   }
+  },
+  "frottement": {
+   "fissure": 0.6,
+   "platine_eprouvette": 0.1,
+   "page": "p. 106"
+  },
+  "maillage": {
+   "type": "tets structures a 4 noeuds (24 par cube)",
+   "h2p5": {
+    "h_mm": 2.5,
+    "n_el_poutre": 393216,
+    "n_el_platines": 87,
+    "dt_s": 1e-08
+   },
+   "h5": {
+    "h_mm": 5,
+    "n_el_poutre": 49152,
+    "n_el_platines": 87,
+    "dt_s": 2e-08
+   },
+   "page": "p. 106-107, 114"
+  },
+  "mesure": "F = force de contact verticale platine superieure / poutre ; delta_y = deplacement vertical maximal de la poutre (centre), definition absolue ou relative non precisee",
+  "pics_fig33_h2p5": {
+   "figure": "3.3, p. 108",
+   "Vy_0p02": {
+    "F_N": 305.5,
+    "delta_mm": 0.151
+   },
+   "Vy_0p01": {
+    "F_N": 300.4,
+    "delta_mm": 0.151
+   },
+   "Vy_0p005": {
+    "F_N": 298.5,
+    "delta_mm": 0.151
+   },
+   "Vy_0p002": {
+    "F_N": 298.9,
+    "delta_mm": 0.151
+   },
+   "incertitude_F_N": 3,
+   "incertitude_delta_mm": 0.003,
+   "texte": "pic legerement plus haut a 0,02 m/s, converge sous 0,01 m/s"
+  },
+  "pics_fig37_Vy0p005": {
+   "figure": "3.7, p. 119",
+   "h2p5": {
+    "F_N": 298.8,
+    "delta_mm": 0.15
+   },
+   "h5": {
+    "F_N": 279.3,
+    "delta_mm": 0.137
+   },
+   "incertitude_F_N": 3,
+   "texte": "pic plus faible a 5 mm, attribue a la raideur des joints (p. 119)"
+  },
+  "fleches_fig34": {
+   "figure": "3.4, p. 109-113 (Vy = 0,005 m/s, 2,5 mm)",
+   "amorcage_mm": 0.153,
+   "traversee_mm": 0.21
+  },
+  "derives": {
+   "raideur_secante_N_par_mm": {
+    "valeur": 2000,
+    "incertitude": 100,
+    "calcul": "300 N / 0,15 mm, fig. 3.3"
+   },
+   "MOR_MPa": {
+    "valeur": 4.42,
+    "calcul": "3 F L / (2 b h^2) avec F = 299 N, L = 315 mm",
+    "incertitude_MPa": 0.07
+   },
+   "MOR_sur_ft": 1.47
+  }
+ },
+ "P42_bresilien": {
+  "section": "§3.4, p. 119-128",
+  "geometrie": {
+   "D_mm": 40,
+   "t_mm": 15,
+   "axe": "z",
+   "page": "p. 120, fig. 3.8"
+  },
+  "chargement": {
+   "Vy_m_s": [
+    0.1,
+    0.05,
+    0.02,
+    0.01
+   ],
+   "rampe_s": 0.0002,
+   "platines": "deux platines planes rigides, sens opposes, chacune a Vy",
+   "page": "p. 120-122"
+  },
+  "materiaux": {
+   "tableau": "3.2, p. 121",
+   "disque": {
+    "rho": 2340,
+    "E_GPa": 26,
+    "nu": 0.2,
+    "ft_MPa": 3,
+    "c_MPa": 15,
+    "phi_deg": 30,
+    "Gf_J_m2": 50
+   },
+   "platines": "rigides, sans proprietes"
+  },
+  "frottement": {
+   "fissure": 0.6,
+   "platine_eprouvette": 0.1,
+   "page": "p. 121"
+  },
+  "maillage": {
+   "type": "tets non structures",
+   "h_mm": 1.2,
+   "n_el_disque": 51690,
+   "n_el_platines": 2854,
+   "dt_s": 2e-09,
+   "page": "p. 121"
+  },
+  "mesure": {
+   "F": "moyenne des forces de contact des deux platines (eq. 3.1)",
+   "eps_yy": "Delta d / d, d = distance entre platines (eq. 3.2)",
+   "f_bt": "2F/(pi d t) (eq. 3.3)"
+  },
+  "pic_texte": {
+   "Vy_m_s": 0.01,
+   "F_N": 1844.76,
+   "f_bt_MPa": 1.96,
+   "page": "p. 123",
+   "note": "2 x 1844,76 / (pi 0,04 0,015) = 1,957 MPa"
+  },
+  "pics_fig39": {
+   "figure": "3.9, p. 122",
+   "Vy_0p1": {
+    "F_N": 2288,
+    "eps_pct": 2.26
+   },
+   "Vy_0p05": {
+    "F_N": 2060,
+    "eps_pct": 1.96
+   },
+   "Vy_0p02": {
+    "F_N": 1795,
+    "eps_pct": 1.76
+   },
+   "Vy_0p01": {
+    "F_N": 1809,
+    "eps_pct": 1.76
+   },
+   "incertitude_F_N": 15,
+   "incertitude_eps_pct": 0.02,
+   "note": "la courbe a 0,01 m/s plafonne a 1 809 N sur la figure contre 1 844,76 N dans le texte (-1,9 %) ; le texte fait foi"
+  },
+  "deformations_fig310": {
+   "figure": "3.10 (0,01 m/s)",
+   "eps_pct": [
+    1.03,
+    1.59,
+    3.11,
+    3.15,
+    4.01,
+    4.15
+   ],
+   "amorcage": "fissures de cisaillement aux platines d'abord (b), puis fissure centrale"
+  },
+  "derives": {
+   "f_bt_sur_ft": 0.653,
+   "raideur_secante_initiale_N_par_mm": {
+    "valeur": 3200,
+    "incertitude": 300,
+    "calcul": "1 000 N a eps = 0,78 % (Delta d = 0,31 mm)"
+   },
+   "remarque": "un disque elastique E = 26 GPa entre platines rigides se rapproche d'environ 0,04 mm a 2 800 N (Johnson 1985), soit eps ~ 0,1 % : la deformation de Guo est 15 a 20 fois plus grande ; raideur de Guo non physique (joints intrinseques, penalites), ou axe en pour mille mal etiquete"
+  }
+ },
+ "valeurs_cles": {
+  "P41": {
+   "F_peak_h2p5": 298.8,
+   "F_peak_h5": 279.3,
+   "F_peak_h2p5_v0p02": 305.5,
+   "MOR": 4420000.0,
+   "incertitude_F": 3.0
+  },
+  "P42": {
+   "F_peak_v0p01": 1844.76,
+   "f_bt": 1957000.0,
+   "F_peak_v0p02": 1795.0,
+   "F_peak_v0p05": 2060.0,
+   "F_peak_v0p1": 2288.0,
+   "incertitude_F": 15.0
+  }
+ }
+}

@@ -65,6 +65,7 @@ private:
     void contactForces();
     void wallAndToolForces();
     void integrate();
+    void checkFinite();                  // C4 (w20) : NaN/Inf reel
     void rebuildGrid();
     void toolParticleContact(Part& p);
 
@@ -83,6 +84,7 @@ private:
     double r_ = 1.25e-3;
     std::string packing_ = "hex";
 
+    long nanEvery_ = 256, nanStep_ = 0;  // nanCheckEvery (C4, w20)
     std::vector<Part> p_;
     std::vector<Bond> b_;
     long nBroken_ = 0;
@@ -92,7 +94,6 @@ private:
 
     // contact / bond micro-parameters
     double knC_ = 0, ksC_ = 0, mu_ = 0.5, xiC_ = 0.1;
-    double kbn_ = 0;                  // bond modulus per length: E / L0 (per bond, via knA)
     double ksRatio_ = 0.4;
     double tanPhiB_ = 0;
     double lambda_ = 1.0;             // bond radius factor: Rb = lambda*min(ri,rj)

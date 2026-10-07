@@ -1,0 +1,174 @@
+{
+ "exe": "C:\\Users\\fuzquianoalricabi\\simulations\\FDEM\\rockim_g1\\rockim_g1.exe",
+ "exe_sha256": "563d82794ef55a0ab57f9926b3e7308fdb50b087a325d58efd665bfd490036d6",
+ "date": "2026-09-11 11:15:57",
+ "refs": "C:\\Users\\fuzquianoalricabi\\simulations\\FDEM\\rockim_g1\\tools\\bitid_refs.json",
+ "update": false,
+ "results": {
+  "fem3d_cdp_PQ_court": {
+   "rc": 0,
+   "tries": 1,
+   "apex_retries": 0,
+   "wall_total_s": 62.0,
+   "peak_force_N": 7916.75,
+   "wall_s": 61.7448,
+   "dt_s": 1.23807e-08,
+   "steps": 10501,
+   "hashes": {
+    "history.csv": "b94eab939d501b29486be019e935c70924bec4d34657b2bd3b4de182d02c59f7",
+    "frames.csv": "6670a60ed53648e0962f3a40fdbea15400eab92b18a8bd7c5d4f106b596bbca6",
+    "fem3d_0003.vtu": "e2e42e15c8fbdf2d58d9e1fb3865a7acd78e3b6c577fc80df4bdd370fd8ffa96"
+   },
+   "cfg": "tests_f2/bitid/fem3d_cdp_PQ_court.cfg",
+   "mode": "fem3d",
+   "law": "cdp",
+   "threads": 4,
+   "verdict": "IDENTIQUE"
+  },
+  "fem3d_dpr_T1_court": {
+   "rc": 0,
+   "tries": 1,
+   "apex_retries": 0,
+   "wall_total_s": 165.0,
+   "peak_force_N": 6775.14,
+   "wall_s": 163.905,
+   "dt_s": 1.27045e-08,
+   "steps": 1968,
+   "hashes": {
+    "history.csv": "d228f05a35777e3190b2b821d492c1f87f485f95c7e2a6633ac7a224b4185faa",
+    "frames.csv": "14d5f7f70b97905dc56b8b80bcc3cb690b162f6444046043c3370d8699164eac",
+    "fem3d_0002.vtu": "a091dbf168fb6a8455b3a25134b1be236b7b4e54d36ebb9b8d6fb6aa8f242560"
+   },
+   "cfg": "tests_f2/bitid/fem3d_dpr_T1_court.cfg",
+   "mode": "fem3d",
+   "law": "dpr",
+   "threads": 4,
+   "verdict": "IDENTIQUE"
+  },
+  "fem3d_sk2011_cyl_court": {
+   "rc": 0,
+   "tries": 1,
+   "apex_retries": 0,
+   "wall_total_s": 69.1,
+   "peak_force_N": 30390.2,
+   "wall_s": 68.599,
+   "dt_s": 1.77513e-07,
+   "steps": 1127,
+   "hashes": {
+    "history.csv": "f1f08fe6c8edb2008eb25097f97f0044c997e7b2c49eaa892a0b5a473baa9d65",
+    "frames.csv": "6f4b7a8006182f30f4cc5cbc47d7c684e07f12dc5a2ffd525a6faa14d19bfd06",
+    "fem3d_0003.vtu": "da88a5ba839b1d628374380fd6bd8a9c496378da64d1173275fa08e7ffc47ef1"
+   },
+   "cfg": "tests_f2/bitid/fem3d_sk2011_cyl_court.cfg",
+   "mode": "fem3d",
+   "law": "saksala2011",
+   "threads": 4,
+   "verdict": "IDENTIQUE"
+  },
+  "fdem3d_kuru9_court": {
+   "rc": 0,
+   "tries": 1,
+   "apex_retries": 0,
+   "wall_total_s": 141.1,
+   "peak_force_N": 0.0,
+   "wall_s": 140.477,
+   "dt_s": 3.61373e-09,
+   "steps": 2768,
+   "hashes": {
+    "history.csv": "1c0d7cba74fe1c866d6b691a90f1c9b2cec18ca9e1cc6e2a087ed61d8d801774",
+    "frames.csv": "b6e78ab13daadbc282eca03638c83804c3c0c4bd798decf9c21cfbc7f1fdf6cb",
+    "fdem3d_0002.vtu": "e44b5aa3d1fd8f857bf3e8e7c77b18cf5b0c6019241305a23cbcef74532ecf15",
+    "fdem3d_joints_0002.vtu": "56d504dfee1e8a722d34766ee1b4420e250f739f3bbd76ce8b564b484b6cace4"
+   },
+   "cfg": "tests_f2/bitid/fdem3d_kuru9_court.cfg",
+   "mode": "fdem3d",
+   "law": "(joints cohesifs + bulkDamage yang)",
+   "threads": 4,
+   "verdict": "IDENTIQUE"
+  },
+  "fdem3d_cut3d_heilman_court": {
+   "rc": 0,
+   "tries": 1,
+   "apex_retries": 0,
+   "wall_total_s": 47.7,
+   "peak_force_N": 19541.3,
+   "wall_s": 47.3216,
+   "dt_s": 1.54296e-09,
+   "steps": 3889,
+   "hashes": {
+    "history.csv": "abcbbdad4ef39a74f921ed86ec2ed3eb22d72deb358cf2a2dc8c13c4ce9034d6",
+    "frames.csv": "f5604b32880fc9ff32e87bacb508ea869eca78cbd2a0d8626cefe2abebf7c6c4",
+    "fdem3d_0003.vtu": "a8922a4e3d7c02e969e64ced9272064507a52aba69a00a39e000c40cdfbabe00",
+    "fdem3d_joints_0003.vtu": "1c8a348e8113179d3ef5bf3a8cefd69fb24dd7995a8f71e3d4aca941861877d9"
+   },
+   "cfg": "tests_f2/bitid/fdem3d_cut3d_heilman_court.cfg",
+   "mode": "fdem3d",
+   "law": "(joints cohesifs, volume elastique)",
+   "threads": 4,
+   "verdict": "IDENTIQUE"
+  },
+  "fdem3d_visc_yan_3d": {
+   "rc": 0,
+   "tries": 1,
+   "apex_retries": 0,
+   "wall_total_s": 132.2,
+   "peak_force_N": null,
+   "wall_s": 132.075,
+   "dt_s": 7.15193e-09,
+   "steps": 19576,
+   "hashes": {
+    "history.csv": "d5e75bf8a679913fea106235c90a7791c78bb657f3556ef87eb98a236866f58d",
+    "frames.csv": "37943002f9c24c388eaaa3da0c5d43db77dc4f8110774ac53fe40613f296c2e2",
+    "fdem3d_0002.vtu": "3feb409709a875b5ee7b0b93005aadc90b38166a9fa78e78f500cf6e92aa5c12",
+    "fdem3d_joints_0002.vtu": "af143536820122cd7c5805b51b08a3f5a8d9c11bf288fac66c33148b3bc9e718"
+   },
+   "cfg": "tests_f2/bitid/fdem3d_visc_yan_3d.cfg",
+   "mode": "fdem3d",
+   "law": "(joints cohesifs + viscosite Yan)",
+   "threads": 4,
+   "verdict": "IDENTIQUE"
+  },
+  "fdem_toolcontact_signorini": {
+   "rc": 0,
+   "tries": 1,
+   "apex_retries": 0,
+   "wall_total_s": 36.8,
+   "peak_force_N": 205788.0,
+   "wall_s": 36.7365,
+   "dt_s": 1.46053e-09,
+   "steps": 205405,
+   "hashes": {
+    "history.csv": "cca67df9d8aef5fddb89174d910894c7cedf3108f2777d5ebe32680846a8c888",
+    "frames.csv": "13f14bd526e2f9204aaa8122ea69fb2ca8f57104fd61b002ff9d6c4b29f48d71",
+    "fdem_0007.vtu": "e3de044d793467285f489989d45406d99803728f6121b0962d031c8c490c368a",
+    "fdem_joints_0007.vtu": "86d5b2b945f1c4606030a71b80fd5626f57bb8d0c362e3f650db90bae151b0ae"
+   },
+   "cfg": "tests_f2/bitid/fdem_toolcontact_signorini.cfg",
+   "mode": "fdem",
+   "law": "(joints cohesifs, volume elastique)",
+   "threads": 4,
+   "verdict": "IDENTIQUE"
+  },
+  "fdem_ucs_yan_adaptive_court": {
+   "rc": 0,
+   "tries": 1,
+   "apex_retries": 0,
+   "wall_total_s": 116.4,
+   "peak_force_N": null,
+   "wall_s": 116.363,
+   "dt_s": 1.46441e-08,
+   "steps": 136574,
+   "hashes": {
+    "history.csv": "abeaff1358e7a7a8d89ec6c5bc676778326ffb0235a6305d3e83311338a1280d",
+    "frames.csv": "8d487de361fd2140f422812d789335639b83330c0aa5849b1465a1d0c2295f13",
+    "fdem_0002.vtu": "c9ea1942ca9591f1d179bb3304a8fb3443348f3d455646f8379f21a6efa56f6d",
+    "fdem_joints_0002.vtu": "7af7122e40eb65abdb260f9ea523500bcde71669679fead52a4a8739e860eed4"
+   },
+   "cfg": "tests_f2/bitid/fdem_ucs_yan_adaptive_court.cfg",
+   "mode": "fdem",
+   "law": "(joints cohesifs yan, insertion adaptative)",
+   "threads": 4,
+   "verdict": "IDENTIQUE"
+  }
+ }
+}

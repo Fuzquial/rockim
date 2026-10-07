@@ -9,6 +9,7 @@
 // ---------------------------------------------------------------------------
 #include <algorithm>
 #include <cmath>
+#include <iostream>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -116,6 +117,56 @@ struct PhaseSet {
     double aTen = 1.0, aCoh = 1.0, aGf = 1.0, aE = 1.0, aFric = 1.0;
     double heteroFactor = 1.0;
 
+    // ---- proprietes de joint PAR PAIRE DE PHASES (2026-09-01) -------------
+    // Les alpha ci-dessus donnent UN facteur pour tout le reseau ; la
+    // litterature GBM tabule au contraire chaque paire (Aboayanah et al.
+    // RMRE 2024, Table 2 : six paires Bt-Bt, Fsp-Fsp, Qz-Qz, Bt-Fsp, Bt-Qz,
+    // Qz-Fsp, dont les GfI vont de 1,07 a 907 J/m2 — deux ordres de
+    // grandeur que deux boutons ne peuvent pas representer).
+    // Syntaxe (opt-in, l'ordre des deux phases est indifferent) :
+    //   gb.feldspar.quartz.ft            = 2.0e6
+    //   gb.feldspar.quartz.cohesion      = 32e6
+    //   gb.feldspar.quartz.Gf            = 300
+    //   gb.feldspar.quartz.gfShearFactor = 4.83
+    //   gb.feldspar.quartz.frictionDeg   = 39.0
+    //   gb.feldspar.quartz.E             = 71.5e9
+    // Une valeur posee REMPLACE le resultat de la regle alpha/hetero pour
+    // cette paire (elle ne s'y multiplie pas) ; une valeur absente laisse
+    // la regle alpha agir. Sans aucune cle gb.<a>.<b>.*, chemin et
+    // resultats strictement inchanges.
+    struct GbPair {
+        double ft = -1.0, coh = -1.0, Gf = -1.0, gfs = -1.0;
+        double phiDeg = -1.0, E = -1.0;
+        bool any = false;
+    };
+    std::vector<GbPair> pairGb;            // n x n, symetrique ; vide = aucun
+
+    const GbPair* gbOf(int a, int b) const {
+        if (pairGb.empty() || a < 0 || b < 0 || a >= n() || b >= n())
+            return nullptr;
+        const GbPair& g = pairGb[(std::size_t)a * n() + b];
+        return g.any ? &g : nullptr;
+    }
+
+    std::string gbOverrideSummary() const {
+        if (pairGb.empty()) return {};
+        std::string s;
+        for (int i = 0; i < n(); ++i)
+            for (int j = i; j < n(); ++j) {
+                const GbPair* g = gbOf(i, j);
+                if (!g) continue;
+                s += "  " + name[i] + "-" + name[j] + " :";
+                if (g->ft > 0)  s += " ft " + std::to_string(g->ft / 1e6) + " MPa";
+                if (g->coh > 0) s += " c " + std::to_string(g->coh / 1e6) + " MPa";
+                if (g->Gf > 0)  s += " GfI " + std::to_string(g->Gf);
+                if (g->gfs > 0) s += " x" + std::to_string(g->gfs);
+                if (g->phiDeg > 0) s += " phi " + std::to_string(g->phiDeg);
+                if (g->E > 0)   s += " E " + std::to_string(g->E / 1e9) + " GPa";
+                s += "\n";
+            }
+        return s;
+    }
+
     int    n() const { return (int)mat.size(); }
     double maxE() const {
         double e = 0.0;
@@ -137,8 +188,41 @@ struct PhaseSet {
         auto bad = [&](const std::string& what) {
             throw std::runtime_error("Material (" + who + "): " + what);
         };
+        // ---- FINITUDE (2026-09-06) -------------------------------------
+        // Les tests « > 0 » ci-dessous attrapent NaN par accident (toute
+        // comparaison avec NaN est fausse) mais laissent passer +inf, et un
+        // rho sous-normal passe aussi. Le prix etait mesure : E = inf ou
+        // rho = 1e-300 donnent cP = inf, donc dt = 0, donc
+        // nSteps = (long)ceil(T/0) = (long)+inf — conversion HORS BORNES
+        // (comportement indefini) qui vaut -2147483648 sur MSVC : la boucle
+        // en temps ne tourne JAMAIS et le programme sort en succes, avec un
+        // resume complet et « peak |sigma| = 0 / 0 MPa ». Un script de
+        // campagne enregistre ce run comme termine. Le chemin par phase
+        // multiplie les portes d'entree (un E et un rho par fiche) et la CFL
+        // est prise sur phases_.maxCp() : UNE phase pourrie empoisonne le pas
+        // de temps du bloc entier. Le test de finitude manquait ici.
+        auto fin = [&](double v, const char* nm) {
+            if (!std::isfinite(v))
+                bad(std::string(nm) + " must be fini (ni inf ni nan)");
+        };
+        fin(m.E, "E");            fin(m.rho, "rho");
+        fin(m.nu, "nu");          fin(m.ft, "ft");
+        fin(m.cohesion, "cohesion");  fin(m.Gf, "Gf");
+        fin(m.gfShearFactor, "gfShearFactor");
+        fin(m.phiDeg, "frictionDeg");
+        // Les SIGNES avant les grandeurs derivees (B1 / CDP-04, 2026-09-06).
+        // Avec E = -1 et rho = 2650, sqrt(E/rho) vaut NaN : le controle de
+        // finitude levait toujours en premier et accusait rho ou la grandeur
+        // de E, alors que le defaut est le signe de E.
         if (!(m.E > 0.0))   bad("E must be > 0");
         if (!(m.rho > 0.0)) bad("rho must be > 0");
+        // rho sous-normal : cP = sqrt(E/rho) deborde en +inf bien avant que
+        // rho n'atteigne zero. On refuse le domaine ou le pas de temps n'est
+        // plus representable, pas seulement le zero exact.
+        if (!std::isfinite(std::sqrt(m.E / m.rho)))
+            bad("E / rho deborde (rho trop petit ou E trop grand) : la "
+                "vitesse d'onde n'est pas finie, donc le pas de temps serait "
+                "nul et la boucle en temps ne tournerait jamais");
         if (!(m.nu >= 0.0 && m.nu < 0.5)) bad("nu must be in [0, 0.5)");
         if (!(m.ft > 0.0))       bad("ft must be > 0");
         if (!(m.cohesion > 0.0)) bad("cohesion must be > 0");
@@ -178,6 +262,23 @@ struct PhaseSet {
         std::string nm;
         double fsum = 0.0;
         while (ss >> nm) {
+            // ---- nom REPETE (2026-09-06) -------------------------------
+            // `phases = dur dur` etait accepte sans un mot : deux fiches
+            // homonymes, un tableau materiau et un bilan par phase qui
+            // impriment deux lignes indiscernables, la fraction voulue pour
+            // un mineral scindee en deux populations, et un
+            // groupPhase.<groupe> = dur qui resout vers le DERNIER homonyme
+            // (la boucle de resolution ecrase sans test). Le depouillement
+            // par phase devient illisible et la microstructure n'est plus
+            // celle que le deck decrit.
+            for (const auto& prev : ps.name)
+                if (prev == nm)
+                    throw std::runtime_error("PhaseSet: la phase '" + nm
+                        + "' est nommee deux fois dans la cle `phases` — les "
+                          "deux fiches seraient homonymes et indiscernables "
+                          "(fraction scindee, bilan par phase illisible, "
+                          "groupPhase resolu vers la derniere). Donner un nom "
+                          "distinct a chaque phase.");
             std::string k = "phase." + nm + ".";
             Material m = base;
             m.rho = c.getd(k + "rho", m.rho);
@@ -189,10 +290,33 @@ struct PhaseSet {
             m.Gf       = c.getd(k + "Gf", m.Gf);
             m.gfShearFactor = c.getd(k + "gfShearFactor", m.gfShearFactor);
             validate(m, "phase " + nm);
+            // RESISTANCES HERITEES (mesure du 2026-09-11) : une phase qui
+            // ne pose que rho/E/nu (carbure, acier) herite ft et cohesion du
+            // bloc global — c est-a-dire de la ROCHE. Un insert en carbure
+            // dont les joints cassent a 11 MPa n est pas une fiche materiau,
+            // c est un oubli. On avertit des que le module trahit un autre
+            // materiau (E > 1,5 x le global) ; aucune valeur n est changee.
+            if (c.has(k + "E") && m.E > 1.5 * base.E
+                && !c.has(k + "ft") && !c.has(k + "cohesion"))
+                std::cout << "[Material] *** AVERTISSEMENT *** phase '" << nm
+                          << "' : E = " << m.E / 1e9 << " GPa pose au deck, "
+                             "mais ft et cohesion HERITES du bloc global (ft = "
+                          << m.ft / 1e6 << " MPa, c = " << m.cohesion / 1e6
+                          << " MPa) : ses joints casseront comme la roche. "
+                             "Poser phase." << nm << ".ft / .cohesion (1e12 "
+                             "pour un corps incassable) ou groupContinuum.\n";
             double f = c.reqd(k + "fraction");
-            if (f <= 0.0)
+            // `if (f <= 0.0)` etait FAUX pour NaN comme pour +inf : les deux
+            // passaient. Le prix, mesure sur mesh = voronoi : une fraction
+            // nan renvoie 100 % du volume a UNE phase et 0 % aux autres — le
+            // deck a trois mineraux devient le bloc homogene SANS contraste
+            // elastique, c'est-a-dire exactement le cas temoin que tout ce
+            // chantier existe pour eviter — et le run sort en succes avec un
+            // pic annonce comme un resultat.
+            if (!(f > 0.0) || !std::isfinite(f))
                 throw std::runtime_error("PhaseSet: fraction of phase '" + nm
-                                         + "' must be positive");
+                                         + "' must be positive and finite "
+                                           "(ni inf ni nan)");
             ps.mat.push_back(m);
             ps.fraction.push_back(f);
             ps.name.push_back(nm);
@@ -200,7 +324,51 @@ struct PhaseSet {
         }
         if (ps.mat.empty())
             throw std::runtime_error("PhaseSet: 'phases' key present but empty");
+        if (!(fsum > 0.0) || !std::isfinite(fsum))
+            throw std::runtime_error("PhaseSet: la somme des fractions n'est "
+                                     "pas finie et positive");
         for (double& f : ps.fraction) f /= fsum;
+
+        // ---- surcharges par paire de phases (voir GbPair ci-dessus) ------
+        // Lecture directe par cle : pas besoin d'enumerer le fichier, et
+        // les deux ordres d'ecriture sont acceptes. Une seule cle presente
+        // suffit a armer la paire ; les autres proprietes restent sous la
+        // regle alpha.
+        const int np = ps.n();
+        std::vector<GbPair> pg((std::size_t)np * np);
+        bool anyPair = false;
+        auto rd = [&](const std::string& a, const std::string& b,
+                      const char* prop) {
+            double v = c.getd("gb." + a + "." + b + "." + prop, -1.0);
+            if (v < 0.0) v = c.getd("gb." + b + "." + a + "." + prop, -1.0);
+            return v;
+        };
+        for (int i = 0; i < np; ++i)
+            for (int j = i; j < np; ++j) {
+                GbPair g;
+                g.ft     = rd(ps.name[i], ps.name[j], "ft");
+                g.coh    = rd(ps.name[i], ps.name[j], "cohesion");
+                g.Gf     = rd(ps.name[i], ps.name[j], "Gf");
+                g.gfs    = rd(ps.name[i], ps.name[j], "gfShearFactor");
+                g.phiDeg = rd(ps.name[i], ps.name[j], "frictionDeg");
+                g.E      = rd(ps.name[i], ps.name[j], "E");
+                g.any = g.ft > 0 || g.coh > 0 || g.Gf > 0 || g.gfs > 0
+                        || g.phiDeg > 0 || g.E > 0;
+                if (!g.any) continue;
+                if (g.phiDeg > 0 && !(g.phiDeg < 89.0))
+                    throw std::runtime_error(
+                        "PhaseSet: gb." + ps.name[i] + "." + ps.name[j]
+                        + ".frictionDeg doit etre dans [0, 89)");
+                if (g.gfs > 0 && !(g.Gf > 0))
+                    throw std::runtime_error(
+                        "PhaseSet: gb." + ps.name[i] + "." + ps.name[j]
+                        + ".gfShearFactor sans .Gf — poser les deux (GfII = "
+                          "Gf x gfShearFactor)");
+                anyPair = true;
+                pg[(std::size_t)i * np + j] = g;
+                pg[(std::size_t)j * np + i] = g;
+            }
+        if (anyPair) ps.pairGb.swap(pg);
         return ps;
     }
 };

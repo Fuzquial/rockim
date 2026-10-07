@@ -1,0 +1,9 @@
+S4 (campagne du 13/09) - ancre de bit-identite, OMP_NUM_THREADS = 4, machine partagee (bancs de Fernando sur 14 fils)
+
+exe = tests_f2/campagne13/S4/rockim_s4test.exe = build/rockim.exe sha256 c099f1a2d36b63adc8fe2f6b44da571e5098c04d4f832ae71bf7815e242567a0 (2 492 416 octets)
+refs tools/bitid_refs.json (ancre rockim_g1ref.exe), deck fdem3d_kuru9_court (bulkDamage = yang, scenario percussion, toolShape none) :
+  IDENTIQUE  fdem3d_kuru9_court               166.2 s  omp4  pic 0 N
+[bitid] 1/1 IDENTIQUE
+
+Temoins sans cle S4 (decks iso_ref, biax_ref, uni_ref, uni2d_ref) : history.csv et dernier VTU IDENTIQUES octet pour octet entre l exe S4 et rockim_g1y16.exe (section C de RESULTATS_check_s4.txt).
+Les 7 autres decks de l ancre par defaut et fdem3d_yang_v2_court (refs jointlaw, ~370 s) sont laisses a l agent Build (regle 7 du cadrage).

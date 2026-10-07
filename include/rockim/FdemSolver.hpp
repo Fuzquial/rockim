@@ -1,4 +1,22 @@
 #pragma once
+//
+// ---------------------------------------------------------------------------
+// PROVENANCE DES CITATIONS « Y3D*.c l. NNNN » DE CE FICHIER — lire d abord
+//   ../../SOURCES_SOLIDITY.md  (a la racine du depot, note B4a du 2026-08-30)
+//
+// Elles renvoient au code d Imperial College London,
+// github.com/ImperialCollegeLondon/solidity-solver-open, LGPL-3.0, LU LE
+// 2026-08-26. Trois choses a savoir avant d en citer une :
+//   1. c est BIEN leur code — le contraire a ete affirme puis rectifie ;
+//   2. ce n est PAS la version qui a produit l article de 2026 (facteur
+//      d endommagement cable a zero, DIF neutre) : y lire une FORME et en
+//      conclure une implementation de l article est une faute ;
+//   3. LES NUMEROS DE LIGNE NE SONT PAS ANCRES SUR UN COMMIT. Le depot est
+//      maintenu, donc ils bougent. Ils valent pour le 2026-08-26.
+// Les 72 citations du depot ne visent que 13 endroits distincts : la table
+// des 13, avec leur statut (article / code public / version interne), est
+// dans SOURCES_SOLIDITY.md §3.
+// ---------------------------------------------------------------------------
 // ---------------------------------------------------------------------------
 // FdemSolver — 2D combined finite-discrete element method (FDEM) in the
 // architecture of Munjiza (Y2D lineage): the v2 mode sketched in the README.
@@ -60,6 +78,12 @@
 #include <Eigen/Dense>
 
 #include "rockim/Config.hpp"
+// Noyau PARTAGE des joints extrinseques de la note de septembre 2026
+// (§2.2 critere elliptique, §2.4 loi de Camacho-Ortiz). Fonctions PURES,
+// appelees a l identique par le solveur 3D : la loi ne peut pas diverger
+// entre les deux dimensions par recopie. Inerte tant qu aucune des cles
+// opt-in insertionCriterion / jointTSL / jointMixLaw n est posee.
+#include "rockim/JointTsl.hpp"
 #include "rockim/MatLaw.hpp"
 #include "rockim/Material.hpp"
 #include "rockim/Solver.hpp"
@@ -67,6 +91,69 @@
 #include "rockim/YanSoftening.hpp"
 
 namespace rockim {
+
+// ---------------------------------------------------------------------------
+//  §2.4 « compression et frottement sur un joint insere » — FROTTEMENT EN CAP
+//  (correctif du 2026-09-11, RETOUR_v3 §1.4 quater).
+//
+//  Fonction PURE, sans etat : elle est appelee par jointForces() sous
+//  jointTSL = camacho et par le banc tests_f2/check_camacho_friction.cpp,
+//  de sorte que le banc exerce le code compile dans le solveur et non une
+//  transcription.
+//
+//  POURQUOI. La premiere ecriture de la branche `camacho` appliquait le
+//  frottement de Coulomb comme une TRACTION de magnitude constante
+//  [D] mu <-t_n>, dirigee par le signe du DEPLACEMENT de glissement (2D :
+//  tau += fr si dtg > 0, tau -= fr si dtg < 0). C'est un ressort sec a force
+//  constante, discontinu en dtg = 0, porte par chaque joint insere comprime
+//  ET par chaque joint rompu comprime (D = 1, que jointDeath = separation ne
+//  tue jamais). RETOUR_v3 §1.4 quater l'a designe par lecture des deux
+//  solveurs et par cinq isolations : le deck loi_note_2026 explose a ~91 us
+//  quelle que soit la matrice (elastique comprise), quel que soit dt, avec
+//  ou sans branche ascendante ; x25 insertions en cascade ; le terme a
+//  pleine valeur des D = 0 (_fricoff) explose PLUS TOT ; les joints
+//  penalises de g0 (frottement en cap avec retour de glissement) tiennent
+//  100 us. La v3 §3.4 ecrit la forme correcte : une force qui s'oppose a la
+//  VITESSE de glissement, regularisee — pas au deplacement.
+//
+//  FORME RETENUE : le mecanisme de la branche penalisee de g0, applique a la
+//  seule part frottante. Traction d'ESSAI de collage sur le glissement
+//  geometrique, tau_tr = pj (delta_s - slip_p), ecretee au cap
+//  f_cap = [D] mu <-t_n> (jtsl::shearCap a cohesion nulle, enveloppe de la
+//  cle comprise), avec RETOUR DE GLISSEMENT slip_p += (tau_tr - tau_fric)/pj.
+//  C'est la regularisation de la v3 : le ressort pj fait office de
+//  penalite de collage, la vitesse de glissement n'est jamais lue, et le
+//  travail du terme est >= 0 par construction (tau_fric et l'increment de
+//  slip_p sont de meme signe). Continue en delta_s = 0 (tau_tr y vaut
+//  -pj slip_p, pas un saut de +-f_cap).
+//
+//  f_cap == 0 (traction, ou D = 0 sous jointFrictionMobilised = damage) :
+//  tau_fric = 0 ET slip_p = delta_s — pas de ressort de collage en
+//  traction, il ajouterait une raideur tangentielle que l'eq. 19 ne prevoit
+//  pas, et le joint qui revient en compression repart sans a-coup depuis
+//  son glissement courant.
+//
+//  Budget CFL : la raideur pj est deja budgetee pour TOUTES les facettes
+//  (computeStableDt, kPara pj) — rien a ajouter. Chemin MORT sous
+//  jointTSL = penalty (defaut) : la branche historique n'appelle pas cette
+//  fonction et n'est touchee par aucun caractere.
+// ---------------------------------------------------------------------------
+namespace jfric {
+inline double capReturn(double pj, double ds, double fCap, double& slipP)
+{
+    if (!(fCap > 0.0)) { slipP = ds; return 0.0; }
+    const double tauTr = pj * (ds - slipP);
+    if (tauTr > fCap) {
+        slipP += (tauTr - fCap) / pj;
+        return fCap;
+    }
+    if (tauTr < -fCap) {
+        slipP += (tauTr + fCap) / pj;
+        return -fCap;
+    }
+    return tauTr;
+}
+} // namespace jfric
 
 class FdemSolver : public Solver {
 public:
@@ -84,6 +171,12 @@ public:
     // seen (brazilianStopAfterPeak). Off by default: the run length stays T.
     bool finished() const override;
     void finalize() override;
+    // selftest-potcontact2d (revue C5, 2026-10-07) : sonde d acces aux
+    // membres prives, definie dans FdemSolver.cpp, pour exercer
+    // potentialContact() DU SOLVEUR (candidats, potFt_, naissance, ordre
+    // forces exactes puis facteur) sur un petit maillage reel. Aucun effet
+    // sur un run.
+    friend struct PotContactProbe;
 
 private:
     // ROLLERX: lateral roller — the x displacement is held at zero, the y
@@ -102,6 +195,17 @@ private:
         Eigen::Matrix<double, 2, 3> dN;    // reference shape-fn gradients
         double A0;                         // reference area
         double svm = 0.0;                  // von Mises (output)
+        // S1 (13/09), miroir du 3D : pression moyenne (s0 + s1 + szz)/3 au
+        // dernier pas, traction > 0. PRECISION (relecture V) : s0, s1 sont
+        // les composantes ASSEMBLEES (apres cap deviatorique, cap de
+        // traction moyenne et pulverisation) ; szz est la composante hors
+        // plan de la deformation plane (nu (s0 + s1), ou TI / neo-hookeen),
+        // mise a l echelle par le cap DEVIATORIQUE mais NI decalee par le cap
+        // de traction moyenne NI multipliee par la pulverisation, et jamais
+        // assemblee. Ce n est donc pas strictement « tr(sigma)/3 apres caps »
+        // comme en 3D. Sortie seule (`pMean` sous writeRuptureFields = true),
+        // calculee sous cette cle seulement.
+        double pm = 0.0;
         double exx = 0.0;                  // co-rotated axial strain
                                            // (output; SHPB gauges)
         double sxx = 0.0, syy = 0.0;       // global stress (gauges: confinement,
@@ -116,6 +220,21 @@ private:
         // le taux axial, sans facteur de convention. Vaut 0 tant que ni
         // bulkViscosity ni strainRateDIF ne sont armes (branche non calculee).
         double edot = 0.0;
+        // ---- §2.1 eq. 11 de la note 2026 : le TENSEUR taux de deformation --
+        // D = sym(Fdot F^-1) dans le repere GLOBAL (et non co-rote : la
+        // normale de facette n vit dans le repere global), passe dans le MEME
+        // filtre passe-bas que le scalaire ci-dessus. Renseigne UNIQUEMENT
+        // sous `facetRate = tensor` ; sans la cle le champ reste a zero et
+        // n est jamais lu — le scalaire edot alimente alors les deux DIF,
+        // exactement comme dans rockim_g0.
+        //
+        // POURQUOI il faut un tenseur. L eq. 11 demande DEUX taux distincts a
+        // l interface, eps_point_eq = n.eps_point.n (mode I) et
+        // gamma_point = 2||eps_point.n - (n.eps_point.n)n|| (mode II), et
+        // l eq. 13 les fait entrer dans DEUX DIF d exposants differents
+        // (a_s < a_t). Un scalaire par element ne peut pas les separer : il
+        // donne la meme mesure aux deux, ce qui rend difExpS sans objet.
+        Eigen::Matrix2d Dg = Eigen::Matrix2d::Zero();
         // WP1 pulverisation (bulkDamage = yang) : endommagement D et max
         // historique de delta_m = h_e * eps_vm. 0 si la cle est absente.
         double bdD = 0.0;
@@ -144,14 +263,37 @@ private:
                                            // secante de l'eq. 18, stampee par
                                            // activateJoint() (0 en intrinseque),
                                            // jamais mise a jour ensuite.
+                                           // jointTSL = camacho : glissement
+                                           // PLASTIQUE de la seule part
+                                           // frottante (jfric::capReturn),
+                                           // 0 a l'insertion ; la part
+                                           // cohesive (eq. 19) ne le lit pas.
         double omax[2] = {0.0, 0.0};       // largest opening ever reached
                                            // (jointSoftening = yan: the omax
                                            // of eq. 17, per integration point)
         double smax[2] = {0.0, 0.0};       // largest SLIDING ever reached, the
                                            // s_max of eq. 18 (jointShearUnload
                                            // = origin only; unused otherwise)
+        // jointSecantRatchet = on : raideurs secantes non croissantes, mode I
+        // (knr = sigma/dn, eq. 17) et mode II (ksr = tau/s, eq. 18, branche
+        // origin). -1 = jamais posee. Inertes si la cle est off.
+        double knr[2] = {-1.0, -1.0};
+        double ksr[2] = {-1.0, -1.0};
+        // Force NORMALE nette que le joint transmettait a l instant EXACT de
+        // sa mort, en N par metre d epaisseur (negatif = compression). Sortie
+        // de mesure seulement : c est la charge que le relais au contact doit
+        // reprendre. Voir jointDeath dans ce header.
+        double fDeath = 0.0;
         bool dead = false;                 // faces released to general contact
+        // S1 (13/09), miroir du 3D : ouverture normale GEOMETRIQUE maximale
+        // (delta.n sans dn0), max sur les points et le temps, en m ; 0 =
+        // jamais ouvert. Tenu a jour et ecrit (`openMax`) sous
+        // writeRuptureFields = true seulement ; aucune force ne le lit.
+        double onMax = 0.0;
         double tBreak = -1.0;              // first time D reached 1
+        double tInsert = -1.0;             // instant d'insertion adaptative
+                                           // (catalogue AE de nucleation ;
+                                           // -1 = jamais insere, 0 = pre-casse)
         int type = 0;
         double pj = 0.0;                   // penalty per area [Pa/m]
         double ft = 0.0, coh = 0.0;        // strengths [Pa]
@@ -160,11 +302,29 @@ private:
         double slipF = 0.0;                // mode II softening slip
         double tanPhi = 0.0;               // friction
         double stat = 1.0;                 // Weibull strength factor (output)
+        double wplane = 0.0;               // 1 si le joint appartient a un
+        // ---- writeJointState (S8, 2026-09-02) : etat de contact du joint ----
+        // Moyenne des deux points d integration au pas courant : traction
+        // normale (>0 traction), cisaillement, ouverture, et l ETAT :
+        //   0 ouvert (D >= 1, dn > 0)   1 ferme-glissant (|tau| = limite)
+        //   2 ferme-bloque              3 cohesif (D < 1)
+        //   4 mort (relaye au contact general)   5 lie (non insere)
+        // C est le diagnostic de Renshaw-Pollard : un plan delamine OUVERT ou
+        // GLISSANT ne transmet aucune traction — l arret d une fissure y est
+        // mecanique ; un plan FERME-BLOQUE qui arrete quand meme, c est le
+        // rapport d energies qui bloque. Ecrit seulement si la cle est posee.
+        double jsSig = 0.0, jsTau = 0.0, jsDn = 0.0;
+        int jsState = 5;
+                                           // plan de schistosite (weakPlanes)
         // ---- DIF de Yang et al. 2025, GELE a l instant de l insertion ----
         // Sortie seulement : les facteurs ont deja ete appliques a ft, coh,
         // Gf et GfII lors de activateJoint(). edotIns est le taux de
         // deformation moyen des deux elements a cet instant.
         double difT = 1.0, difC = 1.0, edotIns = 0.0;
+        // En schema INTRINSEQUE (difIntrinsic_), le meme gel a lieu au
+        // franchissement de l enveloppe et non a l insertion : ce drapeau
+        // garantit qu il n a lieu QU UNE FOIS. Inerte en adaptatif.
+        bool difStamped = false;
         // ---- mode de rupture (Yan et al. fig. 18 / 20) --------------------
         // Renseigne UNE FOIS, a l'instant ou D atteint 1, en comparant les
         // deux moteurs de l'eq. 16 : rn = (dn - dnE)/(dnF - dnE) (ouverture)
@@ -184,6 +344,30 @@ private:
         // guard of the article, transposed to this joint law).
         bool bonded = false;
         double dn0 = 0.0;
+        // ---- population pre-endommagee (jointPrebrokenFrac) ---------------
+        // pre = le joint est une FISSURE PREEXISTANTE : cree rompu (D = 1,
+        // tBreak = 0, bmode = 4) a l initialisation. Il ne compte ni dans
+        // nBroken_ (garde tBreak < 0) ni dans les compteurs nInserted /
+        // nDamaging de l historique (countInserted le saute) — ceux-ci ne
+        // mesurent que la reponse AU CHARGEMENT.
+        bool pre = false;
+        // ---- catalogue microsismique (cle microseismic) --------------------
+        // Transposition litterale des eq. 11-13 d AbuAisha et al. 2017. Leur
+        // element cohesif est un rectangle a QUATRE noeuds entre deux
+        // triangles ; ce sont exactement a1, a2, b1, b2 ici.
+        //   eq. 11  Ek(t) = 1/2 sum_{i=1..4} m_i v_i^2
+        //   eq. 12  dEk(t) = Ek(t) - Ek(t_y),  t_y = entree en endommagement
+        //   eq. 13  Ee = max dEk sur [t_y, t_f],  M = 2/3 (log10 Ee - 4,8)
+        // Le MAXIMUM se prend pas a pas : il est inaccessible a un
+        // post-traitement de trames (mesure sur le banc AbuAisha : 48 des 49
+        // joints qui cassent naissent, s endommagent et rompent dans un SEUL
+        // intervalle de trame). D ou cette instrumentation dans le solveur.
+        // Ecritures PRIVEES au joint : sures sous OpenMP, aucun accumulateur
+        // global n est ajoute a la boucle de joints.
+        // Inertes quand microseismic n est pas pose (garde seismicOn_).
+        double tYield = -1.0;   // 1er instant ou D est devenu > 0 ; -1 = jamais
+        double keYield = 0.0;   // Ek des 4 copies a cet instant [J]
+        double dKeMax = 0.0;    // max de (Ek - keYield) sur [t_y, t_f] [J]
         // ---- failure mode, recorded ONCE when D first reaches 1 ------------
         // The article reads its fig. 12 patterns as "tensile failure or mixed
         // tensile-shear mode". Telling the two apart needs the partition of the
@@ -193,6 +377,49 @@ private:
         // (opening), 0 = pure mode II (sliding). -1 while the joint is intact.
         // Written to the joint VTU as `failMode` when writeJointMode = true.
         double failMode = -1.0;
+        // ---- jointFailRule = majority (Solidity Y3Dfd.c, Sigma_tau) -------
+        // Chez eux chaque point d integration porte SON z et SA traction, et
+        // le joint ne meurt qu au-dela d UN point rompu (`nfail>1`, l. 1175).
+        // Le joint 2D n a que deux points : la regle y demande donc les DEUX.
+        // Inerte sous `any` (defaut) — le scalaire partage D pilote seul.
+        double Dk[2] = {0.0, 0.0};
+        // ---- strainRateDIFArm = continuous --------------------------------
+        // Leur dpeftdif est recalcule a chaque pas (l. 1448-1456), jamais
+        // fige : on garde donc les proprietes de BASE intactes et la loi
+        // reconstruit ft = ftB*DIF a chaque pas, sans jamais composer.
+        double ftB = 0.0, cohB = 0.0, GfB = 0.0, GfIIB = 0.0;
+        bool baseSnapped = false;
+        // ---- §2.2 de la note 2026 : HYSTERESIS D INSERTION (n_h) ----------
+        // Nombre de pas CONSECUTIFS pendant lesquels le critere d insertion
+        // est satisfait. La note : « pour eviter les insertions en rafale sur
+        // des oscillations numeriques, on exige Phi_F >= 1 sur n_h pas
+        // consecutifs (n_h = 2-3) ». Remis a ZERO des que le critere retombe.
+        // Inerte, et jamais ecrit, sous insertionHoldSteps = 1 (defaut).
+        int nPhi = 0;
+        // ---- §2.4 : jointTSL = camacho, ETAT FIGE A L INSERTION -----------
+        // Les quatre doubles de jtsl::Stamp (t_m^ins, beta, G_C, delta_m^f)
+        // sont tamponnes UNE FOIS par activateJoint() a partir de la traction
+        // REELLEMENT TRANSMISE par la facette, puis jamais recalcules : c est
+        // ce gel qui rend l integrale de la loi egale a G_C independamment du
+        // maillage ET du depassement d un pas. Inertes sous jointTSL =
+        // penalty (defaut) : Stamp::ok() est faux et rien ne les lit.
+        jtsl::Stamp tsl;
+        // Plus grande separation effective delta_m atteinte, PAR POINT
+        // d integration (le joint 2D en a deux, comme omax/smax).
+        // Sous jointTSLRise > 0 c est une separation EFFECTIVE (decalee de
+        // dm0, voir jtsl::effOffset) : initialisee a dm0 par activateJoint()
+        // et non a 0, sinon le premier pas lirait une decharge.
+        double dmMax[2] = {0.0, 0.0};
+        // ---- §2.4, branche ascendante courte (2026-09-11) -----------------
+        // DIRECTION TANGENTIELLE de la traction tamponnee a l insertion, dans
+        // le repere de la facette : +1 si tau_ins >= 0 (sens de e), -1 sinon.
+        // En 2D le glissement est un scalaire signe, la direction l est donc
+        // aussi. Necessaire pour poser le decalage dm0 es / beta SUR LE
+        // GLISSEMENT du bon cote : c est ce qui fait que l eq. 19 rend
+        // exactement (t_n^ins, t_s^ins) a separation geometrique nulle, sans
+        // le Dirac de -t_ins que le run du 2026-09-11 a mesure a rise = 0.
+        // Inerte sous jointTSL = penalty et a rise = 0 (es dm0 = 0).
+        double tsDir = 1.0;
     };
 
     struct BEdge {                         // active contact edge (elem face)
@@ -238,6 +465,7 @@ private:
     // MSH 2.2 ASCII, elements type 2) : le maillage "a la Yan et al.",
     // simplexes uniformes sans structure de grains (box uniquement).
     void buildMeshFile();
+    void checkFinite();                    // C4 (w20) : NaN/Inf reel
     void buildMeshDisc();                  // discMesh = native: exact rim
     void buildMeshShpb();                  // geometry = shpb: bar-disc-bar
     void setupShpbGauges();                // monitor-point element lists
@@ -256,12 +484,42 @@ private:
     void assignJointProps();
     void applyJointStatistics();
     void applyJointSizeEffect(double mWeib);  // eq. 42 : ft *= (Zeff/V_J)^(1/m)
+    void applyPrebrokenPopulation();          // jointPrebrokenFrac / preBrokenJoints
+    // preBrokenJoints : selecteur GEOMETRIQUE de fissures preexistantes.
+    // Rend la liste des segments {x1,y1,x2,y2} lue dans la cle ; vide si la
+    // cle est absente. Jette sur un format invalide (severite de parseNum :
+    // rien ne doit rester a lire apres les quatre nombres d un segment).
+    std::vector<std::array<double, 4>> parsePreBrokenSegments() const;
+    bool seismicOn_ = false;                  // cle microseismic (eq. 11-13)
     void placeTool();
     // adaptive insertion machinery (insertion = adaptive)
     void buildBindingTables();
     void rebindVertex(int v);
     void insertionSweep();
     void activateJoint(int jI, double sig, double tau);
+    // ---- DIF de Yang : application des facteurs a UN joint ---------------
+    // Extrait de activateJoint() le 2026-08-25 pour etre partage avec le gel
+    // a l AMORCAGE du schema intrinseque (difIntrinsic_). Arithmetique
+    // inchangee : les reperes dif_yang_* de la suite verrouillent la
+    // bit-identite du chemin adaptatif.
+    void stampDif(Joint& J, double er);
+    // §2.1 eq. 11 / §2.2 eq. 13 : formes a DEUX taux (eps_point_eq pour la
+    // traction, gamma_point pour le cisaillement) et DEUX exposants. Les
+    // formes a un taux ci-dessus et ci-dessous s'y reroutent avec
+    // erT = erS : a difExpS absente elles sont bit pour bit celles d'hier.
+    void stampDif(Joint& J, double erT, double erS);
+    // Repere de la facette (normale sortante de A, tangente), reforme
+    // exactement comme dans insertionSweep() — memes points milieux P et Q,
+    // meme orientation. Rend false sur une facette degeneree.
+    bool facetFrame(const Joint& J, Eigen::Vector2d& n,
+                    Eigen::Vector2d& e) const;
+    // dnE / dnF / slipF depuis les resistances COURANTES du joint — un seul
+    // site, partage par assignJointProps, applyJointStatistics, stampDif et
+    // refreshDif (voir jointDeltaC).
+    void setJointLengths(Joint& J);
+    void snapBase(Joint& J);              // proprietes de base, une fois
+    void refreshDif(Joint& J, double er); // strainRateDIFArm = continuous
+    void refreshDif(Joint& J, double erT, double erS);   // eq. 11 + eq. 13
     void setupBrazilianLoad();
     void initPlatens(double xc, double hw);  // geometry + tributary weights
     void setupBoundaries();
@@ -335,6 +593,20 @@ private:
     // the literal form of eq. 10.
     bool yanSoft_ = false;
     bool yanFricScaled_ = false;
+    // ---- jointResidualMu : le frottement RESIDUEL du joint rompu ---------
+    // Coefficient de frottement vers lequel le joint GLISSE quand il
+    // s endommage, par la meme f(D) que la cohesion : mu_eff = muRes +
+    // (tan(frictionDeg) - muRes) f(D). A D = 0 c est le frottement de PIC, a
+    // D = 1 c est muRes. C est la distinction de Y-Geo (AbuAisha et al. 2015,
+    // eq. 7.5 : angle de frottement de FRACTURE phi_f distinct de l angle
+    // interne), et l equivalent de ce que Solidity obtient en remettant le
+    // joint rompu au contact et a son glissement (0,6 calcaire / 0,18
+    // granite). rockim gardait jusqu ici le frottement de PIC a vie.
+    // < 0 = non pose = comportement historique, bit-identique.
+    // Generalise jointFrictionScaled : muRes = tan(frictionDeg) reproduit le
+    // defaut, muRes = 0 reproduit jointFrictionScaled = 1. Les deux cles ne
+    // peuvent donc pas etre posees ensemble (erreur de config).
+    double muRes_ = -1.0;
     yan::Params yanP_;
     double yanI_ = 1.0;                    // int_0^1 f(D) dD
 
@@ -355,7 +627,48 @@ private:
     // residuel non degrade) elle rend le glissement frottant reversible. La
     // configuration litterale de l'article est donc origin + fricScaled = 1
     // (c'est ce que pose configs_yan/article_exact_base.cfg).
+    // ⚠️ CONSEIL DU 12/09 (M1) : `origin` est NON CONSERVATIF (la secante
+    // suit tau_lim(sigma_n) courant ; cycle a glissement fixe : ½(k2-k1)s²
+    // crees). Mesure 2D : bissection V0..V20, seule clef en cause. Reste
+    // disponible avec AVERTISSEMENT ; jointSecantRatchet = on le corrige.
     bool shearOrigin_ = false;
+
+    // jointShearUnload = solidity (13/09/2026) : la loi de joint de Solidity
+    // mot a mot (Y3Dfd.c Sigma_tau), miroir du 3D — voir Fdem3dSolver.hpp.
+    // Elastique reversible sans memoire (le joint guerit), dpefm = 0, rupture
+    // a tous les points du joint au meme pas (nfail > 1 : les deux en 2D)
+    // puis mort immediate. Exige parabolic + munjiza + majority + jointXi = 0.
+    bool shearSolidity_ = false;
+
+    // jointSecantRatchet = on | off (defaut off, bit-identique) — conseil du
+    // 12/09 (M1, M7) : secantes de decharge des eq. 17 et 18 NON CROISSANTES
+    // (Joint::knr, Joint::ksr), voir Fdem3dSolver.hpp.
+    bool secRatchet_ = false;
+    // jointNormalProxy = penalty | law (defaut penalty) — audit A #1 : sous
+    // parabolic la loi transmet 2 pj dn ; s_E, plage coulomb et amorcage DIF
+    // lisaient pj dn. Voir Fdem3dSolver.hpp.
+    double pjN_ = 1.0;
+
+    // jointShearRange = cohesion | coulomb (defaut cohesion, bit-identique).
+    // `coulomb` : la PLAGE d'adoucissement de mode II est divisee a chaque pas
+    // par la resistance de Mohr-Coulomb a la pression courante
+    // fs = c + tan(phi) |sigma_n| (compression seule), plancher 2 sE.
+    // C'est LA FORME PUBLIEE du modele (verifiee sur les pages de la these le
+    // 2026-08-27) : Guo 2014 pose delta_c = 3 Gf/f (eq. 2.30) avec f = "the
+    // shear strength fs" pour le cisaillement (p. 65), fs etant l'enveloppe de
+    // Mohr-Coulomb a coupure de l'eq. 2.24 — dependante de sigma_n — et le
+    // driver d'endommagement (delta_s - delta_sp)/(delta_sc - delta_sp) de
+    // l'eq. 2.33 en herite par la substitution n -> s. Le code Solidity fait
+    // de meme (Y3Dfd.c l. 1110-1126 : st = max(2 sp, 3 GfII/dpefs), dpefs
+    // friction-inclus recalcule par point et par pas), ainsi que le code Y
+    // ancetre et la lignee Y-Geo (AbuAisha et al. 2015, eq. 7.4). La lecture
+    // historique de rockim (3 GfII/c, cohesion seule) etait une erreur de
+    // transcription : en traction elle coincide (f = ft), sous confinement
+    // elle surestime le glissement critique d'un facteur fs/c (~54 a 1 GPa
+    // aux cartes d'impact St Anne) — d'ou l'absence de rupture en
+    // cisaillement des joints COMPRIMES, donc de noyau broye d'indentation.
+    // `cohesion` = la plage figee 3 GfII/c, conservee comme defaut historique.
+    bool shearRangeCoulomb_ = false;
 
     // ---- adaptive insertion (insertion = adaptive) --------------------------
     // No cohesive joint exists at t = 0: every interior edge starts BONDED and
@@ -369,7 +682,47 @@ private:
     // union-find at the two endpoint vertices: copies bind per connected
     // component of the element fan over still-bonded edges.
     bool adaptive_ = false;
+    // ---- insertion = none : le CONTINUUM PUR (porte de insertion-pointe,
+    // commit 2ead636 du 2026-08-25). Aucun joint n existe ni ne peut naitre :
+    // les copies de noeuds restent liees pour toujours (liaison rigide =
+    // elements finis a noeuds partages, exactement). C est le mode a utiliser
+    // quand la fissuration est portee par la LOI DE VOLUME (law = dpdfh,
+    // saksala, bulkDamage...) et non par des cohesifs.
+    //
+    // Pourquoi la cle existe : on obtenait ce comportement en posant des
+    // resistances de joint inatteignables (ft = 1e12). C est une bombe a
+    // retardement — mesure du 2026-08-25 sur l impact 3D DP-DFH : un element
+    // totalement endommage (D -> DCAP, 1 % de raideur, aucune suppression) se
+    // distord, sort une contrainte aberrante, franchit meme une enveloppe a
+    // 1e12, et les 89 424 joints qui s activent alors portent dnE = ft/pj =
+    // 8 cm : l energie passe de 53 J a -89 GJ en 10 microsecondes. Avec
+    // insertion = none le balayage n existe pas, donc le piege non plus.
+    // BONUS : le pas de temps ne paie plus le ressort des joints (ils ne
+    // peuvent pas s activer), ce qui le multiplie par ~2,6.
+    bool noJoints_ = false;
     long nInserted_ = 0;
+    // ---- Insertion preferentielle en POINTE (2026-08-24, OPT-IN) ---------
+    // Mesure qui la motive : l adaptatif ne propage que 43,7 % de ses
+    // ruptures (le reste NUCLEE en terrain vierge) contre 56,8 % pour
+    // l intrinseque a loi de joint identique. Cause : la contrainte est
+    // moyennee sur deux CST, ce qui ECRASE la singularite de pointe (2,7
+    // elements par zone cohesive de mode I) — la facette devant une pointe
+    // ne se distingue plus d une facette quelconque de l anneau plastique.
+    // Correctif : une facette EN POINTE voit son enveloppe DIVISEE par
+    // insertionTipFactor ; une facette en terrain vierge garde l enveloppe
+    // nominale. Defaut 1,0 = chemin inchange, bit-identique.
+    //
+    // Pourquoi relacher la POINTE plutot que penaliser la nucleation (les
+    // deux se valent a un facteur global pres) : mesure du 2026-08-24 sur
+    // verify_fdem_voronoi_tension — penaliser la nucleation x1,6 fait passer
+    // l essai de 15 joints rompus a ZERO. Sans fissure preexistante tout est
+    // terrain vierge, donc le facteur relevait la RESISTANCE MACROSCOPIQUE
+    // de 60 % et aurait invalide le calage GBM Red Bohus. Relacher la pointe
+    // laisse l amorcage — donc la resistance mesuree — inchange.
+    double tipFactor_ = 1.0;      // insertionTipFactor
+    double tipD_ = 0.5;           // insertionTipDamage : ce qui compte comme pointe
+    std::vector<char> vertTip_;   // sommet touche par un joint rompu (>= tipD_)
+    long nNuc_ = 0, nProp_ = 0;   // compteurs de diagnostic
     std::vector<std::vector<int>> copiesOfVert_;   // vertex -> node copies
     std::vector<std::vector<int>> jointsOfVert_;   // vertex -> incident joints
     std::vector<std::vector<std::vector<int>>> grpsOfVert_; // vertex -> groups
@@ -377,6 +730,9 @@ private:
     // per-phase element data (indexed by Elem::phase)
     std::vector<Eigen::Matrix3d> DmP_;
     std::vector<double> nuP_, crushCapP_, ftP_, rhoP_;
+    // Constantes de Lame par phase, pour bulkModel = neohookean seulement
+    // (la branche co-rotationnelle passe par DmP_, inchangee).
+    std::vector<double> lamP_, mu2P_;
     std::vector<double> hEl_;              // per-element inscribed size (4A/P)
 
     // contact
@@ -385,6 +741,129 @@ private:
     std::unordered_map<uint64_t, double> pen0_;
 
     double damping_ = 0.02, pullV_ = 0.05;
+    // dampingViscous : l amortissement NODAL de l eq. 9 d AbuAisha et al. 2017,
+    // C = mu I, soit une force -mu v sur chaque noeud, la meme pour tous
+    // independamment de la masse. Distinct de dampingLocal (Cundall, sur |f|,
+    // SANS dimension) et de bulkViscosity (Kelvin-Voigt de volume, 2 mu D).
+    // 0 = inerte, chemin bit-identique.
+    double muVisc_ = 0.0;                     // [kg/(m.s)], cle dampingViscous
+    // dampingViscousScheme : explicit (defaut, la forme de leur eq. 8) ou
+    // implicit (division v /= 1 + dt c/m, celle des amortisseurs de Lysmer).
+    // L implicite est INCONDITIONNELLEMENT STABLE et supprime donc la borne
+    // 2m/(mu e) sur le pas de temps. Il ne change RIEN a la physique du
+    // modele : un mu dont la constante de temps m/(mu e) est plus courte que
+    // le pas fige le noeud dans les deux cas — stablement en implicite, en
+    // divergeant en explicite.
+    bool muViscImplicit_ = false;
+    // hydroCavityClosure : referme le lacet de Green des faces SOURCE en
+    // pontant les bouches de fissure debouchant en paroi. Sans lui, l eventail
+    // omet un coin d aire ~ a R par bouche ouverte : V sous-estime, donc p
+    // SUR-estimee. false = comportement historique, bit-identique.
+    bool cavClosure_ = false;
+    bool cavClosureWarned_ = false;
+    // ---- couplage thermo-mecanique (choc thermique de paroi, 2026-09-01) ---
+    // Conduction transitoire EXPLICITE sur le graphe des joints — chaque joint
+    // relie deux elements, le maillage FDEM est donc deja le graphe de
+    // conduction — avec condition de ROBIN (coefficient d echange fini) sur
+    // les faces selectionnees : la revue etablit que l ebullition en film
+    // plafonne le flux (facteur 2,5-3 sous le Dirichlet ideal), donc un
+    // Dirichlet serait une borne superieure, pas une physique. La contrainte
+    // thermique entre dans l element en -3 K alphaT (T - Tref) I, la forme de
+    // la lignee Yan (Han et al. 2022, eq. 5), STRICTEMENT equivalente a la
+    // deformation thermique pour un volume elastique lineaire — c est pourquoi
+    // setupThermal() REFUSE `law` et `bulkDamage` tant que la decomposition de
+    // deformation n est pas ecrite pour eux. La separation des echelles de
+    // temps (dt_th / dt_mec ~ 1e7) est traitee par ACCELERATION D HORLOGE
+    // thermique (thermalSpeedup) : la mecanique sert de relaxation
+    // quasi-statique entre les increments thermiques, ce qui est la physique
+    // du probleme (Bourdin et al. 2014 le traitent en quasi-statique) et non
+    // un pis-aller. Validation prescrite : diviser thermalSpeedup par deux ne
+    // doit rien changer. Tout est OPT-IN, inerte par defaut.
+    bool thermOn_ = false;
+    double thAlpha_ = 8e-6;                // alphaT [1/K]
+    double thTref_ = 0.0;                  // temperature de reference (etat
+                                           // initial libre de contrainte)
+    double thTf_ = 0.0;                    // temperature du fluide [K ou C]
+    double thH_ = 0.0;                     // coefficient d echange [W/m2K]
+    double thKcond_ = 3.0;                 // conductivite [W/mK]
+    double thCcap_ = 800.0;                // capacite massique [J/kgK]
+    double thStart_ = 0.0;                 // la pompe a froid demarre ici [s]
+    double thSpeed_ = 1.0;                 // acceleration d horloge thermique
+    long   thEvery_ = 1;                   // cadence de l update [pas]
+    double thCrackR_ = 1.0;                // facteur de conductance d un joint
+                                           // ROMPU (1 = inchange, 0 = isolant)
+    double toolStart_ = 0.0;               // percussion : l outil ne part
+                                           // qu apres cet instant [s]
+    double thermQ_ = 0.0;                  // energie deposee par la frontiere
+                                           // [J pour la tranche thk_]
+    bool thInit_ = false;                  // borne de stabilite calculee
+    std::vector<double> Tel_;              // T par element (vide si off)
+    std::vector<double> k3aP_;             // 3 K alphaT par phase [Pa/K]
+    std::vector<double> Gj_;               // conductance par joint [W/K]
+    std::vector<double> thFlux_;           // tampon de flux [W]
+    std::vector<std::pair<int, double>> thBnd_;  // (element, G_robin) [W/K]
+    void setupThermal();
+    void thermalStep();
+    // Bascule d amortissement : forte relaxation pendant la phase thermique
+    // quasi-statique, valeur de production pour la percussion qui suit dans
+    // le MEME run. dampingSwitchT < 0 (defaut) = jamais, bit-identique.
+    double dampSwitchT_ = -1.0;
+    double dampAfter_ = 0.0;
+    // ---- weakPlanes : SCHISTOSITE par plans paralleles (2026-09-01) -------
+    // Une famille de plans paralleles, de pendage beta et d espacement s, dont
+    // les joints portent des proprietes mecaniques REDUITES. C est le sens
+    // strict du mot schistosite — a distinguer du champ correle
+    // (strengthCorrAngleDeg), qui ne donne que des TACHES allongees : la, un
+    // joint est faible parce qu il est au mauvais ENDROIT ; ici il l est parce
+    // qu il est dans la bonne DIRECTION et sur un plan.
+    //
+    // Selection a deux conditions, comme preBrokenJoints : distance du milieu
+    // d arete au plan le plus proche, ET ecart d orientation. La seconde est
+    // indispensable — sans elle on ramasse les aretes transverses qui coupent
+    // le plan, et le « plan » devient un escalier qui scie la roche.
+    //
+    // Le facteur MULTIPLIE ce que le tirage de Weibull a deja pose : texture
+    // et direction se composent au lieu de s ecraser.
+    //
+    // Reserve assumee : le plan discret suit les aretes du maillage, donc en
+    // zigzag. C est la meme approximation que pour TOUTE fissure en FDEM (une
+    // fissure ne peut pas non plus quitter les faces d elements), mais elle
+    // rend le plan legerement plus resistant qu un plan lisse. Le remede est
+    // un maillage conforme aux plans, non ecrit.
+    bool wpOn_ = false;
+    void applyWeakPlanes();
+    bool jsOn_ = false;                    // writeJointState (S8)
+    // ---- bedding* : la SCHISTOSITE PERVASIVE de Lisjak (these Toronto 2013,
+    // ch. 5 ; Lisjak, Grasselli & Vietor 2014 IJRMMS 65:96-115). Trois briques,
+    // dont deux vivent ici — la troisieme est un OUTIL DE MAILLAGE
+    // (tunnel_schisto/make_tunnel_bedded_mesh.py) :
+    //   1. elasticite TRANSVERSALEMENT ISOTROPE portee par le TRIANGLE
+    //      (5 constantes E, E', nu, nu', G' + le pendage). Verbatim de la
+    //      source : « no anisotropy in deformation is introduced in the
+    //      penalty formulation at the crack element level » — les joints ne
+    //      portent AUCUNE anisotropie elastique, sinon elle compterait deux
+    //      fois. Deformation plane exacte : sigma_zz = nu s11 + (E nu'/E') s22
+    //      dans le repere du litage.
+    //   2. resistance cohesive DIRECTIONNELLE : ft, c, GIc, GIIc de chaque
+    //      joint varient LINEAIREMENT avec gamma, l angle joint/litage, du
+    //      MINIMUM a gamma = 0 (joint parallele au litage : la delamination)
+    //      au MAXIMUM a gamma = 90. phi reste CONSTANT. Le texte de la these
+    //      ecrit l inverse (« maximum and minimum for 0 and 90 ») : c est une
+    //      COQUILLE, contredite par sa propre fig. 5.8a et sa table 5.1 —
+    //      verifie sur le PDF le 2026-09-01. Implementer la phrase donnerait
+    //      une roche impossible a deliter.
+    //   3. maillage a aretes alignees sur le litage, h ~ t/3 — hors solveur.
+    // Le triangle est CO-ROTATIONNEL (eps de Biot dans le repere R^T F) : le
+    // litage tourne donc avec l element et la matrice D_glob batie une fois
+    // au pendage de reference reste exacte sous rotation rigide.
+    bool tiOn_ = false;                    // brique 1 armee
+    Eigen::Vector3d tiZz_ = Eigen::Vector3d::Zero();  // sigma_zz = tiZz . eps
+    Eigen::Matrix3d tiS_ = Eigen::Matrix3d::Zero();   // complaisance (bilan)
+    double tiCp_ = 0.0;                    // vitesse d onde max (Christoffel)
+    double tiEmax_ = 0.0;                  // max(E, E') pour le budget de dt
+    bool gamOn_ = false;                   // brique 2 armee
+    void setupBeddingElastic();
+    void applyBeddingCohesive();
     double bulkVisc_ = 0.0;                // 2*mu*D de l'eq. 6 (Yan) [Pa.s]
     // ---- DIF dependant du taux de deformation (Yang et al. 2025) --------
     // Leurs eq. 2-3 : un facteur d amplification dynamique applique a la
@@ -414,13 +893,282 @@ private:
     // articles : il faut pouvoir le desarmer pour faire tourner le modele de
     // quelqu un d autre. <= 0 le desarme. Defaut 3 = inchange.
     double mtCap_ = 3.0;
+    // ---- S1 (campagne du 13/09), miroir du 3D — voir Fdem3dSolver.hpp ----
+    // Compteur d ecretage du cap (dernier pas / max depuis la trame, max
+    // par fil dans mtCapExcT_, membre dimensionne une fois) ;
+    // writeRuptureFields (dead, openMax, pMean, journal du compteur) ;
+    // jointBreakModeRef (0 = slipF historique, 1 = slipRef = plage
+    // courante du moteur). Relecture V : comptage, journal et Elem::pm
+    // sont tous sous writeRupture_ — rien n est execute sous defaut.
+    long mtCapN_ = 0, mtCapNFr_ = 0;
+    double mtCapExc_ = 0.0, mtCapExcFr_ = 0.0;
+    std::vector<double> mtCapExcT_;
+    bool writeRupture_ = false;
+    int breakModeRef_ = 0;
     bool difOn_ = false;
+    // ---- DIF en schema INTRINSEQUE : le gel a l AMORCAGE (2026-08-25) -----
+    // Vrai quand strainRateDIF est arme ET insertion = intrinsic. Le meme
+    // balayage d enveloppe que l insertion adaptative est alors execute, mais
+    // au franchissement il ne CREE pas le joint (il existe deja) : il se
+    // contente d y STAMPER le DIF. Les deux schemas partagent donc le critere
+    // exact et ne different que par sa consequence — c est le temoin recherche
+    // pour la comparaison a Yang et al. (joints intrinseques AVEC DIF).
+    // Combinaison auparavant REFUSEE par une exception : aucune configuration
+    // valide ne change de comportement (principe I).
+    // ---- bulkModel : la loi de VOLUME (2026-08-25) ---------------------
+    // `corotational` (defaut, historique) : Biot + P = R sigma.
+    // `neohookean` : Guo (these Imperial 2014, eq. 2.6),
+    //   T = (mu/J)(B - I) + (lambda/J) ln(J) I,   B = F F^T,
+    // avec l assemblage EXACT P = J T F^-T = R sigma cof(U). La loi est
+    // hyperelastique (W = mu/2 (tr B - 3) - mu ln J + lambda/2 (ln J)^2,
+    // le neo-hookeen compressible de Simo-Hughes) et redonne l elasticite
+    // lineaire au premier ordre avec les MEMES lambda et mu.
+    // ATTENTION : le facteur d ecart a la forme co-rotationnelle vaut
+    // J^(-2/3) en 3D mais J^(-1/2) en DEFORMATION PLANE. On n ecrit donc
+    // JAMAIS l exposant en dur : la forme generique cof(U) = J U^-1 est
+    // correcte dans les deux dimensions.
+    // ---- Loi de joint : les deux dernieres conventions de Guo -------------
+    // jointElastic = linear (defaut) | parabolic : la branche elastique du
+    // joint. Guo eq. 2.31 la pose PARABOLIQUE, sigma = ft(2r - r^2) avec
+    // r = dn/dnE, ce qui donne une tangente NULLE au pic (transition douce
+    // vers l adoucissement) et une pente initiale 2 pj, valable des DEUX
+    // cotes de dn = 0 (loi C1 a l origine). rockim posait une droite de
+    // pente pj, avec un coude au pic.
+    // ---- jointQuadrature : les points d integration du joint -------------
+    // `vertex` (defaut) : aux NOEUDS. C est la regle de Newton-Cotes nodale,
+    // celle des elements cohesifs d Abaqus, retenue contre les oscillations
+    // parasites du champ de traction a forte penalite (Schellekens & de
+    // Borst). `midedge` : aux MILIEUX D ARETES, poids 1/3 — la regle de Guo
+    // (Table 2.2), exacte a l ordre 2 au lieu de 1.
+    // Les deux coincident EXACTEMENT en chargement uniforme ; elles different
+    // de 50 a 200 % la ou l ouverture a un gradient a travers la facette,
+    // c est-a-dire au front de fissure. Ce n est donc PAS un raffinement de
+    // second ordre : c est un effet nul la ou on le mesure d habitude et fort
+    // la ou la fissure se decide.
+    bool midEdge_ = false;
+    bool paraElastic_ = false;
+    // jointDeltaC = exact (defaut) | guo : l ouverture critique. Guo
+    // eq. 2.30 pose delta_c = 3 Gf/f mesure depuis ZERO, en approchant
+    // l integrale de la z-curve par 1/3 la ou elle vaut 0,386307. Son
+    // modele dissipe donc 3/0,386307 = 1,159 fois son Gf nominal. C est
+    // SA convention, et ses Gf publies ont ete calibres avec : il faut la
+    // reproduire pour retrouver ses chiffres.
+    bool guoDeltaC_ = false;
+    // jointDeltaC = solidity : ce que fait REELLEMENT leur code, qui n est
+    // pas ce qu ecrit la these. Y3Dfd.c lignes 1098-1099 et 1125-1126 :
+    //     op = 2 el ft / p0                   (l ouverture au pic)
+    //     ot = MAXIM(2 op, 3 Gf/ft)           (la PLAGE d adoucissement)
+    // la rupture est donc a op + ot, pas a 3 Gf/ft : la convention `guo`
+    // oublie et l offset op et le plancher 2 op. Le plancher mord quand le
+    // maillage est fin devant Gf/ft — exactement le regime d un impact.
+    bool solidityDeltaC_ = false;
+    bool neoHooke_ = false;
+    bool difIntrinsic_ = false;
+    // strainRateDIFArm = continuous : DIF recalcule a CHAQUE pas depuis les
+    // proprietes de base, comme leur dpeftdif. Exclusif de insertion/envelope.
+    bool difContinuous_ = false;
+    // jointFailRule = majority : mort du joint seulement au-dela d UN point
+    // d integration a D >= 1 (leur `nfail>1`), donc les DEUX points en 2D.
+    bool majorityFail_ = false;
+    // ---- gcBirth : la naissance d un contact sur un joint qui vient de mourir
+    // `ramp` (defaut, historique) : la force part de ZERO et monte sur
+    // gcBirthTau (releve de naissance par AIRE, voir PotHist::aRef).
+    // `penalty` : leur solution (Y3Did.c l. 915-964) — la penalite de la paire
+    // est calee sur fn_joint/fn_contact, bornee, pour que la force soit
+    // CONTINUE. Le facteur persiste, la raideur tangentielle le suit.
+    bool birthPenalty_ = false;
+    double birthPenMin_ = 0.01, birthPenMax_ = 3.0;   // leurs deux bornes
+    long nBirthScaled_ = 0;                           // mesure : paires calees
+    double birthScaleSum_ = 0.0;                      // ... et facteur moyen
+    // ---- correction du contact par potentiel (2026-10-07, ENQUETE_CONTACT)
+    // gcBirth = offset : la paire nee EN recouvrement fige e0 = E(S0) et ne
+    // porte que le potentiel DECALE U = (E - e0)^2 / E (pot::birthOffsetScale)
+    // — aucune energie creee a la naissance. Opt-in, defaut ramp.
+    bool birthOffset_ = false;
+    // potForceExact = true : forces nodales = -grad E exact (retranche le
+    // terme non gradient p I grad lambda de la repartition de Munjiza,
+    // pot::exactGradientForces). Opt-in, defaut false.
+    bool potExact_ = false;
+    // contactCandidates = vertex : le jeu de candidats du potentiel inclut
+    // les voisins PAR SOMMET des elements actifs et tous les elements autour
+    // d un sommet portant un joint INSERE (non lie). Opt-in, defaut active.
+    bool candVertex_ = false;
+    // compteurs purs (lecture seule) : paires nees et energie de
+    // recouvrement E(S0) a leur naissance (celle que la rampe / la penalite
+    // materialisent sans travail ; celle que l offset neutralise)
+    long nPotBirth_ = 0;
+    double potBirthE_ = 0.0;
+    // gcBirth = offset : renaissances (paire retrouvee apres au moins un pas
+    // sans evaluation) et energie E neutralisee a ces renaissances
+    long nPotRebirth_ = 0;
+    double potRebirthE_ = 0.0;
+    long nCandExtra_ = 0;                             // candidats ajoutes (somme)
+    // ---- strainRateFilter : le taux qui alimente le DIF ------------------
+    // `exponential` (defaut) : passe-bas de constante strainRateTau.
+    // `none` : le taux BRUT, ce que fait leur code (Y3Dfd.c l. 1448).
+    bool srFilterOff_ = false;
+    long nDifStamped_ = 0;                 // joints ayant recu le gel
+    long nDifLate_ = 0;                    // dont DEJA endommages au gel
+    // ---- jointDeath : QUAND le joint passe la main au contact -------------
+    // `separation` (defaut, historique) : le joint ne meurt qu une fois
+    // FRANCHEMENT ouvert (dnMax > 3 dnF). En compression il ne meurt donc
+    // JAMAIS, et l algorithme de contact — qui porte le glissement contactMu,
+    // le 0,6 de leur Table 4 — ne prend jamais le relais sous l insert. Le
+    // commentaire du site de mort explique le choix : un joint broye qui
+    // glisse en compression reste VIVANT et sert de contact frottant de ses
+    // propres levres. C est defendable, a une chose pres — il frotte alors a
+    // tan(frictionDeg), le frottement de PIC, et non au glissement residuel.
+    // `damage` : mort des que D >= 1, quel que soit le signe de l ouverture,
+    // la regle de Guo (these Imperial 2014, §2.3.3). Le risque documente est
+    // la pompe a energie (le contact materialise 1/2 k pen^2 sur des levres
+    // interpenetrees) ; la releve de naissance pen0_ ajoutee depuis devrait
+    // la neutraliser — c est ce que la mesure fDeath doit trancher.
+    bool deathOnDamage_ = false;
     double srTau_ = 0.0;                   // constante du filtre de taux [s]
     double srRelax_ = 0.0;                 // exp(-dt/srTau_), pose apres dt
     // Exposant de DIF_traction. 0,07 = transcription LITTERALE de leur eq. 3.
     // 0,1707 = valeur deduite de LEUR PROPRE figure 2(b), qui rend la loi
     // continue a ses deux bornes (voir la note dans FdemSolver.cpp).
     double difExpT_ = 0.07;
+    // =====================================================================
+    //  NOTE DE TRAVAIL DE SEPTEMBRE 2026 — « Lois constitutives proposees
+    //  pour un FDEM hybride a insertion adaptative ». Miroir STRICT du lot
+    //  3D (Fdem3dSolver) : memes noms de cles, meme semantique, memes
+    //  messages. Toutes ces capacites sont OPT-IN et leur defaut reproduit
+    //  rockim_g0 bit pour bit (principe VIII, croissance par addition).
+    //
+    //  PIEGE PROPRE AU 2D : insertionSweep() duplique sa boucle de facette
+    //  en une branche OpenMP et une branche SERIE. Toute modification du
+    //  critere ou du taux doit etre faite DEUX FOIS et les deux copies
+    //  doivent rester strictement identiques, sinon un meme deck rend deux
+    //  resultats selon le nombre de fils.
+    // =====================================================================
+    // §2.1 eq. 10 — facetAverage = arith (defaut) | volume. `volume` pondere
+    // la moyenne de facette par les VOLUMES des deux elements au lieu de
+    // 0,5/0,5. En 2D le volume est A0 * thickness et l epaisseur est
+    // UNIFORME : elle se simplifie exactement, on pondere donc par les AIRES.
+    // S applique a la contrainte ET au taux, comme l exige l eq. 11 (« sur le
+    // MEME patch pondere »).
+    bool facetVol_ = false;
+    // facetAverage = max (porte du 3D le 12/09) : le critere d insertion lit le
+    // plus charge des deux triangles (rapport max(sig/ft_dyn, |tau|/fs)) au
+    // lieu de leur moyenne — la moyenne dilue l anneau hertzien sous un
+    // indenteur (peau de 2 mm au lieu du cone broye en 3D).
+    bool facetMaxIns_ = false;
+    // §2.1 eq. 11 — facetRate = scalar (defaut) | tensor. Voir Elem::Dg.
+    bool facetTensor_ = false;
+    // §2.2 eq. 12 — insertionCriterion = or (defaut) | elliptic. `elliptic`
+    // remplace le OU logique (sigma_n >= ft OU |tau| >= fs) par la norme
+    // effective Phi_F = (<t_n>/t_n0)^2 + (t_s/t_s0)^2 >= 1. Une facette
+    // chargee a 80 % en traction ET a 80 % en cisaillement s insere
+    // (Phi = 1,28) la ou le OU la laissait intacte.
+    bool insElliptic_ = false;
+    // §2.2 — insertionHoldSteps = n_h >= 1 (defaut 1 = chemin d origine).
+    int holdN_ = 1;
+    // §2.2 eq. 13 — a_s, exposant du DIF de CISAILLEMENT, separe de a_t.
+    // < 0 = cle absente = chemin d origine (rockim::difCompressionYang, dont
+    // l exposant 0,07 est fige). La note impose a_s < a_t ; le code
+    // AVERTIT si ce n est pas le cas, il ne refuse pas.
+    double difExpS_ = -1.0;
+    // §2.4 — jointTSL = penalty (defaut) | camacho. `camacho` : loi
+    // INITIALEMENT RIGIDE, t_m^ins = traction transmise, delta_f = 2 G_C /
+    // t_m^ins, decharge secante. Exige insertion = adaptive.
+    bool tslCamacho_ = false;
+    // §2.4 « Discontinuite temporelle des lois extrinseques » (Papoulia, Sam
+    // & Vavasis 2003) — jointTSLRise = delta_m^0 / delta_m^f, la longueur de
+    // la TRES COURTE branche ascendante que la note prescrit (1e-3). Lue
+    // SEULEMENT sous jointTSL = camacho, ou son defaut est 1e-3 (la valeur
+    // de la note) : camacho est opt-in et neuf, aucun deck ne depend de
+    // rise = 0, et rise = 0 vient d etre prouve instable (2026-09-11,
+    // out_note2026 / _fricoff / _dtsafe : raideur secante de recharge
+    // t_ins/dm_max non bornee, p99,9 = 210 x pj, max = 549 x pj ; eGc de
+    // -45 a -1707 J en 16 us pour 3,2 J injectes). 0 explicite = accepte
+    // avec AVERTISSEMENT, reglage de banc. Vaut 0 hors camacho : tout le
+    // code qui le lit y est deja mort.
+    double rise_ = 0.0;
+    // §2.4 eq. 18 — eta de Benzeggagh-Kenane. 0 = jointMixLaw = none, et
+    // jtsl::stampInsertion rend alors G_C = G_Ic sans melange.
+    double bkEta_ = 0.0;
+    // §2.4 — jointFrictionMobilised = off (defaut) | damage. `damage` :
+    // la part FROTTANTE du cap de cisaillement est multipliee par D, donc
+    // nulle au joint naissant. Sans elle le frottement vaut mu<-t_n> a
+    // pleine valeur des D = 0 et le cisaillement est compte deux fois (une
+    // fois par la viscoplasticite de la matrice, une fois par le joint).
+    bool fricMob_ = false;
+    // §2.5 eq. 20 — OPTION B, termes visqueux APRES insertion, en Pa.s/m.
+    // Contrairement a jointXi (dont le coefficient est reconstruit depuis la
+    // penalite, l aire et la masse nodale), ce sont des PARAMETRES MATERIAU.
+    // Exclusifs du DIF : « une seule des deux options, jamais les deux ».
+    double etaN_ = 0.0, etaS_ = 0.0;
+    // §2.5 — jointViscousInCriterion = on (defaut, historique) | off.
+    // `off` : le cap de Coulomb est evalue sur la part ELASTIQUE sigEl et
+    // non sur sig, pour que l amortisseur ne cree pas d effet de vitesse sur
+    // le SEUIL (regle (1) de la loi de joint : un terme visqueux ne fixe
+    // jamais une resistance).
+    bool viscInCrit_ = true;
+    // §2.6 eq. 21 — gbCombine = mean (defaut) | min sur les facettes
+    // INTER-granulaires. Les facteurs phases_.aTen / aCoh / aGf SONT les
+    // chi_t et chi_G de l eq. 21 ; seule la combinaison des deux voisins
+    // change (moyenne -> minimum).
+    bool gbMin_ = false;
+    // §2.6 eq. 22 — Weibull a TROIS parametres : x_u, en FRACTION du seuil
+    // de facette. Le facteur devient x_u + (1 - x_u) * W(m), de moyenne 1
+    // exactement — la resistance calibree reste la moyenne d ensemble et
+    // x_u est un plancher garanti. 0 (defaut) = Weibull a deux parametres.
+    double wbXu_ = 0.0;
+    // §2.6 eq. 22 — jointWeibullScale = volume (defaut) | area : l echelle
+    // x_0 suit (A_F/A_ref)^(-1/m) sur l AIRE DE LA FACETTE (L0 * thickness
+    // en 2D) et non sur le volume des deux voisins.
+    bool wbArea_ = false;
+    // §1.3 eq. 6 — compBandLength = solver (defaut) | tetEdge : longueur de
+    // bande de la COMPRESSION passee a MatLaw par MatState::lcComp.
+    bool compBandTet_ = false;
+    // §3.2 eq. 26 — energyBreakdown = off (defaut) | on : colonnes
+    // eVp, eDamT, eDamC ajoutees EN FIN de l en-tete de history.csv.
+    bool eBreak_ = false;
+    // §2.1 — poids de la moyenne de facette (eq. 10 et 11). Inline : appele
+    // dans la boucle chaude de insertionSweep().
+    void facetWeights(int eA, int eB, double& wA, double& wB) const {
+        if (!facetVol_) { wA = 0.5; wB = 0.5; return; }
+        const double vA = el_[eA].A0, vB = el_[eB].A0;
+        const double s = vA + vB;
+        if (!(s > 0.0)) { wA = 0.5; wB = 0.5; return; }
+        wA = vA / s; wB = vB / s;
+    }
+    // §2.1 eq. 11 — les DEUX taux a l interface, sur le MEME patch pondere.
+    // n = normale de la facette, e = tangente. Sous facetRate = scalar les
+    // deux sorties valent le MEME scalaire moyenne (chemin de rockim_g0).
+    void facetRates(const Joint& J, const Eigen::Vector2d& n,
+                    const Eigen::Vector2d& e,
+                    double& epsEq, double& gam) const {
+        double wA, wB; facetWeights(J.eA, J.eB, wA, wB);
+        if (!facetTensor_) {
+            epsEq = gam = wA * el_[J.eA].edot + wB * el_[J.eB].edot;
+            return;
+        }
+        const Eigen::Matrix2d Df = wA * el_[J.eA].Dg + wB * el_[J.eB].Dg;
+        const Eigen::Vector2d Dn = Df * n;
+        epsEq = n.dot(Dn);
+        // Le plan 2D n a qu UNE direction tangentielle : le vecteur de
+        // cisaillement eps_point.n - (n.eps_point.n) n vaut (e.eps_point.n) e,
+        // sa norme est donc |e.eps_point.n| et gamma = 2 |e.eps_point.n|.
+        gam = 2.0 * std::fabs(e.dot(Dn));
+    }
+    // §3.2 eq. 26 — recolte des trois dissipations de VOLUME de la loi
+    // (MatState::wPlas / wDamT / wDamC, en J/m^3), integrees sur A0 * thk.
+    // Rend 0 quand aucune loi de volume n est posee.
+    void energyBreakdown(double& wVp, double& wDamT, double& wDamC) const;
+    // Les trois colonnes de l eq. 26, ecrites EN FIN de ligne d historique
+    // (et l en-tete correspondant). No-op sous energyBreakdown = off, donc
+    // le format de history.csv d hier est intact au caractere pres.
+    void historyEnergyHead(std::ostream&) const;
+    void historyEnergyCols(std::ostream&) const;
+    // Lecture et validation de TOUTES les cles de la note de septembre 2026,
+    // en un seul endroit. Appelee depuis le constructeur, APRES strainRateDIF
+    // (les exclusions du §2.5 en dependent) et AVANT `law` et
+    // assignJointProps() (compBandLength, gbCombine et jointWeibull* y sont
+    // consommees). Aucune cle posee = aucun champ touche.
+    void readNote2026Keys();
     double gravity_ = 0.0;                 // body-force acceleration, -y [m/s^2]
     double pullRamp_ = 0.0;                // grip velocity rise time [s]
     bool gripFree_ = false;                // frictionless tension grips
@@ -552,6 +1300,20 @@ private:
                                            // Jamais reinitialise (parite
                                            // pen0_) : une paire retrouvee
                                            // reprend sa force pleine.
+        // ---- gcBirth = penalty (Solidity Y3Did.c l. 915-964) --------------
+        // Facteur de penalite PROPRE A CETTE PAIRE, fige au pas de naissance
+        // pour que la force du contact naissant egale celle du joint mourant.
+        // C est leur d1pepe[icoup]. < 0 = pas encore ne. Inerte sous `ramp`.
+        double penScale = -1.0;
+        // ---- gcBirth = offset (2026-10-07) : energie de recouvrement figee
+        // a la naissance, cliquet decroissant (pot::birthOffsetScale).
+        double e0 = 0.0;
+        // dernier pas ou la paire a ete EVALUEE en recouvrement (pairForce
+        // vrai), sous offset seulement. Revue C1 : une paire absente au pas
+        // precedent (recouvrement disparu en un pas, sortie des candidats,
+        // element inverse) RENAIT au retour — e0 = E courant — au lieu de
+        // garder un e0 perime qui laisserait penetrer librement.
+        long lastEval = -1000;
     };
     std::unordered_map<uint64_t, PotHist> potFt_;
     std::unordered_map<uint64_t, int> jointOfPair_;   // (eMin,eMax) -> joint
@@ -796,7 +1558,14 @@ private:
     bool brushZeroV_ = false;              // remplacer v au lieu d'ajouter
     bool brushArmed_ = false;
     double brushT0_ = 0.0;                 // instant reel de l'armement
-    double brushWork_ = 0.0;               // poste d'energie SEPARE
+    double brushWork_ = 0.0;               // poste SEPARE (cf. energyBodyForces)
+    // ---- energyBodyForces : MIROIR EXACT du 3D (Fdem3dSolver.hpp) ---------
+    // Le raisonnement complet y est ecrit une seule fois ; ici, la parite.
+    // Une divergence 2D/3D sur ce point serait MUETTE et fausserait toute
+    // comparaison dimensionnelle du bilan d'energie — le mode de panne que la
+    // regle de parite du depot existe pour eviter.
+    double gravWork_ = 0.0;                // travail de la PESANTEUR (B4)
+    bool   eBody_ = false;                 // energyBodyForces = on
     std::vector<char> brushCand_;          // par ELEMENT : candidat au retrait
     std::vector<int> brushFrag_;           // fragId_ fige a l'armement
     int brushNFrag_ = 0;
@@ -810,6 +1579,9 @@ private:
 
     Tool tool_;
     double toolKE0_ = 0.0;
+    // reprise post-revue 2026-08-28 : KE de l outil A L INSTANT de l arret
+    // toolStop (le zeroing detruirait la metrique tool KE loss sinon)
+    double toolKEStop_ = -1.0;
 
     // UCS / triaxial loaded through PLATENS instead of clamped node rows.
     // Clamping a node row imposes v = 0 over zero thickness, which creates a
@@ -865,6 +1637,78 @@ private:
     double bdD0_ = 1.4e-5, bdDf_ = 4.0e-4, bdDmax_ = 0.9, bdCd_ = 1.0;
     double bdWork_ = 0.0;
     long nPulv_ = 0;
+    // ---- S4 (campagne du 13/09) : miroir 2D des mesures alternatives de
+    // delta_m = h * eps_m (voir Fdem3dSolver.hpp). bdLen_ : 0 = `inscribed`
+    // (defaut, hEl_ = 4A/P) ; 1 = `edge` (moyenne des trois aretes du
+    // triangle, hEdge_, rempli seulement sous l option). bdStrain_ : 0 =
+    // `deviatoric` (defaut, deformation plane : eps_zz = 0 dans le
+    // deviateur) ; 1 = `principal` (max |eps_i| sur eps_1, eps_2, 0) ; 2 =
+    // `total` (sqrt(2/3)||eps||, trace comprise). bdProbe_ : sortie seule.
+    int bdLen_ = 0;
+    int bdStrain_ = 0;
+    bool bdProbe_ = false;
+    std::vector<double> hEdge_;            // S4 : arete moyenne par triangle
+    // WP6 : mu de contact residuel post-pulverisation — miroir 2D exact du
+    // 3D (voir le commentaire complet dans Fdem3dSolver.hpp). Sites 2D :
+    // contact general (potentiel + relais penalite) et outil (PDC, flat,
+    // disque, Signorini). HORS perimetre : les plateaux (machine).
+    // muCRes_ < 0 = cle absente = comportement historique, bit-identique.
+    double muCRes_ = -1.0;
+    unsigned long long nCtcPulv_ = 0;
+    double tCtcPulv0_ = -1.0;
+    // ---- frottement PAR PHASE + couplage (1-D) : miroir exact du 3D ----
+    // (Table 1 Yang 2026 ; Solidity Y3Did.c l. 995, 1044, 1263-1265, 1292)
+    std::vector<double> muPhase_;
+    bool muPerPhase_ = false;
+    int cplMode_ = 0;
+    unsigned long long nCplEval_ = 0, nCplColl_ = 0;
+    double tCpl0_ = -1.0;
+    inline double cplDf(int eA, int eB) const {
+        double d = 1.0;
+        if (eA >= 0) d = std::min(d, 1.0 - el_[eA].bdD);
+        if (eB >= 0) d = std::min(d, 1.0 - el_[eB].bdD);
+        return (d < 0.041) ? d * 1e-3 : d;   // Y3Did.c l. 1264
+    }
+    inline double ctcMu(int eA, int eB = -1) {
+        double mu = muC_;
+        if (muPerPhase_) {               // le plus FAIBLE gouverne la paire
+            double m = 1e300;
+            if (eA >= 0) m = std::min(m, muPhase_[el_[eA].phase]);
+            if (eB >= 0) m = std::min(m, muPhase_[el_[eB].phase]);
+            if (m < 1e299) mu = m;
+        }
+        if (cplMode_) {
+            double dr = 1.0;
+            if (eA >= 0) dr = std::min(dr, 1.0 - el_[eA].bdD);
+            if (eB >= 0) dr = std::min(dr, 1.0 - el_[eB].bdD);
+            if (dr < 1.0) {
+#ifdef _OPENMP
+#pragma omp atomic
+#endif
+                ++nCplEval_;
+                if (dr < 0.041) {
+#ifdef _OPENMP
+#pragma omp atomic
+#endif
+                    ++nCplColl_;
+                    dr *= 1e-3;
+                }
+                if (tCpl0_ < 0.0) tCpl0_ = t_;
+                mu *= dr;
+            }
+            return mu;
+        }
+        if (muCRes_ < 0.0) return mu;
+        bool p = (eA >= 0 && el_[eA].bdD >= bdDmax_)
+              || (eB >= 0 && el_[eB].bdD >= bdDmax_);
+        if (!p) return mu;
+#ifdef _OPENMP
+#pragma omp atomic
+#endif
+        ++nCtcPulv_;
+        if (tCtcPulv0_ < 0.0) tCtcPulv0_ = t_;
+        return muCRes_;
+    }
     double jointWork_ = 0.0;   // tractions des joints (visqueux INCLUS)
     double cundWork_ = 0.0;    // damping local de Cundall (<= 0)
     double lysWork_ = 0.0;     // frontieres absorbantes (ressort+amortisseur)
@@ -913,6 +1757,20 @@ private:
     double pullDelay_ = 0.0;
     bool ucsStop_ = false;
     double ucsStopDelay_ = 0.0;
+    // ---- ajouts calibration (2026-09-02, opt-in, DOCUMENTATION 5.17) --------
+    // gripsStopAfterPeak : arret apres la chute post-pic en montage a MORS
+    // (miroir de ucsStopAfterPeak, qui ne vaut qu en plateaux) ; stopPeakDrop :
+    // fraction de chute sous le pic qui verrouille (defaut historique : sigma
+    // < 0,3 pic, soit 70 % de chute — inatteignable sous confinement) ;
+    // historyStrains : colonnes epsAx, epsLat, epsVol (faces de la boite).
+    bool gripsStop_ = false;
+    double gripsStopDelay_ = 0.0;
+    double lockDrop_ = -1.0;
+    bool stopKeysRead_ = false;
+    bool histStrains_ = false;
+    std::vector<int> hsTop_, hsBot_, hsLeft_, hsRight_;
+    void setupHistoryStrains();
+    void historyStrains(double& eAx, double& eLat) const;
     bool peakLockedU_ = false;
     double tLockedU_ = -1.0;
     // Deformation axiale. TROIS mesures, portees par history.csv :
@@ -1111,7 +1969,24 @@ private:
     double confAchieved_ = 0.0;
 
     long stepCount_ = 0;
+    long nanEvery_ = 256;                  // nanCheckEvery (C4, w20)
     double work_ = 0.0, peakF_ = 0.0;
+    // T1 : |v| nodale maximale vue sur le run, echantillonnee tous les 1024
+    // pas. Rapportee a 2 v_outil au resume — borne physique dure du choc
+    // contre une masse infinie. Voir le bloc de suivi dans step().
+    double vNodeMax_ = 0.0;
+    double toolV0_ = 0.0;      // vitesse d'outil de reference (2 v = borne)
+    // ETAPE 2 : detecteurs PAR CANAL (print-only). Somme des increments
+    // POSITIFS par pas de chaque famille : un canal sain oscille autour de
+    // zero, un canal qui pompe accumule. Le net (jointWork_, gcWork_) ne le
+    // montre pas, le residu B4 non plus.
+    double jointWorkPos_ = 0.0, gcWorkPos_ = 0.0;
+    double toolWork2_ = 0.0;   // travail outil au TRAPEZE (v- + v+)/2
+    long nStickTool_ = 0, nActTool_ = 0;   // noeuds colles / actifs (Coulomb)
+    long nDeepNode_ = 0;       // noeuds rejetes par d < -capk (traversees)
+    long vMaxEvery_ = 1024;    // cadence d echantillonnage de vNodeMax_
+    bool fixBottomShear_ = false;   // ETAPE 3 : shearSupport = fixedBottom
+    bool toolSigGroup_ = false;     // ETAPE 3 : toolSignoriniGroup
     long nBroken_ = 0;
     int nFrag_ = 1;
     double detachedVol_ = 0.0;

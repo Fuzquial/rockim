@@ -1,0 +1,16 @@
+S3 (campagne du 13/09) - ancres de bit-identite, OMP_NUM_THREADS = 4, machine partagee (bancs de Fernando sur 14 fils)
+
+exe FINAL = build/rockim.exe sha256 8ef6e47664661f0bf6c882aacf1eb1a47af9c43b7c6b0593dd118f3d7bd62a81 (2 480 128 octets), copie C:/Users/FUZQUI~1/AppData/Local/Temp/claude/C--Users-fuzquianoalricabi-simulations/01c1f07a-4d93-418a-851e-98d14203ea97/scratchpad/s3/rockim_s3final.exe
+  refs tools/bitid_refs.json (ancre rockim_g1ref.exe)          :   IDENTIQUE  fdem3d_kuru9_court               156.2 s  omp4  pic 0 N
+  refs tools/bitid_refs.json (ancre rockim_g1ref.exe)          : [bitid] 1/1 IDENTIQUE
+  refs tools/bitid_refs_jointlaw.json (ancre rockim_g1y10.exe) :   IDENTIQUE  fdem3d_yang_v2_court             368.8 s  omp4  pic 0 N
+  refs tools/bitid_refs_jointlaw.json (ancre rockim_g1y10.exe) : [bitid] 1/1 IDENTIQUE
+  json : C:/Users/FUZQUI~1/AppData/Local/Temp/claude/C--Users-fuzquianoalricabi-simulations/01c1f07a-4d93-418a-851e-98d14203ea97/scratchpad/s3/bitid_kf.json, C:/Users/FUZQUI~1/AppData/Local/Temp/claude/C--Users-fuzquianoalricabi-simulations/01c1f07a-4d93-418a-851e-98d14203ea97/scratchpad/s3/bitid_yf.json
+
+premier exe de la serie (physique identique, seul le format d impression du critere (ii) differe) sha256 17acb6b56039f25819ff994c758adb76c97ada81e868a2b5bcc2892858d5eb75 :
+  refs defaut   :   IDENTIQUE  fdem3d_kuru9_court               119.0 s  omp4  pic 0 N
+  refs defaut   : [bitid] 1/1 IDENTIQUE
+  refs jointlaw :   IDENTIQUE  fdem3d_yang_v2_court             323.8 s  omp4  pic 0 N
+  refs jointlaw : [bitid] 1/1 IDENTIQUE
+
+Les 6 autres decks de l ancre par defaut (fdem_ucs_yan_adaptive_court, fdem3d_cut3d_heilman_court, fdem3d_visc_yan_3d, ...) n ont PAS ete rejoues ici (regle 7 du cadrage : l ancre complete 8/8 + 1/1 est faite une fois a la fin par l agent Build).

@@ -1,0 +1,37 @@
+\section{Reproduire les résultats et sources}
+\label{sec-annexe-reproduire}
+
+\subsection{Compiler et lancer}
+
+rockim se compile avec CMake sous Linux, macOS ou Windows ; Eigen est téléchargé s'il n'est pas installé et OpenMP est détecté s'il est disponible. Un calcul se lance par \cle{rockim <configuration> <sortie>}, le nombre de fils se fixant par \cle{OMP_NUM_THREADS} ; un seul fil donne des sorties identiques au bit près à celles du calcul série. La suite de non-régression se lance depuis la racine du dépôt par \cle{python tools/verify_suite.py --tier fast}, les autotests par \cle{rockim selftest-<nom>}. Chaque banc de la campagne se lance par \cle{python vv/<banc>/<script>.py all}, qui prépare, calcule et écrit ses résultats et ses figures.
+
+\subsection{Provenance des résultats}
+
+\begin{longtable}{@{}p{0.34\linewidth} p{0.6\linewidth}@{}}
+\toprule
+partie du rapport & document du dépôt \\
+\midrule
+\endhead
+\bottomrule
+\endfoot
+formulation & \cle{DOCUMENTATION_rockim.md}, \cle{src/Fdem3dSolver.cpp} \\
+correspondance avec Solidity & \cle{docs/notes/ECARTS_guo2014_rockim_2026-09-13.md} \\
+décharge des joints & \cle{docs/notes/ECARTS_guo2014_rockim_2026-09-13.md}, \cle{docs/notes/RAPPORT_nuit_2026-09-13.md} \\
+campagne de vérification et validation & \cle{docs/VV_campagne.md}, dossier \cle{vv/} \\
+suite et autotests & \cle{tools/verify_suite.py}, \cle{tools/BITID.md} \\
+réplique St Anne & \cle{docs/notes/COMPARAISON_yang2025_stanne_2026-09-14.md}, \cle{results/fig/stanne300/} \\
+réplique Kuru & \cle{docs/notes/ETAT_yang2026_2026-09-11.md}, \cle{docs/notes/DIAGNOSTIC_ICL_independant_2026-09-12.md} \\
+insertion adaptative & \cle{docs/notes/BILAN_insertion_adaptative.md}, \cle{docs/notes/ADAPTATIF_impact_2026-09-11.md} \\
+reproduction de Yan et al. & \cle{docs/notes/CHANGES_YAN.md}, \cle{docs/notes/PLAN_article_exact.md}, \cle{vv/B_articles/README.md} \\
+fracturation hydraulique d'AbuAisha et al. & \cle{bench_abuaisha/VALIDATION_hydro.md}, \cle{bench_abuaisha/README.md}, \cle{specs/004-couplage-hydro-mecanique/spec.md} \\
+tunnel de Wang et al. & \cle{tunnel_edz/README.md}, \cle{docs/notes/BILAN_insertion_adaptative.md} \\
+calibration du Red Bohus & \cle{calibration_redbohus/README.md}, \cle{calib_quick/README.md} \\
+coût & \cle{CHANGELOG.md}, \cle{docs/notes/HANDOFF_2026-10-03.md} \\
+figure de la loi de joint & \cle{docs/rapport_guide/figures/fig_loi_joint.py} \\
+\end{longtable}
+
+Les figures géométriques du calcul St Anne demandent les trames VTU, environ 2~Go, qui ne sont pas dans le dépôt.
+
+\subsection{Documents de référence des autres codes}
+
+La formulation de Solidity est lue dans la thèse de Guo~\cite{guo2014thesis} (chapitres 2 et 3) et dans Guo et al.~\cite{guo2020generic}, les bancs du contact dans Xiang et al.~\cite{xiang2009validation}, la mise en données de l'impact dans Yang et al.~\cite{yang2025validation,yang2026pulverisation} et la communication ARMA~\cite{yang2024energy}. Y-Geo est lu dans la thèse de Lisjak~\cite{lisjak2013thesis}, l'article de Mahabadi et al.~\cite{mahabadi2012ygeo} et la procédure de calage de Tatone et Grasselli~\cite{tatone2015}, HOSS dans Knight et al.~\cite{knight2020hoss}, MultiFracS dans Yan et al.~\cite{yan2023adaptive}. Le livre de Munjiza et la thèse de Mahabadi, documentations d'origine de Y2D et de Y-Geo, ne sont pas dans la bibliographie du doctorant.

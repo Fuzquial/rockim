@@ -1,0 +1,18 @@
+﻿[OK  ] phases sur mesh = grid                 refuse avec le bon message
+[OK  ] loi par phase (phase.<nom>.law)        refuse avec le bon message
+[OK  ] cle de LOI ecrite par phase            refuse avec le bon message
+[OK  ] nom de phase inconnu                   refuse avec le bon message
+[OK  ] propriete de JOINT (gbAlphaTen)        refuse avec le bon message
+[OK  ] propriete de JOINT (gb.<a>.<b>.ft)     refuse avec le bon message
+[OK  ] brasage de groupes (groupBond)         refuse avec le bon message
+[OK  ] groupe physique sans phase             refuse avec le bon message
+[OK  ] phases sans groupes nommes             refuse avec le bon message
+[OK  ] Weibull x phases sans phaseWeibull     refuse avec le bon message
+[OK  ] valeur non physique (E < 0)            refuse avec le bon message
+[OK  ] valeur non physique (nu >= 0.5)        refuse avec le bon message
+[OK  ] fraction manquante                     refuse avec le bon message
+[OK  ] fiche de phase sans cle `phases`       refuse avec le bon message
+[OK  ] groupPhase hors mesh = file            refuse avec le bon message
+[OK  ] phaseWeibull sans objet                refuse avec le bon message
+
+VERDICT : les 16 cas fautifs sont refuses avec un message explicatif

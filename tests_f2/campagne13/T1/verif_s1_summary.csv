@@ -1,0 +1,18 @@
+metric,value,unit
+label,out_yang2026_v3  trame 18  t = 180.0 us  (geometrie de reference),-
+nBroken,3357,-
+nComponents,22,-
+noyauId,0,-
+noyauFacets,3328,-
+nArms,16,-
+yangRadialLength,0.008261410053760722,m
+longestArmAny,0.009661582788895442,m
+craterRmax,0.00871351053806823,m
+craterRmeanSect,0.007234929906977991,m
+craterRminSect,0.005263068533781034,m
+craterCover,1.0,-
+rmaxAllVertices,0.009661582788895442,m
+rmaxAllCentroids,0.009039311715849966,m
+depthAll,0.010741953198000004,m
+rcore,0.006,m
+skin,0.001,m

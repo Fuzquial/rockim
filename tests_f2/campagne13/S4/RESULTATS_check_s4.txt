@@ -1,0 +1,63 @@
+S4 — essais elementaires de la pulverisation (scratch : C:/Users/FUZQUI~1/AppData/Local/Temp/claude/C--Users-fuzquianoalricabi-simulations/01c1f07a-4d93-418a-851e-98d14203ea97/scratchpad/s4)
+
+A. seuils en deformation imprimes (delta0/h, medianes)
+  attendu (Kuhn a = 2 mm) : h_ins = 0.828427 mm, h_edge = 2.520159 mm -> 1.68995 % / 0.55552 %
+  [OK]   iso_dev : imprime 1.68995 % / 0.55552 % (ecart relatif 3.0e-07 / -7.9e-07)
+  [OK]   uni_dev : imprime 1.68995 % / 0.55552 % (ecart relatif 3.0e-07 / -7.9e-07)
+  [OK]   uni_edge_tot : imprime 1.68995 % / 0.55552 % (ecart relatif 3.0e-07 / -7.9e-07)
+
+B. compression isotrope (confineFaces = all, 2,5 GPa) et confinement lateral
+  [OK]   iso_dev : max delta_m = 0.812 um (0.058 delta0), max D (VTU) = 0.0000, armes 0/48, nPulv = 0, bdWork = 0 J ; eps_m residuel = delta_m/h = 9.796e-04  [attendu : deviatorique nul en isotrope -> eps_m < 1e-3, D = 0]
+  [OK]   iso_edge : max delta_m = 2.469 um (0.176 delta0), max D (VTU) = 0.0000, armes 0/48, nPulv = 0, bdWork = 0 J ; eps_m residuel = delta_m/h = 9.796e-04  [attendu : deviatorique nul en isotrope -> eps_m < 1e-3, D = 0]
+  [OK]   iso_tot : max delta_m = 195.797 um (13.986 delta0), max D (VTU) = 0.9000, armes 48/48, nPulv = 48, bdWork = -9.522 J  [attendu : la mesure a trace S ARME en isotrope]
+  [OK]   iso_pri : max delta_m = 259.234 um (18.517 delta0), max D (VTU) = 0.9000, armes 48/48, nPulv = 48, bdWork = -11.53 J  [attendu : la mesure a trace S ARME en isotrope]
+  [OK]   iso_edge_tot : max delta_m = 595.725 um (42.552 delta0), max D (VTU) = 0.9000, armes 48/48, nPulv = 48, bdWork = -1.016 J  [attendu : la mesure a trace S ARME en isotrope]
+  [OK]   biax_dev : max delta_m = 278.641 um (19.903 delta0), max D (VTU) = 0.9000, armes 48/48, nPulv = 48, bdWork = -9.044 J  [attendu : etat deviatorique -> toutes les mesures s arment]
+  [OK]   biax_tot : max delta_m = 320.271 um (22.877 delta0), max D (VTU) = 0.9000, armes 48/48, nPulv = 48, bdWork = -5.997 J  [attendu : etat deviatorique -> toutes les mesures s arment]
+  [OK]   biax_pri : max delta_m = 251.834 um (17.988 delta0), max D (VTU) = 0.9000, armes 48/48, nPulv = 48, bdWork = -7.495 J  [attendu : etat deviatorique -> toutes les mesures s arment]
+  [OK]   biax_edge : max delta_m = 848.159 um (60.583 delta0), max D (VTU) = 0.9000, armes 48/48, nPulv = 48, bdWork = -1.052 J  [attendu : etat deviatorique -> toutes les mesures s arment]
+  [OK]   biax_edge_tot : max delta_m = 973.702 um (69.550 delta0), max D (VTU) = 0.9000, armes 48/48, nPulv = 48, bdWork = -0.6678 J  [attendu : etat deviatorique -> toutes les mesures s arment]
+
+C. bit-identite du chemin par defaut
+  [OK]   iso_ref : exe S4 vs rockim_g1y16.exe — history.csv IDENTIQUE, fdem3d_0026.vtu IDENTIQUE
+  [OK]   iso_dev (probe seule) vs iso_ref : history.csv IDENTIQUE ; champs VTU communs egaux ; champs en plus ['bulkDm']
+  [OK]   biax_ref : exe S4 vs rockim_g1y16.exe — history.csv IDENTIQUE, fdem3d_0026.vtu IDENTIQUE
+  [OK]   biax_dev (probe seule) vs biax_ref : history.csv IDENTIQUE ; champs VTU communs egaux ; champs en plus ['bulkDm']
+  [OK]   uni_ref : exe S4 vs rockim_g1y16.exe — history.csv IDENTIQUE, fdem3d_0026.vtu IDENTIQUE
+  [OK]   uni_dev (probe seule) vs uni_ref : history.csv IDENTIQUE ; champs VTU communs egaux ; champs en plus ['bulkDm']
+  [OK]   uni2d_ref : exe S4 vs rockim_g1y16.exe — history.csv IDENTIQUE, fdem_0026.vtu IDENTIQUE
+  [OK]   uni2d_dev (probe seule) vs uni2d_ref : history.csv IDENTIQUE ; champs VTU communs egaux ; champs en plus ['bulkDm']
+
+D. delta_m recompose depuis la geometrie du dernier VTU (polaire exacte) contre `bulkDm`
+  [OK]   uni_dev : trame 19 (max bulkDm 13.70 um) active ins_dev ecart max 4.54e-05 ; inactives separees {'ins_pri': '0.204', 'ins_tot': '0.041', 'edge_dev': '2.042', 'edge_pri': '2.662', 'edge_tot': '2.166'} ; derniere trame : max bulkDm 20.02 um, courant recompose 20.02 um, (courant - bulkDm)/bulkDm max 3.90e-05
+  [OK]   uni_tot : trame 18 (max bulkDm 13.23 um) active ins_tot ecart max 4.89e-05 ; inactives separees {'ins_dev': '0.039', 'ins_pri': '0.157', 'edge_dev': '1.931', 'edge_pri': '2.519', 'edge_tot': '2.042'} ; derniere trame : max bulkDm 21.13 um, courant recompose 21.13 um, (courant - bulkDm)/bulkDm max 4.09e-05
+  [OK]   uni_pri : trame 16 (max bulkDm 12.95 um) active ins_pri ecart max 5.78e-05 ; inactives separees {'ins_dev': '0.169', 'ins_tot': '0.135', 'edge_dev': '1.542', 'edge_pri': '2.042', 'edge_tot': '1.639'} ; derniere trame : max bulkDm 25.19 um, courant recompose 25.19 um, (courant - bulkDm)/bulkDm max 3.63e-05
+  [OK]   uni_edge : trame 9 (max bulkDm 11.93 um) active edge_dev ecart max 1.55e-04 ; inactives separees {'ins_dev': '0.671', 'ins_pri': '0.607', 'ins_tot': '0.659', 'edge_pri': '0.204', 'edge_tot': '0.041'} ; derniere trame : max bulkDm 63.14 um, courant recompose 63.14 um, (courant - bulkDm)/bulkDm max 3.61e-05
+  [OK]   uni_edge_tot : trame 9 (max bulkDm 12.41 um) active edge_tot ecart max 1.55e-04 ; inactives separees {'ins_dev': '0.684', 'ins_pri': '0.621', 'ins_tot': '0.671', 'edge_dev': '0.039', 'edge_pri': '0.157'} ; derniere trame : max bulkDm 76.95 um, courant recompose 76.95 um, (courant - bulkDm)/bulkDm max 6.11e-05
+  [OK]   biax_dev : trame 4 (max bulkDm 11.40 um) active ins_dev ecart max 2.77e-04 ; inactives separees {'ins_pri': '0.100', 'ins_tot': '0.150', 'edge_dev': '2.043', 'edge_pri': '1.741', 'edge_tot': '2.497'} ; derniere trame : max bulkDm 278.64 um, courant recompose 278.24 um, (courant - bulkDm)/bulkDm max -7.02e-05
+  [OK]   biax_tot : trame 4 (max bulkDm 13.10 um) active ins_tot ecart max 2.76e-04 ; inactives separees {'ins_dev': '0.130', 'ins_pri': '0.216', 'edge_dev': '1.648', 'edge_pri': '1.385', 'edge_tot': '2.043'} ; derniere trame : max bulkDm 320.27 um, courant recompose 319.67 um, (courant - bulkDm)/bulkDm max -2.21e-04
+  [OK]   biax_pri : trame 4 (max bulkDm 10.27 um) active ins_pri ecart max 2.75e-04 ; inactives separees {'ins_dev': '0.111', 'ins_tot': '0.277', 'edge_dev': '2.380', 'edge_pri': '2.043', 'edge_tot': '2.884'} ; derniere trame : max bulkDm 251.83 um, courant recompose 250.42 um, (courant - bulkDm)/bulkDm max -8.03e-04
+  [OK]   biax_edge : trame 2 (max bulkDm 9.62 um) active edge_dev ecart max 6.22e-04 ; inactives separees {'ins_dev': '0.671', 'ins_pri': '0.704', 'ins_tot': '0.622', 'edge_pri': '0.100', 'edge_tot': '0.152'} ; derniere trame : max bulkDm 848.16 um, courant recompose 846.44 um, (courant - bulkDm)/bulkDm max -9.59e-05
+  [OK]   biax_edge_tot : trame 2 (max bulkDm 11.05 um) active edge_tot ecart max 6.18e-04 ; inactives separees {'ins_dev': '0.714', 'ins_pri': '0.742', 'ins_tot': '0.671', 'edge_dev': '0.131', 'edge_pri': '0.216'} ; derniere trame : max bulkDm 973.70 um, courant recompose 972.48 um, (courant - bulkDm)/bulkDm max -2.17e-04
+  [OK]   iso_dev : trame 26 (max bulkDm 0.81 um) [non mesurable < 0,2 delta0 : info seule] active ins_dev ecart max 6.11e-02 ; inactives separees {'ins_pri': '503.177', 'ins_tot': '710.889', 'edge_pri': '1532.757', 'edge_tot': '2164.639'} ; derniere trame : max bulkDm 0.81 um, courant recompose 0.81 um, (courant - bulkDm)/bulkDm max -1.57e-03
+  [OK]   iso_tot : trame 5 (max bulkDm 13.91 um) active ins_tot ecart max 1.97e-04 ; inactives separees {'ins_pri': '0.292', 'edge_pri': '1.241', 'edge_tot': '2.043'} ; derniere trame : max bulkDm 195.80 um, courant recompose 195.73 um, (courant - bulkDm)/bulkDm max -2.14e-04
+  [OK]   iso_pri : trame 6 (max bulkDm 13.31 um) active ins_pri ecart max 1.43e-04 ; inactives separees {'ins_tot': '0.413', 'edge_pri': '2.043', 'edge_tot': '3.297'} ; derniere trame : max bulkDm 259.23 um, courant recompose 139.19 um, (courant - bulkDm)/bulkDm max -1.20e-01
+  [OK]   iso_edge : trame 26 (max bulkDm 2.47 um) [non mesurable < 0,2 delta0 : info seule] active edge_dev ecart max 6.11e-02 ; inactives separees {'ins_pri': '164.733', 'ins_tot': '233.012', 'edge_pri': '503.177', 'edge_tot': '710.889'} ; derniere trame : max bulkDm 2.47 um, courant recompose 2.46 um, (courant - bulkDm)/bulkDm max -1.57e-03
+  [OK]   iso_edge_tot : trame 2 (max bulkDm 8.22 um) active edge_tot ecart max 6.18e-04 ; inactives separees {'edge_pri': '0.291'} ; derniere trame : max bulkDm 595.72 um, courant recompose 595.42 um, (courant - bulkDm)/bulkDm max -2.08e-04
+
+E. decks mal formes
+  [OK]   bad_nokey : rc = 1, message 'exige bulkDamage = yang' present
+  [OK]   bad_value : rc = 1, message 'bulkDamageStrain must be' present
+  [OK]   bad_len : rc = 1, message 'bulkDamageLength must be' present
+
+F. miroir 2D (fdem, plaque 4 x 4 mm grid 2 x 2, compression uniaxiale)
+  uni2d_dev : seuils (1.68995, 0.869848) % ; dernier max delta_m = 28.835 um, max D (VTU) = 0.5331, armes 16/16, bulkDm exporte : True
+  [OK]   uni2d_dev : s arme en uniaxial et exporte bulkDm
+  uni2d_tot : seuils (1.68995, 0.869848) % ; dernier max delta_m = 31.549 um, max D (VTU) = 0.5764, armes 16/16, bulkDm exporte : True
+  [OK]   uni2d_tot : s arme en uniaxial et exporte bulkDm
+  uni2d_pri : seuils (1.68995, 0.869848) % ; dernier max delta_m = 37.939 um, max D (VTU) = 0.6539, armes 16/16, bulkDm exporte : True
+  [OK]   uni2d_pri : s arme en uniaxial et exporte bulkDm
+  uni2d_edge : seuils (1.68995, 0.869848) % ; dernier max delta_m = 113.609 um, max D (VTU) = 0.9000, armes 16/16, bulkDm exporte : True
+  [OK]   uni2d_edge : s arme en uniaxial et exporte bulkDm
+
+BILAN : 0 verdict(s) FAIL

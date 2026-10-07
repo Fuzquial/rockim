@@ -1,0 +1,10 @@
+  == 7 criteres (leur Table 3, 10,66 m/s, fourchettes maillages) ==
+  contrainte max au bit  :   174.4 MPa   (leur fig. 9a : ~200-260)
+  vitesse d indentation  :    5.96 m/s   (9,40 - 9,85)
+  vitesse de rebond      :   -5.92 m/s   (6,87 - 7,10)
+  profondeur d indentation:   0.35 mm    (~1,53)
+  fissure radiale max    :     9.9 mm    (20,2 - 24,5)
+  rayon de cratere       :     9.9 mm    (10,0 - 12,1)
+  profondeur fissuree    :     3.7 mm
+  joints rompus          :     113
+écrit : results/fig/yang_s25_adaptif_moyenne_110us.pdf  et  .png

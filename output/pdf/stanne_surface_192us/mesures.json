@@ -1,0 +1,32 @@
+{
+  "run": "C:\\Users\\fuzquianoalricabi\\simulations\\FDEM\\rockim_g1\\out_stanne2025_rock137",
+  "frame": 12,
+  "time_us": 179.994,
+  "broken_facets": 6633,
+  "surface": {
+    "segments": 365,
+    "total_trace_length_mm": 382.1166252009315,
+    "max_radius_mm": 18.26585772003989
+  },
+  "subsurface": {
+    "segments": 830,
+    "total_trace_length_mm": 481.1223603350891,
+    "max_radius_mm": 18.193391049094295
+  },
+  "surface_current": {
+    "segments": 365,
+    "total_trace_length_mm": 382.068043888959,
+    "max_radius_mm": 18.272883229158264
+  },
+  "point_only_contacts": 348,
+  "coplanar_triangles": 0,
+  "old_strict_filter_surface_segments": 0,
+  "tolerance_mm": 1e-06,
+  "tolerance_sensitivity": "same count at 1e-7, 1e-6, 1e-5 mm",
+  "synthetic_tests": "PASS: edge hit, vertex-only hit, duplicate edge, coplanar detection, negative strict filter",
+  "surface_displacement_mm_max": 0.9419323030778219,
+  "source_sha256": {
+    "fdem3d_joints_0000.vtu": "d92d5f27f479458d6243bb4330c385283d0501fbf0ceed9bc8d0ccbc2e04a198",
+    "fdem3d_joints_0012.vtu": "3c7abb1a08c04e2647afcb232db4b94292e45f810941fc33ce27ca1718aa3f21"
+  }
+}

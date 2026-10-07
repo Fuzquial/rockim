@@ -1,0 +1,30 @@
+{
+ "exe": "C:\\Users\\fuzquianoalricabi\\simulations\\FDEM\\rockim_g1\\tests_f2\\campagne13\\S4\\rockim_s4test.exe",
+ "exe_sha256": "c099f1a2d36b63adc8fe2f6b44da571e5098c04d4f832ae71bf7815e242567a0",
+ "date": "2026-09-12 16:36:17",
+ "refs": "C:\\Users\\fuzquianoalricabi\\simulations\\FDEM\\rockim_g1\\tools\\bitid_refs.json",
+ "update": false,
+ "results": {
+  "fdem3d_kuru9_court": {
+   "rc": 0,
+   "tries": 1,
+   "apex_retries": 0,
+   "wall_total_s": 166.6,
+   "peak_force_N": 0.0,
+   "wall_s": 166.223,
+   "dt_s": 3.61373e-09,
+   "steps": 2768,
+   "hashes": {
+    "history.csv": "1c0d7cba74fe1c866d6b691a90f1c9b2cec18ca9e1cc6e2a087ed61d8d801774",
+    "frames.csv": "b6e78ab13daadbc282eca03638c83804c3c0c4bd798decf9c21cfbc7f1fdf6cb",
+    "fdem3d_0002.vtu": "e44b5aa3d1fd8f857bf3e8e7c77b18cf5b0c6019241305a23cbcef74532ecf15",
+    "fdem3d_joints_0002.vtu": "56d504dfee1e8a722d34766ee1b4420e250f739f3bbd76ce8b564b484b6cace4"
+   },
+   "cfg": "tests_f2/bitid/fdem3d_kuru9_court.cfg",
+   "mode": "fdem3d",
+   "law": "(joints cohesifs + bulkDamage yang)",
+   "threads": 4,
+   "verdict": "IDENTIQUE"
+  }
+ }
+}

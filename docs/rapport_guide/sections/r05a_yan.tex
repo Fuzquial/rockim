@@ -1,0 +1,248 @@
+\section{Insertion adaptative : reproduction de Yan et al. 2023}
+\label{sec-yan}
+
+rockim reproduit la hiérarchie établie par Yan et al. entre insertion adaptative et insertion intrinsèque : l'insertion adaptative ne dégrade pas la raideur, et l'insertion intrinsèque s'en approche quand la pénalité croît. Deux écarts subsistent : le plateau intrinsèque reste 13 à $16~\%$ sous l'adaptatif au lieu de le rejoindre, et le brésilien adaptatif ne converge pas en maillage. La portée de cet accord est bornée par la lecture des figures de Yan, par la variabilité propre de rockim (environ $2~\%$ selon le nombre de fils), par une maille de compression deux fois plus grossière que celle de l'article et, hors des neuf calculs rejoués, par l'ancienneté du binaire. Rejoués le 6 octobre 2026 avec le binaire courant, les neuf calculs principaux de la campagne d'août la retrouvent : résistance uniaxiale à $+0{,}03~\%$, brésilien à $+0{,}06~\%$, angle de frottement de $22{,}92^\circ$ contre $22{,}8^\circ$ (\cref{sec-yan-rejeu}).
+
+Yan, Zheng et Wang~\cite{yan2023adaptive} ont introduit dans MultiFracS l'insertion adaptative des joints et l'ont comparée à l'insertion intrinsèque sur cinq essais 2D : bande élastique pesante, essai brésilien, compression uniaxiale et triaxiale, brésilien dynamique aux barres de Hopkinson. rockim a reproduit les cinq en août 2026 ; quatre sont comparés sur leurs grandeurs principales, le Hopkinson sur la seule onde élastique dans les barres. La bande pesante et cette onde se jugent par rapport à une solution exacte et relèvent de la vérification ; le reste est une reproduction de code à code, pas une validation.
+
+\subsection{Cadre commun}
+
+\subsubsection{Trois générations de résultats}
+
+Les résultats relèvent de trois campagnes, qu'il faut dater. Une première campagne du 6 août 2026, avec une loi d'adoucissement linéaire, est périmée pour la comparaison à Yan et ne sert que de témoin. La campagne de référence, des 10 et 11 août, emploie la courbe d'adoucissement de Yan ; elle compte 54 calculs, lancés sous Windows, et elle est antérieure aux correctifs des 19 et 20 août et aux nouvelles lois de décharge et de contact.
+
+La compression uniaxiale a été rejouée une première fois le 4 octobre 2026 sous macOS : $51{,}43$~MPa contre $51{,}1$~MPa en août ($51{,}07$~MPa pour le repère de la suite de non-régression sous Linux), et $34~\%$ de joints rompus en plus. Les neuf calculs principaux de la campagne (sur 54) ont ensuite été rejoués le 6 octobre 2026 sous Linux avec le binaire courant (\cref{sec-yan-rejeu}) : ils retrouvent les valeurs d'août, ce qui écarte l'évolution du code ; l'hypothèse restante pour l'écart macOS est le tirage du maillage de Voronoï, qui dépend de la bibliothèque standard. Les données brutes de la campagne d'août ne sont pas dans les dépôts ; les chiffres viennent des notes d'étude du dépôt, et les valeurs lues sur une figure sont signalées.
+
+\subsubsection{Matériau et modèle}
+
+Le matériau des essais brésilien, uniaxial et triaxial est celui de Tatone et Grasselli, repris par Yan (\cref{tab-yan-mat}). La longueur caractéristique $\ell_{cz} = E\,G_I/f_t^2 = 33{,}7$~mm dépasse le rayon du disque brésilien ($25{,}4$~mm), ce qui pèse sur l'interprétation.
+
+\begin{table}[htbp]
+\centering
+\caption{Matériau des essais de Yan et al. 2023 et réglage de rockim.}
+\label{tab-yan-mat}
+\small
+\begin{tabular}{@{}p{0.24\linewidth}p{0.38\linewidth}p{0.32\linewidth}@{}}
+\toprule
+paramètre & Yan et al. & rockim \\
+\midrule
+$\rho$, $E$, $\nu$ & 1\,704~kg/m$^3$, 15~GPa, $0{,}24$ & identiques \\
+amortissement & visqueux, $\eta = 7{,}6\times10^3$~kg/(m\,s) & Cundall, $0{,}7$ (compression), $0{,}1$ (brésilien) \\
+$f_t$, $c$, $\varphi$ & $1{,}3$~MPa, $16{,}4$~MPa, $23^\circ$ & identiques \\
+$G_I$, $G_{II}$ & $3{,}8$ et 84~J/m$^2$ & identiques \\
+pénalité intrinsèque & 1 à 500 fois $E$, 100 recommandé & 1 à 500 fois $E$ \\
+pénalité des joints insérés & sans objet & 4 fois $E/h$ \\
+adoucissement & $a = 0{,}63$, $b = 1{,}8$, $c = 6{,}01$ & $a = 0{,}63$, $b = 1{,}8$, $c = 6$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Le modèle de Yan est celui de la FDEM classique, avec un critère d'insertion évalué sur la contrainte moyenne des deux éléments projetée sur l'arête :
+\begin{equation}
+\sigma \geq f_t \quad \text{ou} \quad |\tau| \geq f_s, \qquad f_s = \begin{cases} c - \sigma\tan\varphi & \sigma < 0, \\ c & \sigma \geq 0, \end{cases}
+\end{equation}
+et une loi cohésive post-pic seulement, $\sigma = z(D)\,f_t$ avec $D = \sqrt{(o/o_t)^2 + (|s|/s_t)^2}$ (éq.~\ref{eq-z} et~\ref{eq-D}). rockim reprend ce critère et assure la continuité de la contrainte à l'insertion par un décalage initial de l'ouverture $\delta_{n0} = \min(\sigma, f_t)/p_j$ et du glissement $-\tau_0/p_j$. Yan ajoute un terme visqueux $2\mu_v\mathbf D$ à la contrainte des éléments ; la campagne d'août le remplaçait par un amortissement de Cundall, la viscosité de volume n'ayant été ajoutée qu'ensuite.
+
+\subsection{Bande élastique pesante}
+\label{sec-yan-bande}
+
+Une bande de 2~m de large et 10~m de haut ($\rho = 2\,800$~kg/m$^3$, $E = 2$~GPa, $\nu = 0{,}22$), encastrée à la base, sur rouleaux sur ses flancs, se tasse sous son poids, en déformation plane. Les résistances sont choisies hors d'atteinte : aucune fissure ne doit se former, et l'essai mesure la seule souplesse des joints. Le tassement exact du sommet est
+\begin{equation}
+U = -\frac{\rho g h^2 (1+\nu)(1-2\nu)}{2E(1-\nu)} = -6{,}0087\times10^{-4}~\text{m},
+\end{equation}
+avec le profil $u_y(y) = -\rho g (1+\nu)(1-2\nu)(2hy - y^2)/[2E(1-\nu)]$.
+
+L'insertion adaptative donne le tassement exact à six chiffres ; Yan obtient $0{,}23~\%$ d'écart (\cref{fig-yan-bande}). En insertion intrinsèque, le tassement converge vers la solution quand la pénalité croît : l'erreur vaut $279~\%$ à $1E$ et $0{,}14~\%$ à $500E$, contre $208~\%$ et $0{,}44~\%$ chez Yan. L'écart à faible pénalité tient au maillage, structuré à 0,25~m dans rockim et non précisé par Yan, puisque la souplesse ajoutée dépend du nombre d'arêtes par unité de hauteur.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=\linewidth]{yan/fig8_9a_bande_pesante}
+\caption{Bande pesante. (a) Déplacement vertical en insertion adaptative, sommet à $-0{,}601$~mm. (b) Tassement du sommet en insertion intrinsèque selon la pénalité, erreur de $279~\%$ à $1E$ et $0{,}14~\%$ à $500E$.}
+\label{fig-yan-bande}
+\end{figure}
+
+\subsection{Coût de calcul}
+
+Yan mesure une accélération d'un facteur 8 à 18 de l'insertion adaptative sur la bande pesante, par rapport à l'insertion intrinsèque à $100E$. rockim l'a mesurée sur le brésilien, à quatre tailles de maille et 7 fils : 4 à 6 par rapport à $100E$, $13{,}9$ par rapport à $500E$, pénalité à partir de laquelle la réponse a convergé (\cref{fig-yan-cout}). Les deux mesures ne portent pas sur le même essai : la bande ne se fissure pas, le brésilien si. Le gain vient de deux termes : le pas de temps, que les joints de pénalité réduisent comme $1/\sqrt{p_f}$, et le coût des joints eux-mêmes, dont seuls $13~\%$ sont insérés à la rupture en compression uniaxiale.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.8\linewidth]{yan/fig10_timing}
+\caption{Coût du brésilien selon la taille de maille, 7 fils, insertion intrinsèque à $100E$ et adaptative ; accélération de 4 à 6.}
+\label{fig-yan-cout}
+\end{figure}
+
+\subsection{Essai brésilien}
+\label{sec-yan-bresilien}
+
+\subsubsection{Mise en données et références}
+
+Un disque de $50{,}8$~mm de diamètre, maillé à $0{,}75$~mm par un anneau natif exactement circulaire aplati sur un arc de $2\alpha = 20^\circ$, est comprimé entre deux plateaux à $0{,}05$~m/s chacun, avec un frottement de $0{,}1$. La contrainte de traction conventionnelle et les solutions élastiques le long du diamètre chargé, en charge linéique et en charge répartie sur l'arc $2\alpha$ (Hondros), sont, avec $r = y/R$ :
+\begin{gather}
+\sigma_t = \frac{2P}{\pi D t}, \qquad
+\sigma_{xx}(r) = \frac{2P}{\pi D t}, \qquad \sigma_{yy}(r) = -\frac{2P}{\pi D t}\left[\frac{4}{1-r^2} - 1\right], \\
+\sigma_{xx}(0) = \frac{2P}{\pi D t}\,\frac{\sin 2\alpha - \alpha}{\alpha}, \qquad \sigma_{yy}(0) = -\frac{2P}{\pi D t}\,\frac{\sin 2\alpha + \alpha}{\alpha},
+\end{gather}
+soit $0{,}960$ et $-2{,}960$ fois $2P/(\pi D t)$ au centre pour $\alpha = 10^\circ$.
+
+\subsubsection{Résultats}
+
+La hiérarchie de Yan est reproduite (\cref{fig-yan-balayages}a et b) : le pic croît avec la pénalité, de $2{,}75$~MPa à $1E$ à $4{,}44$~MPa à $500E$, et l'insertion adaptative donne le pic le plus haut, $5{,}30$~MPa. Le rapport entre l'adaptatif et la pénalité convergée vaut $1{,}19$, contre $1{,}21$ chez Yan. Ce rapport est déduit de la figure~13a de l'article ; le texte de Yan ne donne pas de pic absolu, et sa valeur n'a pas été relevée sur la figure, si bien qu'on ne sait pas si Yan obtient lui aussi un pic d'environ $4\,f_t$. La raideur converge vers celle de l'adaptatif dès $100E$, mais le pic intrinsèque reste $16~\%$ en dessous, alors que Yan écrit que la famille converge vers l'adaptatif ; l'interprétation retenue est une accumulation d'endommagement sous-critique dans les joints intrinsèques, présents partout. Les faciès montrent une fente diamétrale et des fissures secondaires d'appui dès $5E$ (\cref{fig-yan-facies-bd}). Avant le pic, les champs de contrainte des deux schémas se superposent (\cref{fig-yan-sxx}).
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=\linewidth]{yan/fig13_19b_balayages_bd_ucs}
+\caption{Balayages en pénalité. (a, b) Brésilien : pic croissant de $2{,}75$ à $4{,}44$~MPa, plateau $16~\%$ sous l'adaptatif ($5{,}30$~MPa). (c, d) Compression : résistance adaptative $51{,}1$~MPa (Yan environ 51), plateau intrinsèque 44~MPa. La figure affiche $5{,}29$~MPa pour l'adaptatif, les notes d'étude $5{,}30$~MPa.}
+\label{fig-yan-balayages}
+\end{figure}
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=\linewidth]{yan/fig12_complete}
+\caption{Brésilien : faciès après le pic et champ $\sigma_{xx}$ pour les pénalités $1E$ à $500E$ et l'insertion adaptative. Fente diamétrale dès $5E$ ; $1E$ et $2E$ n'atteignent pas le pic dans la course imposée.}
+\label{fig-yan-facies-bd}
+\end{figure}
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=\linewidth]{yan/fig14a_sxx_evolution}
+\caption{Brésilien : champ $\sigma_{xx}$ à $40~\%$ et $80~\%$ du pic, au pic et après rupture, insertion intrinsèque $100E$ (haut) et adaptative (bas).}
+\label{fig-yan-sxx}
+\end{figure}
+
+Le long du diamètre, à $P = 30$~kN, la contrainte $\sigma_{xx}$ au centre vaut $0{,}33$ à $0{,}35$~MPa, lue sur la figure, contre $0{,}361$~MPa pour Hondros, et $\sigma_{yy}$ environ $-1{,}10$~MPa contre $-1{,}113$~MPa. La figure archivée de ce profil trace une référence fausse pour $\sigma_{yy}$ (facteur 2 au lieu de 4 dans le crochet) et n'est pas reproduite ici ; les points de rockim sont proches de la bonne solution.
+
+La contrainte conventionnelle vaut environ 4 fois $f_t$. Le rapport $\ell_{cz}/D \approx 0{,}7$ place l'essai du côté des petites tailles de l'effet d'échelle cohésif, où la redistribution cohésive relève le pic au-dessus de $f_t$. Aucune référence ne chiffre ce relèvement : qu'il suffise à un facteur 4 n'est pas établi, et la non-convergence en maillage laisse ouverte une surestimation numérique. Le pic adaptatif croît de $25~\%$ quand la maille passe de $1{,}5$ à $0{,}5$~mm ($4{,}73$ ; $5{,}12$ ; $5{,}30$ ; $5{,}93$~MPa), sans convergence. Cette dérive ne s'explique pas par $\ell_{cz}$, résolue par 20 à 70 éléments sur ces maillages ; la pénalité des joints insérés en $4\,E/h$, qui dépend de $h$, et le critère d'insertion évalué près des appuis restent à tester. Yan trouve des résistances \enquote{relativement proches}, sans pic absolu chiffré (\cref{sec-yan-bresilien}). Une surcharge dynamique de $9{,}4~\%$, due à la vitesse des plateaux, est acceptée.
+
+\subsection{Compression uniaxiale et triaxiale}
+
+\subsubsection{Mise en données et références}
+
+Une éprouvette de $36 \times 72$~mm est comprimée entre deux plateaux à $0{,}05$~m/s chacun, avec un frottement de $0{,}1$, sous un confinement de 0, 10, 20 ou 40~MPa appliqué avant la charge axiale. La maille des calculs vaut $1{,}5$~mm, contre $0{,}75$~mm chez Yan. Le module apparent en déformation plane et le critère de Coulomb du matériau d'entrée sont
+\begin{equation}
+E' = \frac{E}{1-\nu^2} = 15{,}92~\text{GPa}, \qquad
+\sigma_1 = \sigma_c + \sigma_3\tan^2\!\left(45^\circ + \frac{\varphi}{2}\right), \qquad
+\sigma_c = \frac{2c\cos\varphi}{1-\sin\varphi} = 49{,}6~\text{MPa},
+\end{equation}
+avec une pente de $2{,}283$ et un angle de rupture $\beta = 45^\circ + \varphi/2 = 56{,}5^\circ$. Inversement, la pente $k$ d'une enveloppe mesurée donne $\varphi = \arcsin[(k-1)/(k+1)]$.
+
+\subsubsection{Résultats}
+
+\begin{table}[htbp]
+\centering
+\caption{Compression uniaxiale et triaxiale 2D : rockim comparé à Yan et au critère d'entrée.}
+\label{tab-yan-ucs}
+\small
+\begin{tabular}{@{}p{0.26\linewidth}p{0.34\linewidth}p{0.34\linewidth}@{}}
+\toprule
+grandeur & Yan et al. & rockim \\
+\midrule
+résistance uniaxiale, adaptatif & environ 51~MPa & $51{,}1$~MPa (août et 6 octobre), $51{,}4$~MPa (macOS, 4 octobre) \\
+résistance uniaxiale, intrinsèque $500E$ & converge vers l'adaptatif & $44{,}3$~MPa \\
+module, adaptatif & 15~GPa & $15{,}5$~GPa ($97~\%$ de $E'$) \\
+module, intrinsèque $1E$ à $500E$ & croît & $7{,}7$ à $16{,}2$~GPa \\
+angle de rupture, adaptatif & $61{,}9^\circ$ & $66^\circ$ \\
+angle de frottement ajusté, adaptatif & $22{,}87^\circ$ & $22{,}8^\circ$ \\
+angle de frottement ajusté, $100E$ & $22{,}36^\circ$ & $21{,}5^\circ$ \\
+cohésion ajustée, adaptatif & sans objet & environ 17~MPa (entrée $16{,}4$) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+La signature de Yan est reproduite (\cref{tab-yan-ucs}) : la résistance adaptative égale celle de l'article et dépasse de $3~\%$ le critère d'entrée, le module adaptatif vaut le module d'entrée d'emblée alors que la famille intrinsèque le sous-estime à faible pénalité. L'angle de frottement de l'enveloppe adaptative est retrouvé à $0{,}1^\circ$ près (\cref{fig-yan-triax}). Comme au brésilien, le plateau intrinsèque reste $13~\%$ sous l'adaptatif. L'amortissement local de $0{,}7$ retenu en compression n'est pas neutre : sur une compression uniaxiale du banc du tunnel, il relève le pic de $48~\%$ par rapport à $0{,}15$ (\cref{sec-tunnel-duree}). Les faciès passent de fentes axiales à $1E$ à des bandes conjuguées dès $100E$, et le cisaillement devient diffus, sans fissure traversante, à 40~MPa de confinement (\cref{fig-yan-facies-ucs}). L'angle de rupture de la famille intrinsèque, de 78 à $88^\circ$, est mal mesuré par l'analyse en composantes principales des joints rompus quand deux bandes se croisent ; seule la valeur adaptative est retenue. Le module à $500E$ dépasse $E'$ de $1{,}8~\%$ et le module adaptatif, alors qu'ajouter des joints ne peut qu'assouplir : la mesure du module (raideur des plateaux) est en cause, et les modules du tableau sont à reprendre.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=\linewidth]{yan/fig18_20_facies_ucs_triax}
+\caption{Faciès de compression. Haut : uniaxial intrinsèque de $1E$ à $500E$. Bas : uniaxial adaptatif, puis triaxial adaptatif à 0, 10, 20 et 40~MPa, cisaillement diffus sans fissure traversante à 40~MPa.}
+\label{fig-yan-facies-ucs}
+\end{figure}
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=\linewidth]{yan/fig21_triaxial_coulomb_maillage}
+\caption{Triaxial 2D et maillage. (a) Courbes axiales, adaptatif et $100E$. (b) Ajustement de Coulomb : $\varphi = 22{,}8^\circ$ et $21{,}5^\circ$ (Yan $22{,}87^\circ$ et $22{,}36^\circ$). (c) Courbes à 10 et 20~MPa : oscillations après rupture, cause du pic de 112~MPa enregistré. (d) Pic brésilien selon la maille, adaptatif et $100E$.}
+\label{fig-yan-triax}
+\end{figure}
+
+Les pics ont été recalculés sur les courbes, parce que le maximum glissant du solveur captait les oscillations parasites après rupture (112~MPa enregistrés pour 73~MPa réels à 10~MPa de confinement). À 20~MPa de confinement, la valeur lue diffère entre deux planches (95 et $100{,}5$~MPa) ; les pics 2D ne sont tabulés nulle part.
+
+Un triaxial 3D, absent de l'article, prolonge l'essai : bloc de $24 \times 24 \times 48$~mm maillé à 3~mm, confinement suiveur sur les faces latérales. Le confinement élastique est restitué à $99{,}96~\%$ au cœur ; les pics valent $56{,}2$, $80{,}8$, $105{,}5$ et $154{,}5$~MPa à 0, 10, 20 et 40~MPa, soit $\varphi = 24{,}9^\circ$ et $c = 17{,}9$~MPa, 5 à $10~\%$ au-dessus du 2D (\cref{fig-yan-tx3d}). Les configurations de ce calcul ne sont pas dans le dépôt.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=\linewidth]{yan/tx3d_validation}
+\caption{Triaxial 3D adaptatif. (a) Contrainte axiale ; la remontée finale à 10~MPa est une compaction de débris. (b) Enveloppe linéaire, $\varphi = 24{,}9^\circ$, $c = 17{,}9$~MPa, pour $23^\circ$ et $16{,}4$~MPa en entrée.}
+\label{fig-yan-tx3d}
+\end{figure}
+
+\subsection{Brésilien dynamique aux barres de Hopkinson}
+
+\subsubsection{Mise en données et références}
+
+Le montage comprend une barre incidente de 2~m, une barre de transmission de $1{,}5$~m, de 50~mm de diamètre, et un disque de roche de 50~mm maillé à $0{,}75$~mm. La roche a pour propriétés $\rho = 2\,800$~kg/m$^3$, $E = 100{,}8$~GPa, $\nu = 0{,}297$, $f_t = 30$~MPa, $c = 65$~MPa, $\varphi = 59^\circ$, $G_I = 100$ et $G_{II} = 220$~J/m$^2$ ; les barres, $\rho = 7\,700$~kg/m$^3$ et $E = 240$~GPa. Une vitesse en demi-sinus de $5{,}2$~m/s d'amplitude sur $220$~µs est imposée à l'extrémité de la barre incidente ; deux jauges sont placées à 1~m du disque de part et d'autre. Les références sont la célérité de barre, la déformation incidente et l'équilibre dynamique du disque :
+\begin{equation}
+c_b = \sqrt{E_b/\rho_b} = 5\,583~\text{m/s}, \qquad \varepsilon_I^\text{max} = -\frac{V_0}{c_b} = -9{,}314\times10^{-4}, \qquad \varepsilon_I + \varepsilon_R = \varepsilon_T .
+\end{equation}
+
+\subsubsection{Résultats}
+
+L'onde élastique dans la barre incidente est exacte : le pic incident vaut $-9{,}3128\times10^{-4}$ contre $-9{,}3142\times10^{-4}$ analytique, soit $0{,}015~\%$ d'écart. Les barres étant maillées avec les mêmes joints, cette comparaison porte sur la propagation dans les barres et non sur le disque. La souplesse des joints intrinsèques retarde et affaiblit l'onde dans le sens décrit par Yan, et la famille converge de façon monotone vers l'adaptatif. L'arrivée passe de $260{,}2$ à $186{,}6$~µs et le pic de $-0{,}658$ à $-0{,}930\times10^{-3}$ quand la pénalité croît de $1E$ à $500E$, soit $-29~\%$ et $+74$~µs à $1E$, et $0{,}3~\%$ d'écart à $200E$ (\cref{fig-yan-shpb}). L'équilibre $\varepsilon_I + \varepsilon_R \approx \varepsilon_T$ est vérifié sur environ $50$~µs avant la rupture, et le disque se fend au centre vers $470$~µs (\cref{fig-yan-shpb-adapt}).
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=\linewidth]{yan/fig23_finale}
+\caption{Barres de Hopkinson : déformation aux jauges incidente et de transmission selon la pénalité. Arrivée de 260 à $187$~µs, pic de $-0{,}66$ à $-0{,}93\times10^{-3}$ ; l'adaptatif rejoint $-V_0/c_b$.}
+\label{fig-yan-shpb}
+\end{figure}
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=\linewidth]{yan/fig22_25_shpb_adaptatif}
+\caption{Brésilien dynamique adaptatif. (a) Vitesse imposée et déformations aux jauges. (b) Équilibre $\varepsilon_I + \varepsilon_R \approx \varepsilon_T$ avant rupture. (c) Fente centrale à $470$~µs. (d) Broyage tardif, hors validité.}
+\label{fig-yan-shpb-adapt}
+\end{figure}
+
+L'impulsion est reconstruite pour retrouver le pic de la figure de Yan, pas reprise de l'essai. Après l'impulsion, l'extrémité pilotée reste immobile et l'énergie réfléchie est piégée, ce qui rebroie les débris : la phase après le pic, au-delà d'environ $540$~µs, est hors validité, et le temps de calcul n'a pas été comparé.
+
+\subsection{Rejeu du 6 octobre 2026 avec le binaire courant}
+\label{sec-yan-rejeu}
+
+Les neuf calculs principaux de la campagne ont été rejoués le 6 octobre 2026 dans une session de calcul séparée, sous Linux, avec le binaire courant (code identique à \cle{f0209ef}) et 4 fils ; les sorties ne sont donc pas garanties identiques au bit près à celles d'août, obtenues sous Windows (\cref{tab-yan-rejeu}).
+
+\begin{table}[htbp]
+\centering
+\caption{Rejeu du 6 octobre 2026 (binaire courant, Linux, 4 fils) face à la campagne d'août et aux références.}
+\label{tab-yan-rejeu}
+\small
+\begin{tabular}{@{}p{0.30\linewidth}p{0.17\linewidth}p{0.25\linewidth}p{0.18\linewidth}@{}}
+\toprule
+essai et grandeur & rejeu & référence & écart \\
+\midrule
+bande pesante, adaptatif, tassement & $-6{,}00866\times10^{-4}$~m & $-6{,}0087\times10^{-4}$~m (solution analytique) & $-0{,}0007~\%$ \\
+bande pesante, intrinsèque $100E$ & $-6{,}18412\times10^{-4}$~m & idem & $+2{,}92~\%$ \\
+bande pesante, intrinsèque $1E$ & $-2{,}28024\times10^{-3}$~m & idem & $+279{,}5~\%$ (Yan : $208~\%$) \\
+brésilien adaptatif, $2P/(\pi D t)$ & $5{,}3031$~MPa & $5{,}30$~MPa (août) & $+0{,}06~\%$ \\
+compression adaptative, résistance & $51{,}114$~MPa & $51{,}1$~MPa (août) & $+0{,}03~\%$ \\
+compression, module apparent & $15{,}54$~GPa & $15{,}5$~GPa (août) & $+0{,}3~\%$ \\
+compression, joints rompus et insérés & 333 et $1\,351$ & 327 et $1\,288$ (août) & $+1{,}8$ et $+4{,}9~\%$ \\
+triaxial, angle de frottement & $22{,}92^\circ$ & $22{,}8^\circ$ (août), $22{,}87^\circ$ (Yan) & $+0{,}05^\circ$ sur Yan \\
+triaxial, cohésion ajustée & $16{,}74$~MPa & $16{,}4$~MPa (entrée) & $+2{,}1~\%$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Le pic triaxial est lu sur la courbe, avant la première chute qui suit une rupture : $51{,}06$ (calcul triaxial à confinement nul, distinct du calcul de compression simple), $73{,}57$, $94{,}51$ et $142{,}25$~MPa pour un confinement de 0, 10, 20 et 40~MPa. Le maximum glissant imprimé par le solveur est faux à 10~MPa ($131{,}83$~MPa, soit $+79~\%$), parce qu'il retient les oscillations qui suivent la rupture : les chiffres du journal ne sont pas utilisables tels quels pour les essais confinés. Les pics triaxiaux d'août avaient déjà été lus sur les courbes, et non dans le journal, qui donnait 112~MPa pour 73~MPa à 10~MPa de confinement ; l'angle de $22{,}8^\circ$ n'est donc pas touché par ce défaut.
+
+Au brésilien, le pic vaut $4{,}08\,f_t$. Le rapport de la contrainte $\sigma_{xx}$ au centre du disque à la solution élastique de Hondros vaut $0{,}992$ tant que la contrainte conventionnelle reste entre $0{,}3$ et $0{,}8\,f_t$, puis tombe à $0{,}700$ au dernier pas avant la première rupture, hors de la bande d'acceptation de $0{,}85$ à $1{,}25$, avec $4{,}7~\%$ des joints au-delà d'un endommagement de $0{,}01$. Le solveur attribue cet écart à une accumulation d'endommagement sous-critique, le mécanisme invoqué pour le plateau intrinsèque ; l'instant où il commence entre $0{,}8\,f_t$ et le pic n'est pas relevé, et il n'éclaire pas le facteur 4 discuté en \cref{sec-yan-bresilien}.
+
+\subsection{Synthèse}
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=\linewidth]{yan/fig_yan_synthese}
+\caption{Synthèse de la reproduction de Yan et al. (a) Enveloppe de Coulomb : critère d'entrée, ajustement 2D et pics 3D. (b) Écart de rockim à la valeur de Yan ou à la solution analytique.}
+\label{fig-yan-synthese}
+\end{figure}
+
+Sur les huit grandeurs comparées (\cref{fig-yan-synthese}), cinq tombent à moins de $1~\%$ de la référence ; les trois autres sont le rapport brésilien entre l'adaptatif et la pénalité convergée ($-1{,}3~\%$), l'angle de frottement de l'insertion intrinsèque ($-3{,}8~\%$) et l'angle de rupture ($+6{,}7~\%$). Pour les grandeurs lues sur les figures de Yan, la précision de lecture et la variabilité de rockim entre nombres de fils (environ $2~\%$) bornent la portée de cet accord. Le plateau intrinsèque reste 13 à $16~\%$ sous l'adaptatif au lieu de le rejoindre, et le brésilien adaptatif ne converge pas en maillage, pour une raison non identifiée. Le rejeu des neuf calculs principaux, le 6 octobre avec le binaire courant, confirme la campagne d'août sur ces calculs : à $0{,}1~\%$ près sur la résistance uniaxiale et le brésilien, à $1~\%$ sur les pics triaxiaux à 10 et 20~MPa, à $0{,}12^\circ$ sur l'angle de frottement, à 2 et $5~\%$ sur les joints rompus et insérés. La compression est à refaire à la maille de $0{,}75$~mm de l'article, et le profil diamétral du brésilien à retracer avec la bonne référence.

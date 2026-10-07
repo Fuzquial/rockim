@@ -1,0 +1,12 @@
+--- C7 : canal insert/roche (C:/Users/FUZQUI~1/AppData/Local/Temp/claude/C--Users-fuzquianoalricabi-simulations/01c1f07a-4d93-418a-851e-98d14203ea97/scratchpad/s2bis/out_s25_fcrock) ---
+C7a  OK    : premiere force non nulle a t = 1.009 us (ligne 357) : Fc_insert_rock_z = -5.136e-05 N ; max |Fc_insert_rock_z| = 2150 N a t = 4.001 us ; lignes non nulles 1059, dont 1059 negatives (l insert POUSSE la roche vers le bas : signe attendu negatif partout ; le meme canal donne 0 exact sur le banc 30 us, C1)
+C7b  OK    : max |Fc_insert_rock + Fc_rock_insert| = 0 N (attendu 0 exact, action = reaction sur les trois composantes)
+C7c  OK    : somme ['Fc_rock_insert_z', 'Fc_bit_insert_z', 'Fc_circlip_insert_z', 'Fc_plate_insert_z', 'Fc_piston_insert_z'] == grpFz (trackGroup = insert) : ecart absolu max 0 N sur 1416 lignes ; la somme n est pas triviale : max |grpFz| = 2150 N a t = 4.001 us, somme au meme pas = 2150 N
+--- C8 : estimateur q. de mouvement contre les Fc (C:/Users/FUZQUI~1/AppData/Local/Temp/claude/C--Users-fuzquianoalricabi-simulations/01c1f07a-4d93-418a-851e-98d14203ea97/scratchpad/b17/s2/out_s25_fc) ---
+C8a  OK    : forces EXTERIEURES au systeme {piston, bit, insert, circlip}, mesurees colonne par colonne : Fc_plate_bit_z max 3214 N, Fc_rock_bit_z max 0 N, Fc_rock_insert_z max 0 N ; max |somme| = 3214 N ; poids = -19 N. La roche ne porte encore RIEN a 30 us (C1) : tout vient du contact plaque/bit — l estimateur de fig_fp.py l attribue a la roche
+C8b  OK    : estimateur EXACT (m_g vz_g par corps) : max |F_r - F_ext| = 1990 N, RMS 1052 N ; echelle = max |Fc_piston_bit_z| = 2.721e+05 N (0.73 % et 0.39 %)
+C8c  OK    : estimateur de fig_fp.py (m_train dv_bit/dt) : max |F_r - F_ext| = 1.304e+04 N, RMS 6321 N, soit 4.8 % et 2.3 % de l echelle — biais de l hypothese « train rigide » (mesure, pas un verdict)
+C8d  OK    : controle falsifiant (systeme FAUX : piston exclu, sa poussee devient exterieure) : max |F_r - F_ext| = 9.679e+04 N, soit 49 x le residu du systeme correct (doit exceder 10 x)
+--- C9 : temoin 200 us (out_yang_bench_s25_v3P) ---
+C9   OK    : temoin out_yang_bench_s25_v3P : 2022 lignes jusqu a 200.0 us ; estimateur fig_fp.py F_r max = 6.508e+04 N a t = 193.2 us ; estimateur exact (3 corps) F_r max = 4.388e+04 N a t = 197.8 us ; colonnes Fc dans ce run : aucune (run anterieur a la cle S2 : la comparaison directe exige un rejeu >= 50 us, hors budget de 5 min)
+BILAN S2bis : TOUS OK

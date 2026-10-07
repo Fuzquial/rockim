@@ -1,0 +1,27 @@
+[FDEM3D] mesh = file: 'meshes/bench_penalite.msh' — 1406 nodes, 5534 tets, box 0.02 x 0.02 x 0.04 m
+[FDEM3D] insertion intrinseque : penalite de joint 20 E/h (jointPenaltyFactor au deck)
+[FDEM3D] gcRestitution = 0.2 (DEFAUT) : detente normale du contact general a ce facteur — a figer au deck des que e ou l ejection est une metrique
+[FDEM3D] 5534 tets, 10196 joints, 22136 nodes, dt = 2.92797e-09 s, steps = 40985
+[FDEM3D] voronoi: 1 grains, 1 phase(s), 0 grain-boundary joints, hmin = 0.000525203 m
+[rockim] cles : 111 consommees (21 du deck, 90 au defaut), 0 du deck non lues -> out_pen_f20/config_effective.cfg
+  10%   20%   30%   40%   50%   60%   70%   80%   90%   100%
+
+[FDEM3D] ---- summary ----
+[FDEM3D] block kinetic energy at end: 1.60351e-05 J
+[FDEM3D] net work by general contact: 0 J
+[FDEM3D] joint dashpot work: -2.01966e-08 J  [OK, dissipative]
+[FDEM3D] energy budget (V2/B4): KE 0 -> 1.60351e-05 J
+[FDEM3D]   elements     : 0.00845227 J preleve (stocke elastique 0.00845191 J)
+[FDEM3D]   joints       : 0.000413389 J cohesif (fissuration + stocke), dashpot 2.01966e-08 J
+[FDEM3D]   contact      : -0 J (dont frottement -0 J)
+[FDEM3D]   Cundall      : 0.00103169 J
+[FDEM3D]   frontieres   : -0 J (dont stocke ressorts 0 J)
+[FDEM3D]   outil->solide: 0 J, platines: 0.00991338 J
+[FDEM3D]   integration  : +6.08077e-08 J (correction leapfrog f^2 dt^2/2m)
+[FDEM3D]   residu       : -2.71548e-08 J (0.000137071 % de l'echelle) [OK]
+[FDEM3D] grains: 1, phases: rock 100% (target 100%)
+[FDEM3D] joints intra/homo/hetero: 10196/0/0, broken: 0/0/0
+[FDEM3D] tension verification (voronoi grains):
+[FDEM3D]   peak macro stress = 8.59557 MPa, expected ft = 1e+06 MPa, error = -99.9991 %  [FAIL]
+[FDEM3D]   broken joints = 0 / 10196
+[rockim] wall time: 231.992 s, output in 'out_pen_f20'

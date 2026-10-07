@@ -1,0 +1,32 @@
+[FEM3D] audit de masse (mesh = voronoi) : sum(m) = 0.0213374 kg contre sum_p rho_p V_p = 0.0213374 kg, ecart relatif 1.62599e-15
+[FEM3D]   phase feldspath : rho = 2560 kg/m3, V = 5.07795e-06 m3, m = 0.0129996 kg
+[FEM3D]   phase quartz : rho = 2650 kg/m3, V = 2.54301e-06 m3, m = 0.00673898 kg
+[FEM3D]   phase biotite : rho = 2800 kg/m3, V = 5.71036e-07 m3, m = 0.0015989 kg
+[FEM3D] voronoi : aire exterieure 0.00256 m^2 contre 0.00256 m^2 (boite), ecart relatif 1.86347e-15 ; 18950 faces interieures entre grains distincts
+[FEM3D] mesh = voronoi : 1001 grains, 40724 tets, 9073 noeuds, boite 0.016 x 0.016 x 0.032 m, h_min (diametre inscrit) = 1.87859e-05 m, lc max = 0.000907275 m
+[FEM3D] voronoi, qualite des tets : lc median = 0.000575695 m, rapport diametre inscrit / lc median = 0.723807 (min 0.107915) — le tetraedre REGULIER vaut 0,833 (6V/A = 0,408 a, lc = 0,490 a) ; en dessous de ~0,1 la bande de fissuration lc = V0^(1/3) n'est plus la largeur normale a la fissure et l'energie dissipee par unite de surface est fausse du rapport d'aspect (bouton : vertexMergeFrac)
+[FEM3D] fractions volumiques realisees / visees : feldspath 61.9867 % / 62 % quartz 31.0426 % / 31 % biotite 6.97066 % / 7 %
+[FEM3D] tool penalty kp = 1.56111e+06 N/m (contactPenaltyFactor 1 x E hmin, hmin = 1.87859e-05 m), m_min = 1.05424e-07 kg, omega_p = sqrt(kp/m_min) = 3.84811e+06 rad/s, omega_p/(2/dt) = 0.00181147 (dt = 9.41487e-10 s, CFL 3.13829e-09 s, 2 sqrt(m_min/kp) = 5.19736e-07 s) ; omega_el/(2/dt) = dt/CFL = 0.3, rapport combine sqrt(omega_el^2 + omega_p^2)/(2/dt) = 0.300005
+[FEM3D] law = elastic, 40724 tets, 9073 nodes, dt = 9.41487e-10 s, steps = 42486
+[FEM3D] materiau PAR PHASE (3 phases, loi commune 'elastic', cles de loi GLOBALES) :
+[FEM3D]   feldspath : E = 70 GPa, nu = 0.29, rho = 2560 kg/m3, ft = 10 MPa, c = 22.77 MPa, phi = 50.4 deg, Gf = 100 J/m2, c_P = 5986.03 m/s, E Gf / ft^2 = 0.07 m (lcMax = 0.000907275 m)
+[FEM3D]   quartz : E = 83.1 GPa, nu = 0.17, rho = 2650 kg/m3, ft = 14 MPa, c = 30 MPa, phi = 45 deg, Gf = 90 J/m2, c_P = 5805.66 m/s, E Gf / ft^2 = 0.0381582 m (lcMax = 0.000907275 m)
+[FEM3D]   biotite : E = 29.3 GPa, nu = 0.36, rho = 2800 kg/m3, ft = 5.5 MPa, c = 15 MPa, phi = 30 deg, Gf = 40 J/m2, c_P = 4193.69 m/s, E Gf / ft^2 = 0.0387438 m (lcMax = 0.000907275 m)
+[FEM3D]   CFL sur c_P max = 5986.03 m/s, penalite de contact sur E max = 83.1 GPa
+[FEM3D]   AVERTISSEMENT verrouillage volumique : nu varie de 0.17 a 0.36 entre les phases. Les tetraedres lineaires de ce solveur (un point d'integration, sans B-bar) sur-raidissent d'autant plus que nu est grand : l'artefact est alors CORRELE A LA PHASE et SOUS-ESTIME le contraste mesure. Verifier sur un banc a nu commun avant de conclure.
+[rockim] cles : 167 consommees (53 du deck, 114 au defaut), 0 du deck non lues -> out_U_gbm/config_effective.cfg
+  10%   20%   30%   40%   50%   60%   70%   80%   90%   100%
+
+[FEM3D] ---- summary (law = elastic) ----
+[FEM3D] block kinetic energy at end: 1.39132e-06 J
+[FEM3D] eroded elements: 0 / 40724 (crater vol 0 m^3)
+[FEM3D] max equiv viscoplastic strain: 0, min pressure: -0.905951 MPa, max cap pc: 0 MPa
+[FEM3D] bilan par phase (fraction volumique realisee, erosion, endommagement, dissipation) :
+[FEM3D]   feldspath : 61.9867 % du volume (62 % vise, 25118 el.), erode 0 el. (0 mm^3, 0 % de la phase), D moyen 0, D max 0, dissipation 0 J
+[FEM3D]   quartz : 31.0426 % du volume (31 % vise, 12756 el.), erode 0 el. (0 mm^3, 0 % de la phase), D moyen 0, D max 0, dissipation 0 J
+[FEM3D]   biotite : 6.97066 % du volume (7 % vise, 2850 el.), erode 0 el. (0 mm^3, 0 % de la phase), D moyen 0, D max 0, dissipation 0 J
+[FEM3D]   rappel : la LOI est commune a toutes les phases (cles de loi globales), seules les proprietes materielles varient ; en noeuds partages il n'y a AUCUN joint, donc aucune frontiere de grain intrinsequement faible — c'est un GBM a contraste ELASTIQUE seul
+[FEM3D] erosion: loi 0 el. (0 mm^3), soupape geometrique (det F < 0 ou |eps| > 0) : 0 el. (0 mm^3), energie elastique effacee 0 J
+[FEM3D] dissipation: plastique 0 J, endommagement traction 0 J, compression 0 J
+[FEM3D] peak |sigma| grip / mid-specimen = 1.28253 / 1.32553 MPa (compression)
+[rockim] wall time: 958.472 s, output in 'out_U_gbm'

@@ -1,0 +1,120 @@
+{
+ "source": "Lisjak Bradley A. (2013), PhD thesis, University of Toronto, chap. 3, §3.4.3 « Seismic analysis of AE », pp. 36-39 imprimees (PDF + 20)",
+ "geometrie": {
+  "L_x_mm": 50,
+  "L_y_mm": 100,
+  "fissure_mm": 5,
+  "inclinaison_deg": 45,
+  "position": "centre",
+  "maillage": "Delaunay h = 0,70 mm, 21 600 triangles",
+  "dt_s": 5e-09,
+  "platines": "deux platines rigides a 0,05 m/s en sens opposes (p. 36)",
+  "page": 36
+ },
+ "table_3_1": {
+  "page": 37,
+  "rho": 2300,
+  "E_GPa": 3,
+  "nu": 0.29,
+  "phi_i_deg": 35,
+  "cohesion_MPa": 15,
+  "phi_f_deg": 35,
+  "ft_MPa": 3,
+  "GIc_J_m2": 2.0,
+  "GIIc_J_m2": 10,
+  "mu_amort_kg_m_s": 7400.0,
+  "pn_GPa_m": 30,
+  "pt_GPa_par_m": 3,
+  "pf_GPa": 15,
+  "frottement_platine": 0.1
+ },
+ "amortissement": {
+  "page": 36,
+  "eq": "3.21 mu_c = 2 h sqrt(rho E)",
+  "h_m": 0.0007,
+  "mu_c_recalcule": 3677.5,
+  "mu_c_publie": 3700.0,
+  "mu_utilise": "2 mu_c = 7,4e3 kg/(m s)"
+ },
+ "table_3_2": {
+  "page": 39,
+  "deux_c_mm": 5,
+  "gamma_deg": 45,
+  "mu": 0.7,
+  "theta_deg": 64,
+  "l_mm": 0.7,
+  "sigma2_MPa": 0
+ },
+ "table_3_3": {
+  "page": 39,
+  "cotterell_rice_1980": 5.1,
+  "zaitsev_1985": 6.9,
+  "horii_nemat_nasser_1986": 14.6,
+  "lehner_kachanov_1996": 8.5,
+  "ygeo_fdem": 7.0
+ },
+ "resultats_ygeo": {
+  "sigma1c_MPa": 7.0,
+  "page": 37,
+  "theta_branchement_deg": 64,
+  "sigma1u_MPa": [
+   33,
+   32
+  ],
+  "note_sigma1u": "33 MPa dans le texte p. 37, 32 MPa dans la legende de la fig. 3.4c",
+  "ratio": 0.21,
+  "t_evenements_1_2_ms": [
+   [
+    1.86,
+    1.87
+   ],
+   [
+    1.89,
+    1.9
+   ]
+  ],
+  "t_rupture_ms": 9,
+  "detection": "sigma1c lu sur les reactions nodales des platines a l'amorcage des ailes (evenements EA 1 et 2, rupture d'element de fissure)"
+ },
+ "KIc": {
+  "eq": "3.23 G_Ic = K_Ic^2 / E",
+  "publie_MPa_sqrt_m": 0.077,
+  "recalcule_E": 0.07746,
+  "recalcule_Eprime": 0.08094
+ },
+ "theta_contrainte_circonferentielle_max_deg": 70.53,
+ "lefm": {
+  "cotterell_rice_1980": {
+   "publie_MPa": 5.1,
+   "statut_formule": "verifiee",
+   "recalcule_KIc_0077_MPa": 5.066,
+   "recalcule_KIc_E_MPa": 5.096,
+   "recalcule_KIc_Eprime_MPa": 5.325,
+   "formule": "branchement infinitesimal (Cotterell et Rice 1980, premier ordre) :\nK_II = tau* sqrt(pi c), K_I = 0 (fissure fermee) ;\nk_I(theta) = 3/4 [sin(theta/2) + sin(3 theta/2)] K_II"
+  },
+  "zaitsev_1985": {
+   "publie_MPa": 6.9,
+   "statut_formule": "candidate non verifiee",
+   "recalcule_KIc_0077_MPa": 6.82,
+   "recalcule_KIc_E_MPa": 6.861,
+   "recalcule_KIc_Eprime_MPa": 7.169,
+   "formule": "CANDIDAT non verifie : coin de glissement moyen b = pi tau* c / E'\nouvrant l'aile a sa racine, K_I = E' b sin(theta) / (2 sqrt(pi l))\n= pi tau* c sin(theta) / (2 sqrt(pi l)). Donne 6,82 MPa contre 6,9 publie."
+  },
+  "horii_nemat_nasser_1986": {
+   "publie_MPa": 14.6,
+   "statut_formule": "verifiee",
+   "recalcule_KIc_0077_MPa": 14.567,
+   "recalcule_KIc_E_MPa": 14.654,
+   "recalcule_KIc_Eprime_MPa": 15.312,
+   "formule": "aile droite chargee par la force de coin F sin(theta) en son centre,\nlongueur effective l + l*, l* = 0,27 c (Horii et Nemat-Nasser 1986) :\nK_I = F sin(theta) / sqrt(pi (l + l*)) - sigma_N sqrt(pi l)"
+  },
+  "lehner_kachanov_1996": {
+   "publie_MPa": 8.5,
+   "statut_formule": "candidate non verifiee",
+   "recalcule_KIc_0077_MPa": 8.53,
+   "recalcule_KIc_E_MPa": 8.581,
+   "recalcule_KIc_Eprime_MPa": 8.966,
+   "formule": "CANDIDAT non verifie (ajustement de forme, pas une derivation) :\nK_I = F / sqrt(pi l) - sigma_N sqrt(pi (l + 0,27 c)). Donne 8,53 MPa\ncontre 8,5 publie ; la coincidence ne prouve pas la formule."
+  }
+ }
+}

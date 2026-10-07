@@ -1,0 +1,86 @@
+S3 - banc de joint cinematique : verification du schema falsifiant
+scratch : C:/Users/FUZQUI~1/AppData/Local/Temp/claude/C--Users-fuzquianoalricabi-simulations/01c1f07a-4d93-418a-851e-98d14203ea97/scratchpad/s3
+
+== ten_solidity (wall 0.31 s, 8003 lignes csv, dt 5e-09 s)
+  (iii) W_I = 57.9935 J/m2 = 1.15987 Gf (attendu 1.15999 Gf) ecart 0.0106437 % [PASS] ; recalcul csv 57.9935 J/m2 (ecart solveur/csv 5.71e-08)
+  (iii) W_II = 0.0000 J/m2 = 0.00000 GfII (attendu a sigma_n = 0 : 1.15932 GfII) ; recalcul csv 0.0000
+  (i)   retrace sigma : recharge 5.332e-10 ft (6000 apparies, 0 sans jumeau), decharge 1.596e-10 ft -> PASS
+  (ii)  ouverture residuel a traction nulle [m] : ['1.952e-18', '1.952e-18', '1.952e-18'] ; |slip| interne : ['0.000e+00', '0.000e+00', '0.000e+00']
+  (iv)  points rompus a t = ['3.3670e-05', '3.3670e-05', '3.3670e-05'] s ; joint a t = 3.3670e-05 s (nFail 3) -> jointFailRule = majority : mort au DEUXIEME point, instants confondus (jbTilt = 0 ?) [non discriminant]
+
+== ten_plastic (wall 0.32 s, 8003 lignes csv, dt 5e-09 s)
+  (iii) W_I = 50.0474 J/m2 = 1.00095 Gf (attendu 1.00107 Gf) ecart 0.0123358 % [PASS] ; recalcul csv 50.0474 J/m2 (ecart solveur/csv 1.58e-07)
+  (iii) W_II = 0.0000 J/m2 = 0.00000 GfII (attendu a sigma_n = 0 : 1.00000 GfII) ; recalcul csv 0.0000
+  (i)   retrace sigma : recharge 9.999e-01 ft (6000 apparies, 0 sans jumeau), decharge 9.999e-01 ft -> FAIL
+  (ii)  ouverture residuel a traction nulle [m] : ['1.952e-18', '1.952e-18', '1.952e-18'] ; |slip| interne : ['0.000e+00', '0.000e+00', '0.000e+00']
+  (iv)  points rompus a t = ['3.1800e-05', '3.1800e-05', '3.1800e-05'] s ; joint a t = 3.1800e-05 s (nFail 3) -> jointFailRule = majority : mort au DEUXIEME point, instants confondus (jbTilt = 0 ?) [non discriminant]
+
+== ten_origin (wall 0.30 s, 8003 lignes csv, dt 5e-09 s)
+  (iii) W_I = 50.0474 J/m2 = 1.00095 Gf (attendu 1.00107 Gf) ecart 0.0123358 % [PASS] ; recalcul csv 50.0474 J/m2 (ecart solveur/csv 1.58e-07)
+  (iii) W_II = 0.0000 J/m2 = 0.00000 GfII (attendu a sigma_n = 0 : 1.00030 GfII) ; recalcul csv 0.0000
+  (i)   retrace sigma : recharge 9.999e-01 ft (6000 apparies, 0 sans jumeau), decharge 9.999e-01 ft -> FAIL
+  (ii)  ouverture residuel a traction nulle [m] : ['1.952e-18', '1.952e-18', '1.952e-18'] ; |slip| interne : ['0.000e+00', '0.000e+00', '0.000e+00']
+  (iv)  points rompus a t = ['3.1800e-05', '3.1800e-05', '3.1800e-05'] s ; joint a t = 3.1800e-05 s (nFail 3) -> jointFailRule = majority : mort au DEUXIEME point, instants confondus (jbTilt = 0 ?) [non discriminant]
+
+== sh_solidity (wall 0.30 s, 7205 lignes csv, dt 7.5e-09 s)
+  (iii) W_I = 0.6000 J/m2 = 0.01200 Gf (attendu 1.15999 Gf) ecart None % [None] ; recalcul csv 0.6000 J/m2 (ecart solveur/csv 1.00e-12)
+  (iii) W_II = 1167.7300 J/m2 = 1.16773 GfII (attendu a sigma_n = 0 : 1.15932 GfII) ; recalcul csv 1167.7255
+  (i)   retrace tau : recharge 8.324e-11 c (4800 apparies, 0 sans jumeau), decharge 9.589e-11 c -> PASS
+  (ii)  glissement residuel a traction nulle [m] : ['8.995e-19', '9.216e-19', '9.538e-19'] ; |slip| interne : ['0.000e+00', '0.000e+00', '0.000e+00']
+  (iv)  points rompus a t = ['4.5420e-05', '4.5420e-05', '4.5420e-05'] s ; joint a t = 4.5420e-05 s (nFail 3) -> jointFailRule = majority : mort au DEUXIEME point, instants confondus (jbTilt = 0 ?) [non discriminant]
+
+== sh_plastic (wall 0.32 s, 7205 lignes csv, dt 7.5e-09 s)
+  (iii) W_I = 0.6000 J/m2 = 0.01200 Gf (attendu 1.00107 Gf) ecart None % [None] ; recalcul csv 0.6000 J/m2 (ecart solveur/csv 1.00e-12)
+  (iii) W_II = 1699.1000 J/m2 = 1.69910 GfII (attendu a sigma_n = 0 : 1.00000 GfII) ; recalcul csv 1699.1006
+  (i)   retrace tau : recharge 3.742e+00 c (4800 apparies, 0 sans jumeau), decharge 5.698e+00 c -> FAIL
+  (ii)  glissement residuel a traction nulle [m] : ['1.198e-05', '1.198e-05', '1.198e-05'] ; |slip| interne : ['1.838e-05', '1.838e-05', '1.838e-05']
+  (iv)  points rompus a t = ['4.2405e-05', '4.2405e-05', '4.2405e-05'] s ; joint a t = 4.2405e-05 s (nFail 3) -> jointFailRule = majority : mort au DEUXIEME point, instants confondus (jbTilt = 0 ?) [non discriminant]
+
+== sh_origin (wall 0.29 s, 7205 lignes csv, dt 7.5e-09 s)
+  (iii) W_I = 0.6000 J/m2 = 0.01200 Gf (attendu 1.00107 Gf) ecart None % [None] ; recalcul csv 0.6000 J/m2 (ecart solveur/csv 1.00e-12)
+  (iii) W_II = 1006.6000 J/m2 = 1.00660 GfII (attendu a sigma_n = 0 : 1.00030 GfII) ; recalcul csv 1006.6027
+  (i)   retrace tau : recharge 4.712e+00 c (4800 apparies, 0 sans jumeau), decharge 4.712e+00 c -> FAIL
+  (ii)  glissement residuel a traction nulle [m] : ['8.995e-19', '9.216e-19', '9.538e-19'] ; |slip| interne : ['0.000e+00', '0.000e+00', '0.000e+00']
+  (iv)  points rompus a t = ['4.2495e-05', '4.2495e-05', '4.2495e-05'] s ; joint a t = 4.2495e-05 s (nFail 3) -> jointFailRule = majority : mort au DEUXIEME point, instants confondus (jbTilt = 0 ?) [non discriminant]
+
+== tilt_sol (wall 0.20 s, 4003 lignes csv, dt 5e-09 s)
+  (iii) W_I = 57.7682 J/m2 = 1.15536 Gf (attendu 1.15999 Gf) ecart 0.399083 % [PASS] ; recalcul csv 57.7682 J/m2 (ecart solveur/csv 1.72e-07)
+  (iii) W_II = 0.0059 J/m2 = 0.00001 GfII (attendu a sigma_n = 0 : 1.15932 GfII) ; recalcul csv 0.0059
+  (iv)  points rompus a t = ['jamais', '1.0715e-05', '1.0260e-05'] s ; joint a t = 1.0715e-05 s (nFail 2) -> jointFailRule = majority : mort au DEUXIEME point, instants distincts [PASS]
+
+== tilt_pl_maj (wall 0.21 s, 4003 lignes csv, dt 5e-09 s)
+  (iii) W_I = 49.8521 J/m2 = 0.99704 Gf (attendu 1.00107 Gf) ecart 0.402438 % [PASS] ; recalcul csv 49.8521 J/m2 (ecart solveur/csv 9.57e-07)
+  (iii) W_II = 0.0051 J/m2 = 0.00001 GfII (attendu a sigma_n = 0 : 1.00000 GfII) ; recalcul csv 0.0051
+  (iv)  points rompus a t = ['jamais', '9.2450e-06', '8.8550e-06'] s ; joint a t = 9.2450e-06 s (nFail 2) -> jointFailRule = majority : mort au DEUXIEME point, instants distincts [PASS]
+
+== tilt_pl_any (wall 0.21 s, 4003 lignes csv, dt 5e-09 s)
+  (iii) W_I = 46.7413 J/m2 = 0.93483 Gf (attendu 1.00107 Gf) ecart 6.61741 % [FAIL] ; recalcul csv 46.7413 J/m2 (ecart solveur/csv 7.24e-07)
+  (iii) W_II = 0.0043 J/m2 = 0.00000 GfII (attendu a sigma_n = 0 : 1.00000 GfII) ; recalcul csv 0.0043
+  (iv)  points rompus a t = ['8.8550e-06', '8.8550e-06', '8.8550e-06'] s ; joint a t = 8.8550e-06 s (nFail 3) -> jointFailRule = any : rupture au PREMIER point [conforme]
+
+== schema falsifiant (ce que chaque deck DOIT donner)
+  [OK ] ten_solidity (i) retrace PASS (loi sans memoire)
+  [OK ] ten_plastic  (i) retrace FAIL (secante de decharge eq. 17) - variante qui DOIT echouer
+  [OK ] ten_origin   (i) retrace FAIL (mode I identique a plastic)
+  [OK ] sh_solidity  (i) retrace PASS
+  [OK ] sh_plastic   (i) retrace FAIL (retour radial)
+  [OK ] sh_origin    (i) retrace FAIL contre la charge (secante a l origine)
+  [OK ] ten_solidity (iii) W_I/Gf = 1.15987, attendu 1.159 (+/- 2 %)
+  [OK ] ten_solidity (iii) recalcul independant depuis jointbench.csv = chiffre du solveur (1e-6)
+  [OK ] ten_plastic  (iii) W_I/Gf = 1.00095, attendu 1.000 (+/- 2 %)
+  [OK ] ten_plastic  (iii) recalcul independant depuis jointbench.csv = chiffre du solveur (1e-6)
+  [OK ] ten_origin   (iii) W_I/Gf = 1.00095, attendu 1.000 (+/- 2 %)
+  [OK ] ten_origin   (iii) recalcul independant depuis jointbench.csv = chiffre du solveur (1e-6)
+  [OK ] sh_plastic   (ii) glissement residuel > 1 um sur les trois points (plasticite conservee)
+  [OK ] sh_solidity  (ii) glissement residuel nul (< 1e-3 pas de chemin = 7.5e-12 m)
+  [OK ] sh_origin    (ii) glissement residuel nul (< 1e-3 pas de chemin = 7.5e-12 m)
+  [OK ] tilt_sol     (iv) instants distincts, joint mort au 2e point, 3e point jamais rompu [PASS] (points [None, 1.0715e-05, 1.026e-05])
+  [OK ] tilt_pl_maj  (iv) instants distincts, joint mort au 2e point, 3e point jamais rompu [PASS] (points [None, 9.245e-06, 8.855e-06])
+  [OK ] tilt_pl_any  (iv) jointFailRule = any : mort au PREMIER point - variante qui DOIT differer
+  [OK ] tilt : tBreak(majority) = 9.2450e-06 s > tBreak(any) = 8.8550e-06 s sur le meme trajet plastic
+  [OK ] bad_key_percussion refuse a l initialisation (message contenant 'jointbench')
+  [OK ] bad_mesh           refuse a l initialisation (message contenant 'mesh')
+  [OK ] ancre bitid fdem3d_kuru9_court : IDENTIQUE 156.2 s
+  [OK ] ancre bitid fdem3d_yang_v2_court : IDENTIQUE 368.8 s
+
+BILAN : schema falsifiant entierement tenu

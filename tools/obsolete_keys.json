@@ -1,0 +1,14 @@
+{
+ "_meta": {
+  "role": "table des cles OBSOLETES (anciens noms que le code ne lit plus) -> nom courant ; lue par tools/gen_keys_by_mode.py (table compilee kObsolete dans include/rockim/KeysByMode.hpp) et par tools/scan_decks.py ; message : « cle obsolete X : remplacee par Z »",
+  "regle": "un renommage de cle = une entree ici, dans le MEME commit ; ne jamais retirer une entree (les vieux decks doivent rester diagnosticables)",
+  "created": "2026-09-05 w21 (C1, decision Fernando 20:00)"
+ },
+ "obsolete": {
+  "fragBrushV": {
+   "new": "fragBrushV0",
+   "since": "2026-08-25",
+   "note": "coquille des decks bench_impact (le code a toujours lu fragBrushV0) ; corrigee dans rockim_p1 le 25/08 (commit 828e876) puis dans rockim_f2 le 05/09 (C0) ; les runs Kuru anterieurs tournaient SANS brossage"
+  }
+ }
+}

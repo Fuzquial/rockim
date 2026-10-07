@@ -1,0 +1,35 @@
+﻿[FDEM] mesh = file: 'calib_quick/meshes/box20x40_h08_algo5.msh' — 1772 nodes, 3388 triangles, box 0.02 x 0.04 m
+[FDEM] joint softening: Yan et al. f(D), a = 0.63, b = 1.8, c = 6, int f(D) dD = 0.386307
+[FDEM] jointResidualMu = 0.25 : le frottement du joint glisse du PIC tan(frictionDeg) vers ce residuel par la meme f(D) que la cohesion. C est la distinction pic/fracture de Y-Geo (AbuAisha et al. 2015, eq. 7.5) et l equivalent du glissement que Solidity applique au joint rompu remis au contact (0,6 calcaire, 0,18 granite chez Yang et al.).
+[FDEM] adaptive insertion: 5005 bonded edges, activation penalty 4 E/h
+[FDEM] gcRestitution = 0.2 (DEFAUT) : detente normale du contact general a ce facteur — a figer au deck des que e ou l ejection est une metrique
+[FDEM] contact activation: adaptive (Fukuda) — margin 2 cells, sweep <= every 64 steps
+[FDEM] confinement: 50 MPa on 102 exterior faces (sides), total length 0.08 m, ramp 0.0001 s
+[FDEM] 3388 elements, 5005 joints, 10164 nodes, dt = 4.06226e-09 s, steps = 541571
+[FDEM] voronoi: 1 grains, 1 phase(s), 0 grain-boundary joints, hmin = 0.000279506 m
+  10%   20%   30%   40%   50%   60%   70%   80%   90%   100%
+
+[FDEM] ---- summary ----
+[FDEM] block kinetic energy at end: 0.0876601 J/m
+[FDEM] net work injected by general contact: -2722.84 J/m
+[FDEM] joint dashpot work: -3.42606 J/m  [OK, dissipative]
+[FDEM] energy budget (V2/B4): KE 0 -> 0.0876601 J/m
+[FDEM]   elements     : 374.954 J/m preleve (stocke elastique 363.77 J/m)
+[FDEM]   joints       : 1368.16 J/m cohesif (fissuration + stocke), dashpot 3.42606 J/m
+[FDEM]   contact      : 2722.84 J/m (dont frottement 912.001 J/m)
+[FDEM]   Cundall      : 2756.67 J/m
+[FDEM]   frontieres   : -0 J/m (dont stocke ressorts 0 J/m)
+[FDEM]   outil->solide: 0 J/m, platines/grips: 2746.14 J/m
+[FDEM]   confinement  : -245.746 J/m (pression suiveuse -> solide)
+[FDEM]   integration  : +4718.86 J/m (correction leapfrog f^2 dt^2/2m)
+[FDEM]   residu       : 6.87745 J/m (0.0673076 % de l'echelle) [OK]
+[FDEM] adaptive insertion: 2430 / 5005 joints inserted (48.5514 %), 925 fully broken
+[FDEM] relais joint->contact: 428 joints morts, dont 127 EN COMPRESSION (29.6729 %) ; charge normale lachee au relais 3868.16 kN/m cumules, 272.719 kN/m au maximum pour un joint
+[FDEM] adaptive contact activation: 71 / 154 exterior faces activated (46.1039 %)
+[FDEM] grains: 1, phases: rock 100% (target 100%)
+[FDEM] joints intra/homo/hetero: 5005/0/0, broken: 925/0/0  (intergranular fraction 0 %)
+[FDEM] confinement: target 50 MPa, achieved mean sigma_xx in the core at the end of the ramp = -50 MPa (5.2546e-10 %); at the END of the run (axial load included) -38.8388 MPa
+[FDEM] tension result (GB-controlled, verifyFt=off):
+[FDEM]   peak macro stress = 564.292 MPa = 94.0486 x bulk ft (weak-boundary reference gbAlphaTen = 1)
+[FDEM]   broken joints = 925 / 5005
+[rockim] wall time: 234.728 s, output in 'out_q1t050_P050'

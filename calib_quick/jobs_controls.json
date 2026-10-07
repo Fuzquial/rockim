@@ -1,0 +1,8 @@
+[
+ {"cfg": "calib_quick/q1_s1_P050.cfg", "out": "out_q1_s1_P050"},
+ {"cfg": "calib_quick/q1_s2_P050.cfg", "out": "out_q1_s2_P050"},
+ {"cfg": "calib_quick/q1_s3_P050.cfg", "out": "out_q1_s3_P050"},
+ {"cfg": "calib_quick/q1u070_P050.cfg", "out": "out_q1u070_P050"},
+ {"cfg": "calib_quick/q1u070_P020.cfg", "out": "out_q1u070_P020"},
+ {"cfg": "calib_quick/q1u070slow_P050.cfg", "out": "out_q1u070slow_P050"}
+]

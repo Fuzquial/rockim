@@ -1,0 +1,21 @@
+{
+ "tag": "h1",
+ "runs": "calib_quick\\runs_h1",
+ "template": "calib_quick/q1v070_P050.cfg",
+ "bts": "calib_quick/bts_v070b.cfg",
+ "extra": [
+  "historyStrains=true",
+  "gripsStopAfterPeak=true",
+  "stopPeakDrop=0.3",
+  "gripsStopDelay=2e-4",
+  "jointResidualMu=0.6",
+  "rho=2640"
+ ],
+ "conf": [
+  20.0,
+  50.0
+ ],
+ "seeds": [],
+ "nu": 0.29,
+ "created": "2026-09-02 14:52:02"
+}

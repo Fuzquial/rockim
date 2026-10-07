@@ -1,0 +1,49 @@
+﻿[FDEM] geometry = disc + mesh = file : le fichier est pris tel quel comme disque (diametre 0.04 m, centre 0.02, 0.02)
+[FDEM] mesh = file: 'calib_quick/meshes/disc40_h08_f20_s1.msh' — 2767 nodes, 5368 triangles, box 0.04 x 0.0375877 m
+[FDEM] joint softening: Yan et al. f(D), a = 0.63, b = 1.8, c = 6, int f(D) dD = 0.386307
+[FDEM] jointResidualMu = 0.25 : le frottement du joint glisse du PIC tan(frictionDeg) vers ce residuel par la meme f(D) que la cohesion. C est la distinction pic/fracture de Y-Geo (AbuAisha et al. 2015, eq. 7.5) et l equivalent du glissement que Solidity applique au joint rompu remis au contact (0,6 calcaire, 0,18 granite chez Yang et al.).
+[FDEM] adaptive insertion: 7970 bonded edges, activation penalty 4 E/h
+[FDEM] WARNING: jointPenaltyFactor est INERTE en insertion = adaptive : la penalite des joints inseres est insertionPenaltyFactor (4 E/h)
+[FDEM] gcRestitution = 0.2 (DEFAUT) : detente normale du contact general a ce facteur — a figer au deck des que e ou l ejection est une metrique
+[FDEM] contact activation: adaptive (Fukuda) — margin 2 cells, sweep <= every 64 steps
+[FDEM] brazilian: flattening 2*alpha = 0 deg, platen penalty 1 x E*t
+[FDEM] brazilian: two rigid platens closing at 0.1 m/s total (0.05 m/s each, both inward), half-width 0.0025 m
+[FDEM] 5368 elements, 7970 joints, 16104 nodes, dt = 4.204e-09 s, steps = 261656
+[FDEM] disc geometry: diameter 0.04 m, centre (0.02, 0.02)
+[FDEM] voronoi: 1 grains, 1 phase(s), 0 grain-boundary joints, hmin = 0.000283055 m
+  10%   20%   30%   40%   50%   60%   70% 
+[rockim] solver requested an early stop at t = 0.000845766 s (201181 / 261656 steps)
+
+[FDEM] ---- summary ----
+[FDEM] block kinetic energy at end: 0.0656884 J/m
+[FDEM] net work injected by general contact: 0.00234108 J/m
+[FDEM] joint dashpot work: -0.113011 J/m  [OK, dissipative]
+[FDEM] energy budget (V2/B4): KE 0 -> 0.0656884 J/m
+[FDEM]   elements     : 11.4298 J/m preleve (stocke elastique 11.3359 J/m)
+[FDEM]   joints       : 18.5553 J/m cohesif (fissuration + stocke), dashpot 0.113011 J/m
+[FDEM]   contact      : -0.00234108 J/m (dont frottement 0.000553151 J/m)
+[FDEM]   Cundall      : 19.7366 J/m
+[FDEM]   frontieres   : -0 J/m (dont stocke ressorts 0 J/m)
+[FDEM]   outil->solide: 0 J/m, platines/grips: 34.1243 J/m
+[FDEM]   integration  : +15.7738 J/m (correction leapfrog f^2 dt^2/2m)
+[FDEM]   residu       : 5.87447e-14 J/m (6.99663e-14 % de l'echelle) [OK]
+[FDEM] adaptive insertion: 1616 / 7970 joints inserted (20.276 %), 157 fully broken
+[FDEM] relais joint->contact: 94 joints morts, dont 2 EN COMPRESSION (2.12766 %) ; charge normale lachee au relais 40.8524 kN/m cumules, 35.179 kN/m au maximum pour un joint
+[FDEM] adaptive contact activation: 29 / 164 exterior faces activated (17.6829 %)
+[FDEM] platen balance (|Ftop|-|Fbot|)/mean = -30.4893 % (quasi-static if a few %)
+[FDEM] grains: 1, phases: rock 100% (target 100%)
+[FDEM] joints intra/homo/hetero: 7970/0/0, broken: 157/0/0  (intergranular fraction 0 %)
+[FDEM] brazilian ELASTIC-BAND gauge (sigma_t in [0.3, 0.8] x ft, disc intact, 23897 history steps, 0 % of joints damaged at the top of the band):
+[FDEM]   mean sigma_t = 4.63216 MPa, mean centre sigma_xx = 4.12256 MPa -> ratio 0.889987  [PASS]  (band 0.85-1.25; mean sigma_yy = -13.5086 MPa, sigma_yy/sigma_xx = -3.27675)
+[FDEM] brazilian elastic gauge (last step before first breakage, sigma_t = 11.6144 MPa):
+[FDEM]   centre sigma_xx = 2.38751 MPa, expected +11.6144 MPa -> ratio 0.205565  [FAIL]  (this IS what sigma_t reports, band 0.85-1.25)
+[FDEM]   centre sigma_yy = -41.8637 MPa, sigma_yy/sigma_xx = -17.5344 (informative only: -3 is the LINE-load value; a finite bearing cuts the centre compression much more than the tension, so a flattened disc reads well above it)
+[FDEM]   bearing: 14 nodes in contact, participation ratio 12.7287 (= effective number carrying the load; 1 means a single asperity takes everything)
+[FDEM]   sub-critical damage at peak: 1.7064 % of joints above D = 0.01, mean D = 0.00368496 (diffuse ratcheting of the intrinsic penalty — if this eats the strength it must track the deficit)
+[FDEM] brazilian (D = 0.04 m, t = 1 m, bearing width 0 m):
+[FDEM]   peak force P = 826325 N at t = 0.000703906 s (110 joints already broken; peak LOCKED at the post-failure load drop)
+[FDEM]   indirect tensile strength sigma_t = 2P/(pi D t) = 13.1514 MPa
+[FDEM]   ratio to the bulk ft (8.4 MPa) = 1.56564
+[FDEM]   crack location: 92 / 157 broken joints within 15 % of R from the load axis (58.5987 % diametral), mean |x-xc|/R = 0.192124
+[FDEM]   fragments = 5
+[rockim] wall time: 158.413 s, output in 'out_bts_v070'

@@ -1,0 +1,46 @@
+﻿[suite] 44 tests, exe = .\rockim_f2g.exe, OMP_NUM_THREADS = 1, sorties C:\Users\FUZQUI~1\AppData\Local\Temp\rockim_suite_2qviug4j
+  PASS  selftest_saksala2011             0.1s  
+  PASS  selftest_dpdfh                   0.1s  
+  PASS  selftest_mc                      0.2s  
+  PASS  selftest_potential2d             0.1s  pot_ke = 5.11562e-07 ok (ref 0); pot_mom = 4.88498e-15 ok (ref 0)
+  PASS  selftest_potential3d             1.2s  pot3_ke = 2.04788e-08 ok (ref 0); pot3_mom = 4.66335e-15 ok (ref 0)
+  PASS  yan_integral                     2.2s  yan_int = 0.386307 ok (ref 0.386307)
+  PASS  fem_bar                          2.3s  err_pct = 0.889143 ok (ref 0.889143)
+  PASS  dem_tension                      1.5s  err_pct = -0.109232 ok (ref -0.109232)
+  PASS  fdem_voronoi_tension            10.1s  err_pct = 11.5614 ok (ref 11.5981); dampWork = 0 <= 0 ok
+  PASS  zeroload_2d_fan                  9.5s  broken = 0 ok (ref 0); dampWork = 0 <= 0 ok
+  PASS  zeroload_2d_origin              10.3s  broken = 0 ok (ref 0); dampWork = 0 <= 0 ok
+  PASS  zeroload_2d_gcadaptive           9.4s  broken = 0 ok (ref 0); dampWork = 0 <= 0 ok
+  PASS  zeroload_2d_potential            9.5s  broken = 0 ok (ref 0); dampWork = 0 <= 0 ok
+  PASS  sizeeffect_2d_zeff1mm3           0.4s  szfac = 0.736079 ok (ref 0.736079)
+  PASS  sizeeffect_2d_zeff1cm3           0.5s  szfac = 0.981577 ok (ref 0.981577)
+  PASS  visc_yan_2d                      8.1s  viscwork = 0.793632 ok (ref 0.793632); broken = 0 ok (ref 0)
+  PASS  dif_yang_litteral_2d             3.1s  edotmed = 99.3556 ok (ref 99.3556); difmed = 1.5157 ok (ref 1.5157)
+  PASS  dif_yang_fig2_2d                 3.4s  edotmed = 40.2157 ok (ref 40.2157); difmed = 1.72029 ok (ref 1.72029)
+  PASS  dif_yang_fig2_plateau_2d         2.7s  edotmed = 315.75 ok (ref 315.75); difmed = 1.85 ok (ref 1.85)
+  PASS  dif_intrinseque_2d               5.2s  difarmed = 547 ok (ref 547); difsansdif = 0 ok (ref 0); edotmed = 57.1995 ok (ref 57.1995); difmed = 1.76803 ok (ref 1.76803)
+  PASS  zeroload_dif_intrinseque_2d     62.5s  difarmed = 0 ok (ref 0); difsansdif = 0 ok (ref 0); broken = 0 ok (ref 0); dampWork = 0 <= 0 ok
+  PASS  jointdeath_tension_2d           47.6s  err_pct = -1.38789 ok (ref -1.38789); dead = 24 ok (ref 24); deadcomp = 0 ok (ref 0); dampWork = 0 <= 0 ok
+  PASS  zeroload_jointdeath_2d          65.8s  broken = 0 ok (ref 0); dampWork = 0 <= 0 ok
+  PASS  wp6_zeroload_2d                  4.3s  ctcpulv = 0 ok (ref 0); npulvel = 0 ok (ref 0); broken = 0 ok (ref 0)
+  PASS  wp6_pulv_2d                      4.0s  ctcpulv = 20778 ok (ref 20776); npulvel = 481 ok (ref 481); broken = 0 ok (ref 0)
+  PASS  bulkmodel_neohooke_2d           72.0s  err_pct = -2.20202 ok (ref -2.12595); broken = 24 ok (ref 24); dampWork = 0 <= 0 ok
+  PASS  zeroload_neohooke_2d            61.4s  broken = 0 ok (ref 0); dampWork = 0 <= 0 ok
+  PASS  jointlaw_guo_2d                 67.9s  err_pct = -2.33473 ok (ref -2.33108); broken = 24 ok (ref 24); dampWork = 0 <= 0 ok
+  PASS  zeroload_jointlaw_guo_2d        68.3s  broken = 0 ok (ref 0); dampWork = 0 <= 0 ok
+  PASS  dtbudget_tangential_defaut_3d     0.6s  dt = 1.30191e-08 ok (ref 1.30191e-08)
+  PASS  dtbudget_tangential_on_3d        0.6s  dt = 1.27315e-08 ok (ref 1.27315e-08)
+  PASS  jointquad_midedge_2d            50.9s  err_pct = -2.72922 ok (ref -2.72922); broken = 24 ok (ref 24); dampWork = 0 <= 0 ok
+  PASS  zeroload_jointquad_2d           54.1s  broken = 0 ok (ref 0); dampWork = 0 <= 0 ok
+  PASS  jointdeltac_solidity_2d         68.6s  err_pct = -2.33432 ok (ref -2.33345); broken = 24 ok (ref 24); dampWork = 0 <= 0 ok
+  PASS  zeroload_jointdeltac_solidity_2d    68.0s  broken = 0 ok (ref 0); dampWork = 0 <= 0 ok
+  PASS  jointfailrule_majority_2d       52.0s  err_pct = -2.79574 ok (ref -2.79574); dampWork = 0 <= 0 ok
+  PASS  zeroload_jointfailrule_2d       53.6s  broken = 0 ok (ref 0); dampWork = 0 <= 0 ok
+  PASS  dif_continuous_2d                5.0s  edotmed = 7.65306 ok (ref 7.65306); difmed = 1.5303 ok (ref 1.53036)
+  PASS  zeroload_dif_continuous_2d      60.1s  broken = 0 ok (ref 0); dampWork = 0 <= 0 ok
+  PASS  gcbirth_ramp_2d                 44.5s  err_pct = -1.24549 ok (ref -1.24549); dead = 24 ok (ref 24)
+  PASS  gcbirth_penalty_2d              45.4s  err_pct = -1.18459 ok (ref -1.18459); dead = 24 ok (ref 24); birthfac = 1 ok (ref 1)
+  PASS  zeroload_gcbirth_penalty_2d     46.8s  broken = 0 ok (ref 0); dampWork = 0 <= 0 ok
+  PASS  srfilter_none_2d                 5.0s  edotmed = 4.01625 ok (ref 4.01337); difmed = 1.46982 ok (ref 1.46976)
+  PASS  zeroload_srfilter_none_2d       60.0s  broken = 0 ok (ref 0); dampWork = 0 <= 0 ok
+[suite] TOUT PASSE (44/44)

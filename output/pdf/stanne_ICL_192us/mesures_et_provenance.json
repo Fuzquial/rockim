@@ -1,0 +1,144 @@
+{
+  "run": "C:\\Users\\fuzquianoalricabi\\simulations\\FDEM\\rockim_g1\\out_stanne2025_rock137",
+  "frame": 10,
+  "time_us": 149.99499999999998,
+  "facets": 3920,
+  "connected_components": 58,
+  "largest_component_facets": 3832,
+  "branches": [
+    {
+      "label": "A",
+      "n": 20,
+      "area": 1.477651817711273e-05,
+      "rmin": 0.005582242865386581,
+      "rmax": 0.013275928636548109,
+      "length": 0.0076936857711615275,
+      "dmin": 0.0,
+      "dmax": 0.0029342491179999985,
+      "ner": 0.174027409978107,
+      "nz": 0.32188127733304583,
+      "orient": "radiale",
+      "az": 95.74692662351998,
+      "tip": 4,
+      "id": 2
+    },
+    {
+      "label": "B",
+      "n": 18,
+      "area": 1.4829113852219385e-05,
+      "rmin": 0.005582040538093261,
+      "rmax": 0.009689115581035324,
+      "length": 0.004107075042942063,
+      "dmin": 0.002685515424000001,
+      "dmax": 0.00694033216199999,
+      "ner": 0.19954025104983036,
+      "nz": 0.3674459254870806,
+      "orient": "radiale",
+      "az": -44.43554011480142,
+      "tip": 2900,
+      "id": 3
+    },
+    {
+      "label": "C",
+      "n": 13,
+      "area": 8.23980419232696e-06,
+      "rmin": 0.0057058925435372835,
+      "rmax": 0.008269697257419259,
+      "length": 0.0025638047138819755,
+      "dmin": 0.0,
+      "dmax": 0.003933776794000005,
+      "ner": 0.3243429041266712,
+      "nz": 0.4210388048850662,
+      "orient": "radiale",
+      "az": -58.7467161293886,
+      "tip": 11,
+      "id": 4
+    }
+  ],
+  "core_sensitivity": [
+    {
+      "rcore_mm": 6,
+      "branches": [
+        {
+          "n": 20,
+          "area": 1.477651817711273e-05,
+          "rmin": 0.005582242865386581,
+          "rmax": 0.013275928636548109,
+          "length": 0.0076936857711615275,
+          "dmin": 0.0,
+          "dmax": 0.0029342491179999985,
+          "ner": 0.174027409978107,
+          "nz": 0.32188127733304583,
+          "orient": "radiale",
+          "az": 95.74692662351998,
+          "tip": 4,
+          "id": 2
+        },
+        {
+          "n": 18,
+          "area": 1.4829113852219385e-05,
+          "rmin": 0.005582040538093261,
+          "rmax": 0.009689115581035324,
+          "length": 0.004107075042942063,
+          "dmin": 0.002685515424000001,
+          "dmax": 0.00694033216199999,
+          "ner": 0.19954025104983036,
+          "nz": 0.3674459254870806,
+          "orient": "radiale",
+          "az": -44.43554011480142,
+          "tip": 2900,
+          "id": 3
+        },
+        {
+          "n": 13,
+          "area": 8.23980419232696e-06,
+          "rmin": 0.0057058925435372835,
+          "rmax": 0.008269697257419259,
+          "length": 0.0025638047138819755,
+          "dmin": 0.0,
+          "dmax": 0.003933776794000005,
+          "ner": 0.3243429041266712,
+          "nz": 0.4210388048850662,
+          "orient": "radiale",
+          "az": -58.7467161293886,
+          "tip": 11,
+          "id": 4
+        }
+      ]
+    },
+    {
+      "rcore_mm": 8,
+      "branches": [
+        {
+          "n": 14,
+          "area": 9.84957205658537e-06,
+          "rmin": 0.008077757818436693,
+          "rmax": 0.013275928636548109,
+          "length": 0.005198170818111416,
+          "dmin": 0.0,
+          "dmax": 0.0029342491179999985,
+          "ner": 0.2064552993378871,
+          "nz": 0.362501510378545,
+          "orient": "radiale",
+          "az": 96.1277220701924,
+          "tip": 4,
+          "id": 0
+        }
+      ]
+    },
+    {
+      "rcore_mm": 10,
+      "branches": []
+    }
+  ],
+  "source_sha256": {
+    "fdem3d_joints_0006.vtu": "e2840fbe5d20ac2f85dbc3c2d5ae0c36957714d48aa8b035dffb5a93f3e579a8",
+    "fdem3d_joints_0008.vtu": "2076c046f4253a2dc5560de4ed866146d514f0a0a014c8fda8cdb7ed1771606e",
+    "fdem3d_joints_0009.vtu": "787b366e03210c6fe4c9fa077af531bb338e4d449ad68b26eb6829dafcfd338a",
+    "fdem3d_joints_0010.vtu": "7fbbdc9ce2059e2870d9a87d7b24a2438d131ee494c651fe214df08c0a9281bf"
+  },
+  "reference_geometry": true,
+  "all_broken_facets_kept": true,
+  "mode_warning": "jointBreakModeRef=slipF in effective deck; exported mode is indicative",
+  "rendering": "Opaque flat-shaded triangles, no edges, no smoothing. Exact planar sections."
+}

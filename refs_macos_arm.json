@@ -1,0 +1,160 @@
+{
+ "_meta": {
+  "date": "2026-08-30 18:20:07",
+  "exe": "build/rockim",
+  "note": "références CHIFFRÉES mesurées sur cette plateforme ; les invariants ne sont pas ici — ils restent en dur dans verify_suite.py",
+  "platform": "macOS-26.6.2-arm64-arm-64bit-Mach-O",
+  "python": "3.13.15",
+  "threads": "1",
+  "tier": "fast"
+ },
+ "bulkmodel_neohooke_2d": {
+  "broken": 24.0,
+  "err_pct": -0.773079
+ },
+ "dem_tension": {
+  "err_pct": -0.109232
+ },
+ "dif_continuous_2d": {
+  "difmed": 1.53051,
+  "edotmed": 7.66944
+ },
+ "dif_intrinseque_2d": {
+  "difarmed": 547.0,
+  "difmed": 1.76804,
+  "difsansdif": 0.0,
+  "edotmed": 57.2018
+ },
+ "dif_yang_fig2_2d": {
+  "difmed": 1.72029,
+  "edotmed": 40.2157
+ },
+ "dif_yang_fig2_plateau_2d": {
+  "difmed": 1.85,
+  "edotmed": 315.75
+ },
+ "dif_yang_litteral_2d": {
+  "difmed": 1.5157,
+  "edotmed": 99.3556
+ },
+ "dtbudget_tangential_defaut_3d": {
+  "dt": 1.30191e-08
+ },
+ "dtbudget_tangential_on_3d": {
+  "dt": 1.27315e-08
+ },
+ "fdem_voronoi_tension": {
+  "err_pct": 7.06583
+ },
+ "fem_bar": {
+  "err_pct": 0.889143
+ },
+ "gcbirth_penalty_2d": {
+  "birthfac": 1.0,
+  "dead": 24.0,
+  "err_pct": -1.33358
+ },
+ "gcbirth_ramp_2d": {
+  "dead": 24.0,
+  "err_pct": -0.664772
+ },
+ "jointdeath_tension_2d": {
+  "dead": 24.0,
+  "deadcomp": 0.0,
+  "err_pct": -1.5577
+ },
+ "jointdeltac_solidity_2d": {
+  "broken": 24.0,
+  "err_pct": -2.3306
+ },
+ "jointfailrule_majority_2d": {
+  "err_pct": -2.79274
+ },
+ "jointlaw_guo_2d": {
+  "broken": 24.0,
+  "err_pct": -2.33217
+ },
+ "jointquad_midedge_2d": {
+  "broken": 24.0,
+  "err_pct": -2.00122
+ },
+ "selftest_potential2d": {
+  "pot_ke": 5.11562e-07,
+  "pot_mom": 5.03301e-15
+ },
+ "selftest_potential3d": {
+  "pot3_ke": 8.3297e-07,
+  "pot3_mom": 5.99553e-15
+ },
+ "sizeeffect_2d_zeff1cm3": {
+  "szfac": 0.981577
+ },
+ "sizeeffect_2d_zeff1mm3": {
+  "szfac": 0.736079
+ },
+ "srfilter_none_2d": {
+  "difmed": 1.46787,
+  "edotmed": 3.92885
+ },
+ "visc_yan_2d": {
+  "broken": 0.0,
+  "viscwork": 0.793632
+ },
+ "wp6_pulv_2d": {
+  "broken": 0.0,
+  "ctcpulv": 23140.0,
+  "npulvel": 468.0
+ },
+ "wp6_zeroload_2d": {
+  "broken": 0.0,
+  "ctcpulv": 0.0,
+  "npulvel": 0.0
+ },
+ "yan_integral": {
+  "yan_int": 0.386307
+ },
+ "zeroload_2d_fan": {
+  "broken": 0.0
+ },
+ "zeroload_2d_gcadaptive": {
+  "broken": 0.0
+ },
+ "zeroload_2d_origin": {
+  "broken": 0.0
+ },
+ "zeroload_2d_potential": {
+  "broken": 0.0
+ },
+ "zeroload_dif_continuous_2d": {
+  "broken": 0.0
+ },
+ "zeroload_dif_intrinseque_2d": {
+  "broken": 0.0,
+  "difarmed": 0.0,
+  "difsansdif": 0.0
+ },
+ "zeroload_gcbirth_penalty_2d": {
+  "broken": 0.0
+ },
+ "zeroload_jointdeath_2d": {
+  "broken": 0.0
+ },
+ "zeroload_jointdeltac_solidity_2d": {
+  "broken": 0.0
+ },
+ "zeroload_jointfailrule_2d": {
+  "broken": 0.0
+ },
+ "zeroload_jointlaw_guo_2d": {
+  "broken": 0.0
+ },
+ "zeroload_jointquad_2d": {
+  "broken": 0.0
+ },
+ "zeroload_neohooke_2d": {
+  "broken": 0.0
+ },
+ "zeroload_srfilter_none_2d": {
+  "broken": 0.0
+ }
+}

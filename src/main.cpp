@@ -14,6 +14,7 @@
 #include <fstream>
 #include <iostream>
 #include <memory>
+#include <sstream>
 
 #include "rockim/Config.hpp"
 #include "rockim/Dem3dSolver.hpp"
@@ -22,18 +23,61 @@
 #include "rockim/FdemSolver.hpp"
 #include "rockim/Fem3dSolver.hpp"
 #include "rockim/FemSolver.hpp"
+#include "rockim/Guards.hpp"
+#include "rockim/KeyGuard.hpp"
+#include "rockim/KeysByMode.hpp"
 #include "rockim/PotentialContact.hpp"
 #include "rockim/Solver.hpp"
+#include "rockim/ThermoBench.hpp"
+#include "rockim/ToolSignorini.hpp"
+#include "rockim/ToolPdc3d.hpp"
 
 using namespace rockim;
 
+// B3 / ORCH-02 et HET-16 (2026-09-06). Deux defauts corriges ici : « --help »
+// etait traite comme un chemin de deck (« Config: cannot open '--help' »)
+// alors que le LISEZ_MOI le propose comme controle de bon fonctionnement ; et
+// l'usage n'annoncait que quatre des ONZE sous-commandes selftest-*.
+static void usage(std::ostream& os) {
+    os << "usage: rockim <config.cfg> [output_dir]\n"
+          "       rockim --help | -h\n"
+          "\n"
+          "  bancs point-materiel et geometriques (onze sous-commandes) :\n"
+          "       rockim selftest-saksala2011 [out.csv]\n"
+          "       rockim selftest-mc          [out.csv]\n"
+          "       rockim selftest-triax       [out.csv]\n"
+          "       rockim selftest-cdp         [out.csv]\n"
+          "       rockim selftest-dpdfh       [out.csv]\n"
+          "       rockim selftest-dfhplus     [out.csv]\n"
+          "       rockim selftest-fixed       [out.csv]\n"
+          "       rockim selftest-toolcontact [out.csv]\n"
+          "       rockim selftest-pdc3d       [out.csv]\n"
+          "       rockim selftest-potential2d [out.csv]\n"
+          "       rockim selftest-potcontact2d [out.csv]\n"
+          "       rockim selftest-potential3d [out.csv]\n"
+          "       rockim selftest-potvolume3d [out.csv]\n"
+          "\n"
+          "  pilotes :\n"
+          "       rockim matpoint <cfg> [out.csv]\n"
+          "       rockim thermobench <loi> [out.csv] "
+          "[--ref <loi>] [--deck <cfg>] [--draws N] [--seed S] "
+          "[--max-rows N] [--probe]\n";
+}
+
 int main(int argc, char** argv) {
     if (argc < 2) {
-        std::cerr << "usage: rockim <config.cfg> [output_dir]\n"
-                     "       rockim selftest-saksala2011 [out.csv]\n";
+        usage(std::cerr);
         return 1;
     }
+    {
+        const std::string a1(argv[1]);
+        if (a1 == "--help" || a1 == "-h") {
+            usage(std::cout);
+            return 0;
+        }
+    }
 
+    std::string outDir;                    // connu apres la lecture du deck
     try {
         if (std::string(argv[1]) == "selftest-saksala2011") {
             std::string csv = argc > 2 ? argv[2] : "rockim_saksala.csv";
@@ -46,6 +90,88 @@ int main(int argc, char** argv) {
             std::string csv = argc > 2 ? argv[2] : "rockim_mc.csv";
             int rc = mcSelftest(csv);
             std::cout << "[rockim] mc selftest traces written to " << csv
+                      << "\n";
+            return rc;
+        }
+        if (std::string(argv[1]) == "selftest-triax") {
+            std::string csv = argc > 2 ? argv[2] : "rockim_triax.csv";
+            int rc = triaxSelftest(csv);
+            std::cout << "[rockim] triax selftest traces written to " << csv
+                      << "\n";
+            return rc;
+        }
+        // CDP (2026-09-04) : banc point-materiel et pilote generique
+        if (std::string(argv[1]) == "selftest-cdp") {
+            std::string csv = argc > 2 ? argv[2] : "rockim_cdp.csv";
+            int rc = cdpSelftest(csv);
+            std::cout << "[rockim] cdp selftest traces written to " << csv
+                      << "\n";
+            return rc;
+        }
+        // tensionDamage = fixed (2026-09-05) : bancs falsifiants (a)-(e)
+        if (std::string(argv[1]) == "selftest-fixed") {
+            std::string csv = argc > 2 ? argv[2] : "rockim_fixed.csv";
+            int rc = fixedCrackSelftest(csv);
+            std::cout << "[rockim] fixed-crack selftest traces written to " << csv
+                      << "\n";
+            return rc;
+        }
+        // Banc THERMODYNAMIQUE generique (2026-09-06) : symetrie majeure de la
+        // tangente, positivite de la dissipation, reduction, objectivite,
+        // continuite — sur des etats et des chemins TIRES AU HASARD (graine
+        // fixe). Ecrit AVANT la loi dfhplus pour prouver le cadre. Ne touche
+        // a aucune loi : il n'utilise que MatLaw::stress. Voir
+        // include/rockim/ThermoBench.hpp et src/ThermoBench.cpp.
+        if (std::string(argv[1]) == "thermobench") {
+            if (argc < 3)
+                throw std::runtime_error(
+                    "usage: rockim thermobench <loi> [out.csv] [--ref <loi>] "
+                    "[--deck <cfg>] [--draws N] [--seed S] [--max-rows N] "
+                    "[--probe]");
+            ThermoBenchOpts opt;
+            opt.law = argv[2];
+            opt.csv = "thermobench_" + opt.law + ".csv";
+            int i = 3;
+            if (argc > 3 && std::string(argv[3]).rfind("--", 0) != 0) {
+                opt.csv = argv[3];
+                i = 4;
+            }
+            for (; i < argc; ++i) {
+                std::string a = argv[i];
+                auto need = [&](const char* what) {
+                    if (i + 1 >= argc)
+                        throw std::runtime_error(std::string("thermobench: ")
+                                                 + what + " attend une valeur");
+                    return std::string(argv[++i]);
+                };
+                if (a == "--ref")            opt.refLaw = need("--ref");
+                else if (a == "--deck")      opt.deck = need("--deck");
+                else if (a == "--draws")     opt.nDraws = std::stoi(need("--draws"));
+                else if (a == "--seed")      opt.seed = std::stoull(need("--seed"));
+                else if (a == "--max-rows")  opt.maxRows = std::stoi(need("--max-rows"));
+                else if (a == "--probe")     opt.forceProbe = true;
+                else throw std::runtime_error("thermobench: option inconnue '"
+                                              + a + "'");
+            }
+            return thermoBench(opt);
+        }
+        if (std::string(argv[1]) == "matpoint") {
+            if (argc < 3)
+                throw std::runtime_error("usage: rockim matpoint <cfg> [out.csv]");
+            Config mp = Config::load(argv[2]);
+            std::string csv = argc > 3 ? argv[3] : mp.gets("mpOut", "matpoint.csv");
+            int rc = matpointDrive(mp, csv);
+            std::cout << "[rockim] matpoint trace written to " << csv << "\n";
+            return rc;
+        }
+        // dfhplus (2026-09-06, etape 1 du chantier DFH+) : bancs falsifiants
+        // de la loi neuve au point materiel — sigma = d(rho psi)/d eps,
+        // Y_i >= 0, reduction elastique, objectivite, exposant 3/(m+3),
+        // comparaison chiffree avec dpdfh, controle dfhpPsiClamp.
+        if (std::string(argv[1]) == "selftest-dfhplus") {
+            std::string csv = argc > 2 ? argv[2] : "rockim_dfhplus.csv";
+            int rc = dfhPlusSelftest(csv);
+            std::cout << "[rockim] dfhplus selftest traces written to " << csv
                       << "\n";
             return rc;
         }
@@ -63,6 +189,30 @@ int main(int argc, char** argv) {
                       << csv << "\n";
             return rc;
         }
+        if (std::string(argv[1]) == "selftest-potcontact2d") {
+            std::string csv = argc > 2 ? argv[2] : "rockim_potcontact2d.csv";
+            int rc = potentialExactSelftest(csv);
+            std::cout << "[rockim] potcontact2d selftest traces written to "
+                      << csv << "\n";
+            return rc;
+        }
+        // T0 (2026-09-02) : contact outil de Signorini, en forme fermee.
+        // Sans maillage ni simulation — voir ToolSignorini.hpp.
+        if (std::string(argv[1]) == "selftest-toolcontact") {
+            std::string csv = argc > 2 ? argv[2] : "rockim_toolcontact.csv";
+            int rc = toolSignoriniSelftest(csv);
+            std::cout << "[rockim] toolcontact selftest traces written to "
+                      << csv << "\n";
+            return rc;
+        }
+        // Cutter PDC 3D (2026-09-03) : geometrie en forme fermee, sans
+        // maillage — voir ToolPdc3d.hpp et src/ToolPdc3d.cpp (G1..G5).
+        if (std::string(argv[1]) == "selftest-pdc3d") {
+            std::string csv = argc > 2 ? argv[2] : "rockim_pdc3d.csv";
+            int rc = pdc3dSelftest(csv);
+            std::cout << "[rockim] pdc3d selftest traces written to " << csv << "\n";
+            return rc;
+        }
         if (std::string(argv[1]) == "selftest-potential3d") {
             std::string csv = argc > 2 ? argv[2] : "rockim_potential3d.csv";
             int rc = potentialSelftest3d(csv);
@@ -70,25 +220,53 @@ int main(int argc, char** argv) {
                       << csv << "\n";
             return rc;
         }
+        if (std::string(argv[1]) == "selftest-potvolume3d") {
+            std::string csv = argc > 2 ? argv[2] : "rockim_potential3d.csv";
+            int rc = potentialSelftest3d(csv, true);
+            std::cout << "[rockim] potential3d selftest traces written to "
+                      << csv << "\n";
+            return rc;
+        }
         Config cfg = Config::load(argv[1]);
         std::string out = (argc > 2) ? argv[2] : cfg.gets("outputDir", "out");
         std::filesystem::create_directories(out);
+        outDir = out;
 
         std::string mode = cfg.gets("mode", "fem");
         std::string mesh = cfg.gets("mesh", "grid");
         if (mesh != "grid" && mesh != "voronoi" && mesh != "file")
             throw std::runtime_error("unknown mesh '" + mesh
                                      + "' (grid | voronoi | file)");
-        if (mesh == "voronoi" && mode != "fdem" && mode != "fdem3d")
+        // mesh = voronoi en fem3d (2026-09-06) : la MEME tessellation que le
+        // FEMDEM (Tessellation3), mais les sommets virtuels sont pris tels
+        // quels comme noeuds PARTAGES au lieu d'etre dedoubles pour poser des
+        // joints — on obtient un continuum maille par grains, ou la frontiere
+        // de grain est un simple saut de proprietes.
+        // 2026-09-07 : le meme chemin existe desormais en `fem` (2D). Il sert
+        // a poser la question « FEM ou FEMDEM ? » a MICROSTRUCTURE EGALE —
+        // meme tessellation, meme germe, meme maillage intra-grain, memes
+        // fiches de phase, et pour seule difference le traitement de la
+        // discontinuite (joint cohesif contre endommagement continu).
+        if (mesh == "voronoi" && mode != "fdem" && mode != "fdem3d"
+            && mode != "fem3d" && mode != "fem")
             throw std::runtime_error("mesh = voronoi (grains + phases) is only "
-                                     "implemented for mode = fdem | fdem3d");
-        if (mesh == "file" && mode != "fdem" && mode != "fdem3d")
+                                     "implemented for mode = fem | fdem | "
+                                     "fdem3d | fem3d");
+        if (mesh == "file" && mode != "fdem" && mode != "fdem3d"
+            && mode != "fem3d")
             throw std::runtime_error("mesh = file (unstructured import) is "
                                      "only implemented for mode = fdem | "
-                                     "fdem3d");
-        if (cfg.has("phases") && mode != "fdem" && mode != "fdem3d")
+                                     "fdem3d | fem3d");
+        // `phases` en fem3d (2026-09-06) : materiau par phase en ELEMENTS
+        // FINIS (une instance de loi par phase, meme cle `law`). La source de
+        // phase est soit la tessellation (mesh = voronoi), soit les groupes
+        // physiques du maillage (mesh = file, $PhysicalNames de dimension 3) ;
+        // le solveur refuse la cle sur mesh = grid, ou rien ne l'affecterait.
+        if (cfg.has("phases") && mode != "fdem" && mode != "fdem3d"
+            && mode != "fem3d" && mode != "fem")
             throw std::runtime_error("'phases' (mineral phases) is only "
-                                     "implemented for mode = fdem | fdem3d");
+                                     "implemented for mode = fem | fdem | "
+                                     "fdem3d | fem3d");
         if (cfg.has("law") && mode != "fem3d" && mode != "fdem"
             && mode != "fdem3d")
             throw std::runtime_error("'law' (bulk constitutive law) is "
@@ -98,6 +276,44 @@ int main(int argc, char** argv) {
                                      "joints — the vumat_fdem_coupled "
                                      "configuration) and mode = fdem3d (3D "
                                      "bulk, no plane-strain trick needed)");
+        // Le couplage thermo-mecanique n existe qu en 2D `fdem`. Le lecteur
+        // de configuration ignorant les cles inconnues EN SILENCE, un deck 3D
+        // portant `thermal = on` tournerait sans thermique et sans un mot —
+        // exactement le resultat faux-mais-plausible que le depot proscrit.
+        if (cfg.has("thermal") && mode != "fdem")
+            throw std::runtime_error("'thermal' (choc thermique de paroi) "
+                                     "n'est implemente que pour mode = fdem "
+                                     "(2D). Le deck demande mode = " + mode);
+        // Idem pour le litage de Lisjak (bedding*) : 2D `fdem` seulement.
+        if (cfg.has("beddingDip") && mode != "fdem")
+            throw std::runtime_error("'bedding*' (schistosite pervasive de "
+                                     "Lisjak) n'est implemente que pour "
+                                     "mode = fdem (2D). Le deck demande "
+                                     "mode = " + mode);
+        // C6 (w20) : idem pour le couplage hydro-mecanique (AbuAisha) —
+        // `hydro` et toute cle `hydro*` : 2D `fdem` seulement. Un deck 3D
+        // avec hydro = on tournait sans fluide et sans un mot (05/09).
+        // (w21 : keysWithPrefix MARQUE les cles rendues comme consommees —
+        // on ne l'appelle donc que hors fdem, pour qu'en fdem une cle hydro*
+        // mal orthographiee reste visible par l'audit C1.)
+        if (mode != "fdem") {
+            auto hk = cfg.keysWithPrefix("hydro");
+            if (!hk.empty())
+                throw std::runtime_error("'" + hk.front() + "' (couplage "
+                    "hydro-mecanique, cavite + fissures) n'est implemente "
+                    "que pour mode = fdem (2D). Le deck demande mode = "
+                    + mode + " ; retirez les cles hydro*");
+        }
+        // C6 (w20) : registre des cles PAR MODE (tools/keys_by_mode.json ->
+        // include/rockim/KeysByMode.hpp, genere par tools/gen_keys_by_mode.py) :
+        // une cle lue par UN SEUL solveur, presente dans un deck d'un autre
+        // mode, est refusee (« cle X sans effet en mode Y »). Les cles lues
+        // par plusieurs solveurs ou par le code partage sont communes et ne
+        // sont jamais refusees. w21 (C1) : ce controle est FONDU dans l'audit
+        // des cles consommees fait apres init() (KeyGuard.hpp) — toutes les
+        // cles fautives (obsolete, autre mode, faute de frappe, inconnue)
+        // sont listees d'un coup et unknownKeys = warn s'y applique aussi ;
+        // keysbymode::check() reste disponible mais n'est plus appele ici.
         std::unique_ptr<Solver> solver;
         if      (mode == "fem") solver = std::make_unique<FemSolver>(cfg, out);
         else if (mode == "fem3d") solver = std::make_unique<Fem3dSolver>(cfg, out);
@@ -109,8 +325,66 @@ int main(int argc, char** argv) {
 
         solver->init();
 
-        long nSteps = (long)std::ceil(solver->duration() / solver->dt());
         int  nFrames = cfg.geti("frames", 50);
+        bool histFlush = cfg.getb("historyFlush", true);
+        // C1 (w21, decision de Fernando du 2026-09-05 20:00) : toute cle du
+        // deck qu'aucun getter n'a consommee pendant l'initialisation et que
+        // ni le solveur du mode courant ni le code partage ne lisent (registre
+        // des lecteurs kReaders, w22) est une ERREUR nommee — obsolete (->
+        // nouveau nom), d'un autre mode (-> les modes ou elle agit), faute de
+        // frappe (suggestion Levenshtein <= 2), ou inconnue de rockim — toutes
+        // listees d'un coup, code 1 ; unknownKeys = warn : avertissement et le
+        // run continue. Regle detaillee dans KeyGuard.hpp et DOC §8.11.
+        // C7 : <outputDir>/config_effective.cfg = les cles consommees et leur
+        // valeur effective (deck ou defaut).
+        {
+            const std::string policy = cfg.gets("unknownKeys", "error");
+            auto found = keyguard::enforce(cfg, mode, policy);
+            auto eff = cfg.effective();
+            std::size_t nDeck = 0;
+            for (const auto& e : eff) if (e.fromDeck) ++nDeck;
+            std::ostringstream stamp;
+            stamp << "exe " << argv[0] << " ; unknownKeys = " << policy;
+            keyguard::writeEffective(cfg, out + "/config_effective.cfg", mode, found,
+                                     stamp.str());
+            std::cout << "[rockim] cles : " << eff.size() << " consommees ("
+                      << nDeck << " du deck, " << (eff.size() - nDeck)
+                      << " au defaut), " << cfg.size() - nDeck
+                      << " du deck non lues" << (found.empty() ? "" : " dont "
+                      + std::to_string(found.size()) + " fautives")
+                      << " -> " << out << "/config_effective.cfg\n";
+            // w22 : fin du suivi — les getters appeles dans step() (ex.
+            // confineGaugeTime a chaque pas) lisent la table sans verrou ni
+            // chaine de defaut, comme avant w21. Lecture pure.
+            cfg.seal();
+        }
+
+        // ---- pas de temps representable (2026-09-06) ---------------------
+        // Deuxieme filet, apres la validation de finitude du materiau : un dt
+        // nul ou non fini faisait (long)ceil(T/0) = (long)+inf, conversion
+        // HORS BORNES (comportement indefini) qui vaut -2147483648 sur MSVC.
+        // La boucle en temps ne tournait alors JAMAIS et le programme sortait
+        // en SUCCES, resume complet a l'appui (« dt = 0 s, steps =
+        // -2147483648 », puis « peak |sigma| = 0 / 0 MPa ») : un script de
+        // campagne enregistrait le run comme termine. Ici on refuse, en
+        // nommant la cause.
+        const double dt0 = solver->dt();
+        if (!(dt0 > 0.0) || !std::isfinite(dt0))
+            throw std::runtime_error("pas de temps non representable (dt = "
+                + std::to_string(dt0) + " s) : la boucle en temps ne "
+                "tournerait jamais et le run sortirait en succes avec des "
+                "champs nuls. Verifier E, rho et nu (une vitesse d'onde "
+                "infinie donne dt = 0).");
+        const double nStepsD = std::ceil(solver->duration() / dt0);
+        // borne : nSteps est un `long` (32 bits sur MSVC), le depassement de
+        // conversion serait le meme comportement indefini qu'on ferme ici.
+        if (!(nStepsD >= 1.0) || nStepsD > 2.0e9)
+            throw std::runtime_error("nombre de pas non representable ("
+                + std::to_string(nStepsD) + " pour T = "
+                + std::to_string(solver->duration()) + " s et dt = "
+                + std::to_string(dt0) + " s) : le pas de temps ou la duree "
+                "sont incoherents.");
+        long nSteps = (long)nStepsD;
         long outEvery  = std::max(1L, nSteps / std::max(1, nFrames));
         long histEvery = std::max(1L, nSteps / 2000);
 
@@ -124,7 +398,6 @@ int main(int argc, char** argv) {
         // lignes a ~2000 sur tout le run, le cout est negligeable, et le
         // fichier se termine toujours sur une ligne complete. Purement I/O :
         // aucun effet sur le calcul (bit-neutre par construction).
-        bool histFlush = cfg.getb("historyFlush", true);
         auto histRow = [&] {
             solver->historyRow(hist);
             if (histFlush) hist.flush();
@@ -134,6 +407,45 @@ int main(int argc, char** argv) {
         auto t0 = std::chrono::steady_clock::now();
         int frame = 0;
         long nextPct = 10;
+        if (solver->variableDt()) {
+            // Pas VARIABLE (dtUpdate = inserted) : boucle pilotee par le
+            // TEMPS. Trames aux instants k T / frames, historique tous les
+            // T / 2000, comme la boucle a pas fixe le fait en nombre de pas.
+            const double T = solver->duration();
+            const double dtOut = T / std::max(1, nFrames);
+            const double dtHist = T / 2000.0;
+            double nextOut = 0.0, nextHist = 0.0;
+            long nStep = 0;
+            bool early = false;
+            while (solver->time() < T * (1.0 - 1e-12)) {
+                if (solver->time() >= nextOut) { solver->writeFrame(frame++); nextOut += dtOut; }
+                if (solver->time() >= nextHist) { histRow(); nextHist += dtHist; }
+                solver->step();
+                ++nStep;
+                if (solver->finished()) {
+                    std::cout << "\n[rockim] solver requested an early stop at t = "
+                              << solver->time() << " s (" << nStep << " steps)\n";
+                    solver->writeFrame(frame++);
+                    histRow();
+                    early = true;
+                    break;
+                }
+                if (100.0 * solver->time() / T >= nextPct) {
+                    std::cout << "  " << nextPct << "%" << std::flush
+                              << (nextPct == 100 ? "\n" : " ");
+                    nextPct += 10;
+                }
+            }
+            if (!early) { solver->writeFrame(frame); histRow(); }
+            solver->finalize();
+            std::cout << "[rockim] pas variable : " << nStep << " pas, dt final "
+                      << solver->dt() << " s\n";
+            auto t1v = std::chrono::steady_clock::now();
+            std::cout << "[rockim] wall time: "
+                      << std::chrono::duration<double>(t1v - t0).count()
+                      << " s, output in '" << out << "'\n";
+            return 0;
+        }
         for (long i = 0; i < nSteps; ++i) {
             if (i % outEvery == 0) solver->writeFrame(frame++);
             if (i % histEvery == 0) histRow();
@@ -160,6 +472,16 @@ int main(int argc, char** argv) {
         std::cout << "[rockim] wall time: "
                   << std::chrono::duration<double>(t1 - t0).count() << " s, output in '"
                   << out << "'\n";
+    } catch (const NanError& e) {
+        // C4 (w20) : NaN/Inf detecte par le garde reel — pas, temps, noeud,
+        // element voisin dans le message ; trace ecrite dans ERROR.txt, code 3
+        std::cerr << "[rockim] error: " << e.what() << "\n";
+        if (!outDir.empty()) {
+            std::ofstream ef(outDir + "/ERROR.txt");
+            ef << "[rockim] error: " << e.what() << "\n";
+            std::cerr << "[rockim] trace : " << outDir << "/ERROR.txt\n";
+        }
+        return 3;
     } catch (const std::exception& e) {
         std::cerr << "[rockim] error: " << e.what() << "\n";
         return 1;
