@@ -19,8 +19,9 @@ reçoit les lignes exigées par les règles déjà en vigueur — dont **toute a
 - Nouveau `README.md` en français (porte d'entrée) et `LIRE_EN_PREMIER.md` (parcours pour un
   encadrant) ; l'ancien README anglais du simulateur FEM/DEM 2D est conservé dans
   `docs/notes/README_historique_FEM_DEM_2D.md`.
-- `rockim_g1y19.exe` n'est plus suivi par git (le fichier reste dans l'historique) ; `*.exe` est
-  ignoré.
+- `rockim_g1y19.exe` reste versionné : c'est le binaire de la réplique St Anne, cité par
+  `docs/REPRODUIRE_stanne_radiales_2026-09-14.md`. La règle `*.exe` du `.gitignore` empêche
+  seulement d'ajouter d'autres exécutables par mégarde.
 
 ## [Non publié] — arbre g1, 2026-10-07 : correction du contact par potentiel (ENQUETE_CONTACT.md)
 
