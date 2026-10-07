@@ -58,7 +58,7 @@ Sous Windows, les scripts de compilation historiques sont dans `scripts/windows/
 | `tests_f2/`, `vv/` | campagnes de tests et bancs de vérification |
 | `docs/rapport_guide/` | rapport-guide, chapitres, figures, simulations préparées, notes de la correction du contact |
 | `docs/notes/` | notes de travail datées (bilans, plans, transmissions), conservées pour l'historique |
-| `bench_*`, `tunnel_edz/`, `tunnel_schisto/`, `calib*`, `gbm_uniaxial/`, `etude_lois_fem/`, `exo_tunnel/` | études et bancs (README dans `bench_*`, `tunnel_edz/`, `calib*` ; pas encore dans les autres) |
+| `bench_*`, `tunnel_edz/`, `tunnel_schisto/`, `calib*`, `gbm_uniaxial/`, `etude_lois_fem/`, `exo_tunnel/` | études et bancs, chacun avec son README (objet, statut daté, résultat principal, figure, commande pour rejouer) |
 | `scripts/windows/`, `scripts/historique/` | scripts de compilation Windows et scripts de lancement historiques (chemins du poste du doctorant) |
 | `specs/` | spécifications des développements |
 
