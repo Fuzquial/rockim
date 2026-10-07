@@ -1,7 +1,7 @@
 \section{Écaillage du granite de Bohus : première comparaison à l'essai}
 \label{sec-ecaillage}
 
-rockim encadre la résistance à l'écaillage mesurée sur le granite de Bohus, $18{,}9$~MPa, entre $14{,}1$~MPa sans facteur dynamique et $23{,}1$~MPa avec le facteur de Yang. Sur les cinq critères écrits avant calcul pour la variante avec facteur dynamique, trois passent nettement. Les deux autres, temps de montée et résistance de Novikov, sont à la limite : ils échouent au point arrière et passent en moyenne sur la face. La géométrie de l'éprouvette est supposée et le calcul repose sur un tirage. Sous ces réserves, ce banc est la première validation du rapport au sens du \cref{sec-introduction} : la référence est un essai qui n'a pas servi au calage.
+Sur les cinq critères écrits avant calcul pour la variante avec le facteur dynamique de Yang, trois passent nettement. Les deux autres, temps de montée et résistance de Novikov, sont à la limite : ils échouent au point arrière ($23{,}1$~MPa pour une borne de $22{,}7$~MPa) et passent en moyenne sur la face. Sans facteur dynamique, la résistance vaut $14{,}1$~MPa ; la mesure, $18{,}9$~MPa, tombe entre les deux variantes. La géométrie de l'éprouvette est supposée et le calcul repose sur un tirage. La référence est un essai qui n'a pas servi au calage : ce banc est la première comparaison du rapport qui relève de la validation au sens du \cref{sec-introduction}, et son verdict est partagé.
 
 \subsection{Objet et essai}
 
@@ -18,13 +18,13 @@ Le banc teste la traction dynamique pure : insertion adaptative en traction, loi
 
 \subsection{Mise en données}
 
-L'article ne cote pas l'éprouvette, et la géométrie a été supposée à la préparation du banc. Le barreau a une section carrée de $39{,}9 \times 39{,}9$~mm, de même aire qu'un disque de 45~mm de diamètre, et une longueur de 140~mm. Cette longueur est compatible avec la jauge G1 placée à 116~mm de la face arrière. Le diamètre de 45~mm est l'ordre de grandeur des éprouvettes d'écaillage du même laboratoire, à confirmer. À aire égale, la célérité de barre et l'impédance sont les mêmes.
+L'article ne cote pas l'éprouvette, qu'il dit cylindrique, et la géométrie a été supposée à la préparation du banc. Le barreau a une section carrée de $39{,}9 \times 39{,}9$~mm, de même aire qu'un disque de 45~mm de diamètre, et une longueur de 140~mm. Cette longueur est compatible avec la jauge G1 placée à 116~mm de la face arrière. Le diamètre de 45~mm est l'ordre de grandeur des éprouvettes d'écaillage du même laboratoire, à confirmer. À aire égale, la célérité de barre et l'impédance sont les mêmes.
 
 Le maillage compte $62\,217$ tétraèdres non structurés de taille nominale $2{,}5$~mm ; le diamètre inscrit vaut $0{,}497$~mm au minimum, $1{,}216$~mm en médiane et $1{,}853$~mm au maximum. La longueur cohésive $\ell_{cz} = E\,G_f/f_t^2$ vaut 48~mm, de sorte que la taille d'élément reste sous $\ell_{cz}/2$ avec une marge de 10. Il n'y a ni facteur de masse ni amortissement local.
 
 Le matériau a $\rho = 2\,660$~kg/m$^3$, $E = \rho\,C_0^2 = 43{,}63$~GPa pour propager à $C_0$, $\nu = 0{,}15$ et $f_t = 8$~MPa, valeurs de Saadati et al. L'énergie $G_f = 70$~J/m$^2$, non publiée, vient du jeu Red Bohus de rockim. La cohésion et le frottement, 25~MPa et $40^\circ$, sont les défauts du code et n'agissent pas en traction uniaxiale.
 
-Le chargement est une traction imposée sur la face d'entrée, égale à la contrainte incidente de la jauge G1 (figure~3 de l'article, numérisée à $\pm 1{,}5$~MPa et $\pm 1$~µs). Elle part de zéro, culmine à $41{,}5$~MPa à 35~µs et revient à zéro à 55~µs. Les autres faces sont libres. La vitesse élastique attendue sur la face arrière, $2\sigma/(\rho C_0) = 7{,}70$~m/s, s'écarte de $0{,}6~\%$ du pic mesuré.
+Le chargement est une pression imposée sur la face d'entrée, égale à la contrainte incidente de compression de la jauge G1 (figure~3 de l'article, numérisée à $\pm 1{,}5$~MPa et $\pm 1$~µs). Elle part de zéro, culmine à $41{,}5$~MPa à 35~µs et revient à zéro à 55~µs. Les autres faces sont libres. La vitesse élastique attendue sur la face arrière, $2\sigma/(\rho C_0) = 7{,}70$~m/s, s'écarte de $0{,}6~\%$ du pic mesuré.
 
 Deux variantes ont tourné le 6 octobre 2026 (binaire \cle{f638b0f}, 4 fils, 14~min chacune) jusqu'à 150~µs. La première applique le facteur dynamique de Yang (\cref{eq-dif}), figé à l'insertion du joint (\cle{dif}) ; la seconde n'en applique pas (\cle{nodif}). Seule la première porte un verdict ; la seconde mesure la part de l'inertie et de la loi cohésive seules.
 
@@ -32,7 +32,7 @@ La vitesse de la face arrière est lue de deux façons. Le point arrière est le
 
 \subsection{Résultats}
 
-Le tableau~\ref{tab-ecaillage-criteres} donne le verdict des cinq critères pour la variante \cle{dif}, avec les deux lectures. Les critères ne désignent pas le point de lecture, et aucune des deux n'est retenue ici. L'essai mesure en un point, ce qui plaide pour la lecture ponctuelle ; mais un sommet isolé porte un bruit de maillage. Une lecture moyennée sur un disque de 2 à 5~mm de diamètre, taille du spot laser, est demandée ; son résultat est à venir.
+Le tableau~\ref{tab-ecaillage-criteres} donne le verdict des cinq critères pour la variante \cle{dif}, avec les deux lectures. Les critères ne désignent pas le point de lecture, et aucune des deux n'est retenue ici. L'essai mesure en un point, ce qui plaide pour la lecture ponctuelle ; mais un sommet isolé porte un bruit de maillage. Une lecture moyennée sur un disque de 2 à 5~mm de diamètre, taille du spot laser, est demandée ; son résultat est à venir. Choisie après le calcul, elle complétera les deux lectures sans remplacer le verdict au point arrière.
 
 \begin{table}[htbp]
 \centering
