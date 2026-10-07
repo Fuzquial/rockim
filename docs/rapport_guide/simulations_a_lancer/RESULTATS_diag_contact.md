@@ -120,6 +120,55 @@ Lecture :
    (`red_tip16`) et sur le maillage de production avant de l'adopter ; vérifier aussi
    l'interpénétration maximale au contact à p = 1e9 (non imprimée ici).
 
+## Diagnostic 4 : `potPenaltyFactor = 0.1` AVEC frottement (2026-10-07, 02 h 35 à 03 h 13)
+
+Decks `configs/diag_contact/red_tip16_pot01.cfg` et `red_adapt_pot01.cfg` (une seule clé ajoutée
+par rapport à `tunnel/red_tip16.cfg` et `tunnel/red_adapt.cfg`, vérifié par diff) ; base
+`red_adapt` rejouée sur le même maillage (`red_adapt_base`, elle n'existait pas). Même maillage de
+23 004 triangles pour les quatre calculs (`meshFile` seul repointé), même dt (5,586e-6 s), T =
+0,25 s, aucun arrêt. `red_adapt` diffère de `red_tip16` par l'absence de facteur de pointe
+(`insertionTipFactor = 1.6`, `insertionTipDamage = 0.5` retirés). Conteneur environ 2,3 fois plus
+lent qu'en début de nuit : les durées ne se comparent pas à celles des diagnostics 1 et 2.
+
+R_EDZ, demi-axes, déplacements de couronne, reins et radier : `tunnel_edz/tools/edz_metrics.py`
+(dernière trame, joints rompus de `fdem_final_joints.csv`). U paroi moyenne : moyenne de |U| sur
+les 86 nœuds des arêtes libres de la cavité (hors boîte extérieure), dernière trame.
+**L'interpénétration maximale au contact n'est pas mesurable** : le solveur ne l'imprime pas, et
+`rn`, `rs` de `fdem_final_joints.csv` sont les rapports de rupture, pas des ouvertures. Le
+déplacement maximal de paroi en tient lieu, faute de mieux.
+
+| run | travail net du contact | frottement | cohésif | Cundall | résidu B4 | joints rompus / insérés | R_EDZ p95 / max (m) | demi-axes h / v (m) | U max (couronne / reins / radier) (m) | U paroi moyenne (max) (m) | v nodale max |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| `base_tip16` (p = 1e10) | **+2,611e6** | 2,708e6 | 9,983e5 | 9,127e6 | −1,328e6 (6,6 %) | 11 536 / 13 117 | 19,56 / 29,77 | 17,27 / 16,16 | 0,160 / 0,222 / 0,160 | 0,130 (0,178) | 25,85 m/s |
+| `red_tip16_pot01` (p = 1e9) | **−8,017e5** | 1,469e6 | 8,602e5 (−13,8 %) | 7,329e6 (−19,7 %) | −1,305e6 (7,1 %) | 11 302 / 13 455 (−2,0 %) | 20,58 / 30,23 | 17,84 / 16,49 | 0,207 / **0,538** / 0,322 | 0,153 (0,331) | 5,64 m/s |
+| `red_adapt_base` (p = 1e10) | **−5,003e5** | 6,916e5 | 3,707e5 | 2,256e6 | −1,413e6 (21,2 %) | 5 700 / 6 667 | 14,46 / 16,89 | 12,14 / 13,40 | 0,147 / 0,145 / 0,174 | 0,086 (0,154) | 3,84 m/s |
+| `red_adapt_pot01` (p = 1e9) | **−8,654e5** | 8,157e5 | 5,103e5 (+37,6 %) | 3,239e6 (+43,6 %) | −1,382e6 (14,3 %) | 8 154 / 9 251 (+43,1 %) | 17,13 / 19,31 | 14,93 / 14,89 | 0,156 / 0,180 / 0,166 | 0,110 (0,159) | 4,79 m/s |
+
+Signe : travail net du contact positif = injecté (source), négatif = dissipé.
+
+Lecture :
+
+1. **Avec frottement, p = 1e9 N/m supprime l'injection** : le contact de `red_tip16` passe de
+   +2,6e6 J/m injectés à −8,0e5 J/m dissipés, et la vitesse nodale max tombe de 25,9 à 5,6 m/s. Le
+   facteur de pointe était donc la condition qui exposait le biais (beaucoup de joints morts en
+   compression), pas sa cause.
+2. **`red_adapt` ne présentait déjà pas d'injection nette à p = 1e10** (−5,0e5 J/m) : son bilan est
+   dominé par le frottement. Pour lui, p/10 rend le contact un peu plus dissipatif encore.
+3. **Mais le faciès bouge avec p, et c'est le point à retenir pour le chapitre.** Sur `red_tip16`,
+   l'EDZ et le nombre de joints rompus sont presque inchangés (R_EDZ p95 +5 %, joints −2 %), mais le
+   déplacement maximal aux reins passe de 0,22 à 0,54 m et la paroi converge davantage (U moyen
+   +18 %, max ×1,9) : la paroi s'enfonce plus dans le massif fragmenté, ce qui est l'effet attendu
+   d'un contact plus mou (interpénétration plus grande, non mesurée). Sur `red_adapt`, p/10 fait
+   rompre 43 % de joints en plus, élargit l'EDZ de 18 % (14,5 → 17,1 m) et augmente U paroi de 28 %.
+   Le contact raide retenait des blocs que le contact mou laisse se déplacer.
+4. **Le résidu B4 ne s'améliore pas** (6,6 → 7,1 % ; 21,2 → 14,3 %) : il reste dominé par l'erreur
+   d'intégration en O(dt) vue au diagnostic 3, que p ne corrige pas à dt fixé. Le résidu de 21 % de
+   `red_adapt_base` est le plus fort de la nuit et mérite d'être signalé.
+5. **Conclusion pratique** : p = 1e9 N/m règle l'injection mais ne laisse pas le faciès invariant ;
+   on ne peut pas l'adopter sans une étude de convergence en p (et en dt) des observables du chapitre
+   (R_EDZ, U paroi, joints rompus), au moins à 3e9 et 1e9 N/m, et une mesure de l'interpénétration.
+   Tant que cette étude manque, les chiffres de tunnel du chapitre sont à donner avec p et dt.
+
 ## Réserves
 
 Maillage réduit trop grossier (hFine = 0,40 m > l_cz/2), 4 fils (non bit-identique), un seul tirage,
