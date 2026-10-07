@@ -57,3 +57,17 @@ Liste complète et commandes : annexe C du rapport et `simulations_a_lancer/STRA
 - Quel nom et quelle géométrie exacte pour l'éprouvette d'écaillage de Saadati 2016 ?
 - Faut-il garder la borne ℓ_cz < a dans le guide (violée par St Anne et Kuru) ?
 - Valeur du brésilien de Yan en août : 5,29 ou 5,30 MPa ?
+
+## Ajout de 6 h 30 : enquête dans le code du contact (lecture seule, rien modifié)
+
+Rapport complet : `docs/rapport_guide/ENQUETE_CONTACT.md` (preuves par une copie instrumentée du code compilée hors dépôt, programmes de test dans `enquete_contact/`). Le rapport-guide n'a PAS encore été mis à jour avec ces conclusions : à valider d'abord.
+
+1. **Cause principale de l'injection** : la recherche de contact ne regarde que les triangles ayant une arête active (`FdemSolver.cpp:7134-7139`). Deux triangles qui ne partagent qu'un sommet ne sont reliés par aucun joint (`:7237`) et peuvent se recouvrir sans être vus. Quand un joint voisin meurt, la paire apparaît d'un coup avec ce recouvrement accumulé, et l'énergie p∫(φA+φB) est créée sans travail. La rampe `gcBirth` ne l'amortit pas : `gcBirthTau` = 1 µs < dt = 5,8 µs (`:1428`, `:7281-7283`). Mesuré sur `tip16_mu0` : 9,09e6 J/m créés à la naissance pour 8,20e6 J/m de travail net du contact ; 100 % viennent de paires à sommet commun. Explique la dépendance en p (énergie ∝ p à recouvrement fixé).
+2. **Résidu B4 : sans lien avec le contact.** La correction d'intégration est calculée avant que les rouleaux n'annulent la vitesse (`:9148` puis `:9163`) : l'énergie retirée par les rouleaux égale exactement le résidu, ∝ dt.
+3. **Défaut secondaire** : les forces nodales de Munjiza ne dérivent pas d'une énergie quand les triangles se déforment (terme en trop p·∫φ·∇λ), 0,3 % de l'injection ici.
+4. **Compteur du travail du contact** : biais O(dt) négatif ; un travail positif est donc une vraie injection, plutôt sous-estimée. Deux commentaires du code ont le signe faux (`:9914-9916`, `:10620-10630`).
+5. **Écarté** : le pas de temps inclut bien la raideur du contact (`:5222`).
+
+Correctifs proposés (non appliqués, avec leur test dans le rapport) : inclure les voisins par sommet des éléments actifs dans la recherche (ou neutraliser l'énergie d'une naissance à recouvrement profond et l'imprimer au bilan) ; avertir si `gcBirthTau` < dt ; appliquer la contrainte des rouleaux avant la correction d'intégration ; corriger les forces de Munjiza ; corriger les deux commentaires.
+
+Conséquence pour le rapport : la conclusion « erreur d'intégration de la raideur » (diagnostics 3 et 4) est à remplacer par « énergie de recouvrement créée à la naissance des paires à sommet commun, proportionnelle à p » ; le résidu B4 des tunnels vient des rouleaux. À faire après ta validation.
