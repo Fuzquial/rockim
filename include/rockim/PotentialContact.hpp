@@ -207,6 +207,196 @@ inline bool pairForce(const V2 posA[3], const V2 posB[3], double p,
     return true;
 }
 
+// ---------------------------------------------------------------------------
+// (2026-10-07) ENERGIE EXACTE ET FORCES NODALES GRADIENT — correctif 3 de
+// ENQUETE_CONTACT.md (§3.2), cle potForceExact, et socle de gcBirth = offset.
+//
+// L'energie de la fonctionnelle de Munjiza pour la paire (A, B) est
+//
+//     E = p  int_S (phi_A + phi_B) dA ,     S = A inter B .
+//
+// Pour des corps RIGIDES, la resultante et le moment de pairForce derivent
+// exactement de E. Pour des triangles DEFORMABLES, la repartition nodale de
+// pairForce (charges de bord reparties par les barycentriques lambda_a(X))
+// vaut
+//
+//     f_a(Munjiza) = - dE/dx_a  +  p I_A grad(lambda_a)       (noeuds de A)
+//     f_b(Munjiza) = - dE/dx_b  +  p I_B grad(lambda_b)       (noeuds de B)
+//
+// avec I_A = int_S phi_A dA, I_B = int_S phi_B dA. Le terme en plus est
+// auto-equilibre (Sum_a grad lambda_a = 0, moment nul) : une « pression »
+// interne fictive dont le travail p I_A d(ln aire_A) ne derive d'aucun
+// potentiel (boucle fermee sur ddl nodaux : 2,9e-4 p, loop2.cpp de
+// l'enquete). Le retrancher rend f = -grad E EXACTEMENT (5e-10 aux
+// differences finies, travail sur boucle 1e-16).
+//
+// I_A, I_B : integration EXACTE par decoupe de S selon les medianes des
+// deux triangles (9 regions ou argmin lambda_A = i et argmin lambda_B = j ;
+// phi_A = 3 lambda_i y est lineaire, son integrale vaut 3 lambda_i(centroide)
+// x aire). Meme decoupe que potx.hpp de l'enquete.
+// ---------------------------------------------------------------------------
+
+// Clip du polygone convexe P (n sommets) par le demi-plan g.X + c >= 0.
+inline int clipHalfPlane(const V2* P, int n, const V2& g, double c, V2* out) {
+    int m = 0;
+    for (int i = 0; i < n; ++i) {
+        const V2& a = P[i];
+        const V2& b = P[(i + 1) % n];
+        double da = g.dot(a) + c, db = g.dot(b) + c;
+        if (da >= 0.0) {
+            out[m++] = a;
+            if (db < 0.0) out[m++] = a + (b - a) * (da / (da - db));
+        } else if (db >= 0.0) {
+            out[m++] = a + (b - a) * (da / (da - db));
+        }
+        if (m > 14) break;                             // garde (degenere)
+    }
+    return m;
+}
+
+// lambda_i(X) = g[i].X + c[i] pour un triangle CCW (den = 2 aire > 0).
+// set() rend false (et ne divise pas) pour un triangle inverse ou degenere,
+// avec le meme seuil que Bary (revue M6) : les fonctions publiques
+// ci-dessous ne dependent plus de ce que l appelant passe d abord par
+// pairForce.
+struct AffBary {
+    V2 g[3];
+    double c[3];
+    bool set(const V2 P[3]) {
+        double den = cross2(P[1] - P[0], P[2] - P[0]);
+        if (!(den > 1e-300)) return false;
+        for (int i = 0; i < 3; ++i) {
+            const V2& Pj = P[(i + 1) % 3];
+            const V2& Pk = P[(i + 2) % 3];
+            V2 e = Pk - Pj;                            // l_i = cross(e, X-Pj)/den
+            g[i] = V2(-e.y(), e.x()) / den;
+            c[i] = -g[i].dot(Pj);
+        }
+        return true;
+    }
+    double l(int i, const V2& X) const { return g[i].dot(X) + c[i]; }
+};
+
+// I_A = int_S phi_A, I_B = int_S phi_B et l'aire de S. false si S est vide.
+inline bool overlapIntegrals(const V2 posA_[3], const V2 posB_[3], double& IA,
+                             double& IB, double& area) {
+    IA = IB = area = 0.0;
+    // REPERE LOCAL (origine au 1er sommet de A) : en coordonnees absolues
+    // (|X| ~ 100 m sur le tunnel), lambda = g.X + c et l aire des sous-
+    // polygones perdent tout chiffre significatif pour un element fin
+    // (h ~ 1e-6 m) — mesure : I_A = -1,46 pour une aire de 2e-13 m2. Les
+    // integrales sont invariantes par translation, les gradients aussi.
+    const V2 O = posA_[0];
+    V2 posA[3], posB[3];
+    for (int k = 0; k < 3; ++k) {
+        posA[k] = posA_[k] - O;
+        posB[k] = posB_[k] - O;
+    }
+    AffBary fa, fb;
+    if (!fa.set(posA) || !fb.set(posB)) return false;  // inverse / degenere
+    V2 S[8];
+    int n = clipTriTri(posA, posB, S);
+    if (n < 3) return false;
+    for (int i = 0; i < 3; ++i)
+        for (int j = 0; j < 3; ++j) {
+            V2 P1[16], P2[16];
+            int m = n;
+            for (int k = 0; k < n; ++k) P1[k] = S[k];
+            // region argmin_A = i : l_k - l_i >= 0 pour k != i ; idem B, j
+            for (int k = 0; k < 3 && m >= 3; ++k) {
+                if (k == i) continue;
+                m = clipHalfPlane(P1, m, fa.g[k] - fa.g[i], fa.c[k] - fa.c[i], P2);
+                for (int t = 0; t < m; ++t) P1[t] = P2[t];
+            }
+            for (int k = 0; k < 3 && m >= 3; ++k) {
+                if (k == j) continue;
+                m = clipHalfPlane(P1, m, fb.g[k] - fb.g[j], fb.c[k] - fb.c[j], P2);
+                for (int t = 0; t < m; ++t) P1[t] = P2[t];
+            }
+            if (m < 3) continue;
+            double A2 = 0.0;
+            V2 cen(0.0, 0.0);
+            for (int t = 0; t < m; ++t) {
+                const V2& P = P1[t];
+                const V2& Q = P1[(t + 1) % m];
+                double w = cross2(P, Q);
+                A2 += w;
+                cen += (P + Q) * w;
+            }
+            if (A2 <= 0.0) continue;
+            cen /= 3.0 * A2;
+            double a = 0.5 * A2;
+            IA += a * 3.0 * fa.l(i, cen);
+            IB += a * 3.0 * fb.l(j, cen);
+            area += a;
+        }
+    return true;
+}
+
+// Energie exacte de la paire, E = p (I_A + I_B) (0 sans recouvrement).
+inline double pairEnergy(const V2 posA[3], const V2 posB[3], double p) {
+    double IA, IB, ar;
+    if (!overlapIntegrals(posA, posB, IA, IB, ar)) return 0.0;
+    // E >= 0 par definition (phi >= 0 sur S) ; sur un recouvrement RASANT,
+    // l arrondi des barycentriques peut donner -1e-20 : on le ramene a 0
+    return std::max(0.0, p * (IA + IB));
+}
+
+// Forces nodales GRADIENT EXACT, en place sur le resultat de pairForce (meme
+// p) : f_a -= p I_A grad lambda_a, f_b -= p I_B grad lambda_b. La resultante
+// R.F et le moment ne changent pas (terme auto-equilibre). Rend l'energie
+// E = p (I_A + I_B) de la paire (sert aussi a gcBirth = offset).
+inline double exactGradientForces(const V2 posA[3], const V2 posB[3], double p,
+                                  PairForce& R) {
+    double IA, IB, ar;
+    if (!overlapIntegrals(posA, posB, IA, IB, ar)) return 0.0;
+    AffBary fa, fb;
+    if (!fa.set(posA) || !fb.set(posB)) return 0.0;   // garde (deja vue)
+    for (int k = 0; k < 3; ++k) {
+        R.fA[k] -= (p * IA) * fa.g[k];
+        R.fB[k] -= (p * IB) * fb.g[k];
+    }
+    return std::max(0.0, p * (IA + IB));       // meme garde que pairEnergy
+}
+
+// gcBirth = offset (2026-10-07) : naissance d'une paire EN recouvrement sans
+// creation d'energie. A la naissance on fige e0 = E(S0), l'energie de
+// recouvrement preexistante, qui n'a ete payee par aucun travail. La paire
+// porte ensuite le potentiel DECALE
+//
+//     U(E) = (E - e0)^2 / E   si E > e0,    0 sinon,
+//
+// fonction de E SEULE, donc -grad U = -U'(E) grad E : le champ reste un
+// gradient (exactement si les forces nodales le sont, potForceExact). La
+// force est CONTINUE (U'(e0) = 0) et rejoint la force pleine quand E >> e0
+// (U' = 1 - (e0/E)^2 -> 1). Cliquet absorbant : e0 <- min(e0, E) quand la
+// paire se separe, ce qui n'a lieu que sur la branche U = 0 ; aucune energie
+// n'est donc creee a geometrie fixee (contrairement a la rampe gcBirthTau,
+// dont la relaxation de aRef a geometrie fixee materialise E(S0)).
+// ATTENTION (revue C2) : la naissance a lieu a la PREMIERE evaluation ou
+// pairForce rend vrai, donc avec une aire > 0 : e0 = E(S1) > 0 pour TOUTE
+// paire, y compris une paire nee par approche. Aucune paire n'est donc en
+// Munjiza pur sous offset : une paire en contact persistant garde le facteur
+// 1 - (e0/E)^2 < 1 et une penetration decalee d'environ celle du premier pas
+// (v_rel dt), jusqu'a ce qu'elle se separe (cliquet) — comportement voisin de
+// la rampe, qui part aussi de 0. Seul e0 = 0 (inatteignable a la naissance)
+// redonnerait Munjiza a l'identique.
+// Rend le facteur U'(E) a appliquer aux forces ; met a jour e0 ; U en sortie.
+inline double birthOffsetScale(double E, double& e0, double* U = nullptr) {
+    if (E <= e0) {                                     // branche libre
+        e0 = std::max(0.0, E);                         // cliquet
+        if (U) *U = 0.0;
+        return 0.0;
+    }
+    if (e0 <= 0.0) {
+        if (U) *U = E;
+        return 1.0;
+    }
+    double r = e0 / E;
+    if (U) *U = (E - e0) * (1.0 - r);
+    return 1.0 - r * r;
+}
+
 } // namespace pot
 
 // ---------------------------------------------------------------------------
@@ -756,6 +946,11 @@ inline bool pairForceVolume(const V3 pa[4], const V3 pb[4], double kn,
 // quasi-plastique (qui dissipe ~80 % par construction). Implante dans
 // FdemSolver.cpp, appele par main.cpp.
 int potentialSelftest(const std::string& csvPath);
+
+// selftest-potcontact2d (2026-10-07) — triangles DEFORMABLES : forces nodales
+// exactes (gradient, boucle fermee) et naissance a sommet commun sans
+// creation d energie (gcBirth = offset). Implante dans FdemSolver.cpp.
+int potentialExactSelftest(const std::string& csvPath);
 
 // selftest-potential3d — le meme test en 3D : deux TETS rigides (6 ddl,
 // quaternion implicite via Rodrigues), collision frontale puis oblique.

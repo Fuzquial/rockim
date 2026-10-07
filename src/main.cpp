@@ -53,6 +53,7 @@ static void usage(std::ostream& os) {
           "       rockim selftest-toolcontact [out.csv]\n"
           "       rockim selftest-pdc3d       [out.csv]\n"
           "       rockim selftest-potential2d [out.csv]\n"
+          "       rockim selftest-potcontact2d [out.csv]\n"
           "       rockim selftest-potential3d [out.csv]\n"
           "       rockim selftest-potvolume3d [out.csv]\n"
           "\n"
@@ -185,6 +186,13 @@ int main(int argc, char** argv) {
             std::string csv = argc > 2 ? argv[2] : "rockim_potential2d.csv";
             int rc = potentialSelftest(csv);
             std::cout << "[rockim] potential2d selftest traces written to "
+                      << csv << "\n";
+            return rc;
+        }
+        if (std::string(argv[1]) == "selftest-potcontact2d") {
+            std::string csv = argc > 2 ? argv[2] : "rockim_potcontact2d.csv";
+            int rc = potentialExactSelftest(csv);
+            std::cout << "[rockim] potcontact2d selftest traces written to "
                       << csv << "\n";
             return rc;
         }

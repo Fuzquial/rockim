@@ -1823,6 +1823,28 @@ void Fdem3dSolver::init() {
     computeStableDt();
     if (jbOn_) jbSetupPath();              // S3 : dt d echantillonnage, T, chemin
     relax_ = std::exp(-dt_ / cfg_.getd("gcBirthTau", 1e-6));
+    // ---- contactCandidates (2026-10-07, miroir 3D du correctif 1 de
+    // ENQUETE_CONTACT.md) : active (defaut, historique) | vertex = + voisins
+    // par SOMMET des elements actifs + tous les elements autour d un sommet
+    // portant un joint INSERE (anneau de Guo 2014, eqs. 2.39-2.46).
+    {
+        std::string cc = cfg_.gets("contactCandidates", "active");
+        if (cc != "active" && cc != "vertex")
+            throw std::runtime_error("contactCandidates must be active | "
+                                     "vertex");
+        candVertex_ = cc == "vertex";
+        if (candVertex_ && !contactPot_)
+            throw std::runtime_error("contactCandidates = vertex exige "
+                                     "contact = potential (paires "
+                                     "d ELEMENTS)");
+        if (candVertex_)
+            std::cout << "[FDEM3D] contactCandidates = vertex : candidats du "
+                         "potentiel = elements actifs + leurs voisins par "
+                         "sommet + eventails des joints declenches ("
+                      << (adaptive_ ? "inseres" : "endommages D > 0 ou morts, "
+                                                  "insertion intrinseque")
+                      << ")\n";
+    }
     // ---- gcBirth : COMMENT nait un contact sur un joint qui vient de mourir
     // ADDITION (principe VIII) : `ramp` est le defaut, mot pour mot l ancien.
     {
@@ -5913,6 +5935,44 @@ void Fdem3dSolver::potentialContact() {
             emark[bf.elem] = epoch;
             elems.push_back(bf.elem);
         }
+    // ---- (1b) contactCandidates = vertex (2026-10-07, opt-in) : miroir du
+    // 2D — voisins par sommet des elements actifs + eventails des joints
+    // declenches (inseres en adaptatif, endommages ou morts en
+    // intrinseque) ; l exclusion des paires a joint VIVANT reste plus bas.
+    if (candVertex_) {
+        if (vElems_.empty()) {             // meme table que activationSweep
+            int nV = 0;
+            for (int v : vOf_) nV = std::max(nV, v + 1);
+            vElems_.assign(nV, {});
+            for (int nd = 0; nd < (int)vOf_.size(); ++nd)
+                vElems_[vOf_[nd]].push_back(elemOf_[nd]);
+        }
+        static std::vector<long> vmark;
+        if (vmark.size() != vElems_.size()) vmark.assign(vElems_.size(), -1);
+        const std::size_t nAct = elems.size();
+        auto markV = [&](int v) {
+            if (vmark[v] == epoch) return;
+            vmark[v] = epoch;
+            for (int e3 : vElems_[v])
+                if (emark[e3] != epoch) {
+                    emark[e3] = epoch;
+                    elems.push_back(e3);
+                }
+        };
+        for (std::size_t q = 0; q < nAct; ++q)
+            for (int a = 0; a < 4; ++a) markV(vOf_[el_[elems[q]].n[a]]);
+        // declencheur (revue C6) : joint INSERE en adaptatif ; en
+        // intrinseque (tout non lie des t = 0), joint ENDOMMAGE (D > 0) ou
+        // mort — sinon tout le maillage devient candidat (x13 mesure)
+        const bool intrinsicJ = !adaptive_;
+        for (const auto& J : jt_)
+            if (!J.bonded && (!intrinsicJ || J.D > 0.0 || J.dead))
+                for (int k = 0; k < 3; ++k) {
+                    markV(vOf_[J.a[k]]);
+                    markV(vOf_[J.b[k]]);
+                }
+        nCandExtra_ += (long)(elems.size() - nAct);
+    }
     if (elems.size() < 2) return;
     auto potTic = std::chrono::steady_clock::now();   // diagnostic (resume)
 
@@ -6358,7 +6418,7 @@ void Fdem3dSolver::generalContact() {
         rebuildContactFaces();
         actStamp_ = nBroken_;
     }
-    if (act_.empty()) return;
+    if (act_.empty() && !candVertex_) return;   // vertex : eventails inseres
     if (contactPot_) {                     // A3 : contact par potentiel —
         potentialContact();                // meme jeu actif, autre physique
         return;
@@ -7635,6 +7695,9 @@ void Fdem3dSolver::finalize() {
                   << " clip-force), tGrid = " << S.tGrid
                   << " s, tLoop = " << S.tLoop << " s\n";
     }
+    if (candVertex_)                       // compteur pur (2026-10-07)
+        std::cout << "[FDEM3D] contactCandidates = vertex : " << nCandExtra_
+                  << " elements-pas ajoutes au jeu actif\n";
     // A dashpot can only DISSIPATE. A positive figure here means the viscous
     // branch is injecting energy — the rectifier failure mode — and every
     // number the run produced is suspect (2D lesson, now measured in 3D too).

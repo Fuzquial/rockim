@@ -31,6 +31,7 @@
 #include <iostream>
 #include <limits>
 #include <map>
+#include <memory>
 #include <queue>
 #include <random>
 #include <set>
@@ -1430,14 +1431,61 @@ void FdemSolver::init() {
     // ADDITION (principe VIII) : `ramp` est le defaut, mot pour mot l ancien.
     {
         std::string gb = cfg_.gets("gcBirth", "ramp");
-        if (gb != "ramp" && gb != "penalty")
-            throw std::runtime_error("gcBirth must be ramp | penalty (ramp = "
-                                     "force partant de ZERO et montant sur "
-                                     "gcBirthTau, le defaut ; penalty = leur "
-                                     "re-echelonnement de la penalite de la "
-                                     "paire pour que la force soit CONTINUE, "
-                                     "Y3Did.c l. 915-964)");
+        if (gb != "ramp" && gb != "penalty" && gb != "offset")
+            throw std::runtime_error("gcBirth must be ramp | penalty | offset "
+                                     "(ramp = force partant de ZERO et montant "
+                                     "sur gcBirthTau, le defaut ; penalty = "
+                                     "leur re-echelonnement de la penalite de "
+                                     "la paire pour que la force soit "
+                                     "CONTINUE, Y3Did.c l. 915-964 ; offset = "
+                                     "energie de recouvrement E(S0) figee a la "
+                                     "naissance et retranchee, cliquet "
+                                     "decroissant, aucune energie creee)");
         birthPenalty_ = gb == "penalty";
+        birthOffset_ = gb == "offset";
+        if (birthOffset_ && !contactPot_)
+            throw std::runtime_error("gcBirth = offset exige contact = "
+                                     "potential (l energie de recouvrement "
+                                     "est celle du potentiel de Munjiza)");
+        if (birthOffset_ && cfg_.has("gcBirthTau"))
+            throw std::runtime_error("gcBirth = offset et gcBirthTau sont "
+                                     "exclusives : la rampe n existe plus, la "
+                                     "constante de temps n a aucun effet");
+        if (birthOffset_)
+            std::cout << "[FDEM] gcBirth = offset (2026-10-07) : une paire "
+                         "nee EN recouvrement fige e0 = E(S0) = p int_S0 "
+                         "(phiA+phiB) et ne porte que le potentiel decale "
+                         "U = (E-e0)^2/E (force continue, nulle a la "
+                         "naissance) ; e0 ne fait que decroitre quand la "
+                         "paire se separe, et une paire retrouvee apres un "
+                         "pas sans recouvrement RENAIT (nouvel e0). Aucune "
+                         "energie n est creee a geometrie fixee "
+                         "(ENQUETE_CONTACT.md §2). Toute paire nait avec "
+                         "e0 = E(S1) > 0, y compris par approche : aucune "
+                         "n est en Munjiza pur.\n";
+        // AVERTISSEMENT seulement (aucun changement) : sous la rampe, une
+        // constante gcBirthTau plus courte que dt degenere en MARCHE —
+        // relax_ = exp(-dt/tau) ~ 0 et la force pleine apparait en un pas,
+        // a geometrie figee : l energie E(S0) des paires nees en
+        // recouvrement est alors creee sans travail (ENQUETE_CONTACT.md
+        // §2.1-3 : tau = 1 us, dt = 5,8 us, relax = 0,003).
+        // (revue M1) Au-dela (tau >= dt), la rampe n est pas neutre pour
+        // autant : a geometrie figee aRef -> 0 et elle materialise TOUT
+        // E(S0) quelle que soit tau, sur plusieurs pas au lieu d un. Seul le
+        // cas degenere, le plus brutal, est signale.
+        if (contactPot_ && !birthPenalty_ && !birthOffset_) {
+            const double tau = cfg_.getd("gcBirthTau", 1e-6);
+            if (tau < dt_)
+                std::cout << "[FDEM] AVERTISSEMENT gcBirth = ramp : "
+                             "gcBirthTau = " << tau << " s < dt = " << dt_
+                          << " s -> relax = exp(-dt/tau) = " << relax_
+                          << " : la rampe de naissance degenere en MARCHE ; "
+                             "une paire nee en recouvrement materialise son "
+                             "energie E(S0) en un pas, sans travail (ligne "
+                             "« energie de recouvrement a la naissance » du "
+                             "bilan ; une tau plus longue l etale sans "
+                             "l annuler ; voir gcBirth = offset)\n";
+        }
         if (birthPenalty_ && !contactPot_)
             throw std::runtime_error("gcBirth = penalty exige contact = "
                                      "potential : le re-echelonnement de la "
@@ -1472,6 +1520,54 @@ void FdemSolver::init() {
         if (birthPenalty_ && !(birthPenMin_ > 0.0 && birthPenMax_ >= birthPenMin_))
             throw std::runtime_error("gcBirthPenMin doit etre > 0 et "
                                      "gcBirthPenMax >= gcBirthPenMin");
+    }
+    // ---- potForceExact (2026-10-07, ENQUETE_CONTACT.md §3.2) -------------
+    // false (defaut, historique) : repartition nodale de Munjiza, exacte en
+    // resultante et moment, mais non gradient pour des triangles DEFORMABLES
+    // (terme p I grad lambda). true : forces nodales = -grad E exact.
+    potExact_ = cfg_.getb("potForceExact", false);
+    if (potExact_ && !contactPot_)
+        throw std::runtime_error("potForceExact exige contact = potential");
+    if (potExact_)
+        std::cout << "[FDEM] potForceExact = true : forces nodales du "
+                     "potentiel = -grad E exact (E = p int_S (phiA+phiB)), "
+                     "terme non gradient p I grad lambda retranche\n";
+    // (revue M3) offset sans forces exactes : accepte, mais le champ U(E)
+    // n est alors un gradient qu en resultante ; le terme non gradient
+    // p I grad lambda pese d autant plus que le recouvrement est profond
+    // (selftest-potcontact2d P3 : 0,12 de derive relative contre 2e-6).
+    if (birthOffset_ && !potExact_)
+        std::cout << "[FDEM] AVERTISSEMENT gcBirth = offset sans "
+                     "potForceExact = true : le potentiel decale n est "
+                     "conservatif qu avec les forces nodales exactes (derive "
+                     "mesuree 0,12 contre 2e-6, selftest-potcontact2d P3) ; "
+                     "poser potForceExact = true\n";
+    // ---- contactCandidates (2026-10-07, ENQUETE_CONTACT.md §2-3) ---------
+    // active (defaut, historique) : elements portant une arete du jeu actif.
+    // vertex : + voisins PAR SOMMET des elements actifs + tous les elements
+    // autour d un sommet portant un joint INSERE (non lie, vivant ou mort).
+    {
+        std::string cc = cfg_.gets("contactCandidates", "active");
+        if (cc != "active" && cc != "vertex")
+            throw std::runtime_error("contactCandidates must be active | "
+                                     "vertex (active = elements du jeu "
+                                     "actif, le defaut ; vertex = + voisins "
+                                     "par sommet et eventails des joints "
+                                     "inseres en adaptatif, endommages en "
+                                     "intrinseque)");
+        candVertex_ = cc == "vertex";
+        if (candVertex_ && !contactPot_)
+            throw std::runtime_error("contactCandidates = vertex exige "
+                                     "contact = potential (paires "
+                                     "d ELEMENTS)");
+        if (candVertex_)
+            std::cout << "[FDEM] contactCandidates = vertex : candidats du "
+                         "potentiel = elements actifs + leurs voisins par "
+                         "sommet + eventails des joints declenches ("
+                      << (adaptive_ ? "inseres" : "endommages D > 0 ou morts, "
+                                                  "insertion intrinseque")
+                      << ") ; seules les paires reliees par un joint VIVANT "
+                         "restent exclues\n";
     }
     // srRelax_ = 0 -> e.edot = taux BRUT (le filtre du premier ordre degenere
     // exactement sur son entree) : `none` passe par le meme chemin.
@@ -7136,6 +7232,54 @@ void FdemSolver::potentialContact() {
             emark[be.elem] = epoch;
             elems.push_back(be.elem);
         }
+    // ---- (1b) contactCandidates = vertex (2026-10-07, opt-in) -------------
+    // ENQUETE_CONTACT.md §2 : deux triangles qui ne partagent qu un SOMMET
+    // n ont aucun joint entre eux ; tant qu aucun des deux n est candidat,
+    // RIEN ne s oppose a leur recouvrement (glissement / ecrasement des joints
+    // inseres de l eventail), et la paire nait des centaines de pas plus tard
+    // avec un recouvrement profond. On ajoute donc (a) les voisins par sommet
+    // des elements actifs, (b) tous les elements autour d un sommet portant
+    // un joint DECLENCHE. Les paires reliees par un joint VIVANT restent
+    // exclues plus bas, comme avant.
+    // Declencheur (revue C6, 2026-10-07) : en insertion ADAPTATIVE, un joint
+    // INSERE (non lie : c est lui qui peut glisser). En insertion
+    // INTRINSEQUE, TOUS les joints sont non lies des t = 0 : le critere
+    // « insere » rendait tout le maillage candidat (x2 a x4 en 2D). On y
+    // declenche donc sur l ENDOMMAGEMENT (D > 0, ou joint mort), comme Guo
+    // 2014 (anneau active a la rupture) et Fukuda et al. 2021 (des le debut
+    // de l adoucissement) : un joint elastique intact ne glisse pas.
+    if (candVertex_) {
+        if (vElems_.empty()) {             // meme table que activationSweep
+            int nV = 0;
+            for (int v : vOf_) nV = std::max(nV, v + 1);
+            vElems_.assign(nV, {});
+            for (int nd = 0; nd < (int)vOf_.size(); ++nd)
+                vElems_[vOf_[nd]].push_back(elemOf_[nd]);
+        }
+        static std::vector<long> vmark;
+        if (vmark.size() != vElems_.size()) vmark.assign(vElems_.size(), -1);
+        const std::size_t nAct = elems.size();
+        auto markV = [&](int v) {
+            if (vmark[v] == epoch) return;
+            vmark[v] = epoch;
+            for (int e3 : vElems_[v])
+                if (emark[e3] != epoch) {
+                    emark[e3] = epoch;
+                    elems.push_back(e3);
+                }
+        };
+        for (std::size_t q = 0; q < nAct; ++q)
+            for (int a = 0; a < 3; ++a) markV(vOf_[el_[elems[q]].n[a]]);
+        const bool intrinsicJ = !adaptive_;      // noJoints_ : tout lie
+        for (const auto& J : jt_)
+            if (!J.bonded && (!intrinsicJ || J.D > 0.0 || J.dead)) {
+                markV(vOf_[J.a1]);
+                markV(vOf_[J.a2]);
+                markV(vOf_[J.b1]);
+                markV(vOf_[J.b2]);
+            }
+        nCandExtra_ += (long)(elems.size() - nAct);
+    }
     if (elems.size() < 2) return;
 
     // ---- (2) AABB courantes + grille DENSE a seaux REUTILISES (N1) -------
@@ -7245,12 +7389,44 @@ void FdemSolver::potentialContact() {
                     }
                     pot::PairForce R;
                     if (!pot::pairForce(pa, pb, potP_, R)) continue;
+                    // ---- potForceExact (opt-in) : -grad E exact ----------
+                    // ePair = E = p int_S (phiA+phiB), < 0 = pas encore calcule
+                    double ePair = -1.0;
+                    if (potExact_)
+                        ePair = pot::exactGradientForces(pa, pb, potP_, R);
                     // ---- releve de naissance par AIRE (voir PotHist::aRef),
                     // constante de temps gcBirthTau (1 us), semantique pen0_
                     auto [itH, isNewH] = potFt_.try_emplace(pk);
                     PotHist& H = itH->second;
+                    // compteur PUR : energie de recouvrement a la naissance
+                    // E(S0) — celle que ramp/penalty materialisent sans
+                    // travail, celle que offset neutralise (bilan)
+                    if (isNewH) {
+                        if (ePair < 0.0) ePair = pot::pairEnergy(pa, pb, potP_);
+                        ++nPotBirth_;
+                        potBirthE_ += ePair;
+                    }
                     double sc;
-                    if (birthPenalty_) {
+                    if (birthOffset_) {
+                        // ---- gcBirth = offset (2026-10-07) ---------------
+                        // U = (E - e0)^2 / E au-dessus de e0, cliquet e0 <-
+                        // min(e0, E) en dessous : voir pot::birthOffsetScale
+                        if (ePair < 0.0) ePair = pot::pairEnergy(pa, pb, potP_);
+                        // revue C1 : une paire NON evaluee au pas precedent
+                        // (recouvrement disparu en un pas, sortie des
+                        // candidats ou de la boite, element inverse) RENAIT :
+                        // e0 = E courant. Sinon elle garderait l e0 de sa
+                        // premiere naissance et penetrerait librement
+                        // jusqu a ce niveau (contact manque).
+                        if (isNewH) H.e0 = ePair;
+                        else if (H.lastEval < stepCount_ - 1) {
+                            H.e0 = ePair;
+                            ++nPotRebirth_;
+                            potRebirthE_ += ePair;
+                        }
+                        H.lastEval = stepCount_;
+                        sc = pot::birthOffsetScale(ePair, H.e0);
+                    } else if (birthPenalty_) {
                         // ---- gcBirth = penalty (Y3Did.c l. 915-964) ------
                         // Au pas EXACT de la naissance ils lisent la force que
                         // le joint portait en mourant et calent la penalite de
@@ -7428,7 +7604,9 @@ void FdemSolver::generalContact() {
         rebuildContactEdges();
         actStamp_ = gcStamp;
     }
-    if (act_.empty()) return;
+    // contactCandidates = vertex : les eventails des joints declenches sont
+    // candidats meme quand le jeu actif est encore vide
+    if (act_.empty() && !candVertex_) return;
     if (contactPot_) {                     // A3 : contact par potentiel —
         potentialContact();                // meme jeu actif, autre physique
         return;
@@ -9145,7 +9323,20 @@ void FdemSolver::integrate() {
                     F += fv;
                     cw += fv.dot(v_[i0]) * dt_;        // < 0 : dissipatif
                 }
-                bias += F.squaredNorm() * dt_ * dt_ / (2.0 * M);
+                // (2026-10-07, correctif de BILAN, lecture pure) : la
+                // correction leapfrog |F|^2 dt^2 / 2M se calcule sur la force
+                // CONTRAINTE. Sur un rouleau, la part F_x^2 dt^2 / 2M etait
+                // inscrite ici puis annulee plus bas (vn.x = 0) sans jamais
+                // atteindre l energie cinetique : c etait tout le residu B4
+                // des decks a rouleaux (-136 005 J/m sur le smoke T = 0,03 s,
+                // ENQUETE_CONTACT.md §3.6). Exact tant que v_x = 0 sur le
+                // rouleau (vrai des le 2e pas). Trajectoire inchangee : F et
+                // vn sont calcules comme avant.
+                {
+                    Eigen::Vector2d Fb = F;
+                    if (flag_[i0] == ROLLERX) Fb.x() = 0.0;
+                    bias += Fb.squaredNorm() * dt_ * dt_ / (2.0 * M);
+                }
                 Eigen::Vector2d vn = v_[i0] + (dt_ / M) * F;
                 if (muVisc_ > 0.0 && muViscImplicit_) {  // eq. 9 : implicite
                     const double cV = muVisc_ * thk_;    // UNE fois par groupe
@@ -9154,7 +9345,10 @@ void FdemSolver::integrate() {
                 }
                 if (cX > 0) {
                     vn.x() /= 1.0 + dt_ * cX / M;
-                    lw -= cX * vn.x() * vn.x() * dt_;  // V2/B4 amortisseur
+                    // rouleau : vn.x est annule juste apres, l amortisseur
+                    // x n a rien dissipe (meme correctif de bilan)
+                    if (flag_[i0] != ROLLERX)
+                        lw -= cX * vn.x() * vn.x() * dt_;  // V2/B4 amortisseur
                 }
                 if (cY > 0) {
                     vn.y() /= 1.0 + dt_ * cY / M;
@@ -9255,7 +9449,14 @@ void FdemSolver::integrate() {
             f_[i] += fv;
             cw += fv.dot(v_[i]) * dt_;                 // < 0 : dissipatif
         }
-        bias += f_[i].squaredNorm() * dt_ * dt_ / (2.0 * m_[i]);
+        // (2026-10-07, correctif de BILAN) : meme regle que le chemin
+        // groupe — la correction leapfrog ignore le ddl bloque du rouleau
+        // (f_ lui-meme n est pas touche : trajectoire et reactions intactes)
+        if (flag_[i] == ROLLERX) {
+            const double fy = f_[i].y();
+            bias += fy * fy * dt_ * dt_ / (2.0 * m_[i]);
+        } else
+            bias += f_[i].squaredNorm() * dt_ * dt_ / (2.0 * m_[i]);
         v_[i] += (dt_ / m_[i]) * f_[i];
         if (muVisc_ > 0.0 && muViscImplicit_) {        // eq. 9 : forme implicite
             const double cV = muVisc_ * thk_;          // meme forme que Lysmer
@@ -9264,7 +9465,8 @@ void FdemSolver::integrate() {
         }
         if (cAbsX_[i] > 0) {
             v_[i].x() /= 1.0 + dt_ * cAbsX_[i] / m_[i];
-            lw -= cAbsX_[i] * v_[i].x() * v_[i].x() * dt_;    // V2/B4
+            if (flag_[i] != ROLLERX)   // rouleau : v_x annule juste apres
+                lw -= cAbsX_[i] * v_[i].x() * v_[i].x() * dt_;    // V2/B4
         }
         if (cAbsY_[i] > 0) {
             v_[i].y() /= 1.0 + dt_ * cAbsY_[i] / m_[i];
@@ -9911,10 +10113,17 @@ void FdemSolver::finalize() {
               << "[FDEM] net work injected by general contact: " << gcWork_
               << " J/m\n";
     if (contactPot_)
-        std::cout << "[FDEM] (contact = potential : champ conservatif — un "
-                     "petit residu positif est le biais O(dt) du compteur "
-                     "plus la releve de naissance, pas une pathologie ; en "
-                     "mode penalty tout positif est une injection)\n";
+        // (2026-10-07, signe corrige) le compteur lit v AVANT le kick :
+        // Sum f.v_old dt = dKE - Sum |f|^2 dt^2 / 2m, donc sur un canal
+        // conservatif son biais O(dt) est NEGATIF (D ~ -1/2 Sum dx.K.dx,
+        // mesure -7,6e5 J/m sur tip16_mu0, ENQUETE_CONTACT.md §3.1). Un
+        // gcWork_ POSITIF n est donc jamais ce biais : c est une injection
+        // reelle (naissance de paires en recouvrement, forces non gradient),
+        // et meme sous-estimee.
+        std::cout << "[FDEM] (contact = potential : le biais O(dt) du "
+                     "compteur est NEGATIF — un residu positif est une "
+                     "injection reelle, sous-estimee, et non le biais ; en "
+                     "mode penalty tout positif est aussi une injection)\n";
     // A dashpot can only DISSIPATE. A positive figure here means the viscous
     // branch is injecting energy — the rectifier failure mode — and every
     // number the run produced is suspect. One multiply per integration point.
@@ -9996,6 +10205,37 @@ void FdemSolver::finalize() {
                   << " J/m (dont stocke ressorts " << uSpr << " J/m)\n"
                   << "[FDEM]   outil->solide: " << toolWork_
                   << " J/m, platines/grips: " << bcWork_ << " J/m\n";
+        // (2026-10-07) compteur PUR, ENQUETE_CONTACT.md §1 : l energie de
+        // recouvrement des paires a leur naissance, E(S0) = p int_S0
+        // (phiA+phiB). Sous gcBirth = ramp (tau < dt) ou penalty, elle est
+        // CREEE sans travail puis rendue en ecartant les corps : c est la
+        // part « injectee » du poste contact. Sous offset, elle est
+        // neutralisee (jamais materialisee).
+        // (revue M1) sous la rampe, a geometrie figee, aRef -> 0 et le
+        // facteur -> 1 QUELLE QUE SOIT tau : tout E(S0) finit materialise ;
+        // tau ne regle que la vitesse (1 - relax = part du premier pas). Le
+        // chiffre est une borne : la part reellement creee depend de ce que
+        // la geometrie fait pendant la rampe.
+        if (contactPot_ && nPotBirth_ > 0)
+            std::cout << "[FDEM]   contact, naissances : " << nPotBirth_
+                      << " paires, energie de recouvrement a la naissance "
+                      << potBirthE_ << " J/m ("
+                      << (birthOffset_ ? "neutralisee par gcBirth = offset"
+                          : birthPenalty_ ? "materialisee sans travail par "
+                                            "gcBirth = penalty"
+                          : "materialisable sans travail par la rampe "
+                            "gcBirth = ramp : en totalite a geometrie "
+                            "figee, quelle que soit gcBirthTau")
+                      << ")\n";
+        if (contactPot_ && birthOffset_ && nPotRebirth_ > 0)
+            std::cout << "[FDEM]   contact, renaissances (gcBirth = offset) : "
+                      << nPotRebirth_ << " paires retrouvees apres au moins "
+                         "un pas sans recouvrement, energie neutralisee "
+                      << potRebirthE_ << " J/m\n";
+        if (candVertex_)
+            std::cout << "[FDEM]   contact, candidats : contactCandidates = "
+                         "vertex, " << nCandExtra_ << " elements-pas "
+                         "ajoutes au jeu actif\n";
         if (confP_ > 0.0)                  // sortie inchangee si pas confine
             std::cout << "[FDEM]   confinement  : " << confWork_
                       << " J/m (pression suiveuse -> solide)\n";
@@ -10620,13 +10860,17 @@ int potentialSelftest(const std::string& csvPath) {
     // frontale, 5.1e-7 en oblique — l'erreur du saute-mouton en rotation) et
     // la quantite de mouvement MACHINE (3e loi exacte de pairForce). Le
     // compteur de travail lit v AVANT le kick (la convention gcWork_ du
-    // solveur) : sur une force conservative il porte un biais systematique
-    // POSITIF de Sum |F|^2 dt^2 / 2m — un artefact O(dt) de la mesure, pas
-    // de la physique (mesure : ~8e-4 de KE0 ici, a comparer aux ~80 % que le
-    // contact penalite quasi-plastique dissipe PAR CONSTRUCTION sur le meme
-    // rebond). Ce biais existera aussi dans le gcWork_ des runs en mode
-    // potential : un petit POSITIF n'y est pas une pathologie, contrairement
-    // au mode penalty ou tout positif est une injection.
+    // solveur) : Sum F.v_old dt = dKE - Sum |F|^2 dt^2 / 2m. Sur une force
+    // conservative (dKE = 0 sur le rebond) il porte donc un biais
+    // systematique NEGATIF de -Sum |F|^2 dt^2 / 2m (signe corrige le
+    // 2026-10-07, ENQUETE_CONTACT.md §3.1 : l ancien commentaire le disait
+    // positif) — un artefact O(dt) de la mesure, pas de la physique (mesure :
+    // ~8e-4 de KE0 ici en valeur absolue, a comparer aux ~80 % que le contact
+    // penalite quasi-plastique dissipe PAR CONSTRUCTION sur le meme rebond).
+    // Ce biais existe aussi dans le gcWork_ des runs en mode potential : il
+    // fait paraitre le contact PLUS dissipatif qu il n est. Un gcWork_
+    // POSITIF n y est donc jamais ce biais, c est une injection reelle
+    // (sous-estimee), comme en mode penalty.
     std::cout << "pot_work_rel = " << worstW << "\n"
               << "pot_ke_rel = " << worstKE << "\n"
               << "pot_mom_rel = " << worstP << "\n";
@@ -10954,4 +11198,703 @@ int toolSignoriniSelftest(const std::string& csvPath) {
     return fails == 0 ? 0 : 1;
 }
 
+// ---------------------------------------------------------------------------
+// PotContactProbe (revue C5, 2026-10-07) — acces de test aux membres prives
+// de FdemSolver (friend), pour que selftest-potcontact2d exerce le contact
+// par potentiel DU SOLVEUR (generalContact -> potentialContact) et non une
+// reimplementation. Petit deck en dur (bande 8 x 8, h = 1, E = 10 donc
+// potP_ = 10, contactMu = 0), sortie de init() avalee. N intervient dans
+// aucun run.
+// ---------------------------------------------------------------------------
+struct PotContactProbe {
+    struct Hist {
+        bool found = false;
+        double aRef = 0.0, e0 = 0.0;
+    };
+    struct Fan {
+        int eA = -1, eB = -1, jv = -1, ja = -1, jb = -1;
+        double vx = 0.0, vy = 0.0, theta = 0.0;
+    };
+    static std::unique_ptr<FdemSolver> make(const std::string& cfgPath,
+                                            const std::vector<std::string>& extra) {
+        {
+            std::ofstream c(cfgPath);
+            c << "mode = fdem\nscenario = tension\nT = 1e-3\nframes = 1\n"
+                 "W = 8\nH = 8\nnx = 8\nny = 8\nmeshJitter = 0\n"
+                 "rho = 1\nE = 10\nnu = 0.25\nft = 1\ncohesion = 2\n"
+                 "frictionDeg = 30\nGf = 1\njointPenaltyFactor = 20\n"
+                 "contact = potential\ncontactMu = 0\n";
+            for (const auto& l : extra) c << l << "\n";
+        }
+        Config cfg = Config::load(cfgPath);
+        auto S = std::make_unique<FdemSolver>(cfg, ".");
+        std::ostringstream sink;
+        std::streambuf* old = std::cout.rdbuf(sink.rdbuf());
+        try {
+            S->init();
+        } catch (...) {
+            std::cout.rdbuf(old);
+            throw;
+        }
+        std::cout.rdbuf(old);
+        return S;
+    }
+    static void setDt(FdemSolver& S, double dt, double relax) {
+        S.dt_ = dt;
+        S.relax_ = relax;
+    }
+    // deux elements de BORD (dans le jeu actif par defaut), sans joint ni
+    // sommet commun : le premier et le dernier porteurs d une arete exterieure
+    static std::pair<int, int> boundaryPair(const FdemSolver& S) {
+        const int a = S.exterior_.front().elem;
+        int b = -1;
+        for (auto it = S.exterior_.rbegin(); it != S.exterior_.rend(); ++it) {
+            bool share = false;
+            for (int k = 0; k < 3; ++k)
+                for (int l = 0; l < 3; ++l)
+                    share |= S.vOf_[S.el_[a].n[k]] == S.vOf_[S.el_[it->elem].n[l]];
+            if (!share) {
+                b = it->elem;
+                break;
+            }
+        }
+        return {a, b};
+    }
+    static std::vector<int> nodesOf(const FdemSolver& S, int eA, int eB) {
+        std::vector<int> n;
+        for (int k = 0; k < 3; ++k) n.push_back(S.el_[eA].n[k]);
+        for (int k = 0; k < 3; ++k) n.push_back(S.el_[eB].n[k]);
+        return n;
+    }
+    static void positions(const FdemSolver& S, const std::vector<int>& nodes,
+                          double* q) {
+        for (int k = 0; k < (int)nodes.size(); ++k) {
+            Eigen::Vector2d p = S.X0_[nodes[k]] + S.u_[nodes[k]];
+            q[2 * k] = p.x();
+            q[2 * k + 1] = p.y();
+        }
+    }
+    // un appel du contact general a positions et vitesses IMPOSEES ; rend
+    // les forces nodales de contact des noeuds demandes
+    static void contact(FdemSolver& S, const std::vector<int>& nodes,
+                        const double* x, const double* v, double* f) {
+        for (auto& fi : S.f_) fi.setZero();
+        for (int k = 0; k < (int)nodes.size(); ++k) {
+            const int n = nodes[k];
+            S.u_[n] = Eigen::Vector2d(x[2 * k], x[2 * k + 1]) - S.X0_[n];
+            S.v_[n] = Eigen::Vector2d(v[2 * k], v[2 * k + 1]);
+        }
+        ++S.stepCount_;
+        S.generalContact();
+        for (int k = 0; k < (int)nodes.size(); ++k) {
+            f[2 * k] = S.f_[nodes[k]].x();
+            f[2 * k + 1] = S.f_[nodes[k]].y();
+        }
+    }
+    static Hist hist(const FdemSolver& S, uint64_t key) {
+        Hist h;
+        auto it = S.potFt_.find(key);
+        if (it == S.potFt_.end()) return h;
+        h.found = true;
+        h.aRef = it->second.aRef;
+        h.e0 = it->second.e0;
+        return h;
+    }
+    static long births(const FdemSolver& S) { return S.nPotBirth_; }
+    static long rebirths(const FdemSolver& S) { return S.nPotRebirth_; }
+    static void kill(FdemSolver& S, int j) {
+        auto& J = S.jt_[j];
+        J.D = 1.0;
+        J.dead = true;
+        ++S.nBroken_;
+        ++S.nDead_;
+    }
+    static void damage(FdemSolver& S, int j, double D) { S.jt_[j].D = D; }
+    // eventail du sommet (vx, vy) : eA, eB sans joint commun (ecart angulaire
+    // minimal), theta = rotation amenant eA sur eB, jv = joint de l eventail
+    // etranger a eA et eB, ja = un joint de eA
+    static Fan fan(const FdemSolver& S, double vx, double vy) {
+        Fan F;
+        int v = -1;
+        for (int i = 0; i < (int)S.X0_.size(); ++i)
+            if ((S.X0_[i] - Eigen::Vector2d(vx, vy)).norm() < 1e-9) {
+                v = S.vOf_[i];
+                break;
+            }
+        if (v < 0) return F;
+        F.vx = vx;
+        F.vy = vy;
+        std::vector<int> fe;
+        std::vector<double> mid;
+        for (int e = 0; e < (int)S.el_.size(); ++e) {
+            int kv = -1;
+            for (int k = 0; k < 3; ++k)
+                if (S.vOf_[S.el_[e].n[k]] == v) kv = k;
+            if (kv < 0) continue;
+            Eigen::Vector2d s(0.0, 0.0);
+            for (int k = 0; k < 3; ++k)
+                if (k != kv) s += (S.X0_[S.el_[e].n[k]] - Eigen::Vector2d(vx, vy)).normalized();
+            fe.push_back(e);
+            mid.push_back(std::atan2(s.y(), s.x()));
+        }
+        auto joined = [&](int a, int b) {
+            for (const auto& J : S.jt_)
+                if ((J.eA == a && J.eB == b) || (J.eA == b && J.eB == a)) return true;
+            return false;
+        };
+        double best = 1e9;
+        for (std::size_t i = 0; i < fe.size(); ++i)
+            for (std::size_t j = 0; j < fe.size(); ++j) {
+                if (i == j || joined(fe[i], fe[j])) continue;
+                double d = mid[j] - mid[i];
+                while (d > M_PI) d -= 2.0 * M_PI;
+                while (d <= -M_PI) d += 2.0 * M_PI;
+                if (std::fabs(d) < best - 1e-12) {
+                    best = std::fabs(d);
+                    F.eA = fe[i];
+                    F.eB = fe[j];
+                    F.theta = d;
+                }
+            }
+        if (F.eA < 0) return F;
+        for (int j = 0; j < (int)S.jt_.size(); ++j) {
+            const auto& J = S.jt_[j];
+            const bool atV = S.vOf_[J.a1] == v || S.vOf_[J.a2] == v
+                          || S.vOf_[J.b1] == v || S.vOf_[J.b2] == v;
+            const bool touches = J.eA == F.eA || J.eB == F.eA
+                              || J.eA == F.eB || J.eB == F.eB;
+            if (atV && !touches && F.jv < 0) F.jv = j;
+            if ((J.eA == F.eA || J.eB == F.eA) && F.ja < 0) F.ja = j;
+            if ((J.eA == F.eB || J.eB == F.eB) && F.jb < 0) F.jb = j;
+        }
+        if (F.jv < 0 || F.ja < 0 || F.jb < 0) F.eA = -1;
+        return F;
+    }
+};
+
+// ---------------------------------------------------------------------------
+// selftest-potcontact2d (2026-10-07) — les deux defauts du contact par
+// potentiel releves par ENQUETE_CONTACT.md, sur triangles DEFORMABLES (le
+// selftest-potential2d n emploie que des corps rigides : il y est aveugle).
+// CRITERES POSES AVANT CALCUL (principe IV) :
+//  P0 sommet commun sans recouvrement (2 000 tirages tournes/echelles) :
+//     aire de recouvrement / aire min <= 1e-12 (pas de force parasite pour
+//     les paires ajoutees par contactCandidates = vertex).
+//  P1 gradient : forces nodales contre -dE/dq aux differences finies :
+//     exactes (potForceExact) < 1e-6 de |f|max ; Munjiza > 1e-2 (le defaut
+//     doit etre VU, mesure 16 % dans l enquete).
+//  P2 boucle fermee sur ddl nodaux, toutes paires de ddl, r = 0,02 :
+//     |travail| exact < 1e-12 ; Munjiza > 1e-5 (mesure 2,9e-4).
+//  P3 deux blocs CST SANS cohesion partageant un SOMMET, nes en
+//     recouvrement profond S0 (eventail ecrase), animes de vitesses qui les
+//     enfoncent l un dans l autre ; la trace (potx.csv) montre que le
+//     recouvrement initial se DETEND d abord (E : 0,544 -> 0, le cliquet
+//     joue) puis que le contact se reengage (Uc max ~0,5 H0).
+//     H = KE + U_el + U_contact, forces de contact DU SOLVEUR (revue C5) :
+//     gcBirth = offset + forces exactes : max_t |H - H0| / H0 < 1e-3 ;
+//     gcBirth = ramp (tau = dt/5,8, le rapport du tunnel tip16) : energie
+//     creee > 0,5 E(S0) (le defaut doit etre VU).
+//  P4 (revue C1) offset par le solveur, cinematique imposee : force nodale
+//     = attendue a 1e-12 ; nulle a la naissance, sur la branche libre et a
+//     la RENAISSANCE (retour en un pas au-dessus de l ancien e0) ; > 0,05
+//     de la force pleine au reengagement ; 1 naissance, 1 renaissance.
+//  P5 (revue C5/C6) eventail : paire a sommet commun nee profonde sous
+//     active (> 0,5 E_plein), au premier recouvrement sous vertex
+//     (< 0,05) avec un joint mort OU seulement endommage, jamais candidate
+//     sous vertex en intrinseque tant qu aucun joint n est endommage.
+// ---------------------------------------------------------------------------
+int potentialExactSelftest(const std::string& csvPath) {
+    using pot::V2;
+    std::ofstream csv(csvPath);
+    csv << "test,mode,t,H,KE,Uel,Uc,E\n";
+    int fails = 0;
+    auto unpack = [](const double* q, V2 a[3], V2 b[3]) {
+        for (int k = 0; k < 3; ++k) {
+            a[k] = V2(q[2 * k], q[2 * k + 1]);
+            b[k] = V2(q[6 + 2 * k], q[6 + 2 * k + 1]);
+        }
+    };
+    // forces nodales generalisees (12 ddl), Munjiza ou exactes
+    auto forces = [&](const double* q, double p, bool exact, double* f) {
+        V2 a[3], b[3];
+        unpack(q, a, b);
+        for (int i = 0; i < 12; ++i) f[i] = 0.0;
+        pot::PairForce R;
+        if (!pot::pairForce(a, b, p, R)) return;
+        if (exact) pot::exactGradientForces(a, b, p, R);
+        for (int k = 0; k < 3; ++k) {
+            f[2 * k] = R.fA[k].x();
+            f[2 * k + 1] = R.fA[k].y();
+            f[6 + 2 * k] = R.fB[k].x();
+            f[6 + 2 * k + 1] = R.fB[k].y();
+        }
+    };
+    auto energy = [&](const double* q, double p) {
+        V2 a[3], b[3];
+        unpack(q, a, b);
+        return pot::pairEnergy(a, b, p);
+    };
+
+    // ---- P0 : sommet commun, aucun recouvrement -------------------------
+    // Secteurs angulaires DISJOINTS autour du sommet (le cas d un eventail de
+    // maillage conforme, copies liees confondues) : aucune aire parasite
+    // admise. Le cas d aretes COLINEAIRES (deux triangles qui se touchent le
+    // long d une droite, sans arete commune) est lu sans critere : c est le
+    // contact rasant ordinaire de pairForce, deja present en mode active.
+    {
+        std::mt19937 rng(11);
+        std::uniform_real_distribution<double> U01(0.0, 1.0);
+        double worst[2] = {0.0, 0.0};
+        for (int it = 0; it < 2000; ++it) {
+            double th = 2.0 * M_PI * U01(rng), sc = std::pow(10.0, -3.0 + 4.0 * U01(rng));
+            V2 O(U01(rng) * 100.0, U01(rng) * 100.0);
+            double cs = std::cos(th), sn = std::sin(th);
+            auto T = [&](double x, double y) {
+                return V2(O.x() + sc * (cs * x - sn * y), O.y() + sc * (sn * x + cs * y));
+            };
+            const int col = (it % 4 == 0) ? 1 : 0;
+            double a1 = 0.3 + 0.8 * U01(rng);
+            double a2 = a1 + (col ? 0.0 : 0.05 + 0.5 * U01(rng));
+            double a3 = a2 + 0.3 + 0.8 * U01(rng);
+            double r1 = 0.5 + U01(rng), r2 = 0.5 + U01(rng), r3 = 0.5 + U01(rng), r4 = 0.5 + U01(rng);
+            V2 A[3] = {T(0, 0), T(r1, 0), T(r2 * std::cos(a1), r2 * std::sin(a1))};
+            V2 B[3] = {T(0, 0), T(r3 * std::cos(a2), r3 * std::sin(a2)),
+                       T(r4 * std::cos(a3), r4 * std::sin(a3))};
+            pot::PairForce R;
+            double amin = std::min(0.5 * std::fabs(pot::cross2(A[1] - A[0], A[2] - A[0])),
+                                   0.5 * std::fabs(pot::cross2(B[1] - B[0], B[2] - B[0])));
+            if (pot::pairForce(A, B, 1.0, R))
+                worst[col] = std::max(worst[col], R.area / amin);
+        }
+        bool ok = worst[0] <= 1e-12;
+        if (!ok) ++fails;
+        std::cout << "[POTX] P0 sommet commun sans recouvrement : aire max / aire min = "
+                  << worst[0] << " (secteurs disjoints, <= 1e-12)"
+                  << (ok ? "  [ok]" : "  [ECHEC]") << " ; aretes colineaires (lu) "
+                  << worst[1] << "\n";
+    }
+
+    // ---- P0b : elements FINS loin de l origine (|X| ~ 100 m, h jusqu a
+    // 1e-7 m) : l energie exacte reste >= 0 a l arrondi pres. Avant le
+    // passage en repere local d overlapIntegrals : I_A = -1,46 pour une aire
+    // de 2e-13 (mesure du 2026-10-07 ; -1 814 J/m cumules sur tip16).
+    {
+        std::mt19937 rng(5);
+        std::uniform_real_distribution<double> U(-1.0, 1.0), U01(0.0, 1.0);
+        double worst = 0.0;
+        for (int it = 0; it < 200000; ++it) {
+            double sc = std::pow(10.0, -3.0 + 3.0 * U01(rng));
+            V2 O(50.0 + 50.0 * U(rng), 50.0 + 50.0 * U(rng));
+            double asp = std::pow(10.0, -4.0 * U01(rng));
+            V2 A[3], B[3];
+            for (int k = 0; k < 3; ++k) {
+                A[k] = O + sc * V2(U(rng), asp * U(rng));
+                B[k] = O + sc * V2(U(rng), U(rng));
+            }
+            if (pot::cross2(A[1] - A[0], A[2] - A[0]) < 0.0) std::swap(A[1], A[2]);
+            if (pot::cross2(B[1] - B[0], B[2] - B[0]) < 0.0) std::swap(B[1], B[2]);
+            if (it % 2) B[0] = A[0];                    // sommet commun
+            double IA, IB, ar;
+            if (!pot::overlapIntegrals(A, B, IA, IB, ar)) continue;
+            worst = std::min(worst, (IA + IB) / (sc * sc));
+        }
+        bool ok = worst > -1e-9;
+        if (!ok) ++fails;
+        std::cout << "[POTX] P0b elements fins a |X| ~ 100 : min (I_A + I_B) / h^2 = "
+                  << worst << " (> -1e-9)" << (ok ? "  [ok]" : "  [ECHEC]") << "\n";
+    }
+
+    // configuration de l enquete (loop2.cpp) : recouvrement partiel
+    double q0[12] = {0, 0, 1, 0, 0, 1, 0.9, 0.85, 0.9, -0.15, -0.1, 0.85};
+    {
+        V2 b0(q0[6], q0[7]), b1(q0[8], q0[9]), b2(q0[10], q0[11]);
+        if (pot::cross2(b1 - b0, b2 - b0) < 0.0) {
+            std::swap(q0[8], q0[10]);
+            std::swap(q0[9], q0[11]);
+        }
+    }
+    const double p = 1.0;
+    // ---- P1 : gradient ----------------------------------------------------
+    {
+        double fM[12], fC[12], eM = 0.0, eC = 0.0, nn = 0.0;
+        forces(q0, p, false, fM);
+        forces(q0, p, true, fC);
+        for (int i = 0; i < 12; ++i) {
+            double qp[12], qm[12];
+            for (int j = 0; j < 12; ++j) qp[j] = qm[j] = q0[j];
+            const double h = 1e-6;
+            qp[i] += h;
+            qm[i] -= h;
+            double g = -(energy(qp, p) - energy(qm, p)) / (2.0 * h);
+            eM = std::max(eM, std::fabs(fM[i] - g));
+            eC = std::max(eC, std::fabs(fC[i] - g));
+            nn = std::max(nn, std::fabs(g));
+        }
+        bool ok = eC / nn < 1e-6 && eM / nn > 1e-2;
+        if (!ok) ++fails;
+        std::cout << "[POTX] P1 gradient : |f - (-dE/dq)| / |f|max : Munjiza "
+                  << eM / nn << " (defaut attendu > 1e-2), exact " << eC / nn
+                  << " (< 1e-6)" << (ok ? "  [ok]" : "  [ECHEC]") << "\n";
+    }
+    // ---- P2 : boucle fermee -----------------------------------------------
+    {
+        double wmax[2] = {0.0, 0.0};
+        const int N = 4000;
+        const double r = 0.02;
+        for (int c = 0; c < 2; ++c)
+            for (int a = 0; a < 12; ++a)
+                for (int b = a + 1; b < 12; ++b) {
+                    double W = 0.0, q[12], f[12];
+                    for (int n = 0; n < N; ++n) {
+                        double s = 2.0 * M_PI * (n + 0.5) / N, ds = 2.0 * M_PI / N;
+                        for (int i = 0; i < 12; ++i) q[i] = q0[i];
+                        q[a] += r * std::cos(s);
+                        q[b] += r * std::sin(s);
+                        forces(q, p, c == 1, f);
+                        W += (f[a] * (-r * std::sin(s)) + f[b] * (r * std::cos(s))) * ds;
+                    }
+                    wmax[c] = std::max(wmax[c], std::fabs(W));
+                }
+        bool ok = wmax[1] < 1e-12 && wmax[0] > 1e-5;
+        if (!ok) ++fails;
+        std::cout << "[POTX] P2 boucle fermee (ddl nodaux, r = 0,02) : max |W| Munjiza "
+                  << wmax[0] << " (defaut attendu > 1e-5), exact " << wmax[1]
+                  << " (< 1e-12)" << (ok ? "  [ok]" : "  [ECHEC]") << "\n";
+    }
+
+    // ---- P3 a P5 : PAR LE SOLVEUR (revue C5, 2026-10-07) ------------------
+    // Les forces de contact sont celles de FdemSolver::generalContact() ->
+    // potentialContact() sur un maillage reel (bande 8 x 8, h = 1, E = 10,
+    // donc potP_ = 10) : candidats, exclusion des joints vivants, potFt_,
+    // naissance (isNewH), renaissance offset, ordre « forces exactes puis
+    // facteur ». Le selftest ne fournit que l elasticite CST et le
+    // saute-mouton (P3) ou la cinematique imposee (P4, P5).
+    const std::string pcfg = csvPath + ".probe.cfg";
+    auto key2 = [](int a, int b) {
+        return ((uint64_t)std::min(a, b) << 32) | (uint64_t)std::max(a, b);
+    };
+    const double pp = 10.0;                  // = potP_ du deck sonde
+
+    // ---- P3 : naissance a sommet commun, deux blocs CST sans cohesion -----
+    // Deux elements de BORD du maillage (sans joint ni sommet commun) deplaces
+    // hors du corps et poses en coin l un dans l autre (copies du sommet
+    // commun confondues), puis pousses l un vers l autre a +-0,1 : le
+    // recouvrement de naissance (0,544) se DETEND d abord (E -> 0, cliquet),
+    // puis le contact se reengage (Uc max ~0,5 H0, potx.csv).
+    // mode 0 : ramp (tau = dt/5,8) + forces exactes ; mode 1 : offset +
+    // exactes ; mode 2 : offset + Munjiza (lu, sans critere)
+    double created[3] = {0, 0, 0}, drift[3] = {0, 0, 0}, ES0 = 0.0, H0s[3] = {0, 0, 0};
+    long rebirths[3] = {0, 0, 0};
+    for (int mode = 0; mode < 3; ++mode) {
+        const double dt = 1e-4, tau = dt / 5.8;
+        std::vector<std::string> ex = {"jointDeath = damage"};
+        if (mode != 2) ex.push_back("potForceExact = true");
+        if (mode == 0) ex.push_back("gcBirth = ramp");
+        else ex.push_back("gcBirth = offset");
+        auto S = PotContactProbe::make(pcfg, ex);
+        PotContactProbe::setDt(*S, dt, std::exp(-dt / tau));
+        const auto [eA, eB] = PotContactProbe::boundaryPair(*S);
+        const std::vector<int> nodes = PotContactProbe::nodesOf(*S, eA, eB);
+        const double Em = 10.0, nu = 0.25, rho = 1.0;
+        // sommet commun en O (deux copies), recouvrement en coin de 15 a 27 deg
+        const double ox = 9.0, oy = 4.0;   // hors du corps [0, 8]^2, dans la boite
+        double X[12] = {0, 0, 1, -0.2, 1, 0.5, 0, 0, 1.1, 0.3, 0.6, 0.9};
+        for (int k = 0; k < 6; ++k) {
+            X[2 * k] += ox;
+            X[2 * k + 1] += oy;
+        }
+        double x[12], v[12], m[12], f[12];
+        Eigen::Matrix3d D;
+        const double fE = Em / ((1 + nu) * (1 - 2 * nu));
+        D << fE * (1 - nu), fE * nu, 0, fE * nu, fE * (1 - nu), 0, 0, 0, fE * (1 - 2 * nu) / 2;
+        Eigen::Matrix<double, 3, 6> Bm[2];
+        double A0[2];
+        for (int e = 0; e < 2; ++e) {
+            V2 P[3];
+            for (int k = 0; k < 3; ++k) P[k] = V2(X[6 * e + 2 * k], X[6 * e + 2 * k + 1]);
+            double A2 = pot::cross2(P[1] - P[0], P[2] - P[0]);
+            A0[e] = 0.5 * A2;
+            Bm[e].setZero();
+            for (int k = 0; k < 3; ++k) {
+                int j = (k + 1) % 3, l = (k + 2) % 3;
+                double bb = P[j].y() - P[l].y(), cc = P[l].x() - P[j].x();
+                Bm[e](0, 2 * k) = bb / A2;
+                Bm[e](1, 2 * k + 1) = cc / A2;
+                Bm[e](2, 2 * k) = cc / A2;
+                Bm[e](2, 2 * k + 1) = bb / A2;
+            }
+            for (int k = 0; k < 6; ++k) m[6 * e + k] = rho * A0[e] / 3.0;
+        }
+        for (int i = 0; i < 12; ++i) {
+            x[i] = X[i];
+            v[i] = 0.0;
+        }
+        // A (sous la bissectrice) monte, B (au-dessus) descend : chacun
+        // s enfonce dans l autre ; le recouvrement initial se detend d abord
+        for (int k = 0; k < 3; ++k) {
+            v[2 * k + 1] = 0.1;
+            v[6 + 2 * k + 1] = -0.1;
+        }
+        auto elastic = [&](double* fo) {
+            double U = 0.0;
+            for (int e = 0; e < 2; ++e) {
+                Eigen::Matrix<double, 6, 1> u;
+                for (int k = 0; k < 6; ++k) u(k) = x[6 * e + k] - X[6 * e + k];
+                Eigen::Vector3d eps = Bm[e] * u;
+                Eigen::Vector3d sig = D * eps;
+                U += 0.5 * A0[e] * eps.dot(sig);
+                if (fo) {
+                    Eigen::Matrix<double, 6, 1> fe = -A0[e] * Bm[e].transpose() * sig;
+                    for (int k = 0; k < 6; ++k) fo[6 * e + k] += fe(k);
+                }
+            }
+            return U;
+        };
+        double H0 = 0.0, Hmax = 0.0, Hlast = 0.0;
+        const long nSteps = 30000;
+        for (long st = 0; st <= nSteps; ++st) {
+            for (int i = 0; i < 12; ++i) f[i] = 0.0;
+            double Uel = elastic(f);
+            double fc[12];
+            PotContactProbe::contact(*S, nodes, x, v, fc);   // LE SOLVEUR
+            for (int i = 0; i < 12; ++i) f[i] += fc[i];
+            // energie de contact courante, lue sur l etat du solveur
+            V2 a[3], b[3];
+            unpack(x, a, b);
+            double E = 0.0, Uc = 0.0;
+            pot::PairForce R;
+            const PotContactProbe::Hist h = PotContactProbe::hist(*S, key2(eA, eB));
+            if (h.found && pot::pairForce(a, b, pp, R)) {
+                E = pot::pairEnergy(a, b, pp);
+                if (st == 0) ES0 = E;
+                if (mode == 0) Uc = std::max(0.0, 1.0 - h.aRef / R.area) * E;
+                else {
+                    double e0c = h.e0;
+                    pot::birthOffsetScale(E, e0c, &Uc);
+                }
+            }
+            // energie SYNCHRONISEE au pas n : v^n ~ v^{n-1/2} + dt/2 f^n/m
+            // (v est au demi-pas dans le saute-mouton, x au pas entier)
+            double KEs = 0.0;
+            for (int i = 0; i < 12; ++i) {
+                double vs = v[i] + 0.5 * dt * f[i] / m[i];
+                KEs += 0.5 * m[i] * vs * vs;
+            }
+            double H = KEs + Uel + Uc;
+            if (st == 0) H0 = H;
+            Hmax = std::max(Hmax, std::fabs(H - H0));
+            Hlast = H;
+            if (st % 300 == 0)
+                csv << "P3," << mode << "," << st * dt << "," << H << "," << KEs
+                    << "," << Uel << "," << Uc << "," << E << "\n";
+            for (int i = 0; i < 12; ++i) {
+                v[i] += dt * f[i] / m[i];
+                x[i] += dt * v[i];
+            }
+        }
+        created[mode] = Hlast - H0;
+        drift[mode] = Hmax;
+        H0s[mode] = H0;
+        rebirths[mode] = PotContactProbe::rebirths(*S);
+    }
+    {
+        bool okR = created[0] > 0.5 * ES0;
+        bool okO = drift[1] / H0s[1] < 1e-3;
+        if (!okR) ++fails;
+        if (!okO) ++fails;
+        std::cout << "[POTX] P3 naissance a sommet commun (forces du SOLVEUR) : E(S0) = "
+                  << ES0 << ", H0 = KE0 = " << H0s[1] << "\n"
+                  << "[POTX]   ramp (tau = dt/5,8) : energie creee H_fin - H0 = "
+                  << created[0] << " = " << created[0] / ES0
+                  << " E(S0) (defaut attendu > 0,5)" << (okR ? "  [ok]" : "  [ECHEC]") << "\n"
+                  << "[POTX]   offset + exact : max |H - H0| / H0 = " << drift[1] / H0s[1]
+                  << " (< 1e-3), H_fin - H0 = " << created[1] << ", renaissances "
+                  << rebirths[1] << (okO ? "  [ok]" : "  [ECHEC]") << "\n"
+                  << "[POTX]   offset + Munjiza (lu) : max |H - H0| / H0 = "
+                  << drift[2] / H0s[2] << ", H_fin - H0 = " << created[2] << "\n";
+        std::cout << "potx_ramp_created_rel = " << created[0] / ES0 << "\n"
+                  << "potx_offset_drift_rel = " << drift[1] / H0s[1] << "\n";
+    }
+
+    // ---- P4 : naissance et RENAISSANCE offset, force par force -----------
+    // (revue C1 + C5) Meme paire deplacee, cinematique IMPOSEE : B translate
+    // le long de d. Chaque pas compare la force nodale du solveur a la
+    // valeur attendue calculee ici independamment (pairForce, forces
+    // exactes, birthOffsetScale avec l e0 ATTENDU). Sequence :
+    //   s0 : naissance en recouvrement profond E1 -> force NULLE (un e0
+    //        laisse a 0 donnerait la force pleine) ;
+    //   s1 : un peu plus profond -> facteur 1 - (E1/E)^2 ;
+    //   s2 : 0,3 E1 -> branche libre, cliquet e0 = 0,3 E1, force nulle ;
+    //   s3 : separation complete en UN pas (pairForce faux, rien d evalue) ;
+    //   s4 : retour DIRECT a 0,5 E1 -> RENAISSANCE, e0 = E, force NULLE.
+    //        Avec l e0 perime (0,3 E1, l ancien code) la paire reprenait la
+    //        force 1 - 0,6^2 = 0,64 de la pleine et materialisait
+    //        U = 0,08 E1 SANS travail. (Un retour SOUS l ancien e0 etait
+    //        deja rattrape par le cliquet : e0 = E, comme une renaissance.)
+    //   s5 : 0,7 E1 -> facteur 1 - (5/7)^2 > 0, la paire resiste.
+    {
+        auto S = PotContactProbe::make(pcfg, {"gcBirth = offset",
+                                              "potForceExact = true"});
+        const auto [eA, eB] = PotContactProbe::boundaryPair(*S);
+        const std::vector<int> nodes = PotContactProbe::nodesOf(*S, eA, eB);
+        double X[12] = {0, 0, 1, -0.2, 1, 0.5, 0, 0, 1.1, 0.3, 0.6, 0.9};
+        for (int k = 0; k < 6; ++k) {
+            X[2 * k] += 9.0;
+            X[2 * k + 1] += 4.0;
+        }
+        const V2 d(-0.3, 1.0);                  // B s eloigne de A
+        auto at = [&](double s, double* q) {
+            for (int i = 0; i < 12; ++i) q[i] = X[i];
+            for (int k = 3; k < 6; ++k) {
+                q[2 * k] += s * d.x();
+                q[2 * k + 1] += s * d.y();
+            }
+        };
+        auto Eof = [&](double s) {
+            double q[12];
+            at(s, q);
+            V2 a[3], b[3];
+            unpack(q, a, b);
+            return pot::pairEnergy(a, b, pp);
+        };
+        const double E1 = Eof(0.0);
+        auto sFor = [&](double target) {        // E decroit avec s : bissection
+            double lo = 0.0, hi = 1.0;
+            for (int it = 0; it < 200; ++it) {
+                double mid = 0.5 * (lo + hi);
+                (Eof(mid) > target ? lo : hi) = mid;
+            }
+            return 0.5 * (lo + hi);
+        };
+        const int NS = 6;
+        const double sv[NS] = {0.0, -0.01, sFor(0.3 * E1), 1.0, sFor(0.5 * E1),
+                               sFor(0.7 * E1)};
+        double e0exp = 0.0, worst = 0.0, fn[NS] = {}, full[NS] = {};
+        bool sepOk = Eof(1.0) == 0.0;
+        double vz[12] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+        for (int st = 0; st < NS; ++st) {
+            double q[12], fs[12], fe[12] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+            at(sv[st], q);
+            PotContactProbe::contact(*S, nodes, q, vz, fs);
+            V2 a[3], b[3];
+            unpack(q, a, b);
+            pot::PairForce R;
+            double nrm = 0.0;                   // |f| PLEINE (facteur 1)
+            if (pot::pairForce(a, b, pp, R)) {
+                double E = pot::exactGradientForces(a, b, pp, R);
+                if (st == 0 || st == 4) e0exp = E;     // naissance, renaissance
+                double sc = pot::birthOffsetScale(E, e0exp);
+                for (int k = 0; k < 3; ++k) {
+                    nrm = std::max({nrm, R.fA[k].norm(), R.fB[k].norm()});
+                    fe[2 * k] = sc * R.fA[k].x();
+                    fe[2 * k + 1] = sc * R.fA[k].y();
+                    fe[6 + 2 * k] = sc * R.fB[k].x();
+                    fe[6 + 2 * k + 1] = sc * R.fB[k].y();
+                }
+            }
+            double err = 0.0, mag = 0.0;
+            for (int i = 0; i < 12; ++i) {
+                err = std::max(err, std::fabs(fs[i] - fe[i]));
+                mag = std::max(mag, std::fabs(fs[i]));
+            }
+            fn[st] = mag;
+            full[st] = nrm;
+            worst = std::max(worst, nrm > 0.0 ? err / nrm : err);
+        }
+        const long nb = PotContactProbe::births(*S), nr = PotContactProbe::rebirths(*S);
+        bool ok = sepOk && worst < 1e-12 && fn[0] == 0.0 && fn[1] > 0.0
+                  && fn[2] == 0.0 && fn[3] == 0.0 && fn[4] == 0.0
+                  && fn[5] > 0.05 * full[5] && nb == 1 && nr == 1;
+        if (!ok) ++fails;
+        std::cout << "[POTX] P4 offset par le solveur : |f_solveur - f_attendue| / |f| = "
+                  << worst << " (< 1e-12) ; |f| / |f plein| : naissance " << fn[0]
+                  << " (= 0), plus profond " << fn[1] / full[1] << ", cliquet " << fn[2]
+                  << " (= 0), separe " << fn[3] << ", retour a 0,5 E1 " << fn[4] / full[4]
+                  << " (= 0 : renaissance ; e0 perime -> 0,64), 0,7 E1 "
+                  << fn[5] / full[5] << " (> 0,05) ; naissances " << nb
+                  << ", renaissances " << nr << " (1, 1)" << (ok ? "  [ok]" : "  [ECHEC]")
+                  << "\n";
+        std::cout << "potx_rebirth_force_rel = " << fn[4] / full[4] << "\n";
+    }
+
+    // ---- P5 : completude de contactCandidates = vertex (eventail) --------
+    // (revue C5 + C6) Sommet interieur v = (4, 4) du maillage 8 x 8 ; eA et
+    // eB : deux elements de son eventail SANS joint commun, loin du bord
+    // (hors du jeu actif et de son anneau). eA tourne autour de v jusqu a
+    // recouvrir eB en N pas. Un joint Jv de l eventail (ni eA ni eB) meurt
+    // au pas 0 ; Ja (de eA) et Jb (de eB) meurent a la fin. Energie de la paire
+    // (eA, eB) au pas ou elle NAIT (une paire n est formee qu entre deux
+    // elements candidats ; Ja et Jb, un joint de chacun, meurent a la fin) :
+    //   active : rien ne la voit pendant la rotation ; elle nait a la mort de
+    //            Ja et Jb, en recouvrement PROFOND (> 0,5 E_plein) ;
+    //   vertex : l anneau de Jv la rend candidate ; elle nait au premier
+    //            recouvrement (< 0,05 E_plein) ;
+    //   vertex, Jv seulement ENDOMMAGE (D = 0,5) : idem (declencheur C6) ;
+    //   vertex, tout intact (D = 0) et rien ne meurt : insertion
+    //            intrinseque, AUCUN declencheur -> jamais candidate (cout C6).
+    {
+        double Ebirth[4] = {-1, -1, -1, -1}, Efull = 0.0;
+        for (int cs = 0; cs < 4; ++cs) {
+            auto S = PotContactProbe::make(
+                pcfg, cs == 0 ? std::vector<std::string>{}
+                              : std::vector<std::string>{"contactCandidates = vertex"});
+            PotContactProbe::Fan F = PotContactProbe::fan(*S, 4.0, 4.0);
+            if (F.eA < 0) {
+                Ebirth[cs] = -2;
+                continue;
+            }
+            const std::vector<int> nodes = PotContactProbe::nodesOf(*S, F.eA, F.eB);
+            double q0[12];
+            PotContactProbe::positions(*S, nodes, q0);
+            const int N = 40, hold = 24;
+            double vz[12] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+            if (cs == 1 || cs == 0) PotContactProbe::kill(*S, F.jv);
+            if (cs == 2) PotContactProbe::damage(*S, F.jv, 0.5);
+            for (int st = 0; st <= N + hold; ++st) {
+                if (st == N + 1 && cs != 3) {
+                    PotContactProbe::kill(*S, F.ja);
+                    PotContactProbe::kill(*S, F.jb);
+                }
+                const double th = F.theta * std::min(st, N) / (double)N;
+                double q[12];
+                for (int i = 0; i < 12; ++i) q[i] = q0[i];
+                for (int k = 0; k < 3; ++k) {             // rotation de eA autour de v
+                    double rx = q0[2 * k] - F.vx, ry = q0[2 * k + 1] - F.vy;
+                    q[2 * k] = F.vx + std::cos(th) * rx - std::sin(th) * ry;
+                    q[2 * k + 1] = F.vy + std::sin(th) * rx + std::cos(th) * ry;
+                }
+                double fs[12];
+                PotContactProbe::contact(*S, nodes, q, vz, fs);
+                V2 a[3], b[3];
+                unpack(q, a, b);
+                if (st == N) Efull = pot::pairEnergy(a, b, pp);
+                if (Ebirth[cs] < 0.0 && PotContactProbe::hist(*S, key2(F.eA, F.eB)).found)
+                    Ebirth[cs] = pot::pairEnergy(a, b, pp);
+            }
+        }
+        bool ok = Efull > 0.0 && Ebirth[0] > 0.5 * Efull
+                  && Ebirth[1] >= 0.0 && Ebirth[1] < 0.05 * Efull
+                  && Ebirth[2] >= 0.0 && Ebirth[2] < 0.05 * Efull
+                  && Ebirth[3] == -1.0;
+        if (!ok) ++fails;
+        auto r = [&](double e) { return e < 0.0 ? e : e / Efull; };
+        std::cout << "[POTX] P5 eventail, paire a sommet commun : E(naissance) / E_plein = "
+                  << "active " << r(Ebirth[0]) << " (> 0,5, nee profonde), vertex+mort "
+                  << r(Ebirth[1]) << " (< 0,05), vertex+D=0,5 " << r(Ebirth[2])
+                  << " (< 0,05), vertex intact " << Ebirth[3]
+                  << " (-1 = jamais candidate : pas de declencheur en intrinseque)"
+                  << (ok ? "  [ok]" : "  [ECHEC]") << "\n";
+        std::cout << "potx_fan_active = " << r(Ebirth[0]) << "\n"
+                  << "potx_fan_vertex = " << r(Ebirth[1]) << "\n";
+    }
+    std::remove(pcfg.c_str());
+    std::cout << (fails == 0 ? "[PASS]" : "[FAIL]")
+              << " selftest-potcontact2d : forces exactes (gradient, boucle "
+                 "fermee), naissance et renaissance sans creation "
+                 "d energie (gcBirth = offset) et completude des candidats "
+                 "(contactCandidates = vertex), par le solveur\n";
+    return fails == 0 ? 0 : 1;
+}
+
 } // namespace rockim
+

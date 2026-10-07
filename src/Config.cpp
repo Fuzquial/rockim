@@ -1,5 +1,8 @@
 #include "rockim/Config.hpp"
 #include <algorithm>
+#include <cctype>
+#include <iostream>
+#include <set>
 #include <fstream>
 #include <sstream>
 #include <stdexcept>
@@ -128,8 +131,24 @@ bool Config::getb(const std::string& key, bool def) const {
     if (d_->sealed.load()) e = peek(key);
     else { const std::string sdef = def ? "true" : "false"; e = touch(key, &sdef); }
     if (!e) return def;
-    const std::string& v = e->value;
-    return v == "1" || v == "true" || v == "yes" || v == "on";
+    // (2026-10-07, revue M5) insensible a la casse : `True`, `ON`... valaient
+    // false EN SILENCE. Aucun deck existant n en est change (balayage des
+    // 3 918 .cfg de la base et des generateurs : seules des minuscules). Une
+    // valeur hors {1,true,yes,on,0,false,no,off} reste false, comme avant,
+    // mais est signalee (une fois par cle) : `ture` ne passe plus muette.
+    std::string v = e->value;
+    for (char& c : v) c = (char)std::tolower((unsigned char)c);
+    if (v == "1" || v == "true" || v == "yes" || v == "on") return true;
+    if (!(v == "0" || v == "false" || v == "no" || v == "off")) {
+        static std::mutex wmu;
+        static std::set<std::string> warned;
+        std::lock_guard<std::mutex> lk(wmu);
+        if (warned.insert(key).second)
+            std::cerr << "[Config] AVERTISSEMENT : cle booleenne '" << key
+                      << "' = '" << e->value << "' non reconnue (attendu "
+                         "true|false|1|0|yes|no|on|off) : lue false\n";
+    }
+    return false;
 }
 std::string Config::reqs(const std::string& key) const {
     const Entry* e = d_->sealed.load() ? peek(key) : touch(key, nullptr);

@@ -478,11 +478,14 @@ tous être refusés avec un message explicatif).
 | **`gcActivation`** (full) | full \| **adaptive** = activation adaptative des faces de contact (Fukuda et al.) : `act_` ne contient que les faces qui **peuvent** toucher, au lieu de tout l'extérieur balayé à chaque pas. Trois règles, activation **monotone** : (C) peau endommagée — l'élément porte un joint cassé/mort, plus un anneau par sommet ; (A) autre corps à moins de `gcActMargin` cellules (composantes connexes par union-find sur les joints porteurs, recalculées quand nBroken change) — c'est ce qui arme le SHPB multi-corps dès t = 0 ; (B) voisinage d'une face ayant déjà **porté** une force (une face qui racle propage, une face inerte non). Balayage cadencé par v_max, borné par `gcActEvery`. Les faces libérées par joints morts entrent au **même pas** qu'en mode full (cache). **Mesuré : percussion 3D ×2,32 bit-identique** (1130 → 488 s, 4 % des faces activées), percussion 2D bit-identique, UCS −15 % aux mêmes chiffres, SHPB identique sur 83 % du run puis enveloppe chaotique (contrôle : full sous OMP=2 diverge 8× plus tôt). Approximation assumée (la même que Fukuda) : un continuum **intact** ne se replie pas sur lui-même |
 | `gcActMargin` (2.0) | marge d'activation des règles A/B, en multiples de la cellule de détection |
 | `gcActEvery` (64) | cadence maximale du balayage d'activation [pas] |
-| **`contact`** (penalty) | penalty \| **potential** = contact général par **potentiel de Munjiza** (éq. 2-5 de Yan et al. 2023), **2D et 3D**. Paires d'**éléments** (et non nœud-face) : force normale distribuée F = p·∮(φ_A−φ_B)·n dΓ sur le bord du recouvrement — polygone triangle-triangle en 2D (φ = 3·min λ), **polyèdre tet-tet** en 3D (φ = 4·min λ, clip par les 4 demi-espaces + face de coupe reconstruite). Intégration **exacte** (subdivision aux plans de médiane : 6 en 2D, 12 en 3D), lumping nodal consistant, 3e loi de Newton **machine**, champ **conservatif** — collisions élastiques : ΔKE/KE₀ = 3,7e-12 (2D), 2,0e-8 (3D), transfert exact (selftest-potential2d/3d). Frottement tangentiel incrémental à ressort + cap de Coulomb (éq. 4-5, vectoriel en 3D), historique par paire. Détection O(N) type NBS (binning AABB), exclusion des paires liées par un joint **vivant**, compose avec `gcActivation`/`gcXwindow`. Relève de naissance par **aire/volume** de recouvrement (pen0_ du potentiel, τ = `gcBirthTau`) : une paire née en recouvrement (joint mort comprimé) ne matérialise pas son énergie potentielle — signe absorbant garanti (une rampe temporelle ferait l'inverse, mesuré +179 J/m). Gardes 3D : plancher de volume relatif (1e-12·min V) + contrôle de **fermeture** du polyèdre (les tets exactement tangents produisaient des slivers à faces non refermées — 5 joints cassés à charge nulle, attrapés par le contrôle zeroload). ⚠️ le gcWork peut porter un petit résidu positif (biais O(dt) du compteur + relève) — annoté dans le résumé, pas une pathologie en potentiel. L'outil analytique reste en pénalité (un outil MAILLÉ passe sous le potentiel via les groupes physiques + `toolShape = none`). SHPB : onde incidente identique au penalty à 3e-6 près ; zone broyée **conservative** → rebond plus élastique (percussion 2D : e 0,55 → 0,71, moins de casses) — écart de loi physique assumé. Coût par paire supérieur au nœud-face : combiner avec `gcActivation = adaptive`. **Perf (N1, 2026-08-14, tout bit-neutre)** : grille dense à seaux réutilisés + **ordre canonique des paires** (tri (eLo,eHi) — les sommes de forces ne dépendent plus de l'ordre de découverte ; réf shpb_mini_potential recalée 595 → 578, dernier changement d'ordre autorisé), **pré-filtre SAT complet 3D** (8 plans de faces + 36 axes d'arêtes croisées, cache du dernier axe séparateur par paire à la Baraff — jeu complet : s'il ne sépare pas, le recouvrement est réel), clip **sans copie** (ping-pong de pointeurs — l'ancien `P = Q` déplaçait ~9 Ko ×4 par clip). Compteurs `potential stats` au résumé (paires / joint-vivant / sep-hint / sep-face / sep-arête / clip-vide / clip-force, tGrid / tLoop) : sur percussion 3D T = 5e-5, 230 M de paires → 61 % réglées par le cache d'axe, 22 % de **clips VIDES** (~4 µs chacun — contacts rasants : recouvrement réel sous plancher). Mesures : 682 s (grille naïve) → 643 (seaux) → 477 (SAT faces) → 448 s (ping-pong) à T = 5e-5. Sur la **longue** T = 2e-4 (3 474 s vs 488 s pénalité, ~7×), les compteurs renversent le tableau : le poste dominant est l'**intégration exacte des 33 M de clips AVEC force** (paires de débris en contact permanent, ~70 µs pièce — la subdivision aux 12 plans — ≈ 2/3 du run), les clips vides ne pèsent que ~12 %, et le scan SAT complet n'y sépare plus rien (37 k sur 479 M — les axes d'arêtes sont dispensables en régime débris). Le critère N1 (≤ 1,3×) demande donc une refonte de l'INTÉGRATION en régime de contact persistant (quadrature moins chère = perte d'exactitude à arbitrer, warm-start du polyèdre, cadence des contacts stationnaires) — pistes au plan v2, décision à prendre |
+| **`contact`** (penalty) | penalty \| **potential** = contact général par **potentiel de Munjiza** (éq. 2-5 de Yan et al. 2023), **2D et 3D**. Paires d'**éléments** (et non nœud-face) : force normale distribuée F = p·∮(φ_A−φ_B)·n dΓ sur le bord du recouvrement — polygone triangle-triangle en 2D (φ = 3·min λ), **polyèdre tet-tet** en 3D (φ = 4·min λ, clip par les 4 demi-espaces + face de coupe reconstruite). Intégration **exacte** (subdivision aux plans de médiane : 6 en 2D, 12 en 3D), lumping nodal consistant, 3e loi de Newton **machine**, champ **conservatif** — collisions élastiques : ΔKE/KE₀ = 3,7e-12 (2D), 2,0e-8 (3D), transfert exact (selftest-potential2d/3d). Frottement tangentiel incrémental à ressort + cap de Coulomb (éq. 4-5, vectoriel en 3D), historique par paire. Détection O(N) type NBS (binning AABB), exclusion des paires liées par un joint **vivant**, compose avec `gcActivation`/`gcXwindow`. Relève de naissance par **aire/volume** de recouvrement (pen0_ du potentiel, τ = `gcBirthTau`) : elle n'oppose de force qu'à la NOUVELLE approche et laisse libre la sortie sous aRef (une rampe purement temporelle faisait pire, mesuré +179 J/m). ⚠️ (corrigé le 2026-10-07, ENQUETE_CONTACT.md §2) elle ne protège PAS une paire née en recouvrement S0 : à géométrie figée aRef → 0 et le facteur → 1 quelle que soit τ, si bien que l'énergie E(S0) est matérialisée sans travail (en un pas quand τ < dt) ; c'était la source de l'injection du tunnel `tip16_mu0`. Remède opt-in : `gcBirth = offset` et `contactCandidates = vertex`. Gardes 3D : plancher de volume relatif (1e-12·min V) + contrôle de **fermeture** du polyèdre (les tets exactement tangents produisaient des slivers à faces non refermées — 5 joints cassés à charge nulle, attrapés par le contrôle zeroload). ⚠️ (signe corrigé le 2026-10-07, ENQUETE_CONTACT.md §3.1) le compteur lit v avant le kick : son biais O(dt) est NÉGATIF (Σf·v_old·dt = ΔKE − Σ|f|²dt²/2m) ; un gcWork POSITIF n'est donc jamais ce biais mais une injection réelle, sous-estimée (naissances de paires en recouvrement, voir `gcBirth = offset` et `contactCandidates = vertex`). L'outil analytique reste en pénalité (un outil MAILLÉ passe sous le potentiel via les groupes physiques + `toolShape = none`). SHPB : onde incidente identique au penalty à 3e-6 près ; zone broyée **conservative** → rebond plus élastique (percussion 2D : e 0,55 → 0,71, moins de casses) — écart de loi physique assumé. Coût par paire supérieur au nœud-face : combiner avec `gcActivation = adaptive`. **Perf (N1, 2026-08-14, tout bit-neutre)** : grille dense à seaux réutilisés + **ordre canonique des paires** (tri (eLo,eHi) — les sommes de forces ne dépendent plus de l'ordre de découverte ; réf shpb_mini_potential recalée 595 → 578, dernier changement d'ordre autorisé), **pré-filtre SAT complet 3D** (8 plans de faces + 36 axes d'arêtes croisées, cache du dernier axe séparateur par paire à la Baraff — jeu complet : s'il ne sépare pas, le recouvrement est réel), clip **sans copie** (ping-pong de pointeurs — l'ancien `P = Q` déplaçait ~9 Ko ×4 par clip). Compteurs `potential stats` au résumé (paires / joint-vivant / sep-hint / sep-face / sep-arête / clip-vide / clip-force, tGrid / tLoop) : sur percussion 3D T = 5e-5, 230 M de paires → 61 % réglées par le cache d'axe, 22 % de **clips VIDES** (~4 µs chacun — contacts rasants : recouvrement réel sous plancher). Mesures : 682 s (grille naïve) → 643 (seaux) → 477 (SAT faces) → 448 s (ping-pong) à T = 5e-5. Sur la **longue** T = 2e-4 (3 474 s vs 488 s pénalité, ~7×), les compteurs renversent le tableau : le poste dominant est l'**intégration exacte des 33 M de clips AVEC force** (paires de débris en contact permanent, ~70 µs pièce — la subdivision aux 12 plans — ≈ 2/3 du run), les clips vides ne pèsent que ~12 %, et le scan SAT complet n'y sépare plus rien (37 k sur 479 M — les axes d'arêtes sont dispensables en régime débris). Le critère N1 (≤ 1,3×) demande donc une refonte de l'INTÉGRATION en régime de contact persistant (quadrature moins chère = perte d'exactitude à arbitrer, warm-start du polyèdre, cadence des contacts stationnaires) — pistes au plan v2, décision à prendre |
 | `potPenaltyFactor` (1.0) | pénalité normale du potentiel, en multiples de E·épaisseur (2D) / de E (3D) |
 | `potForce` (munjiza) | munjiza \| **`volume`** (2026-10-03, fdem3d, sous `contact = potential`) : force fondée sur le **volume de recouvrement**, Liu, Ma, Liu, Tang & Fish, CMAME 395 (2022) 114981 (cadre de Feng). Potentiel Φ = ½·kn·V²/V′, V′ = 2·V_A·V_B/(V_A+V_B) ; la force −(kn·V/V′)·Σ aᵢnᵢ est appliquée **face par face** du polyèdre de recouvrement (faces de A d'un côté, faces de coupe de B de l'autre), ce qui garde le champ conservatif (selftest-potvolume3d : ΔKE/KE₀ = 7e-15 frontal, 1,2e-11 oblique, contre 2e-8 en Munjiza). Même clip et mêmes gardes que le potentiel de Munjiza ; ce qui disparaît, c'est l'intégration exacte aux 12 plans, poste dominant en régime de débris. ⚠️ **Loi différente, pas une accélération à résultat égal** : à enfoncement égal la force croît comme l'**aire²** de contact (Munjiza : comme l'aire), si bien qu'aucun facteur ne reproduit Munjiza partout. Le facteur 8/3 l'égale exactement face contre face entre tétras égaux ; sur un recouvrement partiel le rapport volume/Munjiza ≈ fraction de face couverte (0,82 à 79 %, 0,49 à 47 %, 0,25 à 24 % ; tétra moitié plus petit : 0,77 — `tools/potvolume_partiel.cpp`). Banc Yang s = 2,5 (v3P, T = 1e-4, 4 fils) : temps 398 → 255 s (**−36 %**, contact 7,07 → 3,3 ms/pas) quel que soit le facteur ; pic F_z outil-roche 11 400 N (Munjiza) contre 6 850 (×8/3), 10 770 (×4), **10 650 (×5)** ; impulsion 0,264 contre 0,167 / 0,230 / **0,223 N·s** ; joints rompus 57 contre 56 / 36 / 53 (dispersion de la fragmentation non encore mesurée). Un calcul de thèse choisit l'une ou l'autre loi et s'y tient. | fdem3d |
 | `potVolumeFactor` (5) | kn de `potForce = volume` en multiples de la pénalité du potentiel (potPenaltyFactor·E, ou ·min E sous `potStiffnessByPhase = min`). 5 = valeur centrale de Liu et al. §2.6 (3 à 10) ; 8/3 = équivalence exacte face contre face seulement (trop mou en impact : −40 % de pic sur Yang) | fdem3d |
 | `potTangentFactor` (1.0) | raideur tangentielle de l'éq. 4-5, en multiples de E·épaisseur (2D) / de E·hmin (3D) |
+| `contactCandidates` (active) | active \| **`vertex`** (2026-10-07, fdem et fdem3d, exige `contact = potential`) — correctif 1 de `docs/rapport_guide/ENQUETE_CONTACT.md`. `active` (défaut, historique) : candidats du potentiel = éléments portant une arête du jeu actif. `vertex` : + les voisins **par sommet** des éléments actifs + **tous les éléments autour d'un sommet portant un joint DÉCLENCHÉ** (sommets d'origine `vOf_`, topologie initiale : l'anneau de Guo 2014, éqs. 2.39-2.46). Déclencheur (revue C6, 2026-10-07) : en insertion **adaptative**, un joint INSÉRÉ (non lié, vivant ou mort) ; en insertion **intrinsèque**, où tous les joints sont non liés dès t = 0, un joint **ENDOMMAGÉ (D > 0) ou mort** — Guo active l'anneau à la rupture du joint, Fukuda et al. 2021 (semi-ACAA) au début de l'adoucissement ; un joint élastique intact ne glisse pas. Seules les paires reliées par un joint VIVANT restent exclues. Cause visée : deux triangles qui ne partagent qu'un sommet n'ont aucun joint entre eux ; hors du jeu actif, rien ne s'oppose à leur recouvrement pendant que les joints de l'éventail glissent ou s'écrasent, et la paire naît des centaines de pas plus tard avec un recouvrement profond (100 % de l'énergie injectée mesurée sur `tip16_mu0`). Le contact est évalué même si le jeu actif est vide. Compteur au bilan : « contact, candidats ». Contrôles : `selftest-potcontact2d` P0 (sommet commun sans recouvrement → aire exactement nulle) et P5 (éventail, par le solveur : la paire à sommet commun naît à 1,0 E_plein sous `active`, à 0,0055 E_plein sous `vertex` avec un joint de l'éventail mort OU seulement endommagé, et jamais sous `vertex` en intrinsèque tant qu'aucun joint n'est endommagé) ; repères `contactfix_perc_*_2d` (énergie de naissance 2,9e-3 → 8,9e-4 J/m sur une petite percussion). Mesuré sur `tip16_mu0` (T = 0,12 s, p = 1e10) : gcWork +1,31e6 → −8,8e4 J/m, énergie de naissance 1,45e6 → 16 J/m ; avec `gcBirth = offset` et `potForceExact` : −8,3e4 J/m, 15 J/m neutralisés (0,005 % du cohésif) ; gcWork ≤ 0 aussi à p = 1e9 et 1e11 (CHANGELOG). Coût ×1,7 sur le tunnel (adaptatif, inchangé par C6). Insertion intrinsèque : avant C6 tous les éléments devenaient candidats (×2 à ×4 en 2D, ×8,5 sur la petite percussion `contactfix_perc_vertex_2d` à T = 30 µs, ×13 sur la charge nulle 3D) ; après C6, ×2,3 sur la même percussion (28,6 → 7,7 s, défaut 3,4 s) ; charge nulle 3D 607 → 370 s (défaut 46 s : il reste les voisins par sommet des éléments ACTIFS, toute la peau du bloc, que C6 ne touche pas). |
+| `potForceExact` (false) | true — correctif 3/§3.2 de l'enquête (fdem 2D, exige `contact = potential`). La répartition nodale de Munjiza est exacte en résultante et moment mais, pour des triangles DÉFORMABLES, vaut f_a = −∂E/∂x_a + p·I_A·∇λ_a (I_A = ∫_S φ_A dA) : un terme auto-équilibré sans potentiel. `true` le retranche (`pot::exactGradientForces`, I_A et I_B intégrés exactement par découpe de S selon les médianes des deux triangles) : forces = −∇E exact, E = p∫_S(φ_A+φ_B)dA. Mesuré (`selftest-potcontact2d`) : écart à −dE/dq 0,157 (Munjiza) → 4,9e-10 ; travail sur boucle fermée 2,9e-4 → 5e-17. Coût : 9 clips de plus par paire en contact. |
+
 | `insertionPenaltyFactor` (4) | pénalité des joints ACTIVÉS en mode adaptatif (décharge/contact) |
 | `jointWeibullM` (0 = off) | m > 1 : ft et cohésion de chaque joint × facteur Weibull(m) de moyenne 1 (Gf non tiré) |
 | `strengthCorrLength` (0) | 0 = tirages indépendants ; > 0 = champ gaussien corrélé (copule) de cette longueur [m] |
@@ -762,7 +765,7 @@ ligne cités. Toutes sont opt-in, tous les défauts restent bit-identiques.
 | `jointDeltaC` | `exact` \| `guo` \| **`solidity`** | `exact` |
 | `jointFailRule` | `any` \| **`majority`** | `any` |
 | `strainRateDIFArm` | `insertion` \| `envelope` \| **`continuous`** | `insertion` |
-| `gcBirth` | `ramp` \| **`penalty`** \| `relay` (12/09 : `penalty` pour les paires nées d'un joint MORT, `ramp` pour les autres — `penalty` injectait ½kδ₀² au premier contact piston/bit, 1 J, abort 2,9 µs) | `ramp` |
+| `gcBirth` | `ramp` \| **`penalty`** \| `relay` (12/09 : `penalty` pour les paires nées d'un joint MORT, `ramp` pour les autres — `penalty` injectait ½kδ₀² au premier contact piston/bit, 1 J, abort 2,9 µs) \| **`offset`** (2026-10-07, fdem 2D seulement : voir ci-dessous) | `ramp` |
 | `gcBirthPenMin` / `gcBirthPenMax` | bornes du facteur | 0.01 / 3.0 |
 | `strainRateFilter` | `exponential` \| **`none`** | `exponential` |
 
@@ -884,6 +887,53 @@ défaut, la clé serait inerte et le solveur refuse). Exclusive de `gcBirthTau`.
 > `gcBirthTau` est **inerte** sous `gcBirth = penalty` : `relax_` n'est lu que dans
 > la branche `else` de la naissance, et le solveur refuse même de poser les deux
 > clés ensemble. Un balayage de τ ne renseigne donc **que** le mode `ramp`.
+
+**`gcBirth = offset`** (2026-10-07, fdem 2D, exige `contact = potential`,
+exclusive de `gcBirthTau`) — correctif 2 de `docs/rapport_guide/ENQUETE_CONTACT.md`.
+Ni la rampe ni la pénalité ne sont neutres pour une paire qui naît EN
+recouvrement S0 : faire passer le facteur de 0 à 1 à géométrie fixée crée
+∫e·dsc = E(S0) = p∫_S0(φ_A+φ_B)dA sans travail (la rampe ne fait qu'étaler ;
+avec `gcBirthTau` = 1 µs < dt = 5,8 µs, c'est une marche : relax = 0,003).
+`offset` transpose au potentiel l'offset avec cliquet de LS-DYNA (`IGNORE = 1` :
+F = k(d − d0), d0 mis à jour quand la pénétration diminue). À la naissance on
+fige e0 = E(S0) ; la paire porte ensuite le potentiel décalé, fonction de E
+seule (`pot::birthOffsetScale`) :
+
+  U(E) = (E − e0)²/E si E > e0, 0 sinon ; force = U′(E)·(−∇E), U′ = 1 − (e0/E)² ;
+  cliquet e0 ← min(e0, E), qui n'agit que sur la branche U = 0.
+
+Propriétés : U(S0) = 0 (aucune énergie créée à la naissance), force continue
+(U′(e0) = 0), force pleine quand E ≫ e0. ⚠️ (revue C2) La naissance a lieu à la
+PREMIÈRE évaluation où le recouvrement est non vide : e0 = E(S1) > 0 pour TOUTE
+paire, y compris une paire née par approche. Aucune paire n'est donc en Munjiza
+pur : une paire en contact persistant garde le facteur 1 − (e0/E)² < 1 et une
+pénétration décalée d'environ celle du premier pas (v_rel·dt) jusqu'à ce qu'elle
+se sépare — comportement voisin de la rampe, qui part aussi de zéro.
+**Renaissance** (revue C1) : une paire non évaluée au pas précédent (recouvrement
+disparu en un pas, sortie des candidats ou de la boîte, élément inversé) renaît à
+son retour, e0 = E courant. Sans cela elle gardait un e0 périmé : un retour SOUS
+l'ancien e0 était rattrapé par le cliquet, mais un retour en un pas AU-DESSUS
+reprenait d'emblée la force 1 − (e0/E)² et matérialisait U = (E − e0)²/E sans
+travail. Ligne de bilan « contact, renaissances ». Le champ est un gradient exact
+si les forces nodales le sont (`potForceExact = true`) : `offset` sans
+`potForceExact` est accepté mais AVERTI (revue M3 ; dérive 0,12 contre 2e-6 sur
+P3). Variante écartée : le décalage de
+NIVEAU c0 de la note de littérature (E_eff = p∫(φ_A+φ_B−c0)₊), qui demande un
+clip de plus et une force nodale propre ; la forme en E seule réutilise le
+gradient exact déjà disponible. Mesuré (`selftest-potcontact2d` P3, forces de
+contact calculées PAR LE SOLVEUR — `generalContact()` sur un maillage 8 × 8 —
+deux blocs CST sans cohésion nés en recouvrement à sommet commun, animés de
+vitesses qui les enfoncent l'un dans l'autre ; la trace montre que le
+recouvrement initial se détend d'abord, E : 0,544 → 0 et le cliquet joue, puis
+que le contact se réengage, Uc max ≈ 0,5 H0) : rampe τ = dt/5,8 → énergie créée
+1,000 E(S0) ; offset + forces exactes → |H − H0|/H0 = 2,2e-6. P4 contrôle force
+par force la naissance (force nulle), le cliquet et la renaissance. Le bilan imprime dans tous les modes la ligne « contact, naissances :
+N paires, énergie de recouvrement à la naissance Σ E(S0) » (compteur pur), et le
+solveur AVERTIT (sans rien changer) quand `gcBirthTau < dt` sous `ramp` — cas
+le plus brutal seulement : au-delà, la rampe étale la même énergie sans
+l'annuler (revue M1).
+Non porté en 3D (`Fdem3dSolver` : il faut I_A = ∫_V φ_A dV par découpe du
+polyèdre de recouvrement selon les 12 plans de médiane ; exception documentée).
 
 ⚠️ **Le relevé de naissance n'était pas qu'une douceur.** L'en-tête de
 `PotHist::aRef` documente sa vraie raison d'être : il empêche une **injection
@@ -1407,6 +1457,16 @@ rapide). Un run qui diverge laisse son autopsie au lieu de mégajoules de
 débris. Typique : `budgetAbortPct = 5` en production, off pour les études
 de diagnostic (E0) où l'on VEUT voir la divergence se développer.
 
+> ⚠️ **Rouleaux + moniteur (2026-10-07, revue C3).** Le correctif de bilan
+> des rouleaux (`lateralRollers = true` : le terme F_x²dt²/2M et l'amortisseur
+> x ne sont plus comptés sur le ddl bloqué) change `biasW_` et `lysWork_`, donc
+> le résidu que ce moniteur juge. La trajectoire d'un run à rouleaux est
+> bit-identique **tant que `budgetAbortPct = 0`** ; avec le moniteur armé,
+> l'instant d'arrêt change (l'ancien résidu parasite valait −136 005 J/m sur le
+> smoke tunnel T = 0,03 s : un arrêt fondé dessus était faux) et la trajectoire
+> écrite avec lui. Aucun deck du dépôt ne combine les deux (tunnels à
+> `budgetAbortPct = 0`, decks b7/s25 en fdem3d, sans ROLLERX).
+
 > ⚠️ **À NE PAS ARMER SANS `energyBodyForces = on`** (mesuré le 2026-08-30).
 > Le résidu que ce moniteur juge **ne contenait pas** le travail des forces
 > volumiques : ni la pesanteur (aucun compteur n'existait) ni le tri des
@@ -1463,7 +1523,7 @@ T au-delà de la rupture (rebroyage sans fin — chantier ouvert).
 | `absorbLayer` (2.2) | épaisseur de la couche absorbante DEM (×r) | dem* |
 | `fixSides` (false) | flancs encastrés | fem |
 | `bottomWall` (true hors tension) / `sideWalls` (false) | murs rigides DEM | dem* |
-| `lateralRollers` (false) | rouleaux u_x = 0 sur les flancs (bande confinée de Yan §3.1) | fdem |
+| `lateralRollers` (false) | rouleaux u_x = 0 sur les flancs (bande confinée de Yan §3.1). Bilan B4 corrigé le 2026-10-07 (le ddl bloqué n'entre plus dans la correction leapfrog ni dans l'amortisseur x) : trajectoire inchangée, mais l'instant d'arrêt de `budgetAbortPct > 0` change (voir le moniteur d'énergie) | fdem |
 | `barV0` (1.0) / `barGaugeFrac` (0.8) | vérification onde de barre | fem, bar_wave |
 | `damage` (true hors bar_wave) | endommagement on/off | fem |
 | `erodeD` (0.98) / `strainCap` (0.15) | seuils d'érosion | fem |
@@ -2759,6 +2819,12 @@ cible ft exacte). **UCS par platines** : `scenario = tension`, `loading = platen
       Limite connue : les énergies internes (joints, intégration) ne sont pas dans le balayage — un run de
       traction 2D à `dtFactor = 50` finit à code 0 avec `joints : nan J/m` alors que u, v, f sont finis
       (voir `bitid_w20/selftest_gardes/SELFTEST_gardes.md`).
+    - **Booléens (2026-10-07, revue M5)** : `Config::getb` lit désormais la valeur sans tenir compte de la
+      casse (`True`, `ON`, `Yes` valaient false EN SILENCE). Aucun deck existant n'en est changé : balayage des
+      3 918 `.cfg` de la base et des générateurs de decks, valeurs toutes en minuscules. Une valeur hors
+      {1, true, yes, on, 0, false, no, off} reste lue false, comme avant, mais est signalée une fois par clé sur
+      stderr (`[Config] AVERTISSEMENT : cle booleenne 'X' = 'ture' non reconnue`). Repères
+      `getb_casse_potexact`, `getb_valeur_inconnue`.
     - **C6 clés par mode** : `hydro` et toute clé `hydro*` refusées hors `mode = fdem` (à côté de `thermal` et
       `bedding*` dans `main.cpp`) ; et **registre des clés par mode** `tools/keys_by_mode.json` → table
       compilée `include/rockim/KeysByMode.hpp`, tous deux GÉNÉRÉS par `tools/gen_keys_by_mode.py` (à relancer

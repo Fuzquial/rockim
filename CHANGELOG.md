@@ -5,6 +5,79 @@ plan de robustesse du 2026-09-05). L'arbre `g0` est sous git depuis le tag `g0-0
 reçoit les lignes exigées par les règles déjà en vigueur — dont **toute ancre de bit-identité changée**
 (`tools/bitid_refs.json`, règle de `tools/BITID.md`).
 
+## [Non publié] — arbre g1, 2026-10-07 : correction du contact par potentiel (ENQUETE_CONTACT.md)
+
+### Ajouté (opt-in, défaut bit-identique)
+
+- **`contactCandidates = vertex`** (défaut `active`, fdem et fdem3d, sous `contact = potential`) : le jeu
+  de candidats du potentiel reçoit les voisins PAR SOMMET des éléments actifs et tous les éléments autour
+  d'un sommet portant un joint déclenché (anneau de Guo 2014, éqs. 2.39-2.46) : joint inséré en insertion
+  adaptative ; joint endommagé (D > 0) ou mort en insertion intrinsèque (revue C6, comme Guo à la rupture
+  et le semi-ACAA de Fukuda et al. 2021 au début de l'adoucissement). Les paires à sommet commun ne
+  naissent plus en recouvrement profond. Compteur « contact, candidats » au bilan.
+- **`gcBirth = offset`** (fdem 2D) : la paire née en recouvrement fige e0 = E(S0) et porte le potentiel
+  décalé U = (E − e0)²/E, cliquet e0 ← min(e0, E) ; aucune énergie créée à la naissance, force continue
+  (offset `IGNORE = 1` de LS-DYNA transposé au potentiel). `pot::birthOffsetScale`. Une paire non évaluée
+  au pas précédent RENAÎT à son retour (e0 = E courant ; ligne « contact, renaissances »). Toute paire naît
+  avec e0 = E(S1) > 0, y compris par approche : aucune n'est en Munjiza pur (revue C2 : la mention « e0 = 0
+  redonne Munjiza » était fausse). Avertissement si `potForceExact` n'est pas posé.
+- **`potForceExact = true`** (défaut false, fdem 2D) : forces nodales = −∇E exact pour des triangles
+  déformables (retrait du terme p·I_A·∇λ_a de la répartition de Munjiza). `pot::overlapIntegrals`,
+  `pot::exactGradientForces`, `pot::pairEnergy`.
+- `rockim selftest-potcontact2d` et le repère `selftest_potcontact2d` (tier fast ; P3 à P5 passent par
+  `FdemSolver::generalContact()` via la sonde `PotContactProbe`) ; repères fast `contactfix_perc_{ramp,
+  vertex,three}_2d` (bout en bout : énergie de naissance, gcWork ≤ 0, résidu B4 à rouleaux), refus des
+  valeurs invalides (`refuse_*`), `warn_offset_sans_exact`, `getb_*` ; repères `zeroload_contactfix_2d` et
+  `contactfix_tension_2d` (tier full). `verify_suite.py` : contrôles `max:`/`min:` (bornes),
+  `expect_error` (deck refusé + message), `expect_out` (ligne exigée).
+- Bilan : ligne « contact, naissances : N paires, énergie de recouvrement à la naissance » (compteur pur,
+  tous modes ; sous la rampe, énergie matérialisable EN TOTALITÉ à géométrie figée quelle que soit τ, et
+  non « à hauteur de 1 − relax »). Avertissement (sans effet) quand `gcBirthTau < dt` sous `gcBirth = ramp`.
+- `Config::getb` insensible à la casse (`True` valait false en silence) ; valeur non reconnue signalée sur
+  stderr, toujours lue false. Aucun deck existant changé (3 918 `.cfg` balayés, minuscules seulement).
+- Gardes de triangle inversé ou dégénéré dans `pot::AffBary`, `overlapIntegrals`, `exactGradientForces`
+  (fonctions publiques : plus de division sans garde).
+
+### Corrigé (bilan ; trajectoires bit-identiques SAUF sous `budgetAbortPct > 0` + `lateralRollers`)
+
+- Correction leapfrog des rouleaux (`integrate()`, chemins groupé et par nœud) : le terme F_x²dt²/2M (et
+  l'amortisseur x) n'est plus compté sur le ddl bloqué d'un nœud ROLLERX. Résidu B4 du smoke tunnel
+  T = 0,03 s : −136 005 J/m → −3,3e-11 J/m ; `tip16_mu0` T = 0,12 s : −527 664 → −1,4e-7 J/m ; petite
+  percussion à rouleaux sans amortissement (`contactfix_perc_ramp_2d`) : −1,73 → −1,2e-13 J/m. Le 3D
+  masquait déjà les axes imposés. ⚠️ (revue C3) `biasW_` et `lysWork_` entrent dans le résidu jugé par
+  `checkEnergyAbort()` : sur un deck qui combine `lateralRollers = true` et `budgetAbortPct > 0`, l'instant
+  d'arrêt change, donc la trajectoire écrite aussi (l'ancien arrêt reposait sur un résidu faux). Aucun deck
+  du dépôt ne combine les deux (tunnels à `budgetAbortPct = 0`, b7/s25 en fdem3d).
+- Signe du biais du compteur de contact (message du résumé et commentaire du selftest-potential2d) : il
+  est NÉGATIF ; un gcWork positif est une injection réelle.
+
+### Mesuré (tunnel `tip16_mu0`, maillage `tunnel_hs_red.msh`, T = 0,12 s, 2 fils)
+
+| p (Pa) | clés | gcWork (J/m) | naissances : paires, Σ E(S0) (J/m) | cohésif (J/m) |
+|---|---|---|---|---|
+| 1e10 | défaut | +1,309e6 | 3 689 ; 1,452e6 (créés) | 392 838 |
+| 1e10 | `potForceExact` | +1,534e6 | 3 428 ; 1,668e6 (créés) | 405 605 |
+| 1e10 | `gcBirth = offset` | −2,79e4 | 2 720 ; 2,345e6 (neutralisés) | 374 680 |
+| 1e10 | `gcBirth = offset` + `potForceExact` | −3,14e4 | 2 859 ; 1,396e6 (neutralisés) | 360 254 |
+| 1e10 | `contactCandidates = vertex` | −8,81e4 | 15 364 ; 16 | 317 944 |
+| 1e10 | les trois | −8,27e4 | 15 560 ; 15 (neutralisés) | 316 551 |
+| 1e9 | défaut / les trois | +1,322e5 / −6,44e4 | 1,79e5 / 1,3 | 353 241 / 345 282 |
+| 1e11 | défaut / les trois | +7,131e6 / −8,03e4 | 8,17e6 / 117 | 471 658 / 240 202 |
+
+Critères de l'enquête (§4-1) avec les trois clés : gcWork ≤ 0 pour p = 1e9, 1e10, 1e11 (tenu) ; énergie de
+naissance < 1 % du cohésif (tenu : 0,0004 %, 0,005 %, 0,05 %). `vertex` seul suffit à tarir la source ;
+`offset` seul la neutralise sans la tarir. Résidu B4 < 4e-7 J/m sur tous les runs. Coût mesuré à machine
+calme (séquentiel, 2 fils) : 80 s (défaut), 137 s (`vertex`), 177 s (les trois). Ces runs sont antérieurs
+aux corrections de revue (C1 renaissance, C6 déclencheur intrinsèque) : `tip16_mu0` est en insertion
+adaptative, que C6 ne touche pas ; C1 ne touche que `offset`.
+
+### Registre des clés
+
+- `tools/keys_by_mode.json` et `include/rockim/KeysByMode.hpp` régénérés par `tools/gen_keys_by_mode.py`
+  (séparateurs Windows remis) : `contactCandidates` commune à fdem et fdem3d (revue C4 : elle était
+  déclarée propre à fdem, ce qui aurait fait refuser par `--scan-decks` tout deck fdem3d la portant),
+  `potForceExact` propre à fdem. 450 clés, 285 communes, 165 propres à un mode.
+
 ## [Non publié] — arbre g1, 2026-10-03 : contact par volume de recouvrement `potForce = volume` (Liu et al. 2022)
 
 ### Ajouté (opt-in, défaut bit-identique)

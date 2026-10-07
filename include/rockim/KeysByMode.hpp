@@ -1,5 +1,5 @@
 #pragma once
-// KeysByMode.hpp — GENERE par tools/gen_keys_by_mode.py le 2026-10-03 18:40:54 : NE PAS EDITER.
+// KeysByMode.hpp — GENERE par tools/gen_keys_by_mode.py le 2026-10-07 06:40:44 : NE PAS EDITER.
 // Registre lisible : tools/keys_by_mode.json (methode dans la docstring du generateur).
 // Table des cles PROPRES A UN MODE (lues par un seul solveur) ; toute autre cle est commune.
 #include <stdexcept>
@@ -72,6 +72,7 @@ inline const Entry kTable[] = {
     {"platenHalfWidth", "fdem"},
     {"platenPenaltyFactor", "fdem"},
     {"platenTributary", "fdem"},
+    {"potForceExact", "fdem"},
     {"potXi", "fdem"},
     {"preBrokenAngleDeg", "fdem"},
     {"preBrokenJoints", "fdem"},
@@ -273,6 +274,7 @@ inline const char* const kKnown[] = {
     "confiningPressure",
     "confiningRamp",
     "contact",
+    "contactCandidates",
     "contactDamageCoupling",
     "contactForcePairs",
     "contactMu",
@@ -508,6 +510,7 @@ inline const char* const kKnown[] = {
     "platenPenaltyFactor",
     "platenTributary",
     "potForce",
+    "potForceExact",
     "potPenaltyFactor",
     "potStiffnessByPhase",
     "potTangentFactor",
@@ -765,6 +768,7 @@ inline const Readers kReaders[] = {
     {"confiningPressure", "fdem fdem3d fem3d"},
     {"confiningRamp", "fdem fdem3d fem3d"},
     {"contact", "fdem fdem3d"},
+    {"contactCandidates", "fdem fdem3d"},
     {"contactDamageCoupling", "fdem fdem3d"},
     {"contactForcePairs", "fdem3d"},
     {"contactMu", "dem dem3d fdem fdem3d fem fem3d"},
@@ -1000,6 +1004,7 @@ inline const Readers kReaders[] = {
     {"platenPenaltyFactor", "fdem"},
     {"platenTributary", "fdem"},
     {"potForce", "fdem3d"},
+    {"potForceExact", "fdem"},
     {"potPenaltyFactor", "fdem fdem3d"},
     {"potStiffnessByPhase", "fdem3d"},
     {"potTangentFactor", "fdem fdem3d"},

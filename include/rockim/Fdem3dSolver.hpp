@@ -1362,6 +1362,10 @@ private:
     // [0,01 ; 3], de sorte que la force est CONTINUE. Le facteur persiste
     // ensuite pour la paire, et la raideur tangentielle le suit.
     bool birthPenalty_ = false;
+    // contactCandidates = vertex (2026-10-07, miroir du 2D, opt-in) ; compteur
+    // pur des candidats ajoutes (elements-pas)
+    bool candVertex_ = false;
+    long nCandExtra_ = 0;
     // gcBirth = relay (conseil du 12/09, D4/N7) : continuite de FORCE pour les
     // paires nees d un joint MORT (le calage de penalite de Solidity, comme
     // `penalty`), rampe de naissance (vRef, gcBirthTau) pour les paires SANS

@@ -171,6 +171,12 @@ public:
     // seen (brazilianStopAfterPeak). Off by default: the run length stays T.
     bool finished() const override;
     void finalize() override;
+    // selftest-potcontact2d (revue C5, 2026-10-07) : sonde d acces aux
+    // membres prives, definie dans FdemSolver.cpp, pour exercer
+    // potentialContact() DU SOLVEUR (candidats, potFt_, naissance, ordre
+    // forces exactes puis facteur) sur un petit maillage reel. Aucun effet
+    // sur un run.
+    friend struct PotContactProbe;
 
 private:
     // ROLLERX: lateral roller — the x displacement is held at zero, the y
@@ -974,6 +980,29 @@ private:
     double birthPenMin_ = 0.01, birthPenMax_ = 3.0;   // leurs deux bornes
     long nBirthScaled_ = 0;                           // mesure : paires calees
     double birthScaleSum_ = 0.0;                      // ... et facteur moyen
+    // ---- correction du contact par potentiel (2026-10-07, ENQUETE_CONTACT)
+    // gcBirth = offset : la paire nee EN recouvrement fige e0 = E(S0) et ne
+    // porte que le potentiel DECALE U = (E - e0)^2 / E (pot::birthOffsetScale)
+    // — aucune energie creee a la naissance. Opt-in, defaut ramp.
+    bool birthOffset_ = false;
+    // potForceExact = true : forces nodales = -grad E exact (retranche le
+    // terme non gradient p I grad lambda de la repartition de Munjiza,
+    // pot::exactGradientForces). Opt-in, defaut false.
+    bool potExact_ = false;
+    // contactCandidates = vertex : le jeu de candidats du potentiel inclut
+    // les voisins PAR SOMMET des elements actifs et tous les elements autour
+    // d un sommet portant un joint INSERE (non lie). Opt-in, defaut active.
+    bool candVertex_ = false;
+    // compteurs purs (lecture seule) : paires nees et energie de
+    // recouvrement E(S0) a leur naissance (celle que la rampe / la penalite
+    // materialisent sans travail ; celle que l offset neutralise)
+    long nPotBirth_ = 0;
+    double potBirthE_ = 0.0;
+    // gcBirth = offset : renaissances (paire retrouvee apres au moins un pas
+    // sans evaluation) et energie E neutralisee a ces renaissances
+    long nPotRebirth_ = 0;
+    double potRebirthE_ = 0.0;
+    long nCandExtra_ = 0;                             // candidats ajoutes (somme)
     // ---- strainRateFilter : le taux qui alimente le DIF ------------------
     // `exponential` (defaut) : passe-bas de constante strainRateTau.
     // `none` : le taux BRUT, ce que fait leur code (Y3Dfd.c l. 1448).
@@ -1276,6 +1305,15 @@ private:
         // pour que la force du contact naissant egale celle du joint mourant.
         // C est leur d1pepe[icoup]. < 0 = pas encore ne. Inerte sous `ramp`.
         double penScale = -1.0;
+        // ---- gcBirth = offset (2026-10-07) : energie de recouvrement figee
+        // a la naissance, cliquet decroissant (pot::birthOffsetScale).
+        double e0 = 0.0;
+        // dernier pas ou la paire a ete EVALUEE en recouvrement (pairForce
+        // vrai), sous offset seulement. Revue C1 : une paire absente au pas
+        // precedent (recouvrement disparu en un pas, sortie des candidats,
+        // element inverse) RENAIT au retour — e0 = E courant — au lieu de
+        // garder un e0 perime qui laisserait penetrer librement.
+        long lastEval = -1000;
     };
     std::unordered_map<uint64_t, PotHist> potFt_;
     std::unordered_map<uint64_t, int> jointOfPair_;   // (eMin,eMax) -> joint

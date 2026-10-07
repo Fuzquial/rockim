@@ -45,6 +45,15 @@ RX = {
     "budget":    r"residu\s+: (-?[\d.eE+-]+) J",
     "pot_ke":    r"pot_ke_rel = ([\d.eE+-]+)",
     "pot_mom":   r"pot_mom_rel = ([\d.eE+-]+)",
+    # --- correction du contact par potentiel (2026-10-07, ENQUETE_CONTACT.md)
+    "potx_ramp": r"potx_ramp_created_rel = ([\d.eE+-]+)",
+    "potx_off":  r"potx_offset_drift_rel = ([\d.eE+-]+)",
+    "birthe":    r"energie de recouvrement a la naissance (-?[\d.eE+-]+) J/m",
+    # revue C5 (2026-10-07) : P4/P5 du selftest, par le solveur
+    "potx_reb":  r"potx_rebirth_force_rel = ([\d.eE+-]+)",
+    "potx_fanA": r"potx_fan_active = (-?[\d.eE+-]+)",
+    "potx_fanV": r"potx_fan_vertex = (-?[\d.eE+-]+)",
+    "offwarn":   r"(AVERTISSEMENT gcBirth = offset sans potForceExact)",
     "pot3_ke":   r"pot3_ke_rel = ([\d.eE+-]+)",
     "pot3_mom":  r"pot3_mom_rel = ([\d.eE+-]+)",
     "szfac":     r"facteur mean/min/max = ([\d.eE+-]+)",
@@ -157,6 +166,28 @@ TESTS = [
     dict(name="selftest_potential2d", tier="fast", selftest="selftest-potential2d",
          checks=[("pot_ke", 0.0, 1e-5, True), ("pot_mom", 0.0, 1e-12, True),
                  ("pass_tag", None, 0, True)]),
+    # Correction du contact (2026-10-07, ENQUETE_CONTACT.md) : triangles
+    # DEFORMABLES, criteres poses AVANT calcul et codes dans le selftest
+    # (P0 sommet commun sans recouvrement -> aire nulle ; P1 forces exactes a
+    # 1e-6 de -dE/dq, Munjiza > 1e-2 ; P2 boucle fermee exacte < 1e-12,
+    # Munjiza > 1e-5 ; P3 naissance a sommet commun : rampe tau = dt/5,8 cree
+    # > 0,5 E(S0) — mesure 1,000 —, offset + exact conserve H a < 1e-3 —
+    # mesure 2,2e-6). Les deux lectures chiffrees sont verrouillees ici.
+    # Revue C5 (2026-10-07) : P3 a P5 passent desormais par
+    # FdemSolver::generalContact() -> potentialContact() (sonde friend
+    # PotContactProbe, maillage 8 x 8) : P3 reproduit 1,00013 et 2,2e-6 par
+    # le solveur ; P4 compare force par force (renaissance offset, C1) ; P5
+    # eventail : paire a sommet commun nee profonde sous active (1,0 E_plein),
+    # au premier recouvrement sous vertex (0,0055). Verifie par mutation :
+    # renaissance retiree, e0 laisse a 0, appel des forces exactes retire ->
+    # [FAIL] chaque fois.
+    dict(name="selftest_potcontact2d", tier="fast", selftest="selftest-potcontact2d",
+         checks=[("pass_tag", None, 0, True),
+                 ("potx_ramp", 1.00013, 1e-3, True),
+                 ("potx_off", 0.0, 1e-3, True),
+                 ("potx_reb", 0.0, 0.0, True),
+                 ("min:potx_fanA", 0.5, 0, True),
+                 ("max:potx_fanV", 0.05, 0, True)]),
     # ... et son miroir 3D (tet-tet, A3 phase 2) : pointe-contre-face puis
     # oblique, dKE 2e-8, quantite de mouvement machine
     # ---- T0/T1 (2026-09-02) : CONTACT OUTIL, la pompe mesuree le 2026-08-18.
@@ -740,6 +771,119 @@ TESTS = [
                  ("birthn", 260, 0, True),
                  ("broken", 4, 0, True),
                  ("budget", -0.994861, 1e-3, True)]),
+    # ---- correction du contact (2026-10-07) : les trois cles ensemble -----
+    # contactCandidates = vertex + gcBirth = offset + potForceExact = true.
+    # Tier full. Insertion intrinseque (ce deck) : depuis la revue C6, `vertex`
+    # n y declenche l anneau que sur un joint ENDOMMAGE (D > 0) ou mort ; avant,
+    # tous les joints etant non lies, tout le maillage etait candidat (x3,7,
+    # 200 a 330 s). Charge nulle : 0 casse ; travail de contact -1,5e-23 J/m
+    # (apres revue C6 : +8,4e-25 J/m, 67 s) (pas exactement 0 : les copies d un meme sommet bougent sous la
+    # penalite des joints et se recouvrent reellement — physique, pas
+    # arrondi ; P0 du selftest : aire exactement nulle a sommet commun sans
+    # recouvrement).
+    dict(name="zeroload_contactfix_2d", tier="full", cfg="verify_fdem_tension.cfg",
+         over=["verifyFt = false", "pullV = 1e-12", "contact = potential",
+               "jointDeath = damage", "contactCandidates = vertex",
+               "gcBirth = offset", "potForceExact = true"],
+         checks=[("broken", 0, 0, True), ("dampwork", 0.0, 1e-12, True),
+                 ("gcwork", 0.0, 1e-12, True)]),
+    # temoin : gcbirth_ramp_2d (meme deck, -1,24549 %). Mesure 2026-10-07 :
+    # -1,55359 %, 24 morts, residu B4 9e-14 J/m (binaire final, integrales
+    # exactes en repere local). Recale apres revue (C6 : anneau declenche par
+    # l endommagement en intrinseque, et non plus par tout joint ; C1 :
+    # renaissance offset) : -2,07991 %, 24 morts, residu -1,3e-13 J/m, 58 s au
+    # lieu de 200 a 330 s. Cles opt-in : le defaut n est pas touche.
+    dict(name="contactfix_tension_2d", tier="full", cfg="verify_fdem_tension.cfg",
+         over=["contact = potential", "jointDeath = damage",
+               "contactCandidates = vertex", "gcBirth = offset",
+               "potForceExact = true"],
+         checks=[("err_pct", -2.07991, 0.01, True),
+                 ("dead", 24, 0, True),
+                 ("budget", 0.0, 1e-9, True)]),
+    # ---- revue C5 (2026-10-07) : bout en bout, tier fast -------------------
+    # Petite percussion (30 x 25, T = 60 us, jeu nul) ou des joints meurent
+    # EN COMPRESSION sous l indenteur (4 ou 5 morts, 80-100 % comprimes),
+    # SANS amortissement ni bord absorbant (le bilan B4 y est exact) et AVEC
+    # rouleaux lateraux. Trois proprietes, pas des valeurs verrouillees :
+    #  * birthe (energie de recouvrement a la naissance) : grande sous la
+    #    rampe (mesure 2,91e-3 J/m), petite sous vertex (8,9e-4) — les paires
+    #    a sommet commun naissent au premier recouvrement ;
+    #  * gcwork <= 0 sous les trois cles (mesures -1,19 / -1,96 / -1,94 J/m) ;
+    #  * residu B4 a rouleaux ~ 0 : -1,2e-13 a -1,6e-12 J/m, contre
+    #    -1,73 J/m avant le correctif de bilan des rouleaux (binaire HEAD,
+    #    meme deck, trajectoire identique).
+    # Temps : 5 s, 18 s, 32 s (OMP = 1).
+    dict(name="contactfix_perc_ramp_2d", tier="fast", cfg="fdem_percussion.cfg",
+         over=["W = 0.06", "H = 0.05", "nx = 30", "ny = 25", "T = 6.0e-5",
+               "frames = 1", "toolGap = 0", "contact = potential",
+               "jointDeath = damage", "absorbing = none", "dampingLocal = 0",
+               "lateralRollers = true"],
+         checks=[("min:birthe", 2.0e-3, 0, True), ("max:gcwork", 0.0, 0, True),
+                 ("budget", 0.0, 1e-9, True)]),
+    dict(name="contactfix_perc_vertex_2d", tier="fast", cfg="fdem_percussion.cfg",
+         over=["W = 0.06", "H = 0.05", "nx = 30", "ny = 25", "T = 6.0e-5",
+               "frames = 1", "toolGap = 0", "contact = potential",
+               "jointDeath = damage", "absorbing = none", "dampingLocal = 0",
+               "lateralRollers = true", "contactCandidates = vertex"],
+         checks=[("max:birthe", 1.5e-3, 0, True), ("max:gcwork", 0.0, 0, True),
+                 ("budget", 0.0, 1e-9, True)]),
+    dict(name="contactfix_perc_three_2d", tier="fast", cfg="fdem_percussion.cfg",
+         over=["W = 0.06", "H = 0.05", "nx = 30", "ny = 25", "T = 6.0e-5",
+               "frames = 1", "toolGap = 0", "contact = potential",
+               "jointDeath = damage", "absorbing = none", "dampingLocal = 0",
+               "lateralRollers = true", "contactCandidates = vertex",
+               "gcBirth = offset", "potForceExact = true"],
+         checks=[("max:birthe", 1.5e-3, 0, True), ("max:gcwork", 0.0, 0, True),
+                 ("budget", 0.0, 1e-9, True)]),
+    # ---- revue C5 : refus des valeurs invalides (init seule, < 1 s) -------
+    dict(name="refuse_contactcandidates_value", tier="fast",
+         cfg="verify_fdem_tension.cfg",
+         over=["T = 1e-9", "verifyFt = false", "contact = potential",
+               "contactCandidates = vertx"],
+         expect_error=r"contactCandidates must be active \| vertex", checks=[]),
+    dict(name="refuse_gcbirth_value", tier="fast", cfg="verify_fdem_tension.cfg",
+         over=["T = 1e-9", "verifyFt = false", "contact = potential",
+               "gcBirth = ofset"],
+         expect_error=r"gcBirth must be ramp \| penalty \| offset", checks=[]),
+    dict(name="refuse_offset_tau", tier="fast", cfg="verify_fdem_tension.cfg",
+         over=["T = 1e-9", "verifyFt = false", "contact = potential",
+               "gcBirth = offset", "gcBirthTau = 1e-6"],
+         expect_error=r"gcBirth = offset et gcBirthTau sont exclusives", checks=[]),
+    dict(name="refuse_vertex_penalty", tier="fast", cfg="verify_fdem_tension.cfg",
+         over=["T = 1e-9", "verifyFt = false", "contactCandidates = vertex"],
+         expect_error=r"contactCandidates = vertex exige contact = potential",
+         checks=[]),
+    dict(name="refuse_offset_penalty", tier="fast", cfg="verify_fdem_tension.cfg",
+         over=["T = 1e-9", "verifyFt = false", "gcBirth = offset"],
+         expect_error=r"gcBirth = offset exige contact = potential", checks=[]),
+    dict(name="refuse_potexact_penalty", tier="fast", cfg="verify_fdem_tension.cfg",
+         over=["T = 1e-9", "verifyFt = false", "potForceExact = true"],
+         expect_error=r"potForceExact exige contact = potential", checks=[]),
+    dict(name="refuse_contactcandidates_3d", tier="fast",
+         cfg="verify_fdem3d_tension.cfg",
+         over=["T = 1e-9", "contact = potential", "contactCandidates = vertx"],
+         expect_error=r"contactCandidates must be active \| vertex", checks=[]),
+    dict(name="refuse_potexact_3d", tier="fast", cfg="verify_fdem3d_tension.cfg",
+         over=["T = 1e-9", "contact = potential", "potForceExact = true"],
+         expect_error=r"refusee", checks=[]),
+    # revue M3 / M5 : avertissement offset sans forces exactes ; getb
+    # insensible a la casse (`True` armait false EN SILENCE) ; valeur
+    # booleenne non reconnue signalee
+    dict(name="warn_offset_sans_exact", tier="fast", cfg="verify_fdem_tension.cfg",
+         over=["T = 1e-9", "verifyFt = false", "contact = potential",
+               "gcBirth = offset"],
+         expect_out=[r"AVERTISSEMENT gcBirth = offset sans potForceExact"],
+         checks=[]),
+    dict(name="getb_casse_potexact", tier="fast", cfg="verify_fdem_tension.cfg",
+         over=["T = 1e-9", "verifyFt = false", "contact = potential",
+               "gcBirth = offset", "potForceExact = True"],
+         expect_out=[r"potForceExact = true : forces nodales"],
+         checks=[("absent:offwarn", None, 0, True)]),
+    dict(name="getb_valeur_inconnue", tier="fast", cfg="verify_fdem_tension.cfg",
+         over=["T = 1e-9", "verifyFt = false", "contact = potential",
+               "potForceExact = ture"],
+         expect_out=[r"cle booleenne 'potForceExact' = 'ture' non reconnue"],
+         checks=[]),
     dict(name="zeroload_srfilter_none_2d", tier="fast",
          cfg="verify_fdem_tension.cfg",
          over=["verifyFt = false", "pullV = 1e-12", "strainRateDIF = yang",
@@ -1173,9 +1317,23 @@ def run_one(exe, t, outroot, env, timeout, refs=None):
     detail, ok = [], True
     meas = {}                              # valeurs mesurées (--update-refs)
     ovr = (refs or {}).get(t["name"], {})  # références de plateforme (--refs)
+    # revue C5 (2026-10-07) : un deck INVALIDE doit etre REFUSE — code de
+    # sortie non nul ET message attendu (regex), sinon echec
+    if t.get("expect_error"):
+        hit = re.search(t["expect_error"], text)
+        okE = p.returncode != 0 and hit is not None
+        return dict(name=t["name"], ok=okE, dt=dt,
+                    detail=[f"refus attendu : exit {p.returncode}, "
+                            f"message {'trouve' if hit else 'ABSENT'}"])
     if p.returncode != 0:
         return dict(name=t["name"], ok=False, dt=dt,
                     detail=[f"exit {p.returncode}: {text.strip().splitlines()[-1] if text.strip() else '?'}"])
+    for rx in t.get("expect_out", []):     # lignes de sortie exigees (regex)
+        if re.search(rx, text):
+            detail.append(f"sortie attendue trouvee : /{rx}/")
+        else:
+            ok = False
+            detail.append(f"sortie attendue ABSENTE : /{rx}/")
     for (kind, ref, tol, required) in t["checks"]:
         # "absent:<metrique>" — l ABSENCE est le resultat. Ajoute le 2026-08-30
         # (B10) : sans ce mecanisme, un controle non obligatoire dont la
@@ -1190,6 +1348,22 @@ def run_one(exe, t, outroot, env, timeout, refs=None):
                 detail.append(f"{base} : ATTENDU ABSENT, trouve {hits[-1]}")
             else:
                 detail.append(f"{base} : absent, comme attendu")
+            continue
+        # "max:<metrique>" / "min:<metrique>" : une BORNE (propriete), pas une
+        # reference — val <= ref, ou val >= ref (revue C5, 2026-10-07)
+        if kind.startswith("max:") or kind.startswith("min:"):
+            base = kind[4:]
+            hits = re.findall(RX[base], text)
+            if not hits:
+                ok = False
+                detail.append(f"{base}: non trouvé dans la sortie")
+                continue
+            val = float(hits[-1])
+            good = val <= ref if kind.startswith("max:") else val >= ref
+            if not good:
+                ok = False
+            detail.append(f"{base} = {val:g} {'<=' if kind.startswith('max:') else '>='} "
+                          f"{ref:g} {'ok' if good else 'ECHEC'}")
             continue
         if kind == "pass_tag":
             n_fail = text.count("[FAIL]")
