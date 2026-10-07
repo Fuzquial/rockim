@@ -5,7 +5,6 @@ Solveur FDEM (méthode des éléments finis et discrets combinés, lignée Munji
 l'impact d'un insert de carbure sur la roche : élasticité de volume, joints cohésifs insérés entre
 éléments, contact entre fragments, frottement, effets de vitesse, bilan d'énergie.
 
-Un encadrant qui découvre le dépôt commence par **[LIRE_EN_PREMIER.md](LIRE_EN_PREMIER.md)**.
 
 ## Ce que contient le code
 
