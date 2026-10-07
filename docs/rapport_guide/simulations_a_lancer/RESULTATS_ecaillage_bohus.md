@@ -65,6 +65,48 @@ Lecture :
 - 50,6 % des facettes insérées en `dif` restent dormantes (jamais ouvertes au-delà de 0,05 dnF) ;
   le solveur signale un seuil d'insertion ou un `insertionHoldSteps` trop bas.
 
+## Complément du 2026-10-07 : lecture au spot et T doublé
+
+Deux calculs supplémentaires, avec un groupe `box.spot` (et `force.spot = 0 0 0`, pour que
+`U_spot_*` soit écrit dans `history.csv`) centré sur la face arrière. **Le spot de Ø 3 mm demandé
+n'est pas réalisable sur ce maillage** : `box.` retient les faces extérieures dont les trois
+sommets sont dans la boîte, et une boîte de 3 × 3 mm ne contient aucune face à h = 2,5 mm (le
+solveur refuse le deck : « aucune face exterieure dans la boite »). Le plus petit spot qui marche
+est une boîte de **6 × 6 mm** (aire d'un disque de Ø 6,8 mm). Un spot de Ø 3 mm demanderait un
+raffinement local de la face arrière.
+
+Le conteneur était environ 2,3 fois plus lent par pas après deux redémarrages (même calcul, même
+nombre de pas : 690 s contre 311 s) : les deux calculs ont été coupés à 30 min.
+
+| variante | lecture | pic (m/s) | montée 10 % → pic (µs) | ΔV_pb (m/s) | σ_Novikov (MPa) |
+|---|---|---|---|---|---|
+| `dif` (T = 300 µs, coupé à 129,8 µs) | point arrière | 7,592 | 25,7 | 4,283 | 23,07 |
+| | **spot 6 × 6 mm** | **7,593** (−2,0 %) | **26,2** | **4,260** | **22,94** |
+| | moyenne de face | 7,568 | 25,9 | 3,822 | 20,59 |
+| `nodif` (T = 150 µs, coupé à 144,6 µs) | point arrière | 7,579 | 25,2 | 2,620 | 14,11 |
+| | **spot 6 × 6 mm** | **7,516** (−3,0 %) | **24,1** | **2,537** | **13,66** |
+| | moyenne de face | 7,502 | 24,4 | 2,385 | 12,85 |
+
+Critères de la fiche B10 (variante `dif`) relus au spot, sans les changer :
+
+| critère | spot 6 × 6 mm | cible | verdict au spot |
+|---|---|---|---|
+| 1. pic | 7,593 m/s (−2,0 %) | 7,75 ± 5 % | passe |
+| 2. montée | 26,2 µs | 22 ± 3 µs | échoue (+1,2 µs au-delà de la bande) |
+| 3. σ_Novikov | 22,94 MPa | 15,1-22,7 MPa | échoue de 0,24 MPa (+21 % sur 18,9) |
+
+Le spot se comporte comme le point arrière (écart < 1 %), pas comme la moyenne de face : la
+moyenne de face, qui passait, adoucit le signal par les bords du barreau. La lecture fidèle à un
+vélocimètre laser donne donc **trois critères sur cinq**, les deux autres hors bande de peu. Le
+calcul `dif` à T doublé reproduit le premier à mieux que 0,1 % sur la partie commune (23,07 contre
+23,08 MPa au point), ce qui confirme la répétabilité à 4 fils.
+
+**Détachement de l'écaille : non tranché.** À 129,8 µs (`dif`, T doublé coupé), 2 fragments et
+3,8e-8 m³ détachés, comme à 150 µs dans le premier calcul. Mais `nodif`, qui se détachait à 150 µs
+(8,1e-5 m³), ne s'est pas encore détaché à 144,6 µs (5,7e-9 m³) : le détachement survient tard,
+entre 145 et 150 µs. Les 130 µs atteints en `dif` ne disent donc rien. À relancer sur le poste
+local avec T = 300 µs (environ 30 min à 4 fils sur une machine normale).
+
 ## Non fait
 
 Déformations aux jauges g1, g2, g3 contre la fig. 2b (les déplacements `U_g*` sont dans
