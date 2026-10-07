@@ -390,7 +390,7 @@ fissuration, le second l'enveloppe de rupture.
 | `configs_bench/pen_f*.cfg` | banc de pénalité, 5 points |
 | `results/mesh_yang4corps_vue.png` | figure du maillage |
 | `results/montage_impact.png` | figure du montage |
-| `docs/BANC_yang2026_impact.md` | ce document |
+| `docs/notes/BANC_yang2026_impact.md` | ce document |
 
 Runs de mesure seulement (aucun run long) : `out_yang_smoke`, `out_yang_smoke2`,
 `out_yang_court_f20`, `out_pen_f{5,10,20,40,80}`.

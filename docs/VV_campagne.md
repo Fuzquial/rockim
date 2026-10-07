@@ -134,7 +134,7 @@ Les lacunes de la vérification sont les suivantes.
    ni la réponse d'un joint seul à sa loi de traction-séparation en mode I, en mode II et en
    mode mixte.
 4. Aucune étude ne mesure un ordre de convergence en maillage ou en pas de temps sur un cas
-   élastique. `docs/MAILLAGE_serie_2026-09-13.md` documente une série de maillages en impact,
+   élastique. `docs/notes/MAILLAGE_serie_2026-09-13.md` documente une série de maillages en impact,
    sans référence exacte.
 5. L'objectivité de la rupture vis-à-vis du maillage (pic, énergie dissipée, longueur
    fissurée en fonction de h) n'est pas quantifiée. C'est la propriété la plus discutée du

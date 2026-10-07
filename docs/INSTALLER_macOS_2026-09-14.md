@@ -90,7 +90,7 @@ ls results/fig/stanne192/*.pdf output/pdf/stanne_*_192us/*.pdf
 ```
 
 Onze PDF vectoriels en Computer Modern, directement inclusibles en LaTeX, plus les mesures chiffrées
-dans `docs/ECARTS_guo2014_rockim_2026-09-13.md` et `docs/REPRODUIRE_stanne_radiales_2026-09-14.md`.
+dans `docs/notes/ECARTS_guo2014_rockim_2026-09-13.md` et `docs/REPRODUIRE_stanne_radiales_2026-09-14.md`.
 Aucune compilation n'est nécessaire pour cela.
 
 ## 7. Ce qui ne marchera pas sur Mac

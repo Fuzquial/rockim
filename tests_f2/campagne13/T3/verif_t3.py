@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 # ---------------------------------------------------------------------------
 # verif_t3.py — verification INDEPENDANTE (2e passe T3, campagne du 13/09) de
-# la serie de maillages a train fige : docs/MAILLAGE_serie_2026-09-13.md.
+# la serie de maillages a train fige : docs/notes/MAILLAGE_serie_2026-09-13.md.
 # Ne genere aucun maillage, ne lance aucun run : ne LIT que les .msh du depot.
 #
 #   python tests_f2/campagne13/T3/verif_t3.py
@@ -46,7 +46,7 @@ DEFAUT = {
     "s1_hxt05": "meshes/impact_yang_s1_pose_hxt05.msh",
 }
 TRAIN = ("insert", "bit", "piston", "circlip", "plate")
-# valeurs ECRITES dans docs/MAILLAGE_serie_2026-09-13.md (1re passe) : ce
+# valeurs ECRITES dans docs/notes/MAILLAGE_serie_2026-09-13.md (1re passe) : ce
 # script les re-mesure et refuse tout ecart au-dela de la tolerance.
 ATTENDU_MASSE = {"insert": 0.064584, "bit": 1.288297, "piston": 1.058054,
                  "circlip": 0.014237, "plate": 0.190551}

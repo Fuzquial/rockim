@@ -81,4 +81,4 @@ Les figures de l'état à 192 µs sont versionnées dans `results/fig/stanne192/
 
 Les fichiers de résultats (`out_*/`, trames VTU de plusieurs dizaines de Mo chacune), les maillages et les
 journaux. Le run se rejoue à l'identique avec les trois commandes ci-dessus ; les mesures chiffrées sont
-consignées dans `docs/ECARTS_guo2014_rockim_2026-09-13.md` §10 et dans ce document.
+consignées dans `docs/notes/ECARTS_guo2014_rockim_2026-09-13.md` §10 et dans ce document.

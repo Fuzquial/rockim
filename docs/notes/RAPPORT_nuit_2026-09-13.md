@@ -3,7 +3,7 @@
 Fernando, 2 h : « je te laisse la main toute la nuit, corrige tout, demain matin tout doit être en
 ordre, un bel essai 3D impact très raffiné ; trois tentatives par problème, puis le suivant ; et
 refais un audit ». Ce rapport est le point d'entrée du matin. Il se lit seul ; les détails sont dans
-`docs/ETAT_yang2026_2026-09-11.md` §13, `docs/PLAN_loi_joint_2026-09-12.md`, `docs/AUDIT_2026-09-13.md`,
+`docs/notes/ETAT_yang2026_2026-09-11.md` §13, `docs/notes/PLAN_loi_joint_2026-09-12.md`, `docs/notes/AUDIT_2026-09-13.md`,
 le CHANGELOG et le journal du vault (`JOURNAL/2026-09-12.md`).
 
 ## 1. Ce qui tourne au réveil
@@ -155,8 +155,8 @@ Figures `results/fig/fp_s1_s25.png`, `kinetics_s1_s25.png`.
 ## 5. Où sont les choses
 
 - Code : `simulations/FDEM/rockim_g1`, branche `g1`, poussée sur `origin/g1` (Fuzquial/rockim).
-- Docs : `docs/ETAT_yang2026_2026-09-11.md` (§13 = la nuit), `docs/PLAN_loi_joint_2026-09-12.md`,
-  `docs/AUDIT_2026-09-13.md`, `CHANGELOG.md`, `DOCUMENTATION_rockim.md` (nouvelles clés).
+- Docs : `docs/notes/ETAT_yang2026_2026-09-11.md` (§13 = la nuit), `docs/notes/PLAN_loi_joint_2026-09-12.md`,
+  `docs/notes/AUDIT_2026-09-13.md`, `CHANGELOG.md`, `DOCUMENTATION_rockim.md` (nouvelles clés).
 - Vault : `JOURNAL/2026-09-12.md`, `ETUDES/rockim-impact-yang-insert-unique.md`.
 - Figures : `results/fig/joints_*`, `joints_aretes_*`, `coupes_*` (bancs s = 2,5), `coupes_s1_v3*`
   (run s = 1, à générer).

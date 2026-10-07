@@ -1,6 +1,6 @@
 // ---------------------------------------------------------------------------
 // MatLawDfhPlus — la loi `law = dfhplus` (2026-09-06, ETAPE 1 du chantier
-// DFH+). Voir docs/DFHPLUS_etape1.md pour le compte rendu chiffre.
+// DFH+). Voir docs/notes/DFHPLUS_etape1.md pour le compte rendu chiffre.
 //
 // CE QUE CE FICHIER EST, ET CE QU'IL N'EST PAS
 // -------------------------------------------

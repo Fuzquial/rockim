@@ -443,7 +443,7 @@ campagnes y tournent normalement (`etude_lois_fem/cinetique_aising`, deux
 écrit dans `rockim_f2` le 2026-09-06 à 12:40–12:46 (`DOCUMENTATION_rockim.md`,
 `etude_lois_fem/JOURNAL.md`, `etude_lois_fem/heterogeneite/MOTIFS_hetero.md`,
 en laissant des `.bak_doc20260906`). C'est la **même passe** qui a modifié
-`docs/PORT_INSERTION_POINTE.md` ici et qui s'est retrouvée aspirée dans le
+`docs/notes/PORT_INSERTION_POINTE.md` ici et qui s'est retrouvée aspirée dans le
 commit `b54a559`. Contenu sans lien avec DFH+ (bloc doublé,
 `absorbSpringFactor`, comparaison Abaqus). Le gel de `rockim_f2` a donc bien
 été enfreint, mais **pas par le chantier DFH+**.

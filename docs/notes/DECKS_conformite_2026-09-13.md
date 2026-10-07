@@ -1,6 +1,6 @@
 # Decks de conformité (T4, campagne de correction du 13/09 après-midi) — à valider par Fernando
 
-Cadrage : `docs/CAMPAGNE_correction_2026-09-13.md` §T4. Motifs : COMPLEMENT §2 (« commencer par St Anne »,
+Cadrage : `docs/notes/CAMPAGNE_correction_2026-09-13.md` §T4. Motifs : COMPLEMENT §2 (« commencer par St Anne »,
 impact 3D 2025 sans pulvérisation), DIAGNOSTIC §4 (`meanTensionCapFactor = 0` dans tout essai de conformité),
 ECARTS §5 (cap caché actif dans tous les runs, étiquette rn/rs à corriger). **Aucun deck n'a été lancé au-delà
 de 2 µs** (règle 6) ; tout ce qui suit est soit lu dans les sources, soit mesuré par le lancement de fumée

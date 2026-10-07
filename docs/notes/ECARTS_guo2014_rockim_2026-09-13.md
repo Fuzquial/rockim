@@ -111,7 +111,7 @@ les slivers de surface ne partent pas sans remailleur de qualité. Le vrai levie
 
 ## 5 — Relecture des deux diagnostics indépendants du 12/09 (lus le 13/09 à 15 h)
 
-`docs/DIAGNOSTIC_ICL_independant_2026-09-12.md` et `docs/COMPLEMENT_YANG_sources_et_corrections_2026-09-12.md`
+`docs/notes/DIAGNOSTIC_ICL_independant_2026-09-12.md` et `docs/notes/COMPLEMENT_YANG_sources_et_corrections_2026-09-12.md`
 (auteur non identifié, non commités). Ce qu'ils apportent, vérifié ici :
 
 - **Filtre des facettes rompues (§5 du diagnostic) : vrai, corrigé.** `imp_lib.broken()` prenait `damage ≥ 0,999`,

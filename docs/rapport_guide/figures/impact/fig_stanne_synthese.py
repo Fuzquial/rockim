@@ -7,7 +7,7 @@ Donnees lues, aucune valeur inventee :
   results/fig/stanne300/evolution_cache.json        rayon de peau, extension, profondeur par trame
   output/pdf/stanne_<t>us/surface/mesures.json      rayon maximal des traces en surface
 Theorie : impact 1D de barres (piston R 13,25 mm sur taillant R 15 mm, tools/make_impact_mesh.py l. 64-66).
-Reperes Yang 2025 : lectures des fig. 9-10 (docs/COMPARAISON_yang2025_stanne_2026-09-14.md l. 31-57),
+Reperes Yang 2025 : lectures des fig. 9-10 (docs/notes/COMPARAISON_yang2025_stanne_2026-09-14.md l. 31-57),
 fin de charge 254 us (meme fichier l. 87).
 
 Lancer depuis la racine du depot rockim :  python3 docs/rapport_guide/figures/impact/fig_stanne_synthese.py

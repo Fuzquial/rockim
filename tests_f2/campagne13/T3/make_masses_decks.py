@@ -47,7 +47,7 @@ def bloc(rho_p, rho_b, e_p, e_b):
         "# --- T3 (13/09) : correction de masse du train par DENSITE PAR CORPS ---",
         "# Les masses publiees (piston 1,173 kg, bit 1,509 kg) ne sont pas celles du",
         "# dessin V1 du generateur (facettisation -6,0 / -4,0 %, longueurs -4,0 / -11,1 %,",
-        "# docs/MAILLAGE_serie_2026-09-13.md §4). Deux phases acier de plus portent la",
+        "# docs/notes/MAILLAGE_serie_2026-09-13.md §4). Deux phases acier de plus portent la",
         "# densite corrigee ; la geometrie et le maillage ne changent pas.",
         "phases = rock steel steelPiston steelBit carbide",
         "phase.steelPiston.fraction = 0.0140",

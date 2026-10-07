@@ -51,7 +51,7 @@ MESHES = {
                            "0.012", "0.3", "{out}", "1"],
     "tunnel_hs_iso.msh": ["tools/make_unstructured_mesh.py", "tunnelhs", "100", "100", "0.22",
                           "18", "2.0", "{out}", "1"],
-    # docs/MAILLAGE_serie_2026-09-13.md : rock25 = SR 2,5 ; rock137 = SR 1,0
+    # docs/notes/MAILLAGE_serie_2026-09-13.md : rock25 = SR 2,5 ; rock137 = SR 1,0
     # (et non 1,37 comme l'ecrit REPRODUIRE_stanne_radiales_2026-09-14.md)
     "impact_yang_train1_rock25_hxt.msh": ["tools/make_impact_mesh.py", "{out}", "1.0", "2e-5",
                                           "2.5", "gap=2e-5", "quality=hxt", "train=fixed"],

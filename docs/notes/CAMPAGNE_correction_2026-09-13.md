@@ -111,7 +111,7 @@ le MÊME train à s = 1 ; mesurer avec `tools/mesh_quality.py` (h min, arête m�
 nombre de tétras par corps) et imprimer les masses par corps (volume × ρ : 2626 roche, 7850 acier, 15250
 carbure) ; comparer aux volumes analytiques des cylindres et à Yang (piston 1,173 kg, bit 1,509 kg) ;
 expliquer l'écart (facettisation, longueurs, évidement) et proposer la correction (densité par corps via
-deux phases acier, ou géométrie). Rapport `docs/MAILLAGE_serie_2026-09-13.md`. Ne pas lancer de run.
+deux phases acier, ou géométrie). Rapport `docs/notes/MAILLAGE_serie_2026-09-13.md`. Ne pas lancer de run.
 
 ### T4 — Decks de conformité et cas St Anne (decks, sans lancement)
 Motif : COMPLEMENT §2 (« commencer par St Anne »), DIAGNOSTIC §4 (`meanTensionCapFactor = 0`). Écrire :
@@ -123,7 +123,7 @@ exploratoire) sur le maillage s = 2,5 à train figé (T3) ; (b) `configs/yang202
 la série Kuru à partir du témoin A avec `meanTensionCapFactor = 0` et `jointBreakModeRef = slipRef` ; (c)
 pour chaque deck, un en-tête avec la liste EXACTE des clés qui diffèrent du témoin, le coût estimé (à
 partir de `results/yang_bench_s25_v3P.log` : 5 498 s pour 200 µs à 14 fils avec la machine partagée ; ~20
-min seul) et le critère de succès ; (d) un tableau récapitulatif dans `docs/DECKS_conformite_2026-09-13.md`
+min seul) et le critère de succès ; (d) un tableau récapitulatif dans `docs/notes/DECKS_conformite_2026-09-13.md`
 pour la validation de Fernando. Vérifier chaque deck par un lancement de 2 µs (`T = 2e-6`, `frames = 1`)
 qui doit démarrer sans erreur de clé.
 

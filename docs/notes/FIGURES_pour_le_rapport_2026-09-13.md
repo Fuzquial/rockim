@@ -35,7 +35,7 @@ Deux compagnons dans `output/pdf/stanne_300us/` : `ICL/` (revue en trois planche
 (comparaison des traces en surface et sous la surface, avec ses mesures).
 
 Les chiffres qui vont avec ces planches sont dans
-`docs/COMPARAISON_yang2025_stanne_2026-09-14.md`, et les données brutes dans
+`docs/notes/COMPARAISON_yang2025_stanne_2026-09-14.md`, et les données brutes dans
 `results/data/stanne2025_rock137/`.
 
 ## 2. Les états antérieurs du même run

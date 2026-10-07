@@ -130,7 +130,7 @@ python3 tools/fig_evolution_cratere.py out_stanne2025_rock137_T500 --frames 0-33
 
 C'est `fig_kinetics.py` qui donnera enfin la **pente de rebond** comparable aux 5,6 m/s de Yang, la
 seule grandeur que le run à 300 µs n'a pas pu mesurer. Les autres commandes sont dans
-`docs/FIGURES_pour_le_rapport_2026-09-13.md`.
+`docs/notes/FIGURES_pour_le_rapport_2026-09-13.md`.
 
 ## 9. Ce qui ne marchera pas sur Mac
 

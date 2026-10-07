@@ -186,4 +186,4 @@ Sans viscosité. Forces de contact mesurées par `contactForcePairs`.
 
 Reproduction : `docs/REPRODUIRE_stanne_radiales_2026-09-14.md`.
 Figures : `results/fig/stanne285/` et `output/pdf/stanne_285us/`, index dans
-`docs/FIGURES_pour_le_rapport_2026-09-13.md`.
+`docs/notes/FIGURES_pour_le_rapport_2026-09-13.md`.

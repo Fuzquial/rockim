@@ -219,8 +219,8 @@ python3 vv/B_articles/b_articles.py run --cas B6_ucs --threads 1
 
 Références. Yang, Xiang, Naderi, Wang, Aising, Ugarte et Latham, IJRMMS 191 (2025) 106125,
 calcaire de St Anne à 10,66 m/s ; et IJRMMS 206 (2026) 106660, granite de Kuru à 9 m/s ; code
-Solidity (FDEM 3D). Études d'origine : `docs/COMPARAISON_yang2025_stanne_2026-09-14.md`,
-`BANC_yang2026_impact.md`, `ETAT_yang2026_2026-09-11.md`, `mesures_ICL_2026-09-12.json`,
+Solidity (FDEM 3D). Études d'origine : `docs/notes/COMPARAISON_yang2025_stanne_2026-09-14.md`,
+`docs/notes/BANC_yang2026_impact.md`, `docs/notes/ETAT_yang2026_2026-09-11.md`, `docs/notes/mesures_ICL_2026-09-12.json`,
 `ETUDES/rockim-impact-yang-insert-unique.md`.
 
 Cas. Train de frappe complet (piston, bit, insert brasé), roche cylindrique de 125 × 150 mm. Trois
@@ -262,7 +262,7 @@ pas indépendante du chemin de mise au point, et les valeurs publiées sont des 
 Statut de reproductibilité. Toutes les clés sont lues. Maillages régénérés : rock25 24 148
 tétraèdres contre 24 010, rock137 109 160 contre 108 667 (autres réalisations). La commande de
 `REPRODUIRE_stanne_radiales_2026-09-14.md` (rapport de raffinement 1,37) donne 54 185 tétraèdres :
-le maillage rock137 de la série correspond à un rapport 1,0 (`MAILLAGE_serie_2026-09-13.md`), que
+le maillage rock137 de la série correspond à un rapport 1,0 (`docs/notes/MAILLAGE_serie_2026-09-13.md`), que
 `b_articles.py` utilise. Le maillage Kuru s = 2,5 est copié de `meshes/` (10 597 tétraèdres, identique
 à sa régénération). Le binaire courant avertit que la raideur tangentielle du contact dépasse de
 1,43 fois celle que budgète le pas de temps (decks St Anne) ; à surveiller. Runs non lancés.

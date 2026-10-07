@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # ---------------------------------------------------------------------------
 # make_conformity_decks.py — decks de conformite de la campagne du 13/09
-# (T4, docs/CAMPAGNE_correction_2026-09-13.md). Genere, SANS lancer :
+# (T4, docs/notes/CAMPAGNE_correction_2026-09-13.md). Genere, SANS lancer :
 #
 #   (1) configs/stanne2025_bench_s25_visc.cfg
 #       = configs/stanne2025_bench_s25_visc0.cfg (ecrit a la main, la source)
@@ -115,7 +115,7 @@ def v4_text(banc, src_name, desc, src_text, ref_keys):
     head = [
         "# ---------------------------------------------------------------------------",
         "# %s — SERIE v4 (T4, campagne de correction du 13/09" % dst_name,
-        "# apres-midi, docs/CAMPAGNE_correction_2026-09-13.md) : %s" % desc,
+        "# apres-midi, docs/notes/CAMPAGNE_correction_2026-09-13.md) : %s" % desc,
         "# + les TROIS cles de conformite, ajoutees en FIN de deck :",
         "#   meanTensionCapFactor = 0     cap cache sur la pression moyenne en traction",
         "#                                (defaut 3 ft = 32,9 MPa, actif dans TOUS les runs",
@@ -146,7 +146,7 @@ def v4_text(banc, src_name, desc, src_text, ref_keys):
         head += ["#   (aucune)"]
     head += [
         "#",
-        "# COUT ESTIME : docs/DECKS_conformite_2026-09-13.md (dt mesure par le lancement",
+        "# COUT ESTIME : docs/notes/DECKS_conformite_2026-09-13.md (dt mesure par le lancement",
         "# de 2 us, tools/deck_smoke.py ; 77,7 ms/pas machine partagee 14 fils d apres",
         "# results/yang_bench_s25_v3P.log, ~17 ms/pas seul).",
         "# CRITERE DE SUCCES : celui du banc source (temoin A : plateau de reaction",

@@ -86,7 +86,7 @@
 //               Expose son energie libre au banc (hasFreeEnergy). Resultat :
 //               `rockim thermobench dfhplus` PASS, 0 violation, la ou dpdfh en
 //               a 7 172. Bancs : `rockim selftest-dfhplus`. Compte rendu :
-//               docs/DFHPLUS_etape1.md.
+//               docs/notes/DFHPLUS_etape1.md.
 //               !!! RELECTURE ADVERSE 2026-09-06 — DEFAUT MAJEUR (§11.11) :
 //               `dfhplus` NE REPREND PAS le perimetre de DP-DFH au-dela de
 //               sigma3 ~ 160 MPa. Identique a +0,00 % jusqu'a 150 MPa, puis

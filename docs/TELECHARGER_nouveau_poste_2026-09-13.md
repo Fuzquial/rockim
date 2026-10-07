@@ -38,7 +38,7 @@ Vous y trouvez :
 - **220 figures** dont **90 PDF vectoriels en Computer Modern**, directement inclusibles en LaTeX,
   dans `results/fig/` et `output/pdf/` — les planches de St Anne à 192 µs sont dans
   `results/fig/stanne192/` et `output/pdf/stanne_*_192us/` ;
-- **22 documents** dans `docs/`, dont `ECARTS_guo2014_rockim_2026-09-13.md` qui porte toutes les
+- **22 documents** dans `docs/`, dont `notes/ECARTS_guo2014_rockim_2026-09-13.md` qui porte toutes les
   mesures chiffrées, et `REPRODUIRE_stanne_radiales_2026-09-14.md` qui dit comment rejouer le calcul ;
 - les decks dans `configs/`, les scripts de figures dans `tools/`, les bancs dans `tests_f2/` ;
 - `rockim_g1y19.exe`, le binaire Windows qui a produit les fissures radiales.

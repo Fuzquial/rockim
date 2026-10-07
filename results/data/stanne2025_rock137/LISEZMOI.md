@@ -4,7 +4,7 @@ Les **données texte** du run `out_stanne2025_rock137`, terminé le 14/09 à 12 
 calcul sur 14 fils. 4,2 Mo, contre 2,0 Go pour le dossier de sortie complet.
 
 Ce sont **ces fichiers qui portent tous les chiffres** cités dans
-`docs/COMPARAISON_yang2025_stanne_2026-09-14.md` et `docs/ECARTS_guo2014_rockim_2026-09-13.md` §10.
+`docs/notes/COMPARAISON_yang2025_stanne_2026-09-14.md` et `docs/notes/ECARTS_guo2014_rockim_2026-09-13.md` §10.
 Toutes les courbes se refont à partir d'eux seuls, sans les trames.
 
 | Fichier | Taille | Contenu |
