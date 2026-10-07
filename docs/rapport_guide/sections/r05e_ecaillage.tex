@@ -1,0 +1,99 @@
+\section{Écaillage du granite de Bohus : première comparaison à l'essai}
+\label{sec-ecaillage}
+
+rockim encadre la résistance à l'écaillage mesurée sur le granite de Bohus, $18{,}9$~MPa, entre $14{,}1$~MPa sans facteur dynamique et $23{,}1$~MPa avec le facteur de Yang. Sur les cinq critères écrits avant calcul pour la variante avec facteur dynamique, trois passent nettement. Les deux autres, temps de montée et résistance de Novikov, sont à la limite : ils échouent au point arrière et passent en moyenne sur la face. La géométrie de l'éprouvette est supposée et le calcul repose sur un tirage. Sous ces réserves, ce banc est la première validation du rapport au sens du \cref{sec-introduction} : la référence est un essai qui n'a pas servi au calage.
+
+\subsection{Objet et essai}
+
+Saadati et al.~\cite{saadati2016spall} mesurent la résistance en traction dynamique du granite de Bohus par écaillage. Un projectile d'aluminium frappe une barre de Hopkinson collée au barreau de granite. L'onde de compression se réfléchit en traction sur la face arrière libre et écaille le barreau. Un vélocimètre laser mesure la vitesse de la face arrière en un point.
+
+La chute de vitesse après le premier maximum, $\Delta V_{pb}$, donne la résistance dynamique par la formule de Novikov (éq.~1 de l'article) :
+\begin{equation}
+\sigma_\text{dyn} = \tfrac12\,\rho\,C_0\,\Delta V_{pb} ,
+\label{eq-novikov}
+\end{equation}
+avec $\rho = 2\,660$~kg/m$^3$ et $C_0 = 4\,050$~m/s, célérité de barre. L'essai donne $\Delta V_{pb} = 3{,}5$~m/s, soit $\sigma_\text{dyn} = 18{,}9$~MPa à une vitesse de déformation d'environ 70~s$^{-1}$, régime de la percussion selon les auteurs. Sur la figure~2a, lue à $\pm 0{,}1$~m/s et $\pm 1$~µs, le premier maximum vaut $7{,}75$~m/s, le minimum suivant $4{,}25$~m/s et le rebond $4{,}95$~m/s. L'épaisseur de l'écaille, tirée de la période de rebond ($C_0\,\Delta t/2$ avec $\Delta t = 28$~µs), vaut 57~mm à $\pm 4$~mm près. Le modèle de l'article prédit $19{,}5$~MPa ; il n'est pas retenu comme référence.
+
+Le banc teste la traction dynamique pure : insertion adaptative en traction, loi cohésive, facteur dynamique et propagation d'onde dans un barreau à faces libres. Les paramètres de rupture viennent de l'article ($f_t$ quasi statique) et d'un jeu de rockim ($G_f$) qui n'a pas été calé sur un essai dynamique. Les critères ont été écrits le 6 octobre 2026, avant le calcul.
+
+\subsection{Mise en données}
+
+L'article ne cote pas l'éprouvette, et la géométrie a été supposée à la préparation du banc. Le barreau a une section carrée de $39{,}9 \times 39{,}9$~mm, de même aire qu'un disque de 45~mm de diamètre, et une longueur de 140~mm. Cette longueur est compatible avec la jauge G1 placée à 116~mm de la face arrière. Le diamètre de 45~mm est l'ordre de grandeur des éprouvettes d'écaillage du même laboratoire, à confirmer. À aire égale, la célérité de barre et l'impédance sont les mêmes.
+
+Le maillage compte $62\,217$ tétraèdres non structurés de taille nominale $2{,}5$~mm ; le diamètre inscrit vaut $0{,}497$~mm au minimum, $1{,}216$~mm en médiane et $1{,}853$~mm au maximum. La longueur cohésive $\ell_{cz} = E\,G_f/f_t^2$ vaut 48~mm, de sorte que la taille d'élément reste sous $\ell_{cz}/2$ avec une marge de 10. Il n'y a ni facteur de masse ni amortissement local.
+
+Le matériau a $\rho = 2\,660$~kg/m$^3$, $E = \rho\,C_0^2 = 43{,}63$~GPa pour propager à $C_0$, $\nu = 0{,}15$ et $f_t = 8$~MPa, valeurs de Saadati et al. L'énergie $G_f = 70$~J/m$^2$, non publiée, vient du jeu Red Bohus de rockim. La cohésion et le frottement, 25~MPa et $40^\circ$, sont les défauts du code et n'agissent pas en traction uniaxiale.
+
+Le chargement est une traction imposée sur la face d'entrée, égale à la contrainte incidente de la jauge G1 (figure~3 de l'article, numérisée à $\pm 1{,}5$~MPa et $\pm 1$~µs). Elle part de zéro, culmine à $41{,}5$~MPa à 35~µs et revient à zéro à 55~µs. Les autres faces sont libres. La vitesse élastique attendue sur la face arrière, $2\sigma/(\rho C_0) = 7{,}70$~m/s, s'écarte de $0{,}6~\%$ du pic mesuré.
+
+Deux variantes ont tourné le 6 octobre 2026 (binaire \cle{f638b0f}, 4 fils, 14~min chacune) jusqu'à 150~µs. La première applique le facteur dynamique de Yang (\cref{eq-dif}), figé à l'insertion du joint (\cle{dif}) ; la seconde n'en applique pas (\cle{nodif}). Seule la première porte un verdict ; la seconde mesure la part de l'inertie et de la loi cohésive seules.
+
+La vitesse de la face arrière est lue de deux façons. Le point arrière est le sommet le plus proche du centre de la face, à $0{,}18$~mm ; la moyenne de face porte sur ses 377 sommets. Le plan d'écaillage est la position des joints rompus dans la dernière trame, mesurée depuis la face arrière.
+
+\subsection{Résultats}
+
+Le tableau~\ref{tab-ecaillage-criteres} donne le verdict des cinq critères pour la variante \cle{dif}, avec les deux lectures. Les critères ne désignent pas le point de lecture, et aucune des deux n'est retenue ici. L'essai mesure en un point, ce qui plaide pour la lecture ponctuelle ; mais un sommet isolé porte un bruit de maillage. Une lecture moyennée sur un disque de 2 à 5~mm de diamètre, taille du spot laser, est demandée ; son résultat est à venir.
+
+\begin{table}[htbp]
+\centering
+\caption{Critères écrits avant calcul, variante \cle{dif}, maillage de $2{,}5$~mm. Deux lectures de la vitesse de la face arrière : sommet le plus proche du centre et moyenne sur la face.}
+\label{tab-ecaillage-criteres}
+\footnotesize
+\setlength{\tabcolsep}{3pt}
+\begin{tabularx}{\linewidth}{@{}>{\raggedright\arraybackslash}p{0.19\linewidth} >{\raggedright\arraybackslash}p{0.13\linewidth} >{\raggedright\arraybackslash}X >{\raggedright\arraybackslash}X >{\raggedright\arraybackslash}p{0.19\linewidth}@{}}
+\toprule
+critère & cible & point arrière & moyenne de face & verdict \\
+\midrule
+1. pic élastique de vitesse & $7{,}75$~m/s $\pm 5~\%$ & $7{,}579$~m/s ($-2{,}2~\%$) & $7{,}502$~m/s ($-3{,}2~\%$) & passe \\
+2. montée de $10~\%$ au pic & $22 \pm 3$~µs & $25{,}2$~µs & $24{,}4$~µs & échoue de $0{,}2$~µs au point, passe sur la face \\
+3. $\Delta V_{pb}$ et $\sigma_\text{dyn}$ & $15{,}1$ à $22{,}7$~MPa & $4{,}285$~m/s, $23{,}08$~MPa ($+22~\%$) & $3{,}769$~m/s, $20{,}30$~MPa ($+7~\%$) & échoue de $0{,}4$~MPa au point, passe sur la face \\
+4. plan d'écaillage & $57 \pm 10$~mm & \multicolumn{2}{>{\raggedright\arraybackslash}p{0.36\linewidth}}{médiane $55{,}2$~mm (quartiles $50{,}0$ à $62{,}8$)} & passe \\
+5. résidu du bilan (\cref{sec-B4}) & $< 0{,}1~\%$ & \multicolumn{2}{l}{$8{,}7\times10^{-13}~\%$} & passe \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+Le tableau~\ref{tab-ecaillage-variantes} compare les deux variantes. Les instants de l'essai suivent l'horloge de sa figure, d'origine différente de celle du calcul : seules les durées se comparent.
+
+\begin{table}[htbp]
+\centering
+\caption{Variantes avec et sans facteur dynamique, comparées à l'essai. Vitesses au point arrière sauf mention ; plan d'écaillage en médiane et quartiles.}
+\label{tab-ecaillage-variantes}
+\footnotesize
+\setlength{\tabcolsep}{3pt}
+\begin{tabularx}{\linewidth}{@{}>{\raggedright\arraybackslash}p{0.27\linewidth} >{\raggedright\arraybackslash}X >{\raggedright\arraybackslash}X >{\raggedright\arraybackslash}p{0.17\linewidth}@{}}
+\toprule
+grandeur & \cle{dif} & \cle{nodif} & essai \\
+\midrule
+pic de vitesse & $7{,}579$~m/s à $68{,}6$~µs & $7{,}579$~m/s à $68{,}6$~µs & $7{,}75$~m/s \\
+minimum suivant & $3{,}295$~m/s à $103{,}1$~µs & $4{,}959$~m/s à $102{,}3$~µs & $4{,}25$~m/s \\
+rebond & $4{,}317$~m/s à $114{,}6$~µs & $5{,}338$~m/s à $116{,}4$~µs & $4{,}95$~m/s \\
+$\Delta V_{pb}$, point et face & $4{,}285$ et $3{,}769$~m/s & $2{,}620$ et $2{,}385$~m/s & $3{,}5$~m/s \\
+$\sigma_\text{dyn}$, point et face & $23{,}08$ et $20{,}30$~MPa & $14{,}11$ et $12{,}85$~MPa & $18{,}9$~MPa \\
+plan d'écaillage & $55{,}2$~mm ($50{,}0$ à $62{,}8$) & $52{,}7$~mm ($46{,}4$ à $71{,}2$) & 57~mm \\
+joints insérés, rompus & $15\,854$ ; $1\,594$ & $18\,989$ ; $1\,819$ & \\
+rompus en traction, en cisaillement & $1\,575$ ; 19 & $1\,786$ ; 33 & \\
+fragments, volume détaché & 2 ; $3{,}8\times10^{-8}$~m$^3$ & 5 ; $8{,}13\times10^{-5}$~m$^3$ & écaille détachée \\
+facteur dynamique à l'insertion & médiane $1{,}833$ à 89~s$^{-1}$ & sans objet & 70~s$^{-1}$ \\
+résidu du bilan & $8{,}7\times10^{-13}~\%$ & $5{,}7\times10^{-13}~\%$ & \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{Lecture}
+
+Sans facteur dynamique, la résistance apparente vaut $14{,}1$~MPa pour $f_t = 8$~MPa : l'inertie et la loi cohésive portent seules un facteur $1{,}76$. Avec le facteur de Yang, elle vaut $23{,}1$~MPa au point arrière. L'essai, à $18{,}9$~MPa, tombe entre les deux, plus près de la variante \cle{dif}. Le pic élastique est le même dans les deux variantes : il ne dépend que de l'onde.
+
+Le facteur de Yang est appliqué ici à une vitesse de déformation médiane de 89~s$^{-1}$, au-dessus des 70~s$^{-1}$ de l'article. La médiane du facteur vaut $1{,}833$, et $35~\%$ des insertions sont au plafond de $1{,}85$. Dans ce régime, le facteur est presque constant et ne distingue plus les vitesses de déformation.
+
+Sans facteur dynamique, l'écaille se détache : un bloc de $8{,}13\times10^{-5}$~m$^3$, soit $39{,}9 \times 39{,}9 \times 51$~mm, cohérent avec la médiane de $52{,}7$~mm du plan d'écaillage. Avec le facteur, rien ne se détache dans les 150~µs calculées : la fissure est amorcée mais ne traverse pas la section. L'essai montre une écaille détachée ; un calcul plus long dira si la variante \cle{dif} la détache plus tard.
+
+L'épaisseur tirée de la période de rebond simulée, de 87 à 135~mm selon la lecture, ne concorde pas avec la position des joints rompus, près de 55~mm. Le rebond simulé n'est donc pas une réverbération dans l'écaille, notamment avec le facteur dynamique, où l'écaille ne se détache pas. Le critère~4 repose sur la position des joints rompus.
+
+\subsection{Réserves}
+
+La géométrie de l'éprouvette est supposée : longueur et section ne sont pas cotées par l'article. Chaque variante repose sur un seul tirage du maillage, calculé à 4 fils, donc non identique au bit près à un autre nombre de fils. L'énergie $G_f$ n'est pas publiée, et sa sensibilité (35 et 140~J/m$^2$) n'a pas été calculée.
+
+Le verdict porte sur le facteur dynamique de Yang. Son indépendance vis-à-vis de cet essai reste à vérifier : si les données qui fixent son exposant incluent l'essai de Saadati et al., la variante \cle{dif} n'est plus une validation. Le jeu Red Bohus de rockim vise $\sigma_t = 18{,}3$~MPa, voisin de la valeur d'écaillage ; ce banc emploie $f_t = 8$~MPa et non ce jeu.
+
+Dans la variante \cle{dif}, $50{,}6~\%$ des facettes insérées restent dormantes, jamais ouvertes au-delà de 5~\% de l'ouverture critique ; le solveur signale un seuil d'insertion ou un délai d'insertion (\cle{insertionHoldSteps}) trop bas. Le collage entre la barre et l'éprouvette n'est pas modélisé, et l'article ne publie qu'un essai, de dispersion inconnue. Les déformations aux jauges g1 à g3 n'ont pas encore été comparées à la figure~2b de l'article.
