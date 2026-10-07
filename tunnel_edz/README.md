@@ -51,7 +51,7 @@ c'est la moitié de l'article (§5.2).
 
 ```
 1.  coller PATCH 1 puis PATCH 2          (voir les deux fichiers .md)
-2.  build_tun.cmd                        -> rockim_tun.exe  (~2 min)
+2.  scripts/windows/build_tun.cmd                        -> rockim_tun.exe  (~2 min)
 3.  python tools/verify_suite.py --exe rockim_tun.exe --tier fast
         => 15/15 attendu, AUCUN repère ne doit bouger : les deux patchs sont
            inertes tant que insituSh/insituSv valent 0 (constitution, I)
@@ -160,7 +160,7 @@ Maillages déjà produits (dans `meshes/`, hors de ce dossier) :
 ## 8. État de vérification — APPLIQUÉ ET VALIDÉ le 2026-08-17
 
 Les deux patchs sont **collés dans le dépôt** et compilés en `rockim_tun.exe`
-(`build_tun.cmd`, 58 s). Résultats mesurés :
+(`scripts/windows/build_tun.cmd`, 58 s). Résultats mesurés :
 
 | contrôle | résultat |
 |---|---|

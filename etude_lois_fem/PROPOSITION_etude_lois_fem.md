@@ -184,7 +184,7 @@ Choix assumés par l'auteur, à contester si désaccord : carte E 77,66 / ft 9 /
 - Yang X. et al. (2025). IJRMMS 191:106125. doi:10.1016/j.ijrmms.2025.106125.
 - Zhang Q.B., Zhao J. (2014). Rock Mech. Rock Eng. 47:1411-1478. doi:10.1007/s00603-013-0463-y.
 - Zhou Y. et al. (2017). IJRMMS 100:287-297. doi:10.1016/j.ijrmms.2017.11.004.
-- Sources locales : phd/CONTINUUM.md (§2-§7), CONTINUUM/calib_bohus_triax/README.md, CONTINUUM/scratch_bench/RESULTATS_scratch.md, CONTINUUM/percussion_bohus/patch_mat.py, FDEM/rockim/FICHE_rockim.md, FDEM/rockim/rockim_f2_wt/DOCUMENTATION_rockim.md §5.5-5.8, ROADMAP_rockim.md l.10-29, src/MatLaw.cpp (l.176-289, 1142-1202, 1237-1239), src/Fem3dSolver.cpp (l.144, 177, 329, 459-486, 532-534), src/Fdem3dSolver.cpp (l.2156-2212), src/FemSolver.cpp (l.426-440), VUMATS/mh/vumat_mh_v2.f.
+- Sources locales : phd/CONTINUUM.md (§2-§7), CONTINUUM/calib_bohus_triax/README.md, CONTINUUM/scratch_bench/RESULTATS_scratch.md, CONTINUUM/percussion_bohus/patch_mat.py, FDEM/rockim/FICHE_rockim.md, FDEM/rockim/rockim_f2_wt/DOCUMENTATION_rockim.md §5.5-5.8, docs/notes/ROADMAP_rockim.md l.10-29, src/MatLaw.cpp (l.176-289, 1142-1202, 1237-1239), src/Fem3dSolver.cpp (l.144, 177, 329, 459-486, 532-534), src/Fdem3dSolver.cpp (l.2156-2212), src/FemSolver.cpp (l.426-440), VUMATS/mh/vumat_mh_v2.f.
 
 
 ## Annexe A — Matrice détaillée des runs (une clé change entre deux runs, sauf mention)

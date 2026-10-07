@@ -64,7 +64,7 @@ schéma d'insertion.
 | 06/08 | adaptatif validé sur l'UCS de Yan : UCS 47,8 MPa, E 99,1 %, dt ×2, bande 65° | [[rockim-insertion-adaptative]] |
 | 07/08 | explosion 3D en phase débris, **les deux schémas** ; CFL sur le diamètre inscrit réel | [[rockim-instabilite-3d-debris]] |
 | 22/08 | premier impact adaptatif (St Anne) : rebond 0,99, 1 754 joints, pas d'étoile radiale ; diagnostic = dissipation de la zone broyée manquante | `bench_impact/BILAN_fissures_radiales.md` |
-| 25/08 | le critère « n'insère pas trop tôt » (98,8 % des insertions servent) ; il n'isole pas de gros blocs ; `insertionTipFactor = 1,6` | `BILAN_insertion_adaptative.md` |
+| 25/08 | le critère « n'insère pas trop tôt » (98,8 % des insertions servent) ; il n'isole pas de gros blocs ; `insertionTipFactor = 1,6` | `docs/notes/BILAN_insertion_adaptative.md` |
 | 27/08 | plage de mode II ×54 (`jointShearRange = coulomb`), six conventions Solidity, replica **intrinsèque** | `rockim_p4/BILAN_replique_solidity` |
 | 30/08 | decks Kuru : adaptatif retenu « l'unique écart revendiqué » parce que l'intrinsèque multi-corps « se désassemble » (résolu le 11/09 : ft = 1e12 + groupContinuum) | `bench_impact/configs/impact_kuru9*.cfg` |
 | 02/09 | triplet interdit adaptive + damage + gcBirth = penalty | HANDOFF contact §8.3 |

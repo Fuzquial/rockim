@@ -1094,7 +1094,7 @@ de la pénétration de naissance) ; SHPB : `gcCell` (2·hDisc), `gcBoxMesh` (tru
 *Section ajoutée le 2026-09-02. Les clés `toolContact`, `toolSignoriniRelax`,
 `toolImpulseCap` et `cutterThick` existaient — écrites, argumentées en
 en-tête de `FdemSolver.hpp` — et n'étaient documentées **nulle part**, ni dans
-ce fichier, ni dans `CHANTIER_f2.md`, ni dans le README, ni dans la suite de
+ce fichier, ni dans `docs/notes/CHANTIER_f2.md`, ni dans le README, ni dans la suite de
 non-régression. Dette du principe VII, soldée ici avec les deux bancs qui
 leur donnent un verdict.*
 

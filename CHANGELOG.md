@@ -5,6 +5,23 @@ plan de robustesse du 2026-09-05). L'arbre `g0` est sous git depuis le tag `g0-0
 reçoit les lignes exigées par les règles déjà en vigueur — dont **toute ancre de bit-identité changée**
 (`tools/bitid_refs.json`, règle de `tools/BITID.md`).
 
+
+## 2026-10-07 — rangement du dépôt pour le partage
+
+- Racine allégée : les notes de travail datées (bilans, plans, transmissions, audit, feuille de
+  route) passent dans `docs/notes/`, leurs figures et journaux dans `docs/notes/figures/` et
+  `docs/notes/journaux/` ; les scripts `build_*.cmd` et `run_cut.cmd` dans `scripts/windows/`
+  (le `cd /d %~dp0` devient `cd /d %~dp0..\..`, le comportement est inchangé) ; les scripts de
+  lancement `run_*.sh` (chemins absolus du poste) dans `scripts/historique/`. Déplacements par
+  `git mv`, rien n'est supprimé ; les références dans la documentation, les commentaires et les
+  configurations sont mises à jour (les entrées antérieures de ce CHANGELOG gardent les anciens
+  chemins).
+- Nouveau `README.md` en français (porte d'entrée) et `LIRE_EN_PREMIER.md` (parcours pour un
+  encadrant) ; l'ancien README anglais du simulateur FEM/DEM 2D est conservé dans
+  `docs/notes/README_historique_FEM_DEM_2D.md`.
+- `rockim_g1y19.exe` n'est plus suivi par git (le fichier reste dans l'historique) ; `*.exe` est
+  ignoré.
+
 ## [Non publié] — arbre g1, 2026-10-07 : correction du contact par potentiel (ENQUETE_CONTACT.md)
 
 ### Ajouté (opt-in, défaut bit-identique)

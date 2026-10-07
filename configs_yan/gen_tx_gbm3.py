@@ -41,7 +41,7 @@
 #     en FDEM = CONDITION D'INVALIDITE (trajets biaises, divergence en phase
 #     debris) », et DOC 5.16 bis conclut « tout deck GBM de calibration doit le
 #     poser ». Mesure a l'origine de la regle (remarque de F. Uzquiano du
-#     2026-09-02, CHANTIER_f2.md) : le Delaunay intra-grain place ses points
+#     2026-09-02, docs/notes/CHANTIER_f2.md) : le Delaunay intra-grain place ses points
 #     interieurs sur un RESEAU TRIANGULAIRE — orientations d'aretes R6 = 0,548,
 #     pic/creux 18,8, soit PIRE que le mailleur frontal banni (0,34) : trois
 #     directions de fissure imposees a l'interieur de chaque grain. Avec

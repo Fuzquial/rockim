@@ -15,7 +15,7 @@ chaque volet, elle n'est pas décorative.
 | `biblio_fdem.md` | les codes FDEM : Munjiza 2004 (intrinsèque), MultiFracS, Y-Geo/Irazu, Fukuda, HOSS ; comparaisons publiées intrinsèque vs extrinsèque |
 | `biblio_roches.md` | applications roches : Tang/RFPA (l'hétérogénéité de Weibull nécessaire à la localisation), Lisjak EDZ, BPM, GBM, tunnels profonds |
 
-Conclusions opérationnelles : voir [BILAN_insertion_adaptative.md](../BILAN_insertion_adaptative.md)
+Conclusions opérationnelles : voir [docs/notes/BILAN_insertion_adaptative.md](../BILAN_insertion_adaptative.md)
 §2 (ce que dit la littérature) et §7 (idées écartées avec la raison).
 
 Réserve de méthode : la première exécution de la revue a été fauchée par une

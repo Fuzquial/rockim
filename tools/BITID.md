@@ -6,7 +6,7 @@ Jusqu'au 05/09 la preuve « défaut bit-identique » de chaque build était un s
 copié-collé par build (exe, decks et nombre de fils codés en dur), l'ancre a changé deux fois
 (10 configs à OMP 14 pour w0…w12, un seul deck cdp à OMP 2 pour w14…w18), les hachages ne sont pas
 comparables d'un nombre de fils à l'autre, et aucune liste de hachages de référence n'était au dépôt
-(constats T03/T08/P17/D08 de `ETAT_DES_LIEUX_2026-09-05.md`). `tools/bitid.py` remplace ces scripts
+(constats T03/T08/P17/D08 de `docs/notes/ETAT_DES_LIEUX_2026-09-05.md`). `tools/bitid.py` remplace ces scripts
 par **un** outil, **une** liste fixe de decks, **une** ancre versionnée.
 
 ## Usage

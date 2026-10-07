@@ -665,8 +665,8 @@ Priorité 3, changer la manière d'insérer (opt-in, à valider sur les bancs pr
 Lues pour cette note : `src/FdemSolver.cpp` (insertionSweep, facetFrame, activateJoint, stampDif,
 refreshDif, setJointLengths, assignJointProps, step, jointForces, lecture des clés), `src/Fdem3dSolver.cpp`
 (insertionSweep, activateJoint), `include/rockim/JointTsl.hpp`, `YangDif.hpp`, `YanSoftening.hpp`,
-`FdemSolver.hpp` (commentaires du facteur de pointe), `BILAN_insertion_adaptative.md`,
-`AUDIT_loi_adaptative_2026-09-11.md`, `tunnel_edz/REVUE_insertion_adaptative.md`, `CHANGES_YAN.md`,
+`FdemSolver.hpp` (commentaires du facteur de pointe), `docs/notes/BILAN_insertion_adaptative.md`,
+`docs/notes/AUDIT_loi_adaptative_2026-09-11.md`, `tunnel_edz/REVUE_insertion_adaptative.md`, `docs/notes/CHANGES_YAN.md`,
 `docs/SPEC_loi_note_2026.md` (début), `docs/rapport_guide/ENQUETE_CONTACT.md`,
 `docs/rapport_guide/correction_contact/{IMPLEMENTATION,TESTS}.md`, sections r02, r05a, r05c du rapport,
 `biblio_insertion/` (passages cités), Yan et al. 2023 (PDF pages 3 à 8 et texte), Wang et al. 2024 (texte

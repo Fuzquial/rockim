@@ -28,7 +28,7 @@ de `f2` posaient deja ces cles et etaient donc **refuses** par `rockim_f2w21`
 
 **Mesure qui la motive** (relevee dans la branche) : l'insertion adaptative ne
 PROPAGE que 43,7 % de ses ruptures — le reste NUCLEE en terrain vierge — contre
-58,9 % pour le schema intrinseque a loi de joint identique (chiffre CORRIGE le 2026-09-06 : « 56,8 % » etait une coquille de recopie ; la mesure d'origine, BILAN_insertion_adaptative.md l. 102/127/154, donne 58,9 %). Cause : la
+58,9 % pour le schema intrinseque a loi de joint identique (chiffre CORRIGE le 2026-09-06 : « 56,8 % » etait une coquille de recopie ; la mesure d'origine, docs/notes/BILAN_insertion_adaptative.md l. 102/127/154, donne 58,9 %). Cause : la
 contrainte est moyennee sur deux CST, ce qui ECRASE la singularite de pointe
 (2,7 elements par zone cohesive de mode I) ; la facette devant une pointe ne se
 distingue plus d'une facette quelconque de l'anneau plastique.
@@ -221,7 +221,7 @@ necessaires :
 2. **le noeud orphelin.** gmsh ecrit le point du champ de taille (le point
    d'impact lui-meme) comme un noeud 0-D jamais reference par un tetraedre ; le
    lecteur de maillage le refuse (broche fantome de masse nulle sous le pole,
-   cf. `ETAT_DES_LIEUX_2026-09-05.md`). Les outils qui le nettoient,
+   cf. `docs/notes/ETAT_DES_LIEUX_2026-09-05.md`). Les outils qui le nettoient,
    `etude_lois_fem/meshes/drop_orphans.py` et `check_orphans.py`, n'avaient pas
    ete repris a la naissance de `g0` (seuls les `*.py` de la RACINE de
    `etude_lois_fem/` l'avaient ete) alors que le message d'erreur du solveur les

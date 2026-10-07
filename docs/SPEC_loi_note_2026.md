@@ -3,7 +3,7 @@
 Contrat d'implémentation. Version de départ : copie conforme de `rockim_g0`
 (`rockim_g1ref.exe`, 2 263 040 octets, identique à `rockim_fix.exe`).
 Source : note de travail de septembre 2026, sections 1 à 3.
-Audit de départ : `..\rockim_g0\AUDIT_loi_adaptative_2026-09-11.md`.
+Audit de départ : `..\rockim_g0\docs/notes/AUDIT_loi_adaptative_2026-09-11.md`.
 
 ---
 
@@ -181,7 +181,7 @@ fois**, et les deux branches doivent rester bit-identiques entre elles.
 `include/rockim/KeysByMode.hpp`, `tools/keys_by_mode.json`, `include/rockim/JointTsl.hpp`,
 `include/rockim/KeyGuard.hpp`, `include/rockim/Guards.hpp`, `include/rockim/Material.hpp`,
 `include/rockim/YanSoftening.hpp`, `include/rockim/YangDif.hpp`, `src/main.cpp`,
-`CMakeLists.txt`, `build_g1.cmd`, et **tout fichier d'un autre lot**.
+`CMakeLists.txt`, `scripts/windows/build_g1.cmd`, et **tout fichier d'un autre lot**.
 
 Un besoin sur l'un de ces fichiers se **déclare dans le rapport de fin**, il ne s'applique pas.
 

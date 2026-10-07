@@ -4,10 +4,10 @@ project(rockim CXX)
 # ---------------------------------------------------------------------------
 # rockim_g0 — configuration CMake de NAISSANCE (2026-09-05, mesure D1a du
 # PLAN_ROBUSTESSE). Decision (9) : g0 nait avec CMake + Ninja, pas avec
-# build_f2.cmd.
+# scripts/windows/build_f2.cmd.
 #
 # CONTRAINTE : les drapeaux MSVC doivent etre STRICTEMENT ceux de
-# `build_f2.cmd` de rockim_f2, faute de quoi l'exe ne reproduit pas l'ancre
+# `scripts/windows/build_f2.cmd` de rockim_f2, faute de quoi l'exe ne reproduit pas l'ancre
 # de bit-identite `tools/bitid_refs.json` (prise sur rockim_f2w18.exe) :
 #
 #   cl /nologo /std:c++17 /O2 /EHsc /openmp /D_USE_MATH_DEFINES /DNOMINMAX
@@ -33,7 +33,7 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
 endif()
 
 if(MSVC)
-  # Drapeaux exactement equivalents a build_f2.cmd (rien de plus).
+  # Drapeaux exactement equivalents a scripts/windows/build_f2.cmd (rien de plus).
   set(CMAKE_CXX_FLAGS                "/nologo /EHsc" CACHE STRING "" FORCE)
   set(CMAKE_CXX_FLAGS_RELEASE        "/O2"           CACHE STRING "" FORCE)
   set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "/O2 /Zi"       CACHE STRING "" FORCE)
@@ -44,11 +44,11 @@ endif()
 
 # ---------------------------------------------------------------------------
 # Eigen (en-tetes seules). Priorite a la copie locale ..\rockim\eigen-3.4.0,
-# celle que build_f2.cmd utilise : c'est la seule qui garantit la reprise de
+# celle que scripts/windows/build_f2.cmd utilise : c'est la seule qui garantit la reprise de
 # l'ancre. A defaut, paquet systeme, puis telechargement (CI Linux, macOS).
 # ---------------------------------------------------------------------------
 set(ROCKIM_EIGEN_LOCAL "${CMAKE_CURRENT_SOURCE_DIR}/../rockim/eigen-3.4.0"
-    CACHE PATH "Copie locale des en-tetes Eigen (celle de build_f2.cmd)")
+    CACHE PATH "Copie locale des en-tetes Eigen (celle de scripts/windows/build_f2.cmd)")
 if(EXISTS "${ROCKIM_EIGEN_LOCAL}/Eigen/Dense")
   message(STATUS "rockim: Eigen 3.4.0 (copie locale ${ROCKIM_EIGEN_LOCAL})")
   add_library(rockim_eigen INTERFACE)

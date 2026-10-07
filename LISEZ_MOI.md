@@ -1,6 +1,8 @@
 # rockim — solveur FDEM pour le forage percussif
 **Dossier de partage constitué le 2026-08-30. F. Uzquiano, Mines Paris – PSL.**
 
+> État actuel du dépôt (7 octobre 2026) : voir [README.md](README.md) et [LIRE_EN_PREMIER.md](LIRE_EN_PREMIER.md). Les chiffres de ce fichier (44 contrôles) datent du 30 août ; la suite rapide compte aujourd'hui 66 contrôles, dont un échec connu.
+
 ---
 
 ## Ce que c'est
