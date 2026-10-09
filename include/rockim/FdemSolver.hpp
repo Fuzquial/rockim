@@ -904,6 +904,10 @@ private:
     double mtCapExc_ = 0.0, mtCapExcFr_ = 0.0;
     std::vector<double> mtCapExcT_;
     bool writeRupture_ = false;
+    // writeStrainFields (spec 007, J3, 2026-10-02) : tenseur de deformation
+    // GLOBAL par element (strainXX/YY/XY) et deplacement nodal dans les VTU.
+    // Calcule dans writeFrame seulement : aucune trajectoire n en depend.
+    bool writeStrain_ = false;
     int breakModeRef_ = 0;
     bool difOn_ = false;
     // ---- DIF en schema INTRINSEQUE : le gel a l AMORCAGE (2026-08-25) -----

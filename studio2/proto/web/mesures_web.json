@@ -1,0 +1,21 @@
+{
+ "pile": "C web local (WebGL2)",
+ "navigateur": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36 Edg/154.0.0.0",
+ "run": "F7_disc_gbm_P020",
+ "gpu": "ANGLE (Intel, Intel(R) Arc(TM) Graphics (0x00007D55) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+ "N1_demarrage_ms": 444,
+ "N3_ouverture_run_ms": 96,
+ "N4_frame_moy_ms": 16.1,
+ "N4_frame_max_ms": 17.3,
+ "rendu_seul_moy_ms": 0.02,
+ "rendu_seul_max_ms": 0.2,
+ "N5_images_par_s": 60.3,
+ "N5_ecart_max_entre_images_ms": 17.3,
+ "N6_tache_longue_max_ms": 149,
+ "N6_debut_ms": 188,
+ "shaders_compiles_a_ms": 285,
+ "taille_vue_px": [
+  1088,
+  825
+ ]
+}

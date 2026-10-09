@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rockim · Maquettes</title>
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="maquettes.css">
+</head>
+<body>
+<header class="barre">
+  <div class="marque">ROCKIM<span>Triaxial 2D · g1</span></div>
+  <nav class="onglets" id="onglets">
+    <button data-e="essai" class="actif">Essai</button>
+    <button data-e="maillage">Maillage</button>
+    <button data-e="file">File<span class="n">2 en cours · 3</span></button>
+    <button data-e="resultats">Résultats</button>
+  </nav>
+  <div class="etat-global"><span class="point"></span>rockim_j3.exe · 4 jobs × 4 fils</div>
+</header>
+
+<!-- =============================================================== ESSAI -->
+<main class="ecran actif" id="e-essai">
+  <div class="formulaire">
+    <section class="carte">
+      <div class="carte-tete"><span class="titre">Essai</span><span class="overline">F7 · GBM + pré-rompus</span></div>
+      <div class="corps-carte">
+        <div class="segments plein"><button class="actif">Triaxial</button><button>Traction directe</button></div>
+        <div class="ligne"><label>Confinement σ₃</label><div class="nombre"><input value="20"><span>MPa</span></div></div>
+        <div class="ligne"><label>Vitesse des plateaux</label><div class="nombre"><input value="0,1"><span>m/s</span></div></div>
+        <div class="ligne"><label>Arrêt après le pic</label><div class="nombre"><input value="50"><span>% de chute</span></div></div>
+        <div class="aide-ligne">Confinement établi en 0,2 ms, charge axiale à partir de 0,6 ms.</div>
+      </div>
+    </section>
+
+    <section class="carte">
+      <div class="carte-tete"><span class="titre">Éprouvette et matériau</span></div>
+      <div class="corps-carte">
+        <div class="ligne"><label>Largeur × hauteur</label><div class="deux"><div class="nombre"><input value="36"><span>mm</span></div><div class="nombre"><input value="72"><span>mm</span></div></div></div>
+        <div class="ligne"><label>Préréglage</label><select><option>Red Bohus, fragile (Yan 2023)</option><option>Red Bohus, calibré</option></select></div>
+        <div class="aide-ligne">E 15 GPa · ν 0,24 · ft 1,3 MPa · c 16,4 MPa · φ 23° · Gf 3,8 J/m²</div>
+      </div>
+    </section>
+
+    <section class="carte">
+      <div class="carte-tete"><span class="titre">Microstructure</span></div>
+      <div class="corps-carte">
+        <div class="ligne"><label>Maillage</label><div class="segments plein"><button class="actif">Voronoï</button><button>Gmsh homogène</button></div></div>
+        <div class="ligne"><label>Phases</label><div class="segments plein"><button>Une</button><button class="actif">Trois minéraux</button></div></div>
+        <div class="ligne"><label>Taille de grain</label><div class="nombre"><input value="3,0"><span>mm</span></div></div>
+        <div class="ligne"><label>Taille d'élément</label><div class="nombre"><input value="0,70"><span>mm</span></div></div>
+        <div class="aide-ligne ok">≈ 35 éléments par grain (plage 35-90)</div>
+        <div class="ligne"><label>Tailles de grain</label><div class="segments plein"><button class="actif">Uniformes</button><button>Dispersées</button><button>Par phase</button></div></div>
+        <div class="ligne"><label>Contraste minéral</label><div class="segments plein"><button>Élastique seul</button><button class="actif">Complet</button></div></div>
+        <table class="tab-phases">
+          <tr><th>Phase</th><th>Aire</th><th>E GPa</th><th>ft MPa</th><th>c MPa</th><th>φ °</th></tr>
+          <tr><td><i class="pastille-phase" style="background:var(--quartz)"></i>Quartz</td><td>34,5 %</td><td>18,4</td><td>1,55</td><td>15,5</td><td>25,1</td></tr>
+          <tr><td><i class="pastille-phase" style="background:var(--feldspath)"></i>Feldspath</td><td>61,2 %</td><td>13,7</td><td>1,19</td><td>12,9</td><td>22,3</td></tr>
+          <tr><td><i class="pastille-phase" style="background:var(--biotite)"></i>Biotite</td><td>4,3 %</td><td>6,6</td><td>0,83</td><td>7,8</td><td>14,6</td></tr>
+        </table>
+        <div class="ligne"><label>Joints de grain</label><div class="segments plein"><button class="actif">Identiques</button><button>Atténués</button><button>Par paire</button></div></div>
+      </div>
+    </section>
+
+    <section class="carte">
+      <div class="carte-tete"><span class="titre">Discontinuités</span><span class="overline">combinables</span></div>
+      <div class="corps-carte">
+        <div class="interrupteur on"><i></i>Joints pré-rompus diffus</div>
+        <div class="ligne"><label>Fraction</label><div class="nombre"><input value="5"><span>%</span></div></div>
+        <div class="aide-ligne att">En insertion adaptative, environ 2,2 % seront réellement glissants.</div>
+        <div class="interrupteur"><i></i>Famille de plans affaiblis</div>
+        <div class="interrupteur"><i></i>Fissures dessinées sur l'aperçu</div>
+        <div class="aide-ligne">Frottement résiduel : tan 23° = 0,424 (frottement de pic)</div>
+      </div>
+    </section>
+  </div>
+
+  <section class="carte schema">
+    <div class="carte-tete"><span class="titre">Schéma de l'essai</span><span class="overline">à l'échelle</span></div>
+    <svg id="schema" viewBox="0 0 520 620"></svg>
+  </section>
+
+  <div class="colonne-droite">
+    <section class="carte">
+      <div class="carte-tete"><span class="titre">Estimation</span><span class="overline">avant tout calcul</span></div>
+      <div class="chiffres">
+        <div><small>Éléments</small><b>12 990</b></div>
+        <div><small>Grains</small><b>367</b></div>
+        <div><small>Pas de temps</small><b>6,0 ns</b></div>
+        <div><small>Durée estimée</small><b>≈ 1 h 30</b></div>
+      </div>
+    </section>
+    <section class="carte">
+      <div class="carte-tete"><span class="titre">Vérifications</span><span class="overline">0 erreur · 0 alerte</span></div>
+      <ul class="avis">
+        <li class="ok">Recette triaxiale : plateaux, confinement latéral, arrêt après pic.</li>
+        <li class="ok">Maillage aléatoire intra-grain (grainMeshRandom), 35 éléments par grain.</li>
+        <li class="info">Pré-rompus : 5 % de consigne, environ 2,2 % actifs. Lire le journal à l'initialisation.</li>
+        <li class="info">Champs de déformation écrits (writeStrainFields) : exige rockim_j3 ou plus récent.</li>
+      </ul>
+      <div class="boutons">
+        <button class="bouton" data-aller="maillage">Aperçu du maillage (≈ 2 s)</button>
+        <button class="bouton primaire">Ajouter à la file</button>
+        <button class="bouton">Varier σ₃ : 0 · 10 · 20 · 40 MPa → 4 runs</button>
+      </div>
+    </section>
+    <section class="carte">
+      <div class="carte-tete"><span class="titre">Deck g1</span><span class="overline">généré, lecture seule</span></div>
+      <div class="deck" id="deck"></div>
+    </section>
+  </div>
+</main>
+
+<!-- =============================================================== MAILLAGE -->
+<main class="ecran" id="e-maillage">
+  <section class="carte vue-maillage">
+    <canvas id="cvMaillage"></canvas>
+    <div class="incrust haut-gauche"><div style="font-size:15px;font-weight:600">Aperçu du maillage réel</div><div class="sous" style="color:var(--texte2)">généré par g1 (run tronqué à une frame, 2,2 s)</div></div>
+    <div class="outils">
+      <div class="segments"><button class="actif">Phases</button><button>Grains</button><button>Arêtes</button></div>
+      <button class="bouton">✎ Dessiner une fissure</button>
+    </div>
+    <div class="legende">
+      <span><i class="pastille-phase" style="background:var(--quartz)"></i>quartz</span>
+      <span><i class="pastille-phase" style="background:var(--feldspath)"></i>feldspath</span>
+      <span><i class="pastille-phase" style="background:var(--biotite)"></i>biotite</span>
+      <span><i class="pastille" style="background:var(--pre);opacity:1;width:14px"></i> pré-rompus</span>
+    </div>
+  </section>
+  <div class="colonne-droite">
+    <section class="carte">
+      <div class="carte-tete"><span class="titre">Ce que le solveur a construit</span></div>
+      <table class="tab-phases" style="margin:8px 0 4px">
+        <tr><th></th><th>Estimé</th><th>Réalisé</th></tr>
+        <tr><td>Éléments</td><td>12 990</td><td>12 995</td></tr>
+        <tr><td>Grains</td><td>367</td><td>367</td></tr>
+        <tr><td>Éléments par grain</td><td>35,4</td><td>35,4</td></tr>
+        <tr><td>Joints</td><td>—</td><td>19 339</td></tr>
+        <tr><td>dont joints de grain</td><td>—</td><td>2 572</td></tr>
+        <tr><td>Hauteur min. d'élément</td><td>—</td><td>0,20 mm</td></tr>
+      </table>
+    </section>
+    <section class="carte">
+      <div class="carte-tete"><span class="titre">Phases</span><span class="overline">aire réalisée / cible</span></div>
+      <table class="tab-phases" style="margin:8px 0 4px">
+        <tr><th>Phase</th><th>Cible</th><th>Réalisé</th><th>Écart</th></tr>
+        <tr><td><i class="pastille-phase" style="background:var(--quartz)"></i>Quartz</td><td>34,50 %</td><td>34,54 %</td><td>+0,04</td></tr>
+        <tr><td><i class="pastille-phase" style="background:var(--feldspath)"></i>Feldspath</td><td>61,22 %</td><td>61,20 %</td><td>−0,02</td></tr>
+        <tr><td><i class="pastille-phase" style="background:var(--biotite)"></i>Biotite</td><td>4,28 %</td><td>4,25 %</td><td>−0,03</td></tr>
+      </table>
+    </section>
+    <section class="carte">
+      <div class="carte-tete"><span class="titre">Discontinuités posées</span></div>
+      <ul class="avis">
+        <li class="info">1 027 joints pré-rompus sur 19 339 (5,3 %).</li>
+        <li class="att">424 seulement ont une extrémité déjà scindée : fraction glissante effective 2,2 %.</li>
+      </ul>
+      <div class="boutons"><button class="bouton" data-aller="essai">← Modifier l'essai</button><button class="bouton primaire">Maillage validé : ajouter à la file</button></div>
+    </section>
+  </div>
+</main>
+
+<!-- =============================================================== FILE -->
+<main class="ecran" id="e-file">
+  <section class="carte" style="overflow:auto">
+    <div class="barre-file">
+      <span class="titre">File de calculs</span>
+      <span class="mono2">exe</span><select style="min-width:170px"><option>rockim_j3.exe</option><option>rockim_g1y19.exe</option></select>
+      <span class="mono2">jobs</span><div class="nombre" style="width:70px"><input value="4"></div>
+      <span class="mono2">fils</span><div class="nombre" style="width:70px"><input value="4"></div>
+      <span style="margin-left:auto" class="mono2">les calculs continuent si l'interface est fermée</span>
+      <button class="bouton" style="padding:0 14px">Pause</button>
+    </div>
+    <table class="tab-file" id="tabFile"></table>
+  </section>
+  <div class="colonne-droite">
+    <section class="carte">
+      <div class="carte-tete"><span class="titre">F3_tailles_P020</span><span class="overline">en cours · 61 %</span></div>
+      <canvas class="mini-courbe" id="miniCourbe"></canvas>
+      <div class="chiffres">
+        <div><small>t simulé</small><b>6,1 ms</b></div>
+        <div><small>Fin estimée</small><b>≈ 35 min</b></div>
+        <div><small>q actuel</small><b>88,4 MPa</b></div>
+        <div><small>Joints rompus</small><b>1 210</b></div>
+      </div>
+    </section>
+    <section class="carte">
+      <div class="carte-tete"><span class="titre">Journal</span><span class="overline">sortie du solveur</span></div>
+      <div class="journal">[tess] delaunay grain mesh: target element 0.0007 m (0.23 x grain), 367 cells — points interieurs ALEATOIRES (Poisson-disc)
+[FDEM] adaptive insertion: 19339 bonded edges, activation penalty 4 E/h
+[FDEM] confinement: 20 MPa on 205 exterior faces (sides), ramp 0.0002 s
+[FDEM] uniaxial loaded by PLATENS closing at 0.1 m/s total
+[FDEM] 12995 elements, 19339 joints, 38985 nodes, dt = 6.00385e-09 s
+[FDEM] voronoi: 367 grains, 3 phase(s), 2572 grain-boundary joints
+  10%   20%   30%   40%   50%   60%</div>
+    </section>
+  </div>
+</main>
+
+<!-- =============================================================== RÉSULTATS -->
+<main class="ecran" id="e-resultats">
+  <section class="carte liste-runs">
+    <div class="carte-tete"><span class="titre">Runs terminés</span><span class="overline">cocher pour comparer</span></div>
+    <div id="listeRuns" style="margin-top:8px"></div>
+  </section>
+  <div class="comparaison">
+    <section class="carte"><div class="carte-tete"><span class="titre">q en fonction de ε axial</span><span class="overline">superposition</span></div><canvas id="cvComp"></canvas></section>
+    <section class="carte"><div class="carte-tete"><span class="titre">σyy et fissures, F7, frame finale</span><span class="overline">clic : écran détaillé (J1)</span></div><canvas id="cvChamp"></canvas></section>
+  </div>
+  <section class="carte synthese">
+    <div class="carte-tete"><span class="titre">Synthèse de la série</span><span class="overline">mêmes définitions que depouille.py · export CSV · figure PDF</span></div>
+    <table id="tabSynthese"></table>
+  </section>
+</main>
+
+<div class="note-maquette">MAQUETTE J4 · données de la campagne etude_triax_hetero</div>
+<script src="maquettes.js"></script>
+</body>
+</html>

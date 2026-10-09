@@ -1,0 +1,100 @@
+# -------------------------------------------------------------------------
+# F7_disc_gbm_P020 : TRIAXIAL 2D, sigma3 = 20 MPa
+# FRAGILE — GBM 3 phases, grains de MEME taille + discontinuites diffuses (5 %)
+# Genere par studio2/noyau — NE PAS EDITER A LA MAIN.
+# -------------------------------------------------------------------------
+mode = fdem
+scenario = tension
+loading = platens
+T = 0.01
+frames = 24
+historyStrains = true
+writeStrainFields = true    # exige un g1 compile apres le 2026-10-02 (spec 007 J3)
+
+# --- eprouvette --------------------------------------------------------
+W = 0.036
+H = 0.072
+thickness = 1
+
+# --- maillage ----------------------------------------------------------
+mesh = voronoi
+grainSize = 0.003
+grainSeeding = random
+grainJitter = 0.5
+lloydIters = 2
+grainMesh = delaunay
+grainMeshRandom = true    # OBLIGATOIRE en GBM (DOC regle 8.4)
+grainElemSize = 0.0007
+seed = 4211
+
+# --- materiau de volume (fragile) --------------------------------------
+rho = 1704
+E = 15000000000
+nu = 0.24
+ft = 1300000
+cohesion = 16400000
+frictionDeg = 23
+Gf = 3.8
+gfShearFactor = 22.105
+
+# --- phases ------------------------------------------------------------
+phases = quartz feldspar biotite
+phase.quartz.fraction = 0.344985
+phase.quartz.rho = 1728.77
+phase.quartz.E = 18374200000
+phase.quartz.nu = 0.08
+phase.quartz.ft = 1549540
+phase.quartz.cohesion = 18709600
+phase.quartz.frictionDeg = 25.0625
+phase.quartz.Gf = 4.52291
+phase.feldspar.fraction = 0.612195
+phase.feldspar.rho = 1670.06
+phase.feldspar.E = 13682900000
+phase.feldspar.nu = 0.29
+phase.feldspar.ft = 1191950
+phase.feldspar.cohesion = 15591300
+phase.feldspar.frictionDeg = 22.2778
+phase.feldspar.Gf = 3.51782
+phase.biotite.fraction = 0.0428202
+phase.biotite.rho = 1989.72
+phase.biotite.E = 6645980000
+phase.biotite.nu = 0.25
+phase.biotite.ft = 834365
+phase.biotite.cohesion = 9354780
+phase.biotite.frictionDeg = 16.7083
+phase.biotite.Gf = 2.01018
+
+# --- joints de grain ---------------------------------------------------
+gbAlphaTen = 1
+gbAlphaCoh = 1
+gbAlphaGf = 1
+gbAlphaE = 1
+gbAlphaFric = 1
+
+# --- discontinuites preexistantes --------------------------------------
+jointResidualMu = 0.4245    # frottement de PIC : la pre-fissure perd sa cohesion seule
+gcSurfaceRefresh = eager    # exige des qu'il existe des joints pre-rompus
+jointPrebrokenFrac = 0.05
+jointPrebrokenSeed = 8453
+
+# --- schema numerique --------------------------------------------------
+insertion = adaptive
+jointSoftening = yan
+insertionPenaltyFactor = 4
+contactMu = 0.1
+dampingLocal = 0.7
+jointXi = 0
+
+# --- chargement et confinement -----------------------------------------
+pullV = -0.1    # negatif = plateaux en compression
+pullRamp = 0.0002
+pullDelay = 0.0006    # le confinement s'etablit AVANT l'axial
+confiningPressure = 20000000
+confiningRamp = 0.0002
+confineFaces = sides
+confineGaugeTime = 0.0005
+ucsStopAfterPeak = true
+stopPeakDrop = 0.5
+ucsStopDelay = 0.0002
+gaugeLoFrac = 0.25
+gaugeHiFrac = 0.75
