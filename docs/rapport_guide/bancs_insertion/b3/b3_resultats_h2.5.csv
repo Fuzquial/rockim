@@ -1,0 +1,4 @@
+name,njoints,n_ins_or_dmg,n_broken,Wj,Wc,gcnet,resid,wall,dt,nj,nel,ins,sig_pk_MPa,sig_pk_ft,sig_end_ft,W_GW,dur_s,rc,N_fiss,N_fiss_ge3,main_n,main_frac,main_xext_W,main_L_mm,main_ymean_mm,main_ystd_mm,off_frac,prop_break,prop_insert,first_dist_tip_mm,main_dist_tip_mm,main_xmax_mm,dev_mean_mm,dev_max_mm,L_lig,broken_off_main
+b3_h1.25_adapt,8285,0,0,nan,nan,nan,nan,nan,nan,nan,nan,nan,0.165459,0.0165459,0.0165459,nan,nan,?,,,,,,,,,,,,,,,,,,
+b3_h2.5_adapt,2379,127,19,nan,nan,nan,nan,nan,2.60678e-09,2379,1621,nan,6.94078,0.694078,4.30803e-05,nan,1200.01,124,1,1,19,1,0.75,32.2272,42.205,1.2653,0.267717,0.777778,0.626984,0.52428,0.5,40,2.23134,4.41625,1.07424,0
+b3_h2.5_intri,2379,145,19,nan,nan,nan,nan,nan,2.60678e-09,2379,1621,nan,6.09392,0.609392,0.0136361,nan,1200.01,124,1,1,19,1,0.75,32.2272,42.2313,1.21829,0.255172,0.777778,nan,1.3761,0.5,40,2.23134,4.41625,1.07424,0

@@ -1,0 +1,7 @@
+/home/user/rockim/docs/rapport_guide/bancs_insertion/b2L/b2L_h1.25_adapt_brut.cfg
+/home/user/rockim/docs/rapport_guide/bancs_insertion/b2L/b2L_h10_adapt_brut.cfg
+/home/user/rockim/docs/rapport_guide/bancs_insertion/b2L/b2L_h10_adapt_corr.cfg
+/home/user/rockim/docs/rapport_guide/bancs_insertion/b2L/b2L_h2.5_adapt_brut.cfg
+/home/user/rockim/docs/rapport_guide/bancs_insertion/b2L/b2L_h2.5_adapt_corr.cfg
+/home/user/rockim/docs/rapport_guide/bancs_insertion/b2L/b2L_h5_adapt_brut.cfg
+/home/user/rockim/docs/rapport_guide/bancs_insertion/b2L/b2L_h5_adapt_corr.cfg
